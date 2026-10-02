@@ -12,13 +12,14 @@
 //! among a group's other animations. Material and shape animations are not
 //! played. A group whose animation does not read keeps its serialized pose.
 
+use crate::error::{MeleeError, Result};
 use dat_parser::DatFile;
 use dat_parser::descriptor::generic_animation::RawAnimJointGraph;
 use dat_parser::descriptor::map_head::MapHead;
 use dat_parser::hsd::animation::{HsdJointPoseEvaluator, HsdJointPoseLimits, attach_anim_joints};
 use dat_parser::hsd::draw::{HsdDrawEvaluationPolicy, HsdEvaluatedDrawWork};
 use dat_parser::hsd::scene::HsdScene;
-use dat_parser::hsd::source::{HsdFocus, HsdSource, HsdSourceError, Result};
+use dat_parser::hsd::source::{HsdFocus, HsdSource, HsdSourceError};
 
 const ANIMATION: u32 = 0;
 /// The furthest a seek plays to: ten minutes of frames. Seeking replays from
@@ -175,13 +176,13 @@ impl MeleeStagePlayback {
             .source
             .evaluator
             .evaluate(&self.source.scene, &poses)
-            .map_err(|error| HsdSourceError::InvalidDrawWork(error.to_string()))?;
+            .map_err(HsdSourceError::from)?;
         Ok((&self.source.scene, work))
     }
 }
 
-fn playback_error(error: impl std::fmt::Display) -> HsdSourceError {
-    HsdSourceError::InvalidDrawWork(format!("stage animation: {error}"))
+fn playback_error(error: impl std::fmt::Display) -> MeleeError {
+    crate::error::playback_error(format!("stage animation: {error}"))
 }
 
 /// A model group's root joint with the joint animation it starts on.

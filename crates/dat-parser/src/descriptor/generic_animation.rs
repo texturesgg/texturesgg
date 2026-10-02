@@ -65,11 +65,12 @@ pub enum RawGenericAnimationError {
         resource: &'static str,
         source_offset: u32,
     },
-    #[error("{resource} pointer at data offset {field_offset:#x} is invalid: {error:?}")]
+    #[error("{resource} pointer at data offset {field_offset:#x} is invalid: {source}")]
     InvalidPointer {
         resource: &'static str,
         field_offset: u32,
-        error: DatPointerError,
+        #[source]
+        source: DatPointerError,
     },
     #[error("{resource} linked structure cycles at data offset {source_offset:#x}")]
     Cycle {
@@ -220,7 +221,7 @@ fn material_descriptor_error(error: DescriptorParseError) -> RawGenericAnimation
             RawGenericAnimationError::InvalidPointer {
                 resource,
                 field_offset,
-                error: source,
+                source,
             }
         }
         error => RawGenericAnimationError::Descriptor(error),
@@ -272,10 +273,10 @@ pub(super) fn pointer(
         },
     )?;
     dat.resolve_pointer(field_offset)
-        .map_err(|error| RawGenericAnimationError::InvalidPointer {
+        .map_err(|source| RawGenericAnimationError::InvalidPointer {
             resource,
             field_offset,
-            error,
+            source,
         })
 }
 
@@ -415,7 +416,7 @@ mod tests {
             Err(RawGenericAnimationError::InvalidPointer {
                 resource: "AnimJoint child",
                 field_offset: 0,
-                error: DatPointerError::MissingRelocation,
+                source: DatPointerError::MissingRelocation,
             })
         ));
     }
