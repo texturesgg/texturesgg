@@ -1,5 +1,6 @@
 use dat_parser::DatFile;
 use dat_parser::DatParseError;
+use dat_parser::DatResource;
 
 fn write_u32(data: &mut [u8], offset: usize, value: u32) {
     data[offset..offset + 4].copy_from_slice(&value.to_be_bytes());
@@ -15,7 +16,7 @@ fn rejects_header_counts_that_exceed_file_bounds() {
     assert!(matches!(
         DatFile::parse(&raw),
         Err(DatParseError::ResourceLimit {
-            resource: "relocation",
+            resource: DatResource::Relocations,
             ..
         })
     ));
@@ -34,7 +35,7 @@ fn rejects_duplicated_root_names_above_the_symbol_budget() {
     assert!(matches!(
         DatFile::parse(&raw),
         Err(DatParseError::ResourceLimit {
-            resource: "root symbol byte",
+            resource: DatResource::RootSymbolBytes,
             ..
         })
     ));

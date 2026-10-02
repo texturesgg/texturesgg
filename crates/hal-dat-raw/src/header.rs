@@ -10,6 +10,12 @@ use super::reader::Reader;
 ///   0x10: extern_count (u32)
 ///   0x14: version (4 bytes, typically zeroed)
 ///   0x18-0x1F: padding
+///
+/// [`Self::parse`] reads the fields as they are stored and checks none of
+/// them, and a header built by hand is no different: the counts may name
+/// tables the file does not hold. [`DatFile::parse`](crate::DatFile::parse)
+/// is what checks them against the file and against this crate's limits. The
+/// table offsets saturate instead of overflowing.
 #[derive(Debug, Clone)]
 pub struct DatHeader {
     pub file_size: u32,
