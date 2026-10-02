@@ -53,7 +53,7 @@ pub mod render_flags {
 ///   0x04: render_flags (u32)
 ///   0x08: tobj_ptr (u32) — texture object linked list
 ///   0x0C: material_ptr (u32) — material colors struct
-///   0x10: renderdesc_ptr (u32) — base Melee loader ignores its semantics
+///   0x10: renderdesc_ptr (u32) — `MObjLoad` does not read it
 ///   0x14: pe_desc_ptr (u32) — pixel engine descriptor
 #[derive(Debug, Clone)]
 pub struct MObj {

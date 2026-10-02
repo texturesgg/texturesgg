@@ -1,8 +1,7 @@
 //! Design tokens, copied from the textures.gg site's design system.
 //!
 //! The site is the source. Names follow its tokens in snake_case, and lengths
-//! keep their web pixel values. The site's tests read this file and fail when
-//! a value stops matching, so keep each token a literal on its own line.
+//! keep their web pixel values.
 
 /// An sRGB color with straight alpha, packed as `0xRRGGBBAA`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

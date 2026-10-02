@@ -32,7 +32,7 @@ pub mod flags {
 ///   0x08: comp_count (u32) — GXCompCnt (number of components)
 ///   0x0C: comp_type (u32) — GXCompType (UInt8/Int8/UInt16/Int16/Float)
 ///   0x10: scale (u8) — fractional bits (divide decoded value by 2^scale)
-///   0x12: stride (i16) — bytes between elements in the buffer
+///   0x12: stride (u16) — bytes between elements in the buffer
 ///   0x14: buffer_ptr (u32) — pointer to vertex attribute data buffer
 #[derive(Debug, Clone)]
 pub struct GxAttribute {

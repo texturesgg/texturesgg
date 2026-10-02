@@ -1,6 +1,6 @@
 //! Renderer-neutral evaluated HSD draw work.
 //!
-//! This module consumes a settled [`HsdScene`](super::scene::HsdScene), an
+//! This module consumes a settled [`HsdScene`], an
 //! optional root-local pose, and the source-backed envelope evaluator. It emits
 //! evaluator-owned world matrices and position/normal streams in source occurrence order;
 //! it does not select cameras, materials, render passes, or backend resources.

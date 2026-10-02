@@ -15,8 +15,7 @@
 //! decoded material-stage state and skinning inputs without selecting a renderer
 //! projection. It intentionally does not choose a GPU API, bake transforms,
 //! collapse texture stages, or merge geometry. The
-//! original [`crate::DatFile`] remains canonical; this is not the future round-trip
-//! editing model.
+//! original [`crate::DatFile`] remains canonical; nothing here writes it back.
 
 mod build;
 pub(crate) mod discovery;

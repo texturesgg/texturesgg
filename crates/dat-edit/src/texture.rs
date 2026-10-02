@@ -47,8 +47,8 @@ pub struct TexturePatch {
 /// Only storage blocks whose pixels change are re-encoded, and with `dirty`
 /// only the blocks it overlaps are considered (see [`encode_texture_over`]).
 /// Every TObj or material animation sharing the image data sees the edit
-/// once the bytes are written. The patch is refused when its range isn't
-/// safe to overwrite (see [`writable`]).
+/// once the bytes are written. The patch is refused when its range runs
+/// past the data section or covers a relocated pointer.
 pub fn patch_texture(
     dat: &DatFile,
     image: u32,

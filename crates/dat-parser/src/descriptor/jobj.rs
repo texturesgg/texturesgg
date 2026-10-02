@@ -13,7 +13,7 @@ pub mod flags {
     pub const LIGHTING: u32 = 1 << 7;
     pub const TEXGEN: u32 = 1 << 8;
 
-    pub const BILLBOARD_FIELD: u32 = 0xE00; // this covers moultiple bits, 9-11
+    pub const BILLBOARD_FIELD: u32 = 0xE00; // bits 9-11
     pub const BILLBOARD: u32 = 0x200;
     pub const VBILLBOARD: u32 = 0x400;
     pub const HBILLBOARD: u32 = 0x600;

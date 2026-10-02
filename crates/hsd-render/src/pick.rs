@@ -7,7 +7,7 @@
 //! animated pose and cut-outs on screen.
 //!
 //! Reading the pixel back is asynchronous, because a browser can't block on
-//! the GPU: encode with [`HsdRenderer::encode_pick`], submit, call
+//! the GPU: encode with [`crate::HsdRenderer::encode_pick`], submit, call
 //! [`PickReadback::map`], then poll the device until [`PendingPick::take`]
 //! answers. Pick pipelines are built on the first pick, not at load.
 

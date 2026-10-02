@@ -1,5 +1,5 @@
-//! Parsers for serialized HSD descriptors (JObj, DObj, PObj, MObj, TObj,
-//! animation, and RObj structures) inside a parsed DAT archive.
+//! Parsers for serialized HSD descriptors (JObj, DObj, PObj, MObj, TObj
+//! and animation structures) inside a parsed DAT archive.
 //!
 //! Archive bytes, relocation, and roots belong to `hal-dat-raw` (re-exported as
 //! `crate::raw`); these parsers read descriptor fields through it and never

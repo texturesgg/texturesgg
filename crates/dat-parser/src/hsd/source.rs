@@ -30,7 +30,7 @@ pub struct HsdFocus {
 pub struct HsdSource {
     pub policy: HsdDrawEvaluationPolicy,
     /// The part of the scene a viewer should frame, when the loader knows of
-    /// one (a Melee stage's camera range). `None` frames the whole scene.
+    /// one (a stage's camera range). `None` frames the whole scene.
     pub focus: Option<HsdFocus>,
     pub scene: HsdScene,
     pub evaluator: HsdDrawWorkEvaluator,

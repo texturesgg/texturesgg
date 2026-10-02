@@ -84,7 +84,7 @@ pub enum TevAlphaOp {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StageSource {
-    /// TEX0 or TEX1.
+    /// One of the vertex's texture coordinate sets, TEX0 to TEX7.
     TexCoord(u8),
     /// Normalized camera-space normals.
     Reflection,
@@ -340,9 +340,9 @@ fn tev_alpha_op(value: u32) -> Result<TevAlphaOp> {
     })
 }
 
-/// Returns `None` for a stage whose image did not decode; the renderer binds white.
 /// The prepared texture for a stage's scene texture, uploading each distinct
-/// decoded image once however many descriptors and TObjs reach it.
+/// decoded image once however many descriptors and TObjs reach it. `None` for
+/// a stage whose image did not decode; the renderer binds white.
 fn prepare_texture(
     scene: &HsdScene,
     usage: &HsdTextureObject,

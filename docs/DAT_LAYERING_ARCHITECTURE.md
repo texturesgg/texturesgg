@@ -118,7 +118,7 @@ editor); the compiler finds them.
 
 ## Source-backed semantics
 
-References are to the Melee decomp in `external/melee`.
+References are to the [Melee decompilation](https://github.com/doldecomp/melee).
 
 - **Draw passes.** `DObjLoad` (`dobj.c`) classifies the MObj render mode:
   neither XLU nor NO_ZUPDATE is opaque, XLU alone is texEdge, XLU with
@@ -159,7 +159,7 @@ References are to the Melee decomp in `external/melee`.
   (emboss stages are skipped).
 - Rendering changes run the pixel-regression check against a clean Melee NTSC
   1.02 disc image
-  (`TGG_MELEE_ISO=melee.iso cargo run --locked -p hsd-render --release -- regression --software`):
+  (`TGG_MELEE_ISO=melee.iso cargo run -p hsd-render --release -- regression --software`):
   predict the changed cases, inspect the captures, then record with `--update`
   in the same PR. A stable hash is not evidence of Melee fidelity; the Melee
   decompilation and the game itself are the authority.

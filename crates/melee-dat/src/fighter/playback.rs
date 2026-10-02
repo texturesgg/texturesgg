@@ -160,16 +160,16 @@ pub struct MeleeFighterPlayback {
 
 impl MeleeFighterPlayback {
     /// Attach the catalog idle for the costume's recognized root, or return
-    /// the source unchanged when no profile admits it (it then renders its
-    /// bind pose, like the site).
+    /// the source unchanged when no profile admits it (it then draws in its
+    /// bind pose).
     pub fn attach(
         mut source: HsdSource,
         catalog: &MeleeReferenceCatalog,
         store: &MeleeReferenceStore,
     ) -> std::result::Result<Self, Box<NotAttached>> {
         let not_attached = |source, error| Box::new(NotAttached { source, error });
-        // The site attaches idle only to MeleeFighter-policy evaluators; the
-        // policy selects fighter envelope skinning.
+        // Fighter animation needs the MeleeFighter policy, which selects
+        // fighter envelope skinning.
         if source.policy != HsdDrawEvaluationPolicy::MELEE_FIGHTER {
             return Err(not_attached(
                 source,

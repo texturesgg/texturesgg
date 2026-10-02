@@ -4,7 +4,7 @@
 //! A fighter costume carries alternative models for its parts (faces, hands,
 //! items, detail levels) as ordinary DObjs. The fighter data (`PlXx.dat`)
 //! groups them into visibility tables, and the game shows one alternative per
-//! group. Source: melee `1f0499b`, `ft/ftparts.c` (`ftParts_8007487C`,
+//! group. Source: the Melee decompilation's `ft/ftparts.c` (`ftParts_8007487C`,
 //! `ftParts_800749CC`, `ftParts_80074A4C`, `ftParts_80074A8C`,
 //! `ftParts_80074B6C`, `ftParts_800750C8`), `ft/ftdrawcommon.c`
 //! (`ftDrawCommon_800805C8`), and each fighter's `ftXx_Init_OnDeath`.
@@ -117,8 +117,10 @@ impl FighterModelParts {
     /// Visibility per display-object ordinal for the normal, non-metal main
     /// pass, given each group's committed selection (`-1` selects none).
     ///
-    /// `ftParts_8007487C` hides every object tables 0, 1, 3, and 4 name (table
-    /// 2 addresses the separate metal list), and `ftDrawCommon_800805C8`
+    /// `ftParts_8007487C` hides every object tables 0, 1 and 3 name (table 2
+    /// addresses the separate metal list). Table 4 is Mr. Game & Watch's
+    /// outline, which the game draws in passes of its own
+    /// (`ftDrawCommon_80080E18`); it stays hidden here. Then `ftDrawCommon_800805C8`
     /// applies table 0 through `ftParts_80074B6C`: per group, the selected
     /// alternative is shown and every other alternative hidden, in order.
     pub fn main_pass_visibility(

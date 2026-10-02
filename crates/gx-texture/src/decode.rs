@@ -3,6 +3,11 @@
 //! All formats decode to RGBA8 (4 bytes per pixel, in R, G, B, A order).
 //! Channel expansion and CMPR blending follow Dolphin's `TextureDecoder_Generic.cpp`
 //! (`Convert*To8`, `DecodeDXTBlock`), which the encoders invert.
+//!
+//! The walk over each format's tiles is adapted from libWiiSharp
+//! (Copyright (C) 2009 Leathl, GPL-3.0-or-later), as carried in HSDLib's
+//! `GXImageConverter`. It was ported to Rust, its per-texel math replaced with
+//! Dolphin's, and its early return for images narrower than a tile removed.
 
 /// Decode GX texel data to row-major RGBA8 (`width * height * 4` bytes).
 ///

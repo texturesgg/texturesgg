@@ -1,6 +1,6 @@
 //! Renderer-neutral HSD envelope matrix construction and vertex deformation.
 //!
-//! The evaluator mirrors Melee's bounded ten-entry GX position/normal matrix
+//! The evaluator mirrors HSD's bounded ten-entry GX position/normal matrix
 //! palette without selecting models, cameras, materials, or backend resources.
 //!
 //! Matrices and deformed vertices are world-space. View matrices and Melee's

@@ -469,8 +469,9 @@ impl TextureDocument {
         &self.file
     }
 
-    /// Whether the file's bytes differ from when it was opened or last
-    /// marked saved. Undoing back to that state clears it.
+    /// Whether edits stand between the file and the state it was opened or
+    /// last marked saved in. Undoing back to that state clears it; painting
+    /// the old pixels back as a new edit does not.
     pub fn is_modified(&self) -> bool {
         self.history.current() != self.history.saved
     }
