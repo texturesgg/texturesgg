@@ -17,6 +17,8 @@ pub enum TextureReadError {
     Format(#[from] UnsupportedTextureFormat),
     #[error(transparent)]
     PaletteFormat(#[from] UnsupportedPaletteFormat),
+    #[error("the image descriptor has no texel data")]
+    NoImageData,
     #[error("the texel data at {offset:#x} runs past the data section")]
     ImageOutOfBounds { offset: u32 },
     #[error("the palette descriptor has no color data")]

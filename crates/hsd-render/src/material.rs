@@ -318,7 +318,7 @@ fn prepare_texture(
     let Some(source) = scene.textures.get(scene_texture.0) else {
         return Ok(None);
     };
-    let Some(rgba) = source.rgba.as_ref() else {
+    let Ok(rgba) = source.rgba.as_ref() else {
         return Ok(None);
     };
     let content = source.content_key();

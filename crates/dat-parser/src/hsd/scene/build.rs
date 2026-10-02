@@ -544,7 +544,7 @@ impl<'a> SceneBuilder<'a> {
                 "decoded texture byte",
             )?;
             texture::TextureFormat::try_from(image.format)
-                .ok()
+                .map_err(texture::TextureReadError::from)
                 .and_then(|format| {
                     texture::decode_texture(
                         self.dat,
@@ -554,10 +554,9 @@ impl<'a> SceneBuilder<'a> {
                         format,
                         tobj.tlut.as_ref(),
                     )
-                    .ok()
                 })
         } else {
-            None
+            Err(texture::TextureReadError::NoImageData)
         };
         let palette = palette_id.and_then(|descriptor_id| {
             tobj.tlut.as_ref().map(|palette| HsdPaletteSource {
@@ -1346,5 +1345,70 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    /// A texture that does not decode keeps why, and the scene still builds:
+    /// what to draw in its place is the backend's choice.
+    #[test]
+    fn a_texture_that_does_not_decode_keeps_the_reason() {
+        let dat = DatFile::from_parts(vec![0; 0x40], Vec::new(), Vec::new());
+        let mut builder = SceneBuilder::new(&dat, HsdSceneLimits::default());
+        let tobj = |descriptor: u32, data_ptr: Option<u32>, format: u32| TObj {
+            offset: 0,
+            next_ptr: None,
+            tex_map_id: 0,
+            tex_gen_src: 4,
+            rotation: [0.0; 3],
+            scale: [1.0; 3],
+            translation: [0.0; 3],
+            wrap_s: 0,
+            wrap_t: 0,
+            repeat_s: 1,
+            repeat_t: 1,
+            flags: 0,
+            blending: 0.0,
+            mag_filter: 0,
+            image_ptr: Some(descriptor),
+            tlut_ptr: None,
+            lod_ptr: None,
+            tev_ptr: None,
+            image: Some(tobj::ImageDesc {
+                data_ptr,
+                width: 4,
+                height: 4,
+                format,
+                mipmap: 0,
+                min_lod: 0.0,
+                max_lod: 0.0,
+            }),
+            tlut: None,
+            tev_desc: None,
+        };
+        // RGBA8 4x4 is 64 bytes: the data section holds exactly one.
+        use texture::{TextureReadError, UnsupportedTextureFormat};
+        let cases = [
+            (tobj(0x100, Some(0), 6), None),
+            (
+                tobj(0x200, Some(4), 6),
+                Some(TextureReadError::ImageOutOfBounds { offset: 4 }),
+            ),
+            // GX_TF_C14X2, which the codec has no decoder for.
+            (
+                tobj(0x300, Some(0), 10),
+                Some(UnsupportedTextureFormat(10).into()),
+            ),
+            (tobj(0x400, None, 6), Some(TextureReadError::NoImageData)),
+        ];
+        for (tobj, expected) in &cases {
+            let index = builder
+                .intern_texture(tobj)
+                .unwrap()
+                .expect("a scene texture");
+            assert_eq!(
+                builder.textures[index.0].rgba.as_ref().err(),
+                expected.as_ref()
+            );
+        }
+        assert_eq!(builder.textures[0].rgba.as_ref().map(Vec::len), Ok(64));
     }
 }

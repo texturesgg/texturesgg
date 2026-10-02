@@ -33,6 +33,7 @@ use crate::descriptor::mobj::Material;
 use crate::descriptor::pobj::GxAttribute;
 use crate::descriptor::traversal::DescriptorKind;
 use crate::gx::display_list::PrimitiveGroup;
+use crate::gx::texture::TextureReadError;
 use crate::gx::vertex::DecodedPrimitive;
 use crate::gx::{GxAttrName, GxAttrType};
 use crate::math::Mat4;
@@ -368,9 +369,10 @@ pub struct HsdTexture {
     pub id: HsdTextureSourceId,
     pub image: HsdImageSource,
     pub palette: Option<HsdPaletteSource>,
-    /// Renderer-friendly RGBA8. `None` retains a valid source reference whose
-    /// format/data could not be decoded by the current GX decoder.
-    pub rgba: Option<Vec<u8>>,
+    /// Renderer-friendly RGBA8, or why the image did not decode. A texture
+    /// that did not decode keeps its source reference, and the scene still
+    /// builds: what to draw in its place is the backend's choice.
+    pub rgba: Result<Vec<u8>, TextureReadError>,
 }
 
 impl HsdTexture {
@@ -683,7 +685,7 @@ mod tests {
                 format: 1,
                 color_count: 16,
             }),
-            rgba: None,
+            rgba: Err(TextureReadError::NoImageData),
         };
         // Two image descriptors over one pixel block and one palette.
         assert_eq!(
