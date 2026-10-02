@@ -1154,3 +1154,21 @@ fn runtime_visibility_must_cover_the_root_and_leave_instances_unchanged() {
     draw.evaluate(&scene, &[pose(&[true, false, true])])
         .unwrap();
 }
+
+/// A BRANCH track walks a joint's owned children, so a caller-built scene
+/// whose children loop is refused before any walk.
+#[test]
+fn a_root_whose_children_cycle_is_refused() {
+    let mut scene = scene();
+    scene.roots[0].joints[1].children = vec![HsdJointIndex(1)];
+    let limits = HsdJointPoseLimits::default();
+    assert!(matches!(
+        HsdJointPoseEvaluator::unanimated(&scene, 0, limits),
+        Err(HsdJointPoseError::InvalidScene { root_index: 0, .. })
+    ));
+    let tree = tree(vec![1], vec![track(0, 5, &[0x06, 2])]);
+    assert!(matches!(
+        HsdJointPoseEvaluator::from_figatree(&scene, 0, &tree, &[JObjId(0x40)], limits),
+        Err(HsdJointPoseError::InvalidScene { root_index: 0, .. })
+    ));
+}

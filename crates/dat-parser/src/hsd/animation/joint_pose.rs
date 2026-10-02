@@ -17,7 +17,7 @@ use super::{FObjStreamF32, HsdAObjError, HsdAObjEvaluator, HsdAObjFObj, HsdJoint
 use crate::descriptor::animation::{MAX_FIGA_COUNT_LIST_ENTRIES, MAX_FIGA_TRACKS, RawFigaTree};
 use crate::descriptor::jobj::flags::{HIDDEN, INSTANCE};
 use crate::hsd::draw::HsdRootPose;
-use crate::hsd::scene::{HsdJointIndex, HsdScene, HsdTransform, JObjId};
+use crate::hsd::scene::{HsdJointIndex, HsdScene, HsdSceneError, HsdTransform, JObjId};
 
 #[derive(Clone, Copy, Debug)]
 pub struct HsdJointPoseLimits {
@@ -47,6 +47,11 @@ pub enum HsdJointPoseError {
     },
     #[error("joint pose root {root_index} is out of range")]
     RootOutOfRange { root_index: usize },
+    #[error("joint pose root {root_index} is not a joint tree: {source}")]
+    InvalidScene {
+        root_index: usize,
+        source: HsdSceneError,
+    },
     #[error("Figa has {expected} count-list entries but {actual} receiver identities")]
     ReceiverCountMismatch { expected: usize, actual: usize },
     #[error("JObj identity {source_id:?} is ambiguous in the model root")]
@@ -123,6 +128,9 @@ impl<'a> HsdJointPoseEvaluator<'a> {
             .roots
             .get(root_index)
             .ok_or(HsdJointPoseError::RootOutOfRange { root_index })?;
+        // A BRANCH track walks the owned children, so they must be a tree.
+        root.validate_joint_graph()
+            .map_err(|source| HsdJointPoseError::InvalidScene { root_index, source })?;
         if root.joints.len() > limits.max_joints || receivers.len() > limits.max_joints {
             return Err(HsdJointPoseError::ResourceLimit {
                 resource: "joints",
@@ -294,6 +302,9 @@ impl<'a> HsdJointPoseEvaluator<'a> {
             .roots
             .get(root_index)
             .ok_or(HsdJointPoseError::RootOutOfRange { root_index })?;
+        // A BRANCH track walks the owned children, so they must be a tree.
+        root.validate_joint_graph()
+            .map_err(|source| HsdJointPoseError::InvalidScene { root_index, source })?;
         if root.joints.len() > limits.max_joints {
             return Err(HsdJointPoseError::ResourceLimit {
                 resource: "joints",

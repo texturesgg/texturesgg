@@ -420,7 +420,7 @@ pub struct HsdPaletteSource {
     pub color_count: u16,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum HsdSceneError {
     #[error("HSD scene exceeds the {resource} budget of {limit}")]
@@ -467,40 +467,8 @@ pub enum HsdSceneError {
 impl HsdScene {
     pub fn validate(&self) -> Result<(), HsdSceneError> {
         for root in &self.roots {
-            let joint_count = root.joints.len();
-            for (joint_index, joint) in root.joints.iter().enumerate() {
-                if let Some(parent) = joint.parent
-                    && parent.0 >= joint_index
-                {
-                    return Err(HsdSceneError::InvalidReference {
-                        resource: "parent joint",
-                        index: parent.0,
-                        len: joint_index,
-                    });
-                }
-                if joint.flags & crate::descriptor::jobj::flags::INSTANCE != 0
-                    && joint.children.len() != 1
-                {
-                    return Err(HsdSceneError::InvalidData {
-                        context: "INSTANCE requires exactly one referenced joint",
-                    });
-                }
-                for child in &joint.children {
-                    if child.0 >= joint_count {
-                        return Err(HsdSceneError::InvalidReference {
-                            resource: "child joint",
-                            index: child.0,
-                            len: joint_count,
-                        });
-                    }
-                    if joint.flags & crate::descriptor::jobj::flags::INSTANCE == 0
-                        && root.joints[child.0].parent != Some(HsdJointIndex(joint_index))
-                    {
-                        return Err(HsdSceneError::InvalidData {
-                            context: "owned child does not point back to its parent",
-                        });
-                    }
-                }
+            root.validate_joint_graph()?;
+            for joint in &root.joints {
                 for display_object in &joint.display_objects {
                     if let Some(material) = &display_object.material {
                         for texture_object in &material.textures {
@@ -528,6 +496,50 @@ impl HsdScene {
                             }
                         }
                     }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl HsdSceneRoot {
+    /// Check that the joints form the tree the evaluators walk: a parent
+    /// comes before its children, every child index is in range, an owned
+    /// child points back at its parent, and an INSTANCE names one target.
+    /// A parent that precedes its children cannot be part of a cycle.
+    pub(crate) fn validate_joint_graph(&self) -> Result<(), HsdSceneError> {
+        use crate::descriptor::jobj::flags::INSTANCE;
+        let joint_count = self.joints.len();
+        for (joint_index, joint) in self.joints.iter().enumerate() {
+            if let Some(parent) = joint.parent
+                && parent.0 >= joint_index
+            {
+                return Err(HsdSceneError::InvalidReference {
+                    resource: "parent joint",
+                    index: parent.0,
+                    len: joint_index,
+                });
+            }
+            if joint.flags & INSTANCE != 0 && joint.children.len() != 1 {
+                return Err(HsdSceneError::InvalidData {
+                    context: "INSTANCE requires exactly one referenced joint",
+                });
+            }
+            for child in &joint.children {
+                if child.0 >= joint_count {
+                    return Err(HsdSceneError::InvalidReference {
+                        resource: "child joint",
+                        index: child.0,
+                        len: joint_count,
+                    });
+                }
+                if joint.flags & INSTANCE == 0
+                    && self.joints[child.0].parent != Some(HsdJointIndex(joint_index))
+                {
+                    return Err(HsdSceneError::InvalidData {
+                        context: "owned child does not point back to its parent",
+                    });
                 }
             }
         }
