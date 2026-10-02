@@ -8,7 +8,7 @@
 use crate::Error;
 use crate::disk::{read_capped, write_atomically};
 use crate::editor::{Editor, Pending, Unsaved};
-use dat_edit::PaletteOutcome;
+use dat_edit::{PaletteLock, PaletteOutcome, TextureIndex, UseIndex};
 use dat_parser::hsd::scene::HSD_SCENE_MAX_DAT_BYTES;
 use gpui::{Context, PathPromptOptions, Window};
 use std::path::{Path, PathBuf};
@@ -87,7 +87,7 @@ impl Editor {
         };
         // A CI texture that owns its palette gets one rebuilt for the new
         // pixels; otherwise they map to the colors it has.
-        let result = document.import(texture, image.as_raw());
+        let result = document.import(TextureIndex(texture), image.as_raw());
         match result {
             Ok(edit) => {
                 let texels = u32::from(entry.width) * u32::from(entry.height);
@@ -103,6 +103,11 @@ impl Editor {
                     Some(PaletteOutcome::Rebuilt { colors }) => {
                         format!(", palette rebuilt with {colors} colors")
                     }
+                    // Textures are numbered from one in the list.
+                    Some(PaletteOutcome::Kept(PaletteLock::Shared(other))) => format!(
+                        ", palette kept because texture {} uses the same palette",
+                        other.0 + 1
+                    ),
                     Some(PaletteOutcome::Kept(lock)) => format!(", palette kept because {lock}"),
                     None => String::new(),
                 };
@@ -124,7 +129,7 @@ impl Editor {
     pub(crate) fn texture_png(&self, texture: usize) -> Result<Vec<u8>, Error> {
         let document = self.document.as_ref().map_err(|_| Error::NoDocument)?;
         let entry = &document.textures()[texture];
-        let pixels = document.pixels(texture, 0)?;
+        let pixels = document.pixels(TextureIndex(texture), UseIndex(0))?;
         let image = image::RgbaImage::from_raw(entry.width.into(), entry.height.into(), pixels)
             .ok_or(Error::PixelSize)?;
         let mut png = Vec::new();

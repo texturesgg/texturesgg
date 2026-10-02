@@ -12,7 +12,7 @@ pub mod texture;
 pub use color::{DocumentSurface, MaterialColor, MaterialColors, VertexColor};
 pub use document::{
     AnimationFrame, DocumentError, DocumentTexture, PaletteLock, PaletteOutcome, Restored,
-    TextureDocument, TextureEdit, Undone,
+    TextureDocument, TextureEdit, TextureIndex, Undone, UseIndex, VertexColorId,
 };
 pub use gx_texture::TexelRect;
 pub use texture::{TexturePatch, TexturePatchError, patch_texture};

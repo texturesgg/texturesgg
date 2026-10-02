@@ -22,6 +22,11 @@ The crate owns:
   a relocated pointer, ranges past the data section, pixel data two textures
   read differently).
 
+A texture is addressed by its `TextureIndex` in the document and a `UseIndex`
+among its descriptor pairs, a vertex color by a `VertexColorId`, and
+`patch_texture` takes the scene's `ImageDescId` and `TlutDescId`. Errors name
+them the same way; numbering for a player to read is the caller's.
+
 Edits never move data, so the header, tables, and every other byte stay
 identical. Operations that resize or relocate data (new images, a larger
 palette) are out of scope.

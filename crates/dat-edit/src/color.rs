@@ -11,7 +11,7 @@
 //! written, so recoloring is replacing a swatch. The new color is written in
 //! the same format at the same places: nothing moves, as with a texture.
 
-use crate::document::DocumentTexture;
+use crate::document::{DocumentTexture, TextureIndex};
 use dat_parser::DatFile;
 use dat_parser::gx::display_list::{DirectColor, decode_direct_color};
 use dat_parser::gx::{GxAttrName, GxAttrType, GxCompTypeClr};
@@ -24,7 +24,7 @@ use std::collections::HashMap;
 pub struct DocumentSurface {
     pub dobj: DObjId,
     /// The document textures it draws, in stage order.
-    pub textures: Vec<usize>,
+    pub textures: Vec<TextureIndex>,
     /// What its color starts from, before any texture.
     pub base: HsdChannelBase,
     /// Its distinct vertex colors, the most used first. Empty when it has no
@@ -140,6 +140,7 @@ fn surface(
         if let Some(texture) = textures
             .iter()
             .position(|texture| texture.uses.contains(&id))
+            .map(TextureIndex)
             && !drawn.contains(&texture)
         {
             drawn.push(texture);
@@ -225,7 +226,7 @@ pub(crate) fn refresh(dat: &DatFile, surfaces: &mut [DocumentSurface]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::document::{DocumentError, TextureDocument, Undone};
+    use crate::document::{DocumentError, TextureDocument, Undone, VertexColorId};
 
     const GREEN: [u8; 2] = [0x67, 0x0C];
     const YELLOW: [u8; 2] = [0xFF, 0xE6];
@@ -270,6 +271,10 @@ mod tests {
         )
     }
 
+    fn color_id(surface: usize, color: usize) -> VertexColorId {
+        VertexColorId { surface, color }
+    }
+
     fn data(document: &TextureDocument, offset: u32, len: usize) -> &[u8] {
         &document.bytes()[0x20 + offset as usize..][..len]
     }
@@ -280,7 +285,7 @@ mod tests {
         let original = document.bytes().to_vec();
         // Blue, which RGB565 stores as its nearest: 5 bits of blue.
         document
-            .recolor_vertices(&[(0, 0)], [0, 0, 255, 255])
+            .recolor_vertices(&[color_id(0, 0)], [0, 0, 255, 255])
             .unwrap();
         assert_eq!(data(&document, VERTICES[0], 2), [0x00, 0x1F]);
         assert_eq!(data(&document, VERTICES[1], 2), [0x00, 0x1F]);
@@ -347,19 +352,19 @@ mod tests {
     fn an_unchanged_color_and_unknown_targets_leave_no_step() {
         let mut document = document();
         document
-            .recolor_vertices(&[(0, 0)], [96, 224, 96, 255])
+            .recolor_vertices(&[color_id(0, 0)], [96, 224, 96, 255])
             .unwrap();
         assert!(!document.can_undo() && !document.is_modified());
         assert!(matches!(
-            document.recolor_vertices(&[(1, 0)], [0; 4]),
+            document.recolor_vertices(&[color_id(1, 0)], [0; 4]),
             Err(DocumentError::UnknownSurface(1))
         ));
         assert!(matches!(
-            document.recolor_vertices(&[(0, 2)], [0; 4]),
-            Err(DocumentError::UnknownColor {
+            document.recolor_vertices(&[color_id(0, 2)], [0; 4]),
+            Err(DocumentError::UnknownColor(VertexColorId {
                 surface: 0,
                 color: 2
-            })
+            }))
         ));
         assert!(!document.can_undo());
     }

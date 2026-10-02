@@ -20,7 +20,7 @@ mod pane;
 
 use crate::editor::Editor;
 use crate::load_model;
-use dat_edit::{DocumentSurface, MaterialColor, TextureDocument};
+use dat_edit::{DocumentSurface, MaterialColor, TextureDocument, VertexColorId};
 use dat_parser::hsd::channel::HsdChannelBase;
 use gpui::{Context, SharedString};
 
@@ -47,7 +47,7 @@ pub(crate) struct Swatch {
 /// Where a swatch's color is written.
 enum Source {
     /// `(surface, color)` pairs of the document.
-    Vertices(Vec<(usize, usize)>),
+    Vertices(Vec<VertexColorId>),
     /// Surfaces whose material diffuse it is.
     Diffuse(Vec<usize>),
 }
@@ -192,15 +192,13 @@ pub(crate) fn groups(document: &TextureDocument, names: &[String]) -> Vec<ColorG
         if colors.is_empty() {
             continue;
         }
-        let group = match groups
-            .iter()
-            .position(|group| group.textures == surface.textures)
-        {
+        let textures: Vec<usize> = surface.textures.iter().map(|texture| texture.0).collect();
+        let group = match groups.iter().position(|group| group.textures == textures) {
             Some(group) => group,
             None => {
                 groups.push(ColorGroup {
-                    title: title(&surface.textures, names),
-                    textures: surface.textures.clone(),
+                    title: title(&textures, names),
+                    textures,
                     swatches: Vec::new(),
                     vertex_surfaces: Vec::new(),
                 });
@@ -237,7 +235,10 @@ pub(crate) fn groups(document: &TextureDocument, names: &[String]) -> Vec<ColorG
             swatch.alpha |= alpha;
             swatch.uses += uses;
             match (&mut swatch.source, place) {
-                (Source::Vertices(colors), Place::Vertex(color)) => colors.push((index, color)),
+                (Source::Vertices(colors), Place::Vertex(color)) => colors.push(VertexColorId {
+                    surface: index,
+                    color,
+                }),
                 (Source::Diffuse(surfaces), Place::Diffuse) => surfaces.push(index),
                 _ => unreachable!("matched by source above"),
             }

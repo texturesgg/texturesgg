@@ -21,14 +21,32 @@ use crate::color::{self, DocumentSurface, MaterialColor};
 use crate::texture::{TexturePatch, TexturePatchError, patch_palette, patch_texture, writable};
 use dat_parser::descriptor::tobj::{ImageDesc, TlutDesc};
 use dat_parser::gx::display_list::encode_direct_color;
+use dat_parser::gx::texture::TextureReadError;
 use dat_parser::gx::texture::decode_texture;
-use dat_parser::hsd::scene::{HsdScene, HsdSceneError, HsdTextureSourceId};
+use dat_parser::hsd::scene::{HsdScene, HsdSceneError, HsdTextureSourceId, TlutDescId};
 use dat_parser::hsd::texture_animation::texture_animations;
 use dat_parser::raw::header::DATA_SECTION_OFFSET;
 use dat_parser::{DatFile, DatParseError};
 use gx_texture::{PaletteFormat, TexelRect, TextureFormat, image_data_size};
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use thiserror::Error;
+
+/// A texture's position in [`TextureDocument::textures`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct TextureIndex(pub usize);
+
+/// A position in a texture's [`descriptors`](DocumentTexture::descriptors):
+/// which image and palette pair reads it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct UseIndex(pub usize);
+
+/// One of a surface's vertex colors: the surface's position in
+/// [`TextureDocument::surfaces`] and the color's in its `vertex_colors`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct VertexColorId {
+    pub surface: usize,
+    pub color: usize,
+}
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -39,22 +57,37 @@ pub enum DocumentError {
     Scene(#[from] HsdSceneError),
     #[error(transparent)]
     Patch(#[from] TexturePatchError),
-    #[error("texture {0} is not in the document")]
-    UnknownTexture(usize),
-    #[error("texture {texture} has no use {usage}")]
-    UnknownUse { texture: usize, usage: usize },
-    #[error("texture {0} does not decode")]
-    Undecodable(usize),
+    #[error("texture {} is not in the document", .0.0)]
+    UnknownTexture(TextureIndex),
+    #[error("texture {} has no use {}", .texture.0, .usage.0)]
+    UnknownUse {
+        texture: TextureIndex,
+        usage: UseIndex,
+    },
+    #[error("texture {} does not decode: {source}", .texture.0)]
+    Undecodable {
+        texture: TextureIndex,
+        source: TextureReadError,
+    },
+    #[error("the palette of texture {} does not read: {source}", .texture.0)]
+    UnreadablePalette {
+        texture: TextureIndex,
+        source: dat_parser::descriptor::DescriptorParseError,
+    },
     #[error(
-        "texture {texture} shares its pixel data with texture {other}, which reads it differently"
+        "texture {} shares its pixel data with texture {}, which reads it differently",
+        .texture.0, .other.0
     )]
-    SharedPixels { texture: usize, other: usize },
+    SharedPixels {
+        texture: TextureIndex,
+        other: TextureIndex,
+    },
     #[error(transparent)]
     Palette(#[from] gx_texture::PaletteError),
     #[error("surface {0} is not in the document")]
     UnknownSurface(usize),
-    #[error("surface {surface} has no vertex color {color}")]
-    UnknownColor { surface: usize, color: usize },
+    #[error("surface {} has no vertex color {}", .0.surface, .0.color)]
+    UnknownColor(VertexColorId),
     #[error("surface {0} has no material")]
     NoMaterial(usize),
 }
@@ -77,8 +110,8 @@ pub enum PaletteLock {
     NotPaletted,
     #[error("it's drawn through {0} different palettes")]
     SeveralPalettes(usize),
-    #[error("texture {} uses the same palette", .0 + 1)]
-    Shared(usize),
+    #[error("another texture uses the same palette")]
+    Shared(TextureIndex),
     #[error("its palette descriptor doesn't read")]
     Unreadable,
 }
@@ -168,7 +201,7 @@ pub enum Undone {
 /// A texture's pixels after an undo or redo, for the caller to redraw.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Restored {
-    pub texture: usize,
+    pub texture: TextureIndex,
     /// Every descriptor's pixels, as the game decodes them.
     pub decoded: Vec<(HsdTextureSourceId, Vec<u8>)>,
 }
@@ -383,22 +416,21 @@ impl TextureDocument {
         &self.surfaces
     }
 
-    /// Replace vertex colors, each a `(surface, color)`, everywhere they are
-    /// written, as one edit. The color is stored in the vertices' own
+    /// Replace vertex colors everywhere they are written, as one edit. The color is stored in the vertices' own
     /// format, which may keep fewer bits than `rgba`; the surfaces then list
     /// what the game reads back.
     pub fn recolor_vertices(
         &mut self,
-        colors: &[(usize, usize)],
+        colors: &[VertexColorId],
         rgba: [u8; 4],
     ) -> Result<(), DocumentError> {
         let mut writes = Vec::new();
-        for &(surface, color) in colors {
+        for &id in colors {
             let entry = self
-                .surface(surface)?
+                .surface(id.surface)?
                 .vertex_colors
-                .get(color)
-                .ok_or(DocumentError::UnknownColor { surface, color })?;
+                .get(id.color)
+                .ok_or(DocumentError::UnknownColor(id))?;
             let bytes = encode_direct_color(entry.format, rgba);
             writes.extend(entry.sites.iter().map(|&site| (site, bytes.clone())));
         }
@@ -510,7 +542,7 @@ impl TextureDocument {
     fn restored(&mut self, texture: Option<usize>) -> Result<Undone, DocumentError> {
         match texture {
             Some(texture) => Ok(Undone::Texture(Restored {
-                texture,
+                texture: TextureIndex(texture),
                 decoded: self.decode_uses(texture)?,
             })),
             None => {
@@ -577,13 +609,22 @@ impl TextureDocument {
     /// A texture's pixels through one of its
     /// [`descriptors`](DocumentTexture::descriptors), as the game decodes
     /// them.
-    pub fn pixels(&self, texture: usize, usage: usize) -> Result<Vec<u8>, DocumentError> {
-        let id = *self
-            .texture(texture)?
+    pub fn pixels(&self, texture: TextureIndex, usage: UseIndex) -> Result<Vec<u8>, DocumentError> {
+        let id = self.use_of(texture, usage)?;
+        self.decode(texture.0, id)
+    }
+
+    /// The descriptor pair `usage` names among `texture`'s.
+    fn use_of(
+        &self,
+        texture: TextureIndex,
+        usage: UseIndex,
+    ) -> Result<HsdTextureSourceId, DocumentError> {
+        self.texture(texture.0)?
             .descriptors()
-            .get(usage)
-            .ok_or(DocumentError::UnknownUse { texture, usage })?;
-        self.decode(texture, id)
+            .get(usage.0)
+            .copied()
+            .ok_or(DocumentError::UnknownUse { texture, usage })
     }
 
     /// Replace a texture's pixels with row-major RGBA8 `rgba`, mapping colors
@@ -591,24 +632,15 @@ impl TextureDocument {
     /// `dirty`, only the blocks it overlaps are re-encoded.
     pub fn apply(
         &mut self,
-        texture: usize,
-        usage: usize,
+        texture: TextureIndex,
+        usage: UseIndex,
         rgba: &[u8],
         dirty: Option<TexelRect>,
     ) -> Result<TextureEdit, DocumentError> {
-        let id = *self
-            .texture(texture)?
-            .descriptors()
-            .get(usage)
-            .ok_or(DocumentError::UnknownUse { texture, usage })?;
+        let id = self.use_of(texture, usage)?;
+        let (texture, usage) = (texture.0, usage.0);
         self.owns_its_pixels(texture)?;
-        let patch = patch_texture(
-            &self.dat,
-            id.image.0,
-            id.palette.map(|palette| palette.0),
-            rgba,
-            dirty,
-        )?;
+        let patch = patch_texture(&self.dat, id.image, id.palette, rgba, dirty)?;
         let mut changes = Vec::new();
         self.write(&mut changes, patch.data_offset as usize, &patch.bytes)?;
         self.commit(Some(texture), changes);
@@ -632,7 +664,10 @@ impl TextureDocument {
                 && extent(entry).is_ok_and(|range| own.start < range.end && range.start < own.end)
         });
         match shared {
-            Some((other, _)) => Err(DocumentError::SharedPixels { texture, other }),
+            Some((other, _)) => Err(DocumentError::SharedPixels {
+                texture: TextureIndex(texture),
+                other: TextureIndex(other),
+            }),
             None => Ok(()),
         }
     }
@@ -640,21 +675,22 @@ impl TextureDocument {
     /// Whether [`import`](Self::import) can rebuild `texture`'s palette: it must be CI4 or CI8, drawn through
     /// one palette, and no other texture may use that palette's colors.
     /// Returns the palette descriptor.
-    pub fn rebuildable_palette(&self, texture: usize) -> Result<u32, PaletteLock> {
+    pub fn rebuildable_palette(&self, texture: TextureIndex) -> Result<TlutDescId, PaletteLock> {
+        let TextureIndex(texture) = texture;
         let entry = self.textures.get(texture).ok_or(PaletteLock::Unreadable)?;
         if entry.format.palette_entries().is_none() {
             return Err(PaletteLock::NotPaletted);
         }
         // Palettes are identified by the colors they point at: descriptors
         // can share them.
-        let colors_of = |descriptor: u32| {
-            TlutDesc::parse(&self.dat, descriptor)
+        let colors_of = |descriptor: TlutDescId| {
+            TlutDesc::parse(&self.dat, descriptor.0)
                 .ok()
                 .and_then(|tlut| tlut.data_ptr)
         };
-        let mut palettes: Vec<(u32, u32)> = Vec::new();
+        let mut palettes: Vec<(TlutDescId, u32)> = Vec::new();
         for id in &entry.descriptors() {
-            let descriptor = id.palette.ok_or(PaletteLock::NotPaletted)?.0;
+            let descriptor = id.palette.ok_or(PaletteLock::NotPaletted)?;
             let colors = colors_of(descriptor).ok_or(PaletteLock::Unreadable)?;
             if !palettes.iter().any(|&(_, seen)| seen == colors) {
                 palettes.push((descriptor, colors));
@@ -669,11 +705,11 @@ impl TextureDocument {
             }
             let shares = texture_entry.descriptors().iter().any(|id| {
                 id.palette
-                    .and_then(|palette| colors_of(palette.0))
+                    .and_then(colors_of)
                     .is_some_and(|other_colors| other_colors == colors)
             });
             if shares {
-                return Err(PaletteLock::Shared(other));
+                return Err(PaletteLock::Shared(TextureIndex(other)));
             }
         }
         Ok(descriptor)
@@ -686,14 +722,18 @@ impl TextureDocument {
     /// with no more colors than the palette holds encodes exactly; the
     /// palette and pixels are one undo step. Any other CI texture keeps its
     /// palette, and the result says why.
-    pub fn import(&mut self, texture: usize, rgba: &[u8]) -> Result<TextureEdit, DocumentError> {
-        if self.texture(texture)?.format.palette_entries().is_none() {
-            return self.apply(texture, 0, rgba, None);
+    pub fn import(
+        &mut self,
+        texture: TextureIndex,
+        rgba: &[u8],
+    ) -> Result<TextureEdit, DocumentError> {
+        if self.texture(texture.0)?.format.palette_entries().is_none() {
+            return self.apply(texture, UseIndex(0), rgba, None);
         }
         match self.rebuildable_palette(texture) {
-            Ok(descriptor) => self.rebuild_palette(texture, descriptor, rgba),
+            Ok(descriptor) => self.rebuild_palette(texture.0, descriptor, rgba),
             Err(lock) => {
-                let mut edit = self.apply(texture, 0, rgba, None)?;
+                let mut edit = self.apply(texture, UseIndex(0), rgba, None)?;
                 edit.palette = Some(PaletteOutcome::Kept(lock));
                 Ok(edit)
             }
@@ -703,12 +743,12 @@ impl TextureDocument {
     fn rebuild_palette(
         &mut self,
         texture: usize,
-        descriptor: u32,
+        descriptor: TlutDescId,
         rgba: &[u8],
     ) -> Result<TextureEdit, DocumentError> {
         let entry = self.texture(texture)?.clone();
         self.owns_its_pixels(texture)?;
-        let tlut = TlutDesc::parse(&self.dat, descriptor).map_err(TexturePatchError::from)?;
+        let tlut = TlutDesc::parse(&self.dat, descriptor.0).map_err(TexturePatchError::from)?;
         let reachable = entry.format.palette_entries().unwrap_or(0);
         let count = usize::from(tlut.color_count).min(reachable);
         let format = PaletteFormat::try_from(tlut.format).map_err(TexturePatchError::from)?;
@@ -719,7 +759,7 @@ impl TextureDocument {
         self.write(&mut changes, palette_offset as usize, &entries)?;
         let written = patch_texture(
             &self.dat,
-            entry.descriptors()[0].image.0,
+            entry.descriptors()[0].image,
             Some(descriptor),
             rgba,
             None,
@@ -826,16 +866,18 @@ impl TextureDocument {
     fn texture(&self, texture: usize) -> Result<&DocumentTexture, DocumentError> {
         self.textures
             .get(texture)
-            .ok_or(DocumentError::UnknownTexture(texture))
+            .ok_or(DocumentError::UnknownTexture(TextureIndex(texture)))
     }
 
     fn decode(&self, texture: usize, id: HsdTextureSourceId) -> Result<Vec<u8>, DocumentError> {
         let entry = &self.textures[texture];
         let tlut = match id.palette {
-            Some(palette) => Some(
-                TlutDesc::parse(&self.dat, palette.0)
-                    .map_err(|_| DocumentError::Undecodable(texture))?,
-            ),
+            Some(palette) => Some(TlutDesc::parse(&self.dat, palette.0).map_err(|source| {
+                DocumentError::UnreadablePalette {
+                    texture: TextureIndex(texture),
+                    source,
+                }
+            })?),
             None => None,
         };
         decode_texture(
@@ -846,7 +888,10 @@ impl TextureDocument {
             entry.format,
             tlut.as_ref(),
         )
-        .map_err(|_| DocumentError::Undecodable(texture))
+        .map_err(|source| DocumentError::Undecodable {
+            texture: TextureIndex(texture),
+            source,
+        })
     }
 }
 
@@ -919,7 +964,9 @@ fn texels_in(region: Option<TexelRect>, width: u16, height: u16) -> impl Iterato
 
 #[cfg(test)]
 mod tests {
-    use super::{DocumentError, PaletteLock, PaletteOutcome, TextureDocument};
+    use super::{
+        DocumentError, PaletteLock, PaletteOutcome, TextureDocument, TextureIndex, UseIndex,
+    };
     use crate::Undone;
     use crate::texture::TexturePatchError;
     use dat_parser::DatFile;
@@ -1014,15 +1061,21 @@ mod tests {
         assert_eq!(texture.uses.len(), 2);
         assert_eq!(texture.uses[0].image, ImageDescId(0));
         assert!(!document.is_modified());
-        assert_eq!(&document.pixels(0, 0).unwrap()[..4], &[255, 0, 0, 255]);
-        assert_eq!(&document.pixels(0, 1).unwrap()[..4], &[255, 255, 255, 255]);
+        assert_eq!(
+            &document.pixels(TextureIndex(0), UseIndex(0)).unwrap()[..4],
+            &[255, 0, 0, 255]
+        );
+        assert_eq!(
+            &document.pixels(TextureIndex(0), UseIndex(1)).unwrap()[..4],
+            &[255, 255, 255, 255]
+        );
     }
 
     #[test]
     fn an_edit_patches_the_bytes_and_redecodes_every_use() {
         let mut document = document();
         let original = document.bytes().to_vec();
-        let mut rgba = document.pixels(0, 0).unwrap();
+        let mut rgba = document.pixels(TextureIndex(0), UseIndex(0)).unwrap();
         // Texel 0 becomes near-blue: index 2 through the first palette.
         rgba[..4].copy_from_slice(&[10, 5, 240, 255]);
         let dirty = TexelRect {
@@ -1031,7 +1084,9 @@ mod tests {
             width: 1,
             height: 1,
         };
-        let edit = document.apply(0, 0, &rgba, Some(dirty)).unwrap();
+        let edit = document
+            .apply(TextureIndex(0), UseIndex(0), &rgba, Some(dirty))
+            .unwrap();
 
         assert_eq!(edit.patch.changed_blocks, 1);
         // Near-blue isn't in the palette, so the one edited texel is lossy:
@@ -1048,7 +1103,10 @@ mod tests {
         // reversed second one, and the document reads back the same.
         assert_eq!(&edit.decoded[0].1[..4], &[0, 0, 255, 255]);
         assert_eq!(&edit.decoded[1].1[..4], &[0, 255, 0, 255]);
-        assert_eq!(document.pixels(0, 1).unwrap(), edit.decoded[1].1);
+        assert_eq!(
+            document.pixels(TextureIndex(0), UseIndex(1)).unwrap(),
+            edit.decoded[1].1
+        );
         let reparsed = TextureDocument::from_parts(
             document.bytes().to_vec(),
             DatFile::parse(document.bytes()).unwrap(),
@@ -1057,15 +1115,20 @@ mod tests {
                 .iter()
                 .map(|&id| (id, PIXELS, 8, 8, Ci8)),
         );
-        assert_eq!(reparsed.pixels(0, 0).unwrap(), edit.decoded[0].1);
+        assert_eq!(
+            reparsed.pixels(TextureIndex(0), UseIndex(0)).unwrap(),
+            edit.decoded[0].1
+        );
     }
 
     /// Set texel 0 to palette color `index` through the first use.
     fn paint(document: &mut TextureDocument, index: usize) {
         let colors = [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255]];
-        let mut rgba = document.pixels(0, 0).unwrap();
+        let mut rgba = document.pixels(TextureIndex(0), UseIndex(0)).unwrap();
         rgba[..4].copy_from_slice(&colors[index]);
-        document.apply(0, 0, &rgba, None).unwrap();
+        document
+            .apply(TextureIndex(0), UseIndex(0), &rgba, None)
+            .unwrap();
     }
 
     #[test]
@@ -1080,14 +1143,20 @@ mod tests {
             panic!("a texture edit was undone");
         };
         assert_eq!(document.bytes(), original);
-        assert_eq!(restored.texture, 0);
+        assert_eq!(restored.texture, TextureIndex(0));
         assert_eq!(&restored.decoded[0].1[..4], &[255, 0, 0, 255]);
-        assert_eq!(restored.decoded[1].1, document.pixels(0, 1).unwrap());
+        assert_eq!(
+            restored.decoded[1].1,
+            document.pixels(TextureIndex(0), UseIndex(1)).unwrap()
+        );
         assert!(!document.is_modified());
 
         document.redo().unwrap().unwrap();
         assert_eq!(document.bytes(), edited);
-        assert_eq!(&document.pixels(0, 0).unwrap()[..4], &[0, 0, 255, 255]);
+        assert_eq!(
+            &document.pixels(TextureIndex(0), UseIndex(0)).unwrap()[..4],
+            &[0, 0, 255, 255]
+        );
         assert!(document.is_modified() && !document.can_redo());
     }
 
@@ -1124,7 +1193,10 @@ mod tests {
         document.undo();
         assert!(document.undo().is_none());
         // The opened state is out of reach, so the file stays modified.
-        assert_eq!(&document.pixels(0, 0).unwrap()[..4], &[0, 255, 0, 255]);
+        assert_eq!(
+            &document.pixels(TextureIndex(0), UseIndex(0)).unwrap()[..4],
+            &[0, 255, 0, 255]
+        );
         assert!(document.is_modified());
     }
 
@@ -1146,7 +1218,10 @@ mod tests {
     fn a_rebuilt_palette_fits_new_colors_exactly_and_undoes_together() {
         let mut document = single_palette_document();
         let original = document.bytes().to_vec();
-        assert_eq!(document.rebuildable_palette(0), Ok(TLUT));
+        assert_eq!(
+            document.rebuildable_palette(TextureIndex(0)),
+            Ok(TlutDescId(TLUT))
+        );
         // Two RGB565-exact colors the palette doesn't have.
         let (violet, yellow) = ([8, 4, 255, 255], [255, 255, 0, 255]);
         let rgba: Vec<u8> = (0..64)
@@ -1154,14 +1229,15 @@ mod tests {
             .collect();
         let kept = {
             let mut copy = single_palette_document();
-            copy.apply(0, 0, &rgba, None).unwrap()
+            copy.apply(TextureIndex(0), UseIndex(0), &rgba, None)
+                .unwrap()
         };
         assert!(kept.lossy_texels > 0, "the old palette lacks both colors");
 
-        let edit = document.import(0, &rgba).unwrap();
+        let edit = document.import(TextureIndex(0), &rgba).unwrap();
         assert_eq!(edit.palette, Some(PaletteOutcome::Rebuilt { colors: 2 }));
         assert_eq!(edit.lossy_texels, 0);
-        assert_eq!(document.pixels(0, 0).unwrap(), rgba);
+        assert_eq!(document.pixels(TextureIndex(0), UseIndex(0)).unwrap(), rgba);
         // The palette and the pixels are one step.
         document.undo().unwrap().unwrap();
         assert_eq!(document.bytes(), original);
@@ -1176,7 +1252,7 @@ mod tests {
         let original = document.bytes().to_vec();
         let rgba: Vec<u8> = (0..64).flat_map(|_| [8, 4, 255, 255]).collect();
         assert!(matches!(
-            document.import(0, &rgba),
+            document.import(TextureIndex(0), &rgba),
             Err(DocumentError::Patch(
                 TexturePatchError::OverlapsPointer { .. }
             ))
@@ -1190,11 +1266,11 @@ mod tests {
         // The shared archive draws its image through two palettes.
         let mut document = document();
         assert_eq!(
-            document.rebuildable_palette(0),
+            document.rebuildable_palette(TextureIndex(0)),
             Err(PaletteLock::SeveralPalettes(2))
         );
-        let rgba = document.pixels(0, 0).unwrap();
-        let edit = document.import(0, &rgba).unwrap();
+        let rgba = document.pixels(TextureIndex(0), UseIndex(0)).unwrap();
+        let edit = document.import(TextureIndex(0), &rgba).unwrap();
         assert_eq!(
             edit.palette,
             Some(PaletteOutcome::Kept(PaletteLock::SeveralPalettes(2)))
@@ -1259,11 +1335,11 @@ mod tests {
                 64
             };
             assert!(matches!(
-                document.apply(texture, 0, &vec![0; size], None),
+                document.apply(TextureIndex(texture), UseIndex(0), &vec![0; size], None),
                 Err(DocumentError::SharedPixels { .. })
             ));
             assert!(matches!(
-                document.import(texture, &vec![0; size]),
+                document.import(TextureIndex(texture), &vec![0; size]),
                 Err(DocumentError::SharedPixels { .. })
             ));
         }
@@ -1291,14 +1367,14 @@ mod tests {
     fn unknown_textures_and_uses_are_errors() {
         let mut document = document();
         assert!(matches!(
-            document.pixels(1, 0),
-            Err(DocumentError::UnknownTexture(1))
+            document.pixels(TextureIndex(1), UseIndex(0)),
+            Err(DocumentError::UnknownTexture(TextureIndex(1)))
         ));
         assert!(matches!(
-            document.apply(0, 2, &[0; 256], None),
+            document.apply(TextureIndex(0), UseIndex(2), &[0; 256], None),
             Err(DocumentError::UnknownUse {
-                texture: 0,
-                usage: 2
+                texture: TextureIndex(0),
+                usage: UseIndex(2)
             })
         ));
         assert!(!document.is_modified());
