@@ -26,6 +26,25 @@ const MAX_EXTERN_SYMBOL_BYTES: usize = 1024 * 1024;
 /// The data section contains all structs — joints, meshes, materials, textures, etc.
 /// Pointers within the data section are u32 offsets relative to the start of the data section.
 /// The relocation table tells us which locations contain pointers (for resolution).
+///
+/// The fields are public so that a caller can build an archive in code or
+/// patch its data in place. [`Self::parse`] establishes these invariants, and
+/// a value built or changed by hand has to keep them itself:
+///
+/// - `relocation_sites` is sorted ascending with no duplicates
+///   ([`Self::resolve_pointer`] binary-searches it, so an unsorted list makes
+///   relocated fields read as unrelocated);
+/// - every relocation site is a four-byte field inside `data` whose value is
+///   at most `data.len()`;
+/// - `header` agrees with the other fields: `data_size` is `data.len()` and
+///   the three counts are the lengths of `relocation_sites`, `roots` and
+///   `externs`;
+/// - the counts and the symbol bytes are within this crate's limits.
+///
+/// [`Self::from_parts`] sorts the sites and derives the header, and checks
+/// nothing else. Breaking an invariant never panics or reads out of bounds:
+/// every accessor is bounds-checked and reports a [`DatPointerError`] or
+/// `None`, but the answers describe an archive no file could hold.
 #[derive(Debug, Clone)]
 pub struct DatFile {
     /// Raw data section bytes (starts at file offset 0x20).
@@ -100,17 +119,36 @@ impl std::error::Error for DatExternError {}
 pub enum DatParseError {
     TooSmall,
     InvalidHeader,
-    FileSizeMismatch {
-        declared: u32,
-        actual: usize,
-    },
+    FileSizeMismatch { declared: u32, actual: usize },
     InvalidTableLayout,
     DuplicateRelocationSite,
     InvalidRelocation(DatPointerError),
-    ResourceLimit {
-        resource: &'static str,
-        limit: usize,
-    },
+    ResourceLimit { resource: DatResource, limit: usize },
+}
+
+/// What a [`DatParseError::ResourceLimit`] counted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum DatResource {
+    Relocations,
+    NamedRoots,
+    Externs,
+    /// Bytes of root names copied out of the symbol table.
+    RootSymbolBytes,
+    /// Bytes of extern names copied out of the symbol table.
+    ExternSymbolBytes,
+}
+
+impl std::fmt::Display for DatResource {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Relocations => "relocation",
+            Self::NamedRoots => "named root",
+            Self::Externs => "extern",
+            Self::RootSymbolBytes => "root symbol byte",
+            Self::ExternSymbolBytes => "extern symbol byte",
+        })
+    }
 }
 
 impl std::fmt::Display for DatParseError {
@@ -142,14 +180,17 @@ impl std::error::Error for DatParseError {}
 
 impl DatFile {
     /// A DAT from its data section, roots, and relocation sites, with the
-    /// header those imply and no externs. For building one in code; nothing
-    /// here is validated as [`Self::parse`] validates a file.
+    /// header those imply and no externs. For building one in code: the
+    /// sites are sorted, and nothing else is validated as [`Self::parse`]
+    /// validates a file (see the invariants on [`DatFile`]).
     pub fn from_parts(data: Vec<u8>, roots: Vec<RootNode>, mut relocation_sites: Vec<u32>) -> Self {
         relocation_sites.sort_unstable();
+        // A data section too large for the header's fields saturates them.
+        let data_size = u32::try_from(data.len()).unwrap_or(u32::MAX);
         Self {
             header: DatHeader {
-                file_size: data.len() as u32 + 0x20,
-                data_size: data.len() as u32,
+                file_size: data_size.saturating_add(DATA_SECTION_OFFSET as u32),
+                data_size,
                 reloc_count: relocation_sites.len() as u32,
                 root_count: roots.len() as u32,
                 extern_count: 0,
@@ -180,9 +221,13 @@ impl DatFile {
             });
         }
         for (resource, count, limit) in [
-            ("relocation", header.reloc_count, MAX_RELOCATIONS),
-            ("named root", header.root_count, MAX_NAMED_ROOTS),
-            ("extern", header.extern_count, MAX_EXTERNS),
+            (
+                DatResource::Relocations,
+                header.reloc_count,
+                MAX_RELOCATIONS,
+            ),
+            (DatResource::NamedRoots, header.root_count, MAX_NAMED_ROOTS),
+            (DatResource::Externs, header.extern_count, MAX_EXTERNS),
         ] {
             if count > limit {
                 return Err(DatParseError::ResourceLimit {
@@ -244,7 +289,7 @@ impl DatFile {
         .map_err(|error| match error {
             root::RootTableError::InvalidLayout => DatParseError::InvalidTableLayout,
             root::RootTableError::SymbolBudget => DatParseError::ResourceLimit {
-                resource: "root symbol byte",
+                resource: DatResource::RootSymbolBytes,
                 limit: MAX_ROOT_SYMBOL_BYTES,
             },
         })?;
@@ -260,7 +305,7 @@ impl DatFile {
         .map_err(|error| match error {
             root::RootTableError::InvalidLayout => DatParseError::InvalidTableLayout,
             root::RootTableError::SymbolBudget => DatParseError::ResourceLimit {
-                resource: "extern symbol byte",
+                resource: DatResource::ExternSymbolBytes,
                 limit: MAX_EXTERN_SYMBOL_BYTES,
             },
         })?;
@@ -642,12 +687,17 @@ mod tests {
         ));
 
         // A count over the crate's limit, however long the file claims to be.
-        for field in [0x08, 0x0C, 0x10] {
+        // The error names which count it was.
+        for (field, counted) in [
+            (0x08, DatResource::Relocations),
+            (0x0C, DatResource::NamedRoots),
+            (0x10, DatResource::Externs),
+        ] {
             let mut raw = raw_dat(&[0; 4], &[]);
             raw[field..field + 4].copy_from_slice(&u32::MAX.to_be_bytes());
             assert!(matches!(
                 DatFile::parse(&raw),
-                Err(DatParseError::ResourceLimit { .. })
+                Err(DatParseError::ResourceLimit { resource, .. }) if resource == counted
             ));
         }
     }

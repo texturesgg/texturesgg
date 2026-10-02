@@ -5,6 +5,10 @@ use super::reader::Reader;
 /// Root table entries are 8 bytes each:
 ///   - u32 data_offset (offset within data section)
 ///   - u32 symbol_offset (offset within symbol string table)
+///
+/// `data_offset` is the stored value, unchecked: it may lie outside the data
+/// section, in a parsed file as in one built by hand. Readers resolve it
+/// through [`DatFile`](crate::DatFile)'s bounded accessors.
 #[derive(Debug, Clone)]
 pub struct RootNode {
     /// Data-relative value from the table entry.
