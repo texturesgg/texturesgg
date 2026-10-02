@@ -8,7 +8,7 @@ use crate::References;
 use crate::open_file::OpenFile;
 use crate::timeline::Timeline;
 use crate::viewport::{Viewport, ViewportEvent};
-use dat_edit::{DocumentError, TextureDocument, TextureEdit};
+use dat_edit::{DocumentError, TextureDocument, TextureEdit, TextureIndex, UseIndex};
 use dat_parser::hsd::scene::HsdTextureSourceId;
 use gpui::{AppContext, Context, Entity, Subscription};
 use melee_dat::MeleeReferenceStore;
@@ -145,15 +145,19 @@ impl Editor {
                     .find_map(|(index, texture)| {
                         Some((index, texture.uses.iter().position(|used| used == id)?))
                     });
-                if let Some((index, pixels)) = holder
-                    .and_then(|(index, usage)| Some((index, document.pixels(index, usage).ok()?)))
-                {
+                if let Some((index, pixels)) = holder.and_then(|(index, usage)| {
+                    let pixels = document.pixels(TextureIndex(index), UseIndex(usage));
+                    Some((index, pixels.ok()?))
+                }) {
                     decoded.push((*id, texture_size(document, index), pixels));
                 }
             }
         }
         if let Some(texture) = wanted
-            && let (Some(frame), Ok(pixels)) = (frame_of(texture), document.pixels(texture, 0))
+            && let (Some(frame), Ok(pixels)) = (
+                frame_of(texture),
+                document.pixels(TextureIndex(texture), UseIndex(0)),
+            )
         {
             let size = texture_size(document, texture);
             decoded.extend(frame.replaces.iter().map(|&id| (id, size, pixels.clone())));
@@ -405,9 +409,12 @@ pub(crate) fn thumbnails(document: &TextureDocument, names: &[String]) -> Rc<[Th
         .iter()
         .enumerate()
         .map(|(index, texture)| {
-            let image = document.pixels(index, 0).ok().and_then(|rgba| {
-                tgg_ui::render_image(&rgba, texture.width.into(), texture.height.into())
-            });
+            let image = document
+                .pixels(TextureIndex(index), UseIndex(0))
+                .ok()
+                .and_then(|rgba| {
+                    tgg_ui::render_image(&rgba, texture.width.into(), texture.height.into())
+                });
             let format = texture.format.name();
             let uses = match texture.uses.len() {
                 1 => String::new(),

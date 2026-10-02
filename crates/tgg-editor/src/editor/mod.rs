@@ -350,12 +350,13 @@ impl Editor {
                 self.set_notice(format!("{done} a color change"), false, cx);
             }
             Some(Ok(Undone::Texture(restored))) => {
-                self.show_pixels(restored.texture, &restored.decoded, cx);
-                self.resync_external(restored.texture, cx);
-                self.select(Some(restored.texture), cx);
+                let texture = restored.texture.0;
+                self.show_pixels(texture, &restored.decoded, cx);
+                self.resync_external(texture, cx);
+                self.select(Some(texture), cx);
                 let done = if redo { "Redid" } else { "Undid" };
                 self.set_notice(
-                    format!("{done} the edit to {}", self.texture_name(restored.texture)),
+                    format!("{done} the edit to {}", self.texture_name(texture)),
                     false,
                     cx,
                 );

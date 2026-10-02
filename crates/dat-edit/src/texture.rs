@@ -3,7 +3,8 @@
 use dat_parser::DatFile;
 use dat_parser::descriptor::DescriptorParseError;
 use dat_parser::descriptor::tobj::{ImageDesc, TlutDesc};
-use dat_parser::gx::texture::decode_palette;
+use dat_parser::gx::texture::{TextureReadError, decode_palette};
+use dat_parser::hsd::scene::{ImageDescId, TlutDescId};
 use gx_texture::{
     TexelRect, TextureEncodeError, TextureFormat, UnsupportedPaletteFormat,
     UnsupportedTextureFormat, encode_texture_over, image_data_size,
@@ -15,17 +16,23 @@ use thiserror::Error;
 pub enum TexturePatchError {
     #[error(transparent)]
     Descriptor(#[from] DescriptorParseError),
-    #[error("image descriptor {descriptor:#x} has no pixel data")]
-    NoImageData { descriptor: u32 },
-    #[error("palette descriptor {descriptor:#x} has no readable colors")]
-    NoPaletteData { descriptor: u32 },
-    #[error("image descriptor {descriptor:#x} is mipmapped; mip chains cannot be patched yet")]
-    Mipmapped { descriptor: u32 },
+    #[error("image descriptor {:#x} has no pixel data", .descriptor.0)]
+    NoImageData { descriptor: ImageDescId },
+    #[error("palette descriptor {:#x} has no color data", .descriptor.0)]
+    NoPaletteData { descriptor: TlutDescId },
+    #[error("palette descriptor {:#x} does not decode: {source}", .descriptor.0)]
+    UnreadablePalette {
+        descriptor: TlutDescId,
+        source: TextureReadError,
+    },
+    #[error("image descriptor {:#x} is mipmapped; mip chains cannot be patched", .descriptor.0)]
+    Mipmapped { descriptor: ImageDescId },
     #[error(
-        "palette descriptor {descriptor:#x} holds {capacity} colors, fewer than the {colors} to write"
+        "palette descriptor {:#x} holds {capacity} colors, fewer than the {colors} to write",
+        .descriptor.0
     )]
     PaletteTooLarge {
-        descriptor: u32,
+        descriptor: TlutDescId,
         colors: usize,
         capacity: usize,
     },
@@ -52,12 +59,12 @@ pub struct TexturePatch {
     pub changed_blocks: usize,
 }
 
-/// Encode row-major RGBA8 `rgba` as the new pixels of the image described at
-/// data-section offset `image`, returning the bytes to write at the image's
-/// data (see [`TexturePatch`]); nothing is written. CI4 and CI8 images also
-/// need the offset of the TLUT descriptor they are drawn with (the TObj's, or
-/// a material animation's); their palette is kept and each texel maps to its
-/// nearest color.
+/// Encode row-major RGBA8 `rgba` as the new pixels of the image `image`
+/// describes, returning the bytes to write at the image's data (see
+/// [`TexturePatch`]); nothing is written. CI4 and CI8 images also need the
+/// TLUT descriptor they are drawn with (the TObj's, or a material
+/// animation's); their palette is kept and each texel maps to its nearest
+/// color.
 ///
 /// Only storage blocks whose pixels change are re-encoded, and with `dirty`
 /// only the blocks it overlaps are considered (see [`encode_texture_over`]).
@@ -66,13 +73,13 @@ pub struct TexturePatch {
 /// past the data section or covers a relocated pointer.
 pub fn patch_texture(
     dat: &DatFile,
-    image: u32,
-    palette: Option<u32>,
+    image: ImageDescId,
+    palette: Option<TlutDescId>,
     rgba: &[u8],
     dirty: Option<TexelRect>,
 ) -> Result<TexturePatch, TexturePatchError> {
     let descriptor = image;
-    let image = ImageDesc::parse(dat, descriptor)?;
+    let image = ImageDesc::parse(dat, descriptor.0)?;
     let data_offset = image
         .data_ptr
         .ok_or(TexturePatchError::NoImageData { descriptor })?;
@@ -81,8 +88,9 @@ pub fn patch_texture(
     }
     let colors = palette
         .map(|descriptor| {
-            let tlut = TlutDesc::parse(dat, descriptor)?;
-            decode_palette(dat, &tlut).map_err(|_| TexturePatchError::NoPaletteData { descriptor })
+            let tlut = TlutDesc::parse(dat, descriptor.0)?;
+            decode_palette(dat, &tlut)
+                .map_err(|source| TexturePatchError::UnreadablePalette { descriptor, source })
         })
         .transpose()?;
     let format = TextureFormat::try_from(image.format)?;
@@ -114,15 +122,15 @@ pub fn patch_texture(
 
 /// Where big-endian TLUT `entries` in the palette's own format (see
 /// [`gx_texture::build_palette`]) go to replace the colors of the palette
-/// described at data-section offset `descriptor`: its data-section offset,
+/// `descriptor` describes: its data-section offset,
 /// once checked safe to overwrite. Nothing is written; every image drawn
 /// through the palette sees the change once the entries are.
 pub(crate) fn patch_palette(
     dat: &DatFile,
-    descriptor: u32,
+    descriptor: TlutDescId,
     entries: &[u8],
 ) -> Result<u32, TexturePatchError> {
-    let tlut = TlutDesc::parse(dat, descriptor)?;
+    let tlut = TlutDesc::parse(dat, descriptor.0)?;
     let data_offset = tlut
         .data_ptr
         .ok_or(TexturePatchError::NoPaletteData { descriptor })?;
@@ -165,10 +173,11 @@ mod tests {
     use dat_parser::DatFile;
     use dat_parser::descriptor::tobj::TlutDesc;
     use dat_parser::gx::texture::decode_texture;
+    use dat_parser::hsd::scene::{ImageDescId, TlutDescId};
     use dat_parser::raw::header::DATA_SECTION_OFFSET;
     use gx_texture::{TextureEncodeError, TextureFormat, UnsupportedTextureFormat};
 
-    const DESCRIPTOR: u32 = 0;
+    const DESCRIPTOR: ImageDescId = ImageDescId(0);
     const PIXELS: u32 = 0x20;
 
     /// A DAT whose data section holds one 8x8 image descriptor at 0 pointing at
@@ -181,7 +190,7 @@ mod tests {
         data[8..12].copy_from_slice(&format.to_be_bytes());
         data[12..16].copy_from_slice(&mipmap.to_be_bytes());
         data.extend_from_slice(pixels);
-        let sites: Vec<u32> = [DESCRIPTOR].iter().chain(extra_sites).copied().collect();
+        let sites: Vec<u32> = [DESCRIPTOR.0].iter().chain(extra_sites).copied().collect();
 
         let mut file = vec![0; DATA_SECTION_OFFSET];
         let file_size = DATA_SECTION_OFFSET + data.len() + sites.len() * 4;
@@ -273,7 +282,9 @@ mod tests {
 
         check(
             archive(4, &pixels, 1, &[]),
-            TexturePatchError::Mipmapped { descriptor: 0 },
+            TexturePatchError::Mipmapped {
+                descriptor: DESCRIPTOR,
+            },
         );
         // A relocated word must hold an in-bounds pointer, so zero it.
         let mut with_pointer = pixels.clone();
@@ -328,14 +339,15 @@ mod tests {
         };
 
         let mut rgba = decode(&original);
-        let unchanged = patch_texture(&dat, DESCRIPTOR, Some(TLUT), &rgba, None).unwrap();
+        let unchanged =
+            patch_texture(&dat, DESCRIPTOR, Some(TlutDescId(TLUT)), &rgba, None).unwrap();
         assert_eq!((unchanged.blocks, unchanged.changed_blocks), (2, 0));
         assert!(patched(&original, &unchanged) == original);
 
         // A near-blue texel takes the blue entry; nothing else moves, the
         // palette included.
         rgba[..4].copy_from_slice(&[10, 5, 240, 255]);
-        let patch = patch_texture(&dat, DESCRIPTOR, Some(TLUT), &rgba, None).unwrap();
+        let patch = patch_texture(&dat, DESCRIPTOR, Some(TlutDescId(TLUT)), &rgba, None).unwrap();
         let file = patched(&original, &patch);
         assert_eq!(patch.changed_blocks, 1);
         rgba[..4].copy_from_slice(&[0, 0, 255, 255]);
