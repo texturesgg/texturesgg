@@ -3,7 +3,8 @@
 //! size and SHA-256.
 
 use crate::catalog::{MeleeReferenceCatalog, ReferenceAsset};
-use crate::error::{Result, playback_error};
+use crate::error::{MeleeError, Result};
+use dat_parser::DatFile;
 use dat_parser::hsd::HsdScene;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -46,22 +47,27 @@ impl MeleeReferenceStore {
         ))
     }
 
-    pub(crate) fn load(&self, asset: &ReferenceAsset) -> Result<Vec<u8>> {
-        self.entries.get(&asset.sha256).cloned().ok_or_else(|| {
-            playback_error(format!(
-                "reference {} ({}) is not available",
-                asset.file_name, asset.sha256
-            ))
+    /// The supplied file for `asset`, parsed.
+    pub(crate) fn load_dat(&self, asset: &ReferenceAsset) -> Result<DatFile> {
+        DatFile::parse(&self.load(asset)?).map_err(|source| MeleeError::InvalidReference {
+            file_name: asset.file_name.clone(),
+            source,
         })
+    }
+
+    pub(crate) fn load(&self, asset: &ReferenceAsset) -> Result<Vec<u8>> {
+        self.entries
+            .get(&asset.sha256)
+            .cloned()
+            .ok_or_else(|| MeleeError::MissingReference {
+                file_name: asset.file_name.clone(),
+                sha256: asset.sha256.clone(),
+            })
     }
 }
 
 fn catalog_hash(sizes: &HashMap<usize, Vec<&str>>, bytes: &[u8]) -> Option<String> {
     let candidates = sizes.get(&bytes.len())?;
-    let hash = hex(&Sha256::digest(bytes));
+    let hash = format!("{:x}", Sha256::digest(bytes));
     candidates.contains(&hash.as_str()).then_some(hash)
-}
-
-pub(crate) fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }

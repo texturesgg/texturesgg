@@ -9,7 +9,7 @@
 use crate::catalog::CATALOG_JSON;
 use crate::fighter::places::{BodyRegion, CostumePlaces, ModelDetail};
 use crate::fighter::playback::hidden_display_objects;
-use crate::{MeleeFighterPlayback, MeleeReferenceCatalog, MeleeReferenceStore};
+use crate::{FighterAttach, MeleeFighterPlayback, MeleeReferenceCatalog, MeleeReferenceStore};
 use dat_parser::DatFile;
 use dat_parser::hsd::HsdScene;
 use dat_parser::hsd::draw::HsdDrawEvaluationPolicy;
@@ -38,13 +38,13 @@ fn references(
 #[test]
 fn stock_costume_textures_are_placed_on_the_fighter() {
     let mut disc = disc();
-    let catalog = MeleeReferenceCatalog::checked_in().expect("catalog");
+    let catalog = MeleeReferenceCatalog::checked_in();
     let mut places = |file: &str| {
         let raw = disc.read(file).expect("read the stock costume");
         let dat = DatFile::parse(&raw).expect("parse the stock costume");
         let scene = HsdScene::from_dat(&dat).expect("build the costume scene");
-        let store = references(&mut disc, &catalog, &scene);
-        let places = CostumePlaces::read(&dat, &scene, &catalog, &store)
+        let store = references(&mut disc, catalog, &scene);
+        let places = CostumePlaces::read(&dat, &scene, catalog, &store)
             .expect("read places")
             .expect("a stock costume is recognized");
         scene
@@ -83,7 +83,7 @@ fn stock_costume_textures_are_placed_on_the_fighter() {
 #[test]
 fn runtime_masks_match_the_catalog_for_every_stock_costume() {
     let mut disc = disc();
-    let catalog = MeleeReferenceCatalog::checked_in().expect("catalog");
+    let catalog = MeleeReferenceCatalog::checked_in();
     let raw: serde_json::Value = serde_json::from_str(CATALOG_JSON).expect("catalog JSON");
     let costumes: Vec<String> = disc
         .files()
@@ -98,13 +98,14 @@ fn runtime_masks_match_the_catalog_for_every_stock_costume() {
         let source = HsdSource::from_dat(&bytes, HsdDrawEvaluationPolicy::MELEE_FIGHTER)
             .expect("a stock costume loads");
         let (profile, root_index, costume) =
-            MeleeFighterPlayback::profile_for(&source.scene, &catalog)
+            MeleeFighterPlayback::profile_for(&source.scene, catalog)
                 .expect("a stock costume is recognized");
+        let fighter = catalog.fighter(profile);
         let expected = raw["rosterIdleProfiles"]
             .as_array()
             .expect("profiles")
             .iter()
-            .find(|value| value["fighterKind"] == profile.fighter_kind)
+            .find(|value| value["fighterKind"] == fighter.kind.index())
             .map(|value| &value["initialization"]["displayObjects"])
             .expect("raw profile");
         // Some fighters hide nothing; the catalog records no mask for them.
@@ -117,15 +118,11 @@ fn runtime_masks_match_the_catalog_for_every_stock_costume() {
             .flat_map(|joint| &joint.display_objects)
             .map(|object| object.source_id.0)
             .collect();
-        let fighter = catalog.fighter(profile.fighter_kind).expect("fighter");
-        let fighter_file = &catalog
-            .asset(&fighter.fighter_key)
-            .expect("asset")
-            .file_name;
+        let fighter_file = &catalog.data_asset(fighter).file_name;
         let fighter_dat = disc.read(fighter_file).expect("fighter data");
         let fighter_dat = DatFile::parse(&fighter_dat).expect("fighter DAT");
-        let hidden = hidden_display_objects(&fighter_dat, profile.fighter_kind, costume, &objects)
-            .expect("mask");
+        let hidden =
+            hidden_display_objects(&fighter_dat, fighter.kind, costume, &objects).expect("mask");
         let hidden: Vec<u64> = objects
             .iter()
             .enumerate()
@@ -149,14 +146,17 @@ fn runtime_masks_match_the_catalog_for_every_stock_costume() {
 #[test]
 fn a_fighter_plays_seeks_and_speeds_up_any_animation() {
     let mut disc = disc();
-    let catalog = MeleeReferenceCatalog::checked_in().expect("catalog");
+    let catalog = MeleeReferenceCatalog::checked_in();
     let bytes = disc.read("PlFcNr.dat").expect("Falco");
     let source =
         HsdSource::from_dat(&bytes, HsdDrawEvaluationPolicy::MELEE_FIGHTER).expect("source");
-    let store = references(&mut disc, &catalog, &source.scene);
-    let Ok(mut playback) = MeleeFighterPlayback::attach(source, &catalog, &store) else {
+    let store = references(&mut disc, catalog, &source.scene);
+    let FighterAttach::Attached(mut playback) =
+        MeleeFighterPlayback::attach(source, catalog, &store)
+    else {
         panic!("Falco attaches");
     };
+    assert_eq!(playback.fighter().index(), 0x16);
     let find = |action: &str| {
         playback
             .animations()

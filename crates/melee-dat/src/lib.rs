@@ -13,8 +13,9 @@
 //!   load-time animations, and HAL's names for its textures.
 //! - [`catalog`] and [`references`]: the checked-in table of every fighter's
 //!   files, and the original game files a caller supplies to play them.
-//! - [`file_names`] and [`vanilla`]: how the game names its files, and the
-//!   size and hash of each as shipped.
+//! - [`file_names`] and [`vanilla`]: how the game names its files
+//!   ([`MeleeSlot`] is one a skin replaces), and the size and hash of each as
+//!   shipped.
 
 pub mod catalog;
 pub mod error;
@@ -29,8 +30,9 @@ pub mod vanilla;
 
 pub use catalog::MeleeReferenceCatalog;
 pub use error::{MeleeError, Result};
-pub use fighter::playback::MeleeFighterPlayback;
-pub use file_names::*;
-pub use model::MeleeModel;
+pub use fighter::playback::{FighterAttach, MeleeFighterPlayback};
+pub use fighter::{CostumeIndex, FighterKind};
+pub use file_names::{Character, CostumeColor, MeleeSlot, NotASlot, Stage, parse_filename};
+pub use model::{FighterAttachOutcome, MeleeModel, MeleeModelKind};
 pub use references::MeleeReferenceStore;
 pub use stage::playback::MeleeStagePlayback;

@@ -38,7 +38,7 @@ impl Moves {
             }
             let disabled = match playback.check(animation.index) {
                 Ok(()) => None,
-                Err(MeleeError::Unplayable(reason)) => Some(capitalized(&reason).into()),
+                Err(MeleeError::Unplayable { reason, .. }) => Some(capitalized(&reason).into()),
                 Err(error) => Some(error.to_string().into()),
             };
             moves.playable += usize::from(disabled.is_none());

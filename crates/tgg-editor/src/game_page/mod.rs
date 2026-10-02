@@ -7,6 +7,7 @@
 mod view;
 
 use crate::References;
+use crate::costumes::stage_name;
 use crate::costumes::{CostumesEvent, Fighter, Notice};
 use crate::install::SlotState;
 use crate::library::Skin;
@@ -14,7 +15,7 @@ use crate::open_file::OpenFile;
 use crate::page::GameChip;
 use crate::timeline::Timeline;
 use gpui::{AppContext, Context, Entity, EventEmitter, RenderImage, SharedString};
-use melee_dat::{STAGES, stage_name};
+use melee_dat::Stage;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -73,9 +74,8 @@ impl GamePage {
         split: Entity<SplitState>,
     ) -> Self {
         let files = references.game().file_names();
-        let stages = STAGES
-            .iter()
-            .map(|(file, _)| *file)
+        let stages = Stage::all()
+            .map(Stage::file_name)
             .filter(|file| files.iter().any(|name| name == file))
             .collect();
         Self {

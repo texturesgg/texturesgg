@@ -19,10 +19,13 @@ use dat_parser::descriptor::{DescriptorParseError, DescriptorReader};
 use dat_parser::hsd::source::HsdFocus;
 use dat_parser::math::Mat4;
 
-/// General point kinds, as `Ground_801C2D24`'s callers pass them.
-pub mod kind {
+/// What a general point marks, as `Ground_801C2D24`'s callers number it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct StagePointKind(pub i16);
+
+impl StagePointKind {
     /// Two opposite corners of the camera range.
-    pub const CAMERA_CORNERS: [i16; 2] = [0x95, 0x96];
+    pub const CAMERA_CORNERS: [Self; 2] = [Self(0x95), Self(0x96)];
 }
 
 const MAX_RECORDS: usize = 64;
@@ -44,7 +47,7 @@ pub enum StagePointsError {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StagePoint {
-    pub kind: i16,
+    pub kind: StagePointKind,
     /// World position in the bind pose.
     pub position: [f32; 3],
 }
@@ -86,8 +89,9 @@ impl StagePoints {
             let positions = joint_positions(dat, root)?;
             let pairs = DescriptorReader::new(dat, "MapGeneralPointPairs", pairs);
             for pair in 0..pair_count as u32 {
+                // Both fields are s16 in the file.
                 let joint = pairs.u16(pair * 4)? as i16;
-                let kind = pairs.u16(pair * 4 + 2)? as i16;
+                let kind = StagePointKind(pairs.u16(pair * 4 + 2)? as i16);
                 // The source leaves a kind unset when its index is past the tree.
                 let position = usize::try_from(joint)
                     .ok()
@@ -102,7 +106,7 @@ impl StagePoints {
 
     /// A kind's position. When records repeat a kind, the last one wins, as
     /// the source overwrites its table in record order.
-    pub fn position(&self, kind: i16) -> Option<[f32; 3]> {
+    pub fn position(&self, kind: StagePointKind) -> Option<[f32; 3]> {
         self.points
             .iter()
             .rev()
@@ -112,10 +116,10 @@ impl StagePoints {
 
     /// The range the in-game camera keeps fighters within.
     pub fn camera_range(&self) -> Option<StageRect> {
-        self.rect(kind::CAMERA_CORNERS)
+        self.rect(StagePointKind::CAMERA_CORNERS)
     }
 
-    fn rect(&self, corners: [i16; 2]) -> Option<StageRect> {
+    fn rect(&self, corners: [StagePointKind; 2]) -> Option<StageRect> {
         let [a, b] = corners.map(|corner| self.position(corner));
         let (a, b) = (a?, b?);
         Some(StageRect {
@@ -234,9 +238,10 @@ mod tests {
     #[test]
     fn points_take_their_joints_world_position_in_depth_first_order() {
         let points = StagePoints::read(&stage(&[(1, 0x95), (2, 0x96), (0, 0x94)])).unwrap();
-        assert_eq!(points.position(0x94), Some([10.0, 0.0, 0.0]));
-        assert_eq!(points.position(0x95), Some([11.0, 2.0, 0.0]));
-        assert_eq!(points.position(0x96), Some([5.0, 7.0, 0.0]));
+        let position = |kind| points.position(StagePointKind(kind));
+        assert_eq!(position(0x94), Some([10.0, 0.0, 0.0]));
+        assert_eq!(position(0x95), Some([11.0, 2.0, 0.0]));
+        assert_eq!(position(0x96), Some([5.0, 7.0, 0.0]));
         assert_eq!(
             points.camera_range(),
             Some(StageRect {

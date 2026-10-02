@@ -42,7 +42,7 @@ pub use error::Error;
 pub use game::{Found, Game, GameChoice, GameError, References};
 use gpui::{App, AppContext, Bounds, KeyBinding, WindowBounds, WindowOptions, actions, px, size};
 pub(crate) use log::log;
-use melee_dat::{MeleeReferenceCatalog, MeleeReferenceStore};
+use melee_dat::{FighterAttachOutcome, MeleeModelKind, MeleeReferenceCatalog, MeleeReferenceStore};
 
 actions!(
     app,
@@ -97,20 +97,20 @@ pub fn load_model(
     };
     let mut model = MeleeModel::open(bytes, policy)?;
     let mut store = None;
-    if let (MeleeModel::Static(source), Some(references)) = (&model, references)
-        && let Some(found) = references.store_for(&source.scene)
+    if let (MeleeModelKind::Static, Some(references)) = (model.kind(), references)
+        && let Some(found) = references.store_for(model.scene())
     {
-        let (attached, error) = model.attach_fighter(&references.catalog, &found);
-        if let Some(error) = error {
+        let (attached, outcome) = model.attach_fighter(references.catalog, &found);
+        if let FighterAttachOutcome::Failed(error) = outcome {
             log(&format!("idle unavailable, showing the bind pose: {error}"));
         }
         model = attached;
         store = Some(found);
     }
-    let title = match &model {
-        MeleeModel::Fighter(playback) => format!("{name} · {}", playback.fighter()),
-        MeleeModel::Stage(_) => name.to_owned(),
-        MeleeModel::Static(_) => format!("{name} · bind pose"),
+    let title = match model.fighter() {
+        Some(playback) => format!("{name} · {}", playback.fighter_name()),
+        None if model.kind() == MeleeModelKind::Stage => name.to_owned(),
+        None => format!("{name} · bind pose"),
     };
     Ok(Loaded {
         model,
@@ -167,7 +167,7 @@ pub fn discover_games() -> Vec<GameChoice> {
 
 /// References read from the player's game.
 pub fn game_references(game: Game) -> Result<References, Error> {
-    Ok(References::new(MeleeReferenceCatalog::checked_in()?, game))
+    Ok(References::new(MeleeReferenceCatalog::checked_in(), game))
 }
 
 /// Open the editor window and run the application.

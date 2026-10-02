@@ -4,6 +4,7 @@
 
 use super::{Place, Screen, Shell};
 use crate::Error;
+use crate::References;
 use crate::costumes::{Notice, roster, slot_label};
 use crate::editor::{Editor, Pending};
 use crate::game::Game;
@@ -11,10 +12,9 @@ use crate::install::{History, SlotState, install, restore_vanilla, undo};
 use crate::library::{Library, SkinSource};
 use crate::renders::SIZE;
 use crate::review::{Review, ReviewEvent, ReviewItem};
-use crate::{References, log};
 use gpui::{AppContext, Context, Entity, PathPromptOptions, Window};
 use melee_dat::MeleeReferenceCatalog;
-use melee_dat::STAGES;
+use melee_dat::Stage;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use tgg_ui::{drop_images, render_image};
@@ -140,7 +140,7 @@ impl Shell {
             let mut candidate = self
                 .library
                 .borrow()
-                .inspect(&slot, bytes.to_vec(), &references.catalog)
+                .inspect(&slot, bytes.to_vec(), references.catalog)
                 .map_err(|rejected| Error::Rejected(rejected.reason))?;
             candidate.name = name.clone();
             self.library.borrow_mut().store(
@@ -201,20 +201,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let checked_in;
-        let catalog = match self.references.as_deref() {
-            Some(references) => &references.catalog,
-            None => match MeleeReferenceCatalog::checked_in() {
-                Ok(catalog) => {
-                    checked_in = catalog;
-                    &checked_in
-                }
-                Err(error) => {
-                    log(&format!("no reference catalog: {error}"));
-                    return;
-                }
-            },
-        };
+        let catalog = MeleeReferenceCatalog::checked_in();
         let (items, rejected): (Vec<_>, Vec<_>) = self
             .library
             .borrow()
@@ -451,9 +438,8 @@ pub(super) fn slot_files(game: &Game) -> Vec<String> {
         .into_iter()
         .flat_map(|fighter| fighter.costumes)
         .map(|costume| costume.file);
-    let stages = STAGES
-        .iter()
-        .map(|(file, _)| *file)
+    let stages = Stage::all()
+        .map(Stage::file_name)
         .filter(|file| names.iter().any(|name| name == file))
         .map(str::to_owned);
     costumes.chain(stages).collect()

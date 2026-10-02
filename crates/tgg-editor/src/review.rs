@@ -10,7 +10,7 @@ use gpui::{
     Context, EventEmitter, FontWeight, IntoElement, ParentElement, Render, SharedString, Styled,
     Window, div,
 };
-use melee_dat::{ParsedFilename, costume_name, parse_filename};
+use melee_dat::{CostumeColor, parse_filename};
 use tgg_ui::tokens::{space, text};
 use tgg_ui::{ButtonVariant, Dialog, MenuButton, MenuItem, Theme, rem};
 
@@ -40,13 +40,10 @@ impl EventEmitter<ReviewEvent> for Review {}
 impl Review {
     /// The fighter a costume slot belongs to, among the player's fighters.
     fn fighter_of(&self, slot: Option<&str>) -> Option<&Fighter> {
-        match slot.and_then(parse_filename)? {
-            ParsedFilename::Character { character_code, .. } => self
-                .fighters
-                .iter()
-                .find(|fighter| fighter.code == character_code),
-            ParsedFilename::Stage { .. } => None,
-        }
+        let character = slot.and_then(parse_filename)?.character()?;
+        self.fighters
+            .iter()
+            .find(|fighter| fighter.code == character.code())
     }
 
     /// Menus to choose item `index`'s fighter and color.
@@ -86,8 +83,9 @@ impl Review {
                 MenuButton::new(
                     SharedString::from(format!("color-{index}")),
                     slot.as_deref()
-                        .and_then(|slot| slot.get(4..6))
-                        .map_or("Color", costume_name),
+                        .and_then(parse_filename)
+                        .and_then(|slot| slot.color())
+                        .map_or("Color", CostumeColor::name),
                 )
                 .select(),
                 |menu, costume| {

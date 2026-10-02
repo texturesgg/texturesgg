@@ -16,9 +16,8 @@ use dat_parser::hsd::animation::{HsdJointPoseError, HsdJointPoseEvaluator, HsdJo
 use dat_parser::hsd::scene::{HsdJointIndex, HsdSceneRoot, JObjId};
 use dat_parser::{DatFile, DatParseError};
 
-const FIGHTER_KIND_COUNT: u8 = 0x21;
-const FIGHTER_KIND_POPO: u8 = 0x0a;
-const FIGHTER_KIND_NANA: u8 = 0x0b;
+use super::FighterKind;
+
 const MAX_PARTS: usize = 0x8c;
 const RECORD_SIZE: usize = 0x18;
 const AUXILIARY_MASK: u32 = 0x003f_fe00;
@@ -37,8 +36,6 @@ pub struct FighterAnimationBinding {
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum FighterAnimationBindingError {
-    #[error("fighter kind {0} is outside the source FighterKind table")]
-    FighterKind(u8),
     #[error("animation index {index} is outside the authenticated count {count}")]
     AnimationIndex { index: usize, count: usize },
     #[error("missing or ambiguous {0} public root")]
@@ -50,7 +47,11 @@ pub enum FighterAnimationBindingError {
     #[error("invalid animation metadata: {0}")]
     Metadata(&'static str),
     #[error("animation source kind {source_kind} differs from fighter kind {fighter_kind}")]
-    RemappedAnimation { fighter_kind: u8, source_kind: u8 },
+    RemappedAnimation {
+        fighter_kind: FighterKind,
+        /// The record's six-bit kind field, which need not name a kind.
+        source_kind: u8,
+    },
     #[error("Nana's own animation record is populated; the Popo fallback does not apply")]
     NanaRecordPresent,
     #[error("animation enables auxiliary parts ({0:#010x})")]
@@ -73,13 +74,26 @@ pub enum FighterAnimationBindingError {
     ReceiverCount { animation: usize, physical: usize },
 }
 
+/// The files an animation binds from, and the costume it binds to.
+#[derive(Clone, Copy)]
+pub struct FighterAnimationFiles<'a> {
+    /// The playing fighter's data (`PlXx.dat`).
+    pub fighter: &'a DatFile,
+    /// The data every fighter shares (`PlCo.dat`).
+    pub common: &'a DatFile,
+    /// The animation archive the records index (`PlXxAJ.dat`), whole and
+    /// unrelocated: the fighter's own, or Popo's when Nana plays his records.
+    pub aj: &'a [u8],
+    /// The scene root parsed from the fighter's costume DAT. Returned IDs
+    /// belong to that archive, not to the fighter data or a mini-DAT.
+    pub root: &'a HsdSceneRoot,
+    /// `fighter`'s animation count. It must come from the authenticated
+    /// executable's `ftData_Table_Unk0[kind].count` (ftdata.c:174,1603),
+    /// never from adjacent DAT bytes.
+    pub animation_count: usize,
+}
+
 /// Bind an original fighter metadata record to an unmodified physical costume tree.
-///
-/// `fighter_kind` is the *internal* source FighterKind, not Slippi's external
-/// character ID. `animation_count` must come from authenticated executable
-/// `ftData_Table_Unk0[kind].count` (ftdata.c:174,1603), never adjacent DAT bytes.
-/// `root` must be the scene root parsed from the selected fighter's costume DAT;
-/// returned IDs belong to that archive, not the fighter metadata or mini-DAT.
 ///
 /// This models initial `ftParts_SetupParts` followed by `ftAnim_8006FE08` ->
 /// `ftAnim_8006F4C8` -> `lbAnim_8001E6D8`, with no blending, per-part animation
@@ -89,24 +103,19 @@ pub enum FighterAnimationBindingError {
 /// Static auxiliary slots are validated and skipped exactly as SetupParts does.
 /// INSTANCE edges are rejected because setup and descriptor traversal differ.
 pub fn bind_same_kind_fighter_animation(
-    fighter: &DatFile,
-    common: &DatFile,
-    aj: &[u8],
-    root: &HsdSceneRoot,
-    fighter_kind: u8,
+    files: &FighterAnimationFiles<'_>,
+    fighter_kind: FighterKind,
     animation_index: usize,
-    animation_count: usize,
 ) -> Result<FighterAnimationBinding, FighterAnimationBindingError> {
-    check_selection(fighter_kind, animation_index, animation_count)?;
-    let (record, record_offset) = animation_record(fighter, animation_index, animation_count)?;
-    let packed_flags = motion_flags(fighter, record, record_offset, fighter_kind)?;
+    check_selection(animation_index, files.animation_count)?;
+    let (record, record_offset) =
+        animation_record(files.fighter, animation_index, files.animation_count)?;
+    let packed_flags = motion_flags(files.fighter, record, record_offset, fighter_kind)?;
     bind_record_tree(
-        fighter,
+        files.fighter,
         record,
         record_offset,
-        common,
-        aj,
-        root,
+        files,
         fighter_kind,
         packed_flags,
     )
@@ -114,28 +123,25 @@ pub fn bind_same_kind_fighter_animation(
 
 /// Bind a Nana motion through ftData_80085FD4's Popo fallback.
 ///
+/// `files` are Nana's, with Popo's animation archive as `aj`; `popo` is
+/// Popo's data and `popo_count` his authenticated animation count.
+///
 /// Outside demo player slots, a Nana motion whose own record never received an
 /// AJ address (x14 stays zero because ftData_80085A14 skips a zero x8 size)
 /// plays Popo's record for the same motion ID. ChangeMotionState still loads
 /// x594 from Nana's own record (fighter.c:1256), so Nana's flags select the
 /// same-kind ftAnim_8006F4C8 path over Nana's parts: Popo's tree is not remapped.
-/// Both counts are the authenticated `ftData_Table_Unk0` counts for each kind.
-// Mirrors the game's inputs: two fighter archives plus the shared common data.
-#[allow(clippy::too_many_arguments)]
 pub fn bind_nana_fighter_animation(
-    nana: &DatFile,
+    files: &FighterAnimationFiles<'_>,
     popo: &DatFile,
-    common: &DatFile,
-    popo_aj: &[u8],
-    root: &HsdSceneRoot,
-    animation_index: usize,
-    nana_count: usize,
     popo_count: usize,
+    animation_index: usize,
 ) -> Result<FighterAnimationBinding, FighterAnimationBindingError> {
-    check_selection(FIGHTER_KIND_NANA, animation_index, nana_count)?;
-    check_selection(FIGHTER_KIND_POPO, animation_index, popo_count)?;
-    let (own, own_offset) = animation_record(nana, animation_index, nana_count)?;
-    let packed_flags = motion_flags(nana, own, own_offset, FIGHTER_KIND_NANA)?;
+    let nana = files.fighter;
+    check_selection(animation_index, files.animation_count)?;
+    check_selection(animation_index, popo_count)?;
+    let (own, own_offset) = animation_record(nana, animation_index, files.animation_count)?;
+    let packed_flags = motion_flags(nana, own, own_offset, FighterKind::NANA)?;
     require_unresolved_address(nana, own, own_offset)?;
     if own.u32(8)? != 0 {
         return Err(FighterAnimationBindingError::NanaRecordPresent);
@@ -145,22 +151,16 @@ pub fn bind_nana_fighter_animation(
         popo,
         record,
         record_offset,
-        common,
-        popo_aj,
-        root,
-        FIGHTER_KIND_NANA,
+        files,
+        FighterKind::NANA,
         packed_flags,
     )
 }
 
 fn check_selection(
-    fighter_kind: u8,
     animation_index: usize,
     animation_count: usize,
 ) -> Result<(), FighterAnimationBindingError> {
-    if fighter_kind >= FIGHTER_KIND_COUNT {
-        return Err(FighterAnimationBindingError::FighterKind(fighter_kind));
-    }
     if animation_index >= animation_count {
         return Err(FighterAnimationBindingError::AnimationIndex {
             index: animation_index,
@@ -197,8 +197,8 @@ fn record_symbol(
 
 /// The action each of a fighter's `animation_count` animation records plays
 /// (`Wait1`, `AttackHi3`), read from its symbol; `None` for a record with no
-/// animation. `animation_count` is the catalog's authenticated count, as for
-/// [`bind_same_kind_fighter_animation`].
+/// animation. `animation_count` is the catalog's authenticated count, as in
+/// [`FighterAnimationFiles`].
 pub fn fighter_animation_actions(
     fighter: &DatFile,
     animation_count: usize,
@@ -253,7 +253,7 @@ fn motion_flags(
     fighter: &DatFile,
     record: DescriptorReader<'_>,
     record_offset: u32,
-    fighter_kind: u8,
+    fighter_kind: FighterKind,
 ) -> Result<u32, FighterAnimationBindingError> {
     use FighterAnimationBindingError as Error;
     if fighter
@@ -265,7 +265,7 @@ fn motion_flags(
     }
     let packed_flags = record.u32(0x10)?;
     let source_kind = (packed_flags & 0x3f) as u8;
-    if source_kind != fighter_kind {
+    if source_kind != fighter_kind.index() {
         return Err(Error::RemappedAnimation {
             fighter_kind,
             source_kind,
@@ -301,20 +301,20 @@ fn require_unresolved_address(
     Ok(())
 }
 
-/// Resolve a record's FigaTree and bind it over `fighter_kind`'s physical parts.
-// Mirrors the game's inputs: record location, shared data, and costume root.
-#[allow(clippy::too_many_arguments)]
+/// Resolve the FigaTree of `record`, which `fighter` holds, and bind it over
+/// `fighter_kind`'s physical parts.
 fn bind_record_tree(
     fighter: &DatFile,
     record: DescriptorReader<'_>,
     record_offset: u32,
-    common: &DatFile,
-    aj: &[u8],
-    root: &HsdSceneRoot,
-    fighter_kind: u8,
+    files: &FighterAnimationFiles<'_>,
+    fighter_kind: FighterKind,
     packed_flags: u32,
 ) -> Result<FighterAnimationBinding, FighterAnimationBindingError> {
     use FighterAnimationBindingError as Error;
+    let FighterAnimationFiles {
+        common, aj, root, ..
+    } = *files;
     let animation_symbol = record_symbol(fighter, record)?
         .ok_or(FighterAnimationBindingError::NullPointer("symbol"))?;
     require_unresolved_address(fighter, record, record_offset)?;
@@ -377,7 +377,7 @@ pub(crate) struct FighterPartSlots {
 /// tables in `PlCo.dat`.
 pub(crate) fn fighter_part_slots(
     common: &DatFile,
-    fighter_kind: u8,
+    fighter_kind: FighterKind,
     root: &HsdSceneRoot,
 ) -> Result<FighterPartSlots, FighterAnimationBindingError> {
     use FighterAnimationBindingError as Error;
@@ -394,7 +394,7 @@ pub(crate) fn fighter_part_slots(
     let parts_desc_offset = required(
         DescriptorReader::new(common, "parts table", parts_table),
         "fighter parts",
-        u32::from(fighter_kind) * 4,
+        u32::from(fighter_kind.index()) * 4,
     )?;
     let parts =
         DescriptorReader::new(common, "FighterPartsTable", parts_desc_offset).require_extent(12)?;
@@ -415,8 +415,10 @@ pub(crate) fn fighter_part_slots(
         }
     }
     let aux_table = required(common_desc, "auxiliary table", 0x14)?;
-    let auxiliary = DescriptorReader::new(common, "auxiliary table", aux_table)
-        .pointer("fighter auxiliary parts", u32::from(fighter_kind) * 4)?;
+    let auxiliary = DescriptorReader::new(common, "auxiliary table", aux_table).pointer(
+        "fighter auxiliary parts",
+        u32::from(fighter_kind.index()) * 4,
+    )?;
     let mut auxiliary_slots = [false; MAX_PARTS];
     if let Some(offset) = auxiliary {
         let auxiliary =
@@ -550,15 +552,13 @@ fn physical_joint_order(root: &HsdSceneRoot) -> Result<Vec<JObjId>, FighterAnima
 }
 
 /// A compact animation attached to one model root, ready to tick and pose.
+/// Its receivers are the ones the pose was built over, so the two always
+/// agree.
 pub struct AttachedFighterAnimation {
-    pub root_index: usize,
-    /// Data offset of the FigaTree root in its (mini-)archive.
-    pub animation_root_source_id: u32,
-    /// FigaTree.flags, not Fighter_WaitAnimData.x10.
-    pub flags: u32,
-    pub end_frame: f32,
-    pub receivers: Vec<JObjId>,
-    pub pose: HsdJointPoseEvaluator<'static>,
+    flags: u32,
+    end_frame: f32,
+    receivers: Vec<JObjId>,
+    pose: HsdJointPoseEvaluator<'static>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -626,12 +626,34 @@ impl AttachedFighterAnimation {
             HsdJointPoseLimits::default(),
         )?;
         Ok(Self {
-            root_index,
-            animation_root_source_id: source_id,
             flags: tree.flags,
             end_frame: tree.end_frame,
             receivers: receivers.to_vec(),
             pose: pose.into_owned(),
         })
+    }
+
+    /// `FigaTree.flags`, not `Fighter_WaitAnimData.x10`.
+    pub fn flags(&self) -> u32 {
+        self.flags
+    }
+
+    /// The animation's length in frames.
+    pub fn end_frame(&self) -> f32 {
+        self.end_frame
+    }
+
+    /// The costume joints the animation drives, one per count-list entry.
+    pub fn receivers(&self) -> &[JObjId] {
+        &self.receivers
+    }
+
+    pub fn pose(&self) -> &HsdJointPoseEvaluator<'static> {
+        &self.pose
+    }
+
+    /// The pose, to request a frame, set the rate, and advance.
+    pub fn pose_mut(&mut self) -> &mut HsdJointPoseEvaluator<'static> {
+        &mut self.pose
     }
 }

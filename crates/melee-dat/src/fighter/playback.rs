@@ -3,30 +3,38 @@
 //! renderers draw what [`MeleeFighterPlayback::evaluate`] returns.
 
 use crate::catalog::{IdleProfile, MeleeReferenceCatalog};
-use crate::error::{MeleeError, Result, playback_error};
+use crate::error::{MeleeError, Result};
 use crate::fighter::animation::{
-    AttachedFighterAnimation, FighterAnimationBindingError, bind_nana_fighter_animation,
-    bind_same_kind_fighter_animation, fighter_animation_actions,
+    AttachedFighterAnimation, FighterAnimationBindingError, FighterAnimationFiles,
+    bind_nana_fighter_animation, bind_same_kind_fighter_animation, fighter_animation_actions,
 };
 use crate::fighter::moves::{MoveGroup, move_group, move_name};
-use crate::fighter::parts::{
-    FighterModelParts, ModelPartsError, default_selections, wait1_script_selections,
-};
+use crate::fighter::parts::{FighterModelParts, default_selections, wait1_script_selections};
+use crate::fighter::{CostumeIndex, FighterKind};
 use crate::references::MeleeReferenceStore;
 use dat_parser::DatFile;
 use dat_parser::hsd::HsdScene;
 use dat_parser::hsd::draw::{HsdDrawEvaluationPolicy, HsdEvaluatedDrawWork};
 use dat_parser::hsd::scene::{DObjId, HsdJointIndex, HsdTransform, JObjId};
-use dat_parser::hsd::source::{HsdSource, HsdSourceError};
+use dat_parser::hsd::source::HsdSource;
 
 /// ftParts_80074194 caps the game's global display-object list at 124.
 const MAX_FIGHTER_DISPLAY_OBJECTS: usize = 124;
 
-/// A costume the catalog did not admit (`error` is `None`) or failed to attach;
-/// the source comes back so the caller can still render its bind pose.
-pub struct NotAttached {
-    pub source: HsdSource,
-    pub error: Option<MeleeError>,
+/// What [`MeleeFighterPlayback::attach`] made of a model. A model that does
+/// not attach comes back, so the caller can still draw its bind pose.
+pub enum FighterAttach {
+    /// The fighter's idle is playing.
+    Attached(Box<MeleeFighterPlayback>),
+    /// No catalog profile recognizes the model as a stock fighter's costume:
+    /// its root is not one the catalog names, or its joints or display
+    /// objects are not the fighter's. Nothing went wrong.
+    Unrecognized(Box<HsdSource>),
+    /// The catalog recognizes the costume and its idle did not attach.
+    Failed {
+        source: Box<HsdSource>,
+        error: MeleeError,
+    },
 }
 
 /// One of a fighter's animations.
@@ -62,7 +70,7 @@ struct AnimationInputs {
     /// Popo's data when the fighter is Nana, whose motions play Popo's
     /// records (ftData_80085FD4).
     record_fighter: Option<DatFile>,
-    fighter_kind: u8,
+    fighter_kind: FighterKind,
     animation_count: usize,
     record_count: usize,
     root_index: usize,
@@ -79,47 +87,44 @@ impl AnimationInputs {
     /// Bind animation `index` over the costume's parts, as ChangeMotionState
     /// would; the idle must match the catalog's verified metadata.
     fn bind(&self, source: &HsdSource, index: usize) -> Result<AttachedFighterAnimation> {
-        let scene_root = &source.scene.roots[self.root_index];
+        let files = FighterAnimationFiles {
+            fighter: &self.fighter,
+            common: &self.common,
+            aj: &self.aj,
+            root: &source.scene.roots[self.root_index],
+            animation_count: self.animation_count,
+        };
         let binding = match &self.record_fighter {
-            None => bind_same_kind_fighter_animation(
-                &self.fighter,
-                &self.common,
-                &self.aj,
-                scene_root,
-                self.fighter_kind,
-                index,
-                self.animation_count,
-            ),
-            Some(record_fighter) => bind_nana_fighter_animation(
-                &self.fighter,
-                record_fighter,
-                &self.common,
-                &self.aj,
-                scene_root,
-                index,
-                self.animation_count,
-                self.record_count,
-            ),
+            None => bind_same_kind_fighter_animation(&files, self.fighter_kind, index),
+            Some(record_fighter) => {
+                bind_nana_fighter_animation(&files, record_fighter, self.record_count, index)
+            }
         }
-        .map_err(|error| MeleeError::Unplayable(unplayable(&error)))?;
+        .map_err(|source| MeleeError::Unplayable {
+            reason: unplayable(&source),
+            source,
+        })?;
         let animation = AttachedFighterAnimation::from_binding(
             &source.scene,
             self.root_index,
             &self.aj,
             &binding,
-        )
-        .map_err(|error| playback_error(error.to_string()))?;
-        if animation.receivers.len() != self.receivers
+        )?;
+        if animation.receivers().len() != self.receivers
             || (index == self.idle
-                && (animation.flags != self.idle_flags
-                    || animation.end_frame != self.idle_end_frame))
+                && (animation.flags() != self.idle_flags
+                    || animation.end_frame() != self.idle_end_frame))
         {
-            return Err(playback_error(format!(
-                "native {} metadata differs from the verified reference",
-                self.fighter_label
-            )));
+            return Err(self.mismatch("the animation's metadata"));
         }
         Ok(animation)
+    }
+
+    fn mismatch(&self, what: &'static str) -> MeleeError {
+        MeleeError::ReferenceMismatch {
+            fighter: self.fighter_label.clone(),
+            what,
+        }
     }
 }
 
@@ -159,61 +164,48 @@ pub struct MeleeFighterPlayback {
 }
 
 impl MeleeFighterPlayback {
-    /// Attach the catalog idle for the costume's recognized root, or return
-    /// the source unchanged when no profile admits it (it then draws in its
-    /// bind pose).
+    /// Play the catalog idle on a costume the catalog recognizes.
     pub fn attach(
         mut source: HsdSource,
         catalog: &MeleeReferenceCatalog,
         store: &MeleeReferenceStore,
-    ) -> std::result::Result<Self, Box<NotAttached>> {
-        let not_attached = |source, error| Box::new(NotAttached { source, error });
+    ) -> FighterAttach {
+        let failed = |source, error| FighterAttach::Failed {
+            source: Box::new(source),
+            error,
+        };
         // Fighter animation needs the MeleeFighter policy, which selects
         // fighter envelope skinning.
         if source.policy != HsdDrawEvaluationPolicy::MELEE_FIGHTER {
-            return Err(not_attached(
-                source,
-                Some(playback_error(
-                    "fighter playback requires the MeleeFighter evaluation policy",
-                )),
-            ));
+            return failed(source, MeleeError::WrongPolicy);
         }
-        match Self::profile_for(&source.scene, catalog) {
-            None => Err(not_attached(source, None)),
-            Some((profile, root_index, costume)) => {
-                match Self::attach_profile(
-                    &mut source,
-                    catalog,
-                    store,
-                    profile,
-                    root_index,
-                    costume,
-                ) {
-                    Ok(Some(parts)) => {
-                        let mut playback = Self {
-                            source,
-                            current: parts.inputs.idle,
-                            inputs: parts.inputs,
-                            animations: parts.animations,
-                            animation: parts.animation,
-                            label: parts.label,
-                            scale_receiver: parts.scale_receiver,
-                            scale_transform: parts.scale_transform,
-                            root_transform: parts.root_transform,
-                            frame: 0.0,
-                            rate: 1.0,
-                            tick: 0,
-                            loops: 0,
-                        };
-                        match playback.reset() {
-                            Ok(()) => Ok(playback),
-                            Err(error) => Err(not_attached(playback.source, Some(error))),
-                        }
-                    }
-                    Ok(None) => Err(not_attached(source, None)),
-                    Err(error) => Err(not_attached(source, Some(error))),
+        let Some((profile, root_index, costume)) = Self::profile_for(&source.scene, catalog) else {
+            return FighterAttach::Unrecognized(Box::new(source));
+        };
+        match Self::attach_profile(&mut source, catalog, store, profile, root_index, costume) {
+            Ok(Some(parts)) => {
+                let mut playback = Self {
+                    source,
+                    current: parts.inputs.idle,
+                    inputs: parts.inputs,
+                    animations: parts.animations,
+                    animation: parts.animation,
+                    label: parts.label,
+                    scale_receiver: parts.scale_receiver,
+                    scale_transform: parts.scale_transform,
+                    root_transform: parts.root_transform,
+                    frame: 0.0,
+                    rate: 1.0,
+                    tick: 0,
+                    loops: 0,
+                };
+                match playback.reset() {
+                    Ok(()) => FighterAttach::Attached(Box::new(playback)),
+                    Err(error) => failed(playback.source, error),
                 }
             }
+            Ok(None) => FighterAttach::Unrecognized(Box::new(source)),
+            Err(error) => failed(source, error),
         }
     }
 
@@ -226,7 +218,7 @@ impl MeleeFighterPlayback {
     pub(crate) fn profile_for<'c>(
         contract: &HsdScene,
         catalog: &'c MeleeReferenceCatalog,
-    ) -> Option<(&'c IdleProfile, usize, usize)> {
+    ) -> Option<(&'c IdleProfile, usize, CostumeIndex)> {
         catalog.profile_for_roots(contract.roots.iter().map(|root| root.name.as_deref()))
     }
 
@@ -236,7 +228,7 @@ impl MeleeFighterPlayback {
         store: &MeleeReferenceStore,
         profile: &IdleProfile,
         root_index: usize,
-        costume: usize,
+        costume: CostumeIndex,
     ) -> Result<Option<AttachParts>> {
         let root = &source.scene.roots[root_index];
         let initialization = &profile.initialization;
@@ -245,22 +237,20 @@ impl MeleeFighterPlayback {
         {
             return Ok(None);
         }
-        let entry = catalog.fighter(profile.fighter_kind)?;
-        let record_kind = entry
-            .primary_idle
-            .record_fighter_kind
-            .unwrap_or(profile.fighter_kind);
-        let record = catalog.fighter(record_kind)?;
-        if entry.primary_idle.animation_index != 2
+        let entry = catalog.fighter(profile);
+        let record = catalog.record_fighter(entry);
+        let mismatch = |what| MeleeError::ReferenceMismatch {
+            fighter: entry.label.clone(),
+            what,
+        };
+        if entry.idle_animation != 2
             || !(initialization.model_scaling.is_finite() && initialization.model_scaling > 0.0)
             || initialization
                 .root_scale
                 .iter()
                 .any(|scale| !(scale.is_finite() && *scale > 0.0))
         {
-            return Err(playback_error(
-                "reference is not a source-verified native idle initialization",
-            ));
+            return Err(mismatch("the catalog's idle initialization"));
         }
         // ftParts enumerates preorder JObjs followed by each linked DObj list;
         // only global ordinals drive selection, and appended objects stay
@@ -275,36 +265,31 @@ impl MeleeFighterPlayback {
             return Ok(None);
         }
 
-        let parse =
-            |bytes: &[u8]| DatFile::parse(bytes).map_err(|error| playback_error(error.to_string()));
-        let fighter_bytes = store.load(catalog.asset(&entry.fighter_key)?)?;
-        let fighter = parse(&fighter_bytes)?;
+        let fighter = store.load_dat(catalog.data_asset(entry))?;
         // Model-part visibility comes from the fighter data, as the game reads
         // it, and applies before animation binding so a costume whose idle
         // cannot attach still renders only the parts the game draws.
-        let hidden = hidden_display_objects(&fighter, profile.fighter_kind, costume, &objects)?;
+        let hidden = hidden_display_objects(&fighter, entry.kind, costume, &objects)?;
         if !hidden.is_empty() {
             source
                 .evaluator
-                .set_hidden_display_objects(root_index, &hidden)
-                .map_err(|error| playback_error(error.to_string()))?;
+                .set_hidden_display_objects(root_index, &hidden)?;
         }
         let root = &source.scene.roots[root_index];
 
-        let common_bytes = store.load(catalog.asset(&catalog.common_key)?)?;
-        let aj = store.load(catalog.asset(&record.animations_key)?)?;
-        let common = parse(&common_bytes)?;
+        let aj = store.load(catalog.animations_asset(record))?;
+        let common = store.load_dat(catalog.common_asset())?;
         // Nana's unresolved motions play Popo's record and AJ (ftData_80085FD4).
-        let record_fighter = if record_kind == profile.fighter_kind {
+        let record_fighter = if record.kind == entry.kind {
             None
         } else {
-            Some(parse(&store.load(catalog.asset(&record.fighter_key)?)?)?)
+            Some(store.load_dat(catalog.data_asset(record))?)
         };
         let actions = fighter_animation_actions(
             record_fighter.as_ref().unwrap_or(&fighter),
             record.animation_count.min(entry.animation_count),
         )
-        .map_err(|error| playback_error(error.to_string()))?;
+        .map_err(MeleeError::AnimationTable)?;
         let animations = actions
             .into_iter()
             .enumerate()
@@ -320,22 +305,23 @@ impl MeleeFighterPlayback {
             common,
             aj,
             record_fighter,
-            fighter_kind: profile.fighter_kind,
+            fighter_kind: entry.kind,
             animation_count: entry.animation_count,
             record_count: record.animation_count,
             root_index,
             receivers: initialization.joint_parents.len(),
             fighter_label: entry.label.clone(),
-            idle: entry.primary_idle.animation_index,
+            idle: entry.idle_animation,
             idle_flags: profile.idle.flags,
             idle_end_frame: profile.idle.end_frame,
         };
         let animation = inputs.bind(source, inputs.idle)?;
         let scale_receiver_id = *animation
-            .receivers
+            .receivers()
             .get(initialization.scale_receiver_index)
-            .ok_or_else(|| playback_error("native idle scale receiver is missing"))?;
-        let scale_receiver = joint_index(source, root_index, scale_receiver_id)?;
+            .ok_or_else(|| mismatch("the idle's scale receiver"))?;
+        let scale_receiver = joint_index(source, root_index, scale_receiver_id)
+            .ok_or_else(|| mismatch("the scale receiver's joint"))?;
 
         let receiver = &root.joints[scale_receiver.0].local;
         let reciprocal = (1.0 / initialization.model_scaling) as f32;
@@ -366,8 +352,13 @@ impl MeleeFighterPlayback {
         &self.label
     }
 
+    /// Which fighter this is.
+    pub fn fighter(&self) -> FighterKind {
+        self.inputs.fighter_kind
+    }
+
     /// The fighter's name ("Falco").
-    pub fn fighter(&self) -> &str {
+    pub fn fighter_name(&self) -> &str {
         &self.inputs.fighter_label
     }
 
@@ -422,13 +413,13 @@ impl MeleeFighterPlayback {
 
     /// The animation's length in frames.
     pub fn end_frame(&self) -> f32 {
-        self.animation.end_frame
+        self.animation.end_frame()
     }
 
     /// Show `frame`, clamped to the animation.
     pub fn seek(&mut self, frame: f32) -> Result<()> {
         // `clamp` panics on a negative upper bound.
-        self.reset_native(frame.clamp(0.0, self.animation.end_frame.max(0.0)))
+        self.reset_native(frame.clamp(0.0, self.animation.end_frame().max(0.0)))
     }
 
     /// Frames advanced per tick: 1 plays at the game's speed.
@@ -438,35 +429,24 @@ impl MeleeFighterPlayback {
 
     pub fn set_rate(&mut self, rate: f32) -> Result<()> {
         if !(rate.is_finite() && rate > 0.0) {
-            return Err(playback_error(format!(
-                "playback rate {rate} must be positive"
-            )));
+            return Err(MeleeError::InvalidRate(rate));
         }
         self.rate = rate;
-        self.animation
-            .pose
-            .set_rate(rate)
-            .map_err(|error| playback_error(error.to_string()))
+        Ok(self.animation.pose_mut().set_rate(rate)?)
     }
 
     fn reset_native(&mut self, frame: f32) -> Result<()> {
         // Re-requesting resets the native FObj interpreters without reparsing.
-        let pose = &mut self.animation.pose;
-        let fail = |error: dat_parser::hsd::animation::HsdJointPoseError| {
-            playback_error(error.to_string())
-        };
-        pose.set_rate(self.rate).map_err(fail)?;
-        pose.request(frame).map_err(fail)?;
-        pose.set_local_transform(self.scale_receiver, self.scale_transform)
-            .map_err(fail)?;
-        pose.advance().map_err(fail)?;
-        pose.set_local_transform(HsdJointIndex(0), self.root_transform)
-            .map_err(fail)?;
+        let pose = self.animation.pose_mut();
+        pose.set_rate(self.rate)?;
+        pose.request(frame)?;
+        pose.set_local_transform(self.scale_receiver, self.scale_transform)?;
+        pose.advance()?;
+        pose.set_local_transform(HsdJointIndex(0), self.root_transform)?;
         if pose.is_stopped() && frame == 0.0 {
-            return Err(playback_error(format!(
-                "{} stopped at its reset frame",
-                self.label
-            )));
+            return Err(MeleeError::StoppedAtReset {
+                label: self.label.clone(),
+            });
         }
         self.frame = frame;
         Ok(())
@@ -474,12 +454,9 @@ impl MeleeFighterPlayback {
 
     /// Advance one 60 Hz tick, restarting at the end of each cycle.
     pub fn advance(&mut self) -> Result<()> {
-        self.animation
-            .pose
-            .advance()
-            .map_err(|error| playback_error(error.to_string()))?;
+        self.animation.pose_mut().advance()?;
         self.frame += self.rate;
-        if self.animation.pose.is_stopped() {
+        if self.animation.pose().is_stopped() {
             self.reset_native(0.0)?;
             self.loops += 1;
         }
@@ -496,16 +473,11 @@ impl MeleeFighterPlayback {
 
     /// Evaluate the current pose; returns the scene with its draw work.
     pub fn evaluate(&mut self) -> Result<(&HsdScene, &HsdEvaluatedDrawWork)> {
-        let pose = self
-            .animation
-            .pose
-            .pose()
-            .map_err(|error| playback_error(error.to_string()))?;
+        let pose = self.animation.pose().pose()?;
         let work = self
             .source
             .evaluator
-            .evaluate(&self.source.scene, &[pose])
-            .map_err(HsdSourceError::from)?;
+            .evaluate(&self.source.scene, &[pose])?;
         Ok((&self.source.scene, work))
     }
 }
@@ -515,21 +487,18 @@ impl MeleeFighterPlayback {
 /// [`FighterModelParts`]).
 pub(crate) fn hidden_display_objects(
     fighter: &DatFile,
-    fighter_kind: u8,
-    costume: usize,
+    fighter_kind: FighterKind,
+    costume: CostumeIndex,
     objects: &[u32],
 ) -> Result<Vec<DObjId>> {
-    let fail = |error: ModelPartsError| playback_error(format!("model-part visibility: {error}"));
-    let parts = FighterModelParts::load(fighter, fighter_kind, costume).map_err(fail)?;
-    let mut selections = default_selections(fighter_kind, costume, parts.model_count);
+    let parts = FighterModelParts::load(fighter, fighter_kind, costume)?;
+    let mut selections = default_selections(fighter_kind, costume, parts.model_count());
     for &(group, value) in wait1_script_selections(fighter_kind) {
         if let Some(selection) = selections.get_mut(group) {
             *selection = value;
         }
     }
-    let visible = parts
-        .main_pass_visibility(&selections, objects.len())
-        .map_err(fail)?;
+    let visible = parts.main_pass_visibility(&selections, objects.len())?;
     Ok(objects
         .iter()
         .zip(visible)
@@ -548,17 +517,14 @@ pub(crate) struct AttachParts {
     animation: AttachedFighterAnimation,
 }
 
-fn joint_index(source: &HsdSource, root_index: usize, id: JObjId) -> Result<HsdJointIndex> {
+/// The one joint of the root with identity `id`; `None` when it is absent
+/// or more than one joint has it.
+fn joint_index(source: &HsdSource, root_index: usize, id: JObjId) -> Option<HsdJointIndex> {
     let mut matches = source.scene.roots[root_index]
         .joints
         .iter()
         .enumerate()
         .filter(|(_, joint)| joint.source_id == id);
-    let (index, _) = matches
-        .next()
-        .ok_or_else(|| playback_error("joint is absent from the selected model root"))?;
-    if matches.next().is_some() {
-        return Err(playback_error("joint identity is ambiguous"));
-    }
-    Ok(HsdJointIndex(index))
+    let (index, _) = matches.next()?;
+    matches.next().is_none().then_some(HsdJointIndex(index))
 }
