@@ -18,7 +18,7 @@
 //! save, so undoing back to it clears the flag.
 
 use crate::color::{self, DocumentSurface, MaterialColor};
-use crate::texture::{TexturePatch, TexturePatchError, patch_palette, patch_texture};
+use crate::texture::{TexturePatch, TexturePatchError, patch_palette, patch_texture, writable};
 use dat_parser::descriptor::tobj::{ImageDesc, TlutDesc};
 use dat_parser::gx::display_list::encode_direct_color;
 use dat_parser::gx::texture::decode_texture;
@@ -26,11 +26,12 @@ use dat_parser::hsd::scene::{HsdScene, HsdSceneError, HsdTextureSourceId};
 use dat_parser::hsd::texture_animation::texture_animations;
 use dat_parser::raw::header::DATA_SECTION_OFFSET;
 use dat_parser::{DatFile, DatParseError};
-use gx_texture::TexelRect;
+use gx_texture::{TexelRect, image_data_size};
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum DocumentError {
     #[error("the file is not a readable DAT: {0}")]
     Parse(#[from] DatParseError),
@@ -44,6 +45,10 @@ pub enum DocumentError {
     UnknownUse { texture: usize, usage: usize },
     #[error("texture {0} does not decode")]
     Undecodable(usize),
+    #[error(
+        "texture {texture} shares its pixel data with texture {other}, which reads it differently"
+    )]
+    SharedPixels { texture: usize, other: usize },
     #[error(transparent)]
     Palette(#[from] gx_texture::PaletteError),
     #[error("surface {0} is not in the document")]
@@ -141,8 +146,9 @@ pub struct TextureEdit {
     /// What happened to a CI texture's palette on an import; `None` for
     /// other edits and formats.
     pub palette: Option<PaletteOutcome>,
-    /// Texels in the edited region that decode differently from the pixels
-    /// asked for: CMPR's lossy blocks, or colours a CI palette lacks.
+    /// Texels that decode differently from the pixels asked for: CMPR's
+    /// lossy blocks, or colours a CI palette lacks. Counted over the edited
+    /// region, widened for CMPR to the 8x8 tiles it re-encodes whole.
     pub lossy_texels: usize,
     /// The largest difference in any channel (0–255) between an edited texel
     /// and what was asked for: how far from exact the lossy texels are.
@@ -469,8 +475,9 @@ impl TextureDocument {
         &self.file
     }
 
-    /// Whether the file's bytes differ from when it was opened or last
-    /// marked saved. Undoing back to that state clears it.
+    /// Whether edits stand between the file and the state it was opened or
+    /// last marked saved in. Undoing back to that state clears it; painting
+    /// the old pixels back as a new edit does not.
     pub fn is_modified(&self) -> bool {
         self.history.current() != self.history.saved
     }
@@ -523,23 +530,18 @@ impl TextureDocument {
 
     /// Write `bytes` at `data_offset` in both the file and its parse, and
     /// record what was there in `changes`, so an edit is always undoable. An
-    /// unchanged write records nothing; a range outside the data section is
-    /// refused before anything is written.
+    /// unchanged write records nothing; a range outside the data section, or
+    /// over a relocated pointer, is refused before anything is written.
     fn write(
         &mut self,
         changes: &mut Vec<Change>,
         data_offset: usize,
         bytes: &[u8],
     ) -> Result<(), DocumentError> {
-        let range = data_offset..data_offset + bytes.len();
-        let before = self
-            .dat
-            .data
-            .get(range.clone())
-            .ok_or(TexturePatchError::OutOfBounds {
-                data_offset: data_offset as u32,
-            })?
-            .to_vec();
+        let site = u32::try_from(data_offset).map_err(|_| TexturePatchError::OutOfBounds {
+            data_offset: u32::MAX,
+        })?;
+        let before = writable(&self.dat, site, bytes.len())?.to_vec();
         if before == bytes {
             return Ok(());
         }
@@ -607,6 +609,7 @@ impl TextureDocument {
             .descriptors()
             .get(usage)
             .ok_or(DocumentError::UnknownUse { texture, usage })?;
+        self.owns_its_pixels(texture)?;
         let patch = patch_texture(
             &self.dat,
             id.image.0,
@@ -618,6 +621,28 @@ impl TextureDocument {
         self.write(&mut changes, patch.data_offset as usize, &patch.bytes)?;
         self.commit(Some(texture), changes);
         self.edit_report(texture, usage, rgba, dirty, patch)
+    }
+
+    /// Refuse to edit a texture whose pixel data another texture reads with a
+    /// different size or format, or from another offset: writing one would
+    /// change the other with nothing to say so.
+    fn owns_its_pixels(&self, texture: usize) -> Result<(), DocumentError> {
+        let extent = |entry: &DocumentTexture| {
+            let start = u64::from(entry.data_offset);
+            image_data_size(entry.format, entry.width, entry.height)
+                .map(|len| start..start + len as u64)
+        };
+        let Some(own) = extent(self.texture(texture)?) else {
+            return Ok(());
+        };
+        let shared = self.textures.iter().enumerate().find(|&(other, entry)| {
+            other != texture
+                && extent(entry).is_some_and(|range| own.start < range.end && range.start < own.end)
+        });
+        match shared {
+            Some((other, _)) => Err(DocumentError::SharedPixels { texture, other }),
+            None => Ok(()),
+        }
     }
 
     /// Whether [`import`](Self::import) can rebuild `texture`'s palette: it must be CI4 or CI8, drawn through
@@ -690,6 +715,7 @@ impl TextureDocument {
         rgba: &[u8],
     ) -> Result<TextureEdit, DocumentError> {
         let entry = self.texture(texture)?.clone();
+        self.owns_its_pixels(texture)?;
         let tlut = TlutDesc::parse(&self.dat, descriptor).map_err(TexturePatchError::from)?;
         let count = usize::from(tlut.color_count).min(if entry.format == 8 { 16 } else { 256 });
         let (colors, entries) = gx_texture::build_palette(rgba, tlut.format, count)?;
@@ -738,7 +764,26 @@ impl TextureDocument {
         let decoded = self.decode_uses(texture)?;
         let edited = &decoded[usage].1;
         let (mut lossy_texels, mut max_channel_error) = (0, 0u8);
-        for index in texels_in(dirty, entry.width, entry.height) {
+        // CMPR re-encodes every tile the region touches, so texels beside
+        // the painted ones can move too.
+        let measured = match dirty {
+            Some(rect) if entry.format == 14 => {
+                let (x, y) = (rect.x & !7, rect.y & !7);
+                let end = |start: u16, length: u16| {
+                    (u32::from(start) + u32::from(length)).next_multiple_of(8)
+                };
+                let span =
+                    |from: u16, to: u32| u16::try_from(to - u32::from(from)).unwrap_or(u16::MAX);
+                Some(TexelRect {
+                    x,
+                    y,
+                    width: span(x, end(rect.x, rect.width)),
+                    height: span(y, end(rect.y, rect.height)),
+                })
+            }
+            other => other,
+        };
+        for index in texels_in(measured, entry.width, entry.height) {
             let texel = index * 4..index * 4 + 4;
             let error = edited[texel.clone()]
                 .iter()
@@ -1188,6 +1233,59 @@ mod tests {
         });
         assert_eq!(frame.descriptors(), [pair(0x30)]);
         assert_eq!(frame.drawn_as(), [pair(0x10)]);
+    }
+
+    #[test]
+    fn pixel_data_two_textures_read_differently_is_not_edited() {
+        let file = archive();
+        let dat = DatFile::parse(&file).unwrap();
+        let pair = |image, palette| HsdTextureSourceId {
+            image: ImageDescId(image),
+            palette: Some(TlutDescId(palette)),
+        };
+        let mut document = TextureDocument::from_parts(
+            file,
+            dat,
+            [
+                (pair(0, TLUT), PIXELS, 8, 8, 9),
+                (pair(SECOND_IMAGE, SECOND_TLUT), PIXELS, 4, 4, 9),
+            ],
+        );
+        assert_eq!(document.textures().len(), 2);
+
+        for texture in 0..2 {
+            let size = if document.textures()[texture].width == 8 {
+                256
+            } else {
+                64
+            };
+            assert!(matches!(
+                document.apply(texture, 0, &vec![0; size], None),
+                Err(DocumentError::SharedPixels { .. })
+            ));
+            assert!(matches!(
+                document.import(texture, &vec![0; size]),
+                Err(DocumentError::SharedPixels { .. })
+            ));
+        }
+        assert!(!document.is_modified());
+    }
+
+    #[test]
+    fn a_write_over_a_relocated_pointer_is_refused() {
+        // The first image descriptor's data pointer is relocated; a color
+        // write landing on it would leave a file that no longer parses.
+        let mut document = document();
+        let mut changes = Vec::new();
+        assert!(matches!(
+            document.write(&mut changes, 2, &[0xFF; 4]),
+            Err(DocumentError::Patch(TexturePatchError::OverlapsPointer {
+                data_offset: 2,
+                site: 0
+            }))
+        ));
+        assert!(changes.is_empty());
+        assert_eq!(document.bytes(), archive());
     }
 
     #[test]

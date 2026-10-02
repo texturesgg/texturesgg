@@ -9,6 +9,7 @@
 //! ```
 
 use crate::Error;
+use crate::disk::{ReadError, read_capped, write_atomically};
 use dat_parser::DatFile;
 use dat_parser::hsd::scene::HSD_SCENE_MAX_DAT_BYTES;
 use melee_dat::MeleeReferenceCatalog;
@@ -165,17 +166,24 @@ impl Library {
             let file_name = path
                 .file_name()
                 .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-            let bytes = match std::fs::read(path) {
+            let is_zip = has_extension(&file_name, "zip");
+            let limit = if is_zip {
+                MAX_ZIP_DAT_BYTES
+            } else {
+                HSD_SCENE_MAX_DAT_BYTES
+            };
+            let bytes = match read_capped(path, limit as u64) {
                 Ok(bytes) => bytes,
                 Err(error) => {
-                    results.push(Err(Rejected {
-                        file_name,
-                        reason: format!("it couldn't be read ({error})"),
-                    }));
+                    let reason = match error {
+                        ReadError::TooLarge { .. } => error.to_string(),
+                        ReadError::Io(error) => format!("it couldn't be read ({error})"),
+                    };
+                    results.push(Err(Rejected { file_name, reason }));
                     continue;
                 }
             };
-            if has_extension(&file_name, "zip") {
+            if is_zip {
                 match dats_in_zip(&bytes) {
                     Ok(dats) if dats.is_empty() => results.push(Err(Rejected {
                         file_name,
@@ -321,12 +329,26 @@ fn display_name(file_name: &str) -> String {
     }
 }
 
+/// The most a zip may be, and the most its DATs may unpack to: a pack of
+/// every costume in the game is well inside it, and a zip built to exhaust
+/// memory is not.
+const MAX_ZIP_DAT_BYTES: usize = 8 * HSD_SCENE_MAX_DAT_BYTES;
+/// The most entries a zip may list.
+const MAX_ZIP_ENTRIES: usize = 10_000;
+
 /// Every DAT inside a zip archive, by file name, each within the largest
-/// size a Melee file can have.
+/// size a Melee file can have and all of them within [`MAX_ZIP_DAT_BYTES`].
 fn dats_in_zip(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>, String> {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
         .map_err(|error| format!("it isn't a zip the app can open ({error})"))?;
+    if archive.len() > MAX_ZIP_ENTRIES {
+        return Err(format!(
+            "it holds {} files, more than the {MAX_ZIP_ENTRIES} the app reads",
+            archive.len()
+        ));
+    }
     let mut dats = Vec::new();
+    let mut total = 0_usize;
     for index in 0..archive.len() {
         let mut entry = archive
             .by_index(index)
@@ -348,6 +370,13 @@ fn dats_in_zip(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>, String> {
             .read_to_end(&mut data)
             .map_err(|error| format!("{name} couldn't be read ({error})"))?;
         if data.len() <= HSD_SCENE_MAX_DAT_BYTES {
+            total += data.len();
+            if total > MAX_ZIP_DAT_BYTES {
+                return Err(format!(
+                    "its DAT files unpack to more than the {} MB the app reads",
+                    MAX_ZIP_DAT_BYTES / 1_000_000
+                ));
+            }
             dats.push((name, data));
         }
     }
@@ -364,14 +393,6 @@ fn now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs())
-}
-
-/// Write `bytes` beside `path`, then rename it over, so a crash never
-/// leaves a half-written file.
-fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
-    std::fs::write(&temporary, bytes)?;
-    std::fs::rename(&temporary, path)
 }
 
 #[cfg(test)]

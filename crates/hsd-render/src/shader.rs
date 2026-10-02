@@ -218,8 +218,6 @@ fn fragmentMain(input: VertexOutput) -> @location(0) {fragment_output} {{
     )
 }
 
-/// Statements that leave the combined result in `color` and `alpha`. Every
-/// TEV stage clamps to [0, 1] like GX_ENABLE clamping.
 /// GX's alpha test on the fragment's 8-bit alpha (`GXSetAlphaCompare`).
 fn alpha_discard(compare: &HsdAlphaCompare) -> String {
     let term = |function: HsdCompare, reference: u8| {
@@ -249,6 +247,8 @@ fn alpha_discard(compare: &HsdAlphaCompare) -> String {
     )
 }
 
+/// Statements that leave the combined result in `color` and `alpha`. Every
+/// TEV stage clamps to [0, 1] like GX_ENABLE clamping.
 fn tev_fragment_body(material: &PreparedMaterial) -> String {
     let mut lines = Vec::new();
     if material.vertex_color {

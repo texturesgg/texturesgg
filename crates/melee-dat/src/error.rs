@@ -3,6 +3,7 @@
 use dat_parser::hsd::source::HsdSourceError;
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum MeleeError {
     #[error("reference catalog: {0}")]
     Catalog(String),

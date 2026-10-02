@@ -1,6 +1,6 @@
 [package]
 name = "melee-dat"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license.workspace = true
 authors.workspace = true
@@ -16,7 +16,7 @@ description = "Super Smash Bros. Melee on top of dat-parser: fighters, stages, t
 melee-iso = []
 
 [dependencies]
-dat-parser = { version = "0.1.0", path = "../dat-parser" }
+dat-parser = { version = "0.2.0", path = "../dat-parser" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
@@ -24,7 +24,7 @@ thiserror = "2"
 
 [dev-dependencies]
 # The vanilla_files example and the melee-iso tests read a disc image.
-gc-iso = { version = "0.1.0", path = "../gc-iso" }
+gc-iso = { version = "0.2.0", path = "../gc-iso" }
 tempfile = "3"
 
 [lints]

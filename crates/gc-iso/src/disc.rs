@@ -1,6 +1,7 @@
 //! A disc image left on disk and read a file at a time, for callers that
 //! need a few files from a 1.4 GB image without loading all of it.
 
+use crate::fst::find_file;
 use crate::{Error, FstEntry, Result, io, read_disk_fst};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -28,7 +29,8 @@ impl Disc {
     /// Open the image at `path`, reading only its header and file table.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let mut file = File::open(path)?;
-        let mut boot = [0_u8; 0x60];
+        // The title field runs from 0x20 to the end of the 0x400 byte header.
+        let mut boot = [0_u8; 0x400];
         file.seek(SeekFrom::Start(0))?;
         file.read_exact(&mut boot)?;
         let header = DiscHeader {
@@ -53,13 +55,10 @@ impl Disc {
         &self.entries
     }
 
-    /// Read the file called `name`.
+    /// Read the file called `name`: a path from the root
+    /// (`audio/us/main.ssm`), or a bare name when only one file has it.
     pub fn read(&mut self, name: &str) -> Result<Vec<u8>> {
-        let entry = self
-            .entries
-            .iter()
-            .find(|entry| !entry.is_dir && entry.name == name)
-            .ok_or_else(|| Error::FileNotFound(name.into()))?;
+        let entry = find_file(&self.entries, name)?;
         let (offset, size) = (u64::from(entry.offset), entry.size);
         let end = offset
             .checked_add(u64::from(size))

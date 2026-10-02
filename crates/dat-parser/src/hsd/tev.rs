@@ -286,6 +286,7 @@ fn parse_alpha_input(
 }
 
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum HsdTObjTevEvaluationError {
     #[error("custom TObj TEV active mask {active:#010x} has unknown bits {unknown_bits:#010x}")]
     MalformedActiveMask { active: u32, unknown_bits: u32 },

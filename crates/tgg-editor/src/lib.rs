@@ -6,6 +6,7 @@
 //! wasm-clean for the site.
 
 mod costumes;
+mod disk;
 mod editor;
 mod error;
 mod game;

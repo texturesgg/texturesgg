@@ -292,8 +292,6 @@ impl PreparedGeometry {
         })
     }
 
-    /// Copy a new frame's positions, normals, joint positions, and visibility
-    /// into the prepared buffers. Topology must match preparation.
     /// The prepared texture that `HsdScene::textures[scene_texture]` shares,
     /// or `None` when no drawn stage samples it or it did not decode.
     pub fn texture_for_scene_texture(&self, scene_texture: u32) -> Option<usize> {
@@ -302,6 +300,8 @@ impl PreparedGeometry {
             .position(|texture| texture.scene_textures.contains(&scene_texture))
     }
 
+    /// Copy a new frame's positions, normals, joint positions, and visibility
+    /// into the prepared buffers. Topology must match preparation.
     pub fn update_vertices(&mut self, scene: &HsdScene, work: &HsdEvaluatedDrawWork) -> Result<()> {
         let sources = collect_packet_sources(scene, work)?;
         if sources.len() != self.packets.len() {

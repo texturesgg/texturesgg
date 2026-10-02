@@ -188,7 +188,7 @@ pub(crate) fn save(settings: &Settings) {
     let written = path
         .parent()
         .map_or(Ok(()), std::fs::create_dir_all)
-        .and_then(|()| std::fs::write(&path, settings.to_json()));
+        .and_then(|()| crate::disk::write_atomically(&path, settings.to_json().as_bytes()));
     if let Err(error) = written {
         crate::log(&format!(
             "couldn't save settings to {}: {error}",

@@ -96,7 +96,9 @@ impl History {
         let mut json = serde_json::to_string_pretty(history).expect("history serializes");
         json.push('\n');
         std::fs::create_dir_all(&self.root)
-            .and_then(|()| std::fs::write(self.file(&history.path), json))
+            .and_then(|()| {
+                crate::disk::write_atomically(&self.file(&history.path), json.as_bytes())
+            })
             .map_err(Error::HistorySave)
     }
 }

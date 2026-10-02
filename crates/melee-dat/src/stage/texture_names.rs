@@ -8,7 +8,7 @@ use std::collections::HashMap;
 ///
 /// A stock stage DAT exports each image's pixel data as a root symbol,
 /// `Grd<Name>_<FORMAT>_image` (`GrdBattleWall0_C8_image`). The name here is
-/// the part that tells images apart: `BattleWall0`. All 27 unmodified versus
+/// the part that tells images apart: `BattleWall0`. All 29 unmodified versus
 /// stages on a 1.02 disc name every image they draw. A stage rebuilt by a
 /// modding tool may export none, or keep symbols for data it no longer
 /// draws; its images then have no name.

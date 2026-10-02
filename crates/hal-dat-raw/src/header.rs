@@ -48,23 +48,27 @@ impl DatHeader {
         })
     }
 
-    /// Byte offset of the relocation table in the raw file.
+    /// Byte offset of the relocation table in the raw file. Like the other
+    /// table offsets, it saturates where the header's counts would overflow.
     pub fn reloc_table_offset(&self) -> usize {
-        DATA_SECTION_OFFSET + self.data_size as usize
+        DATA_SECTION_OFFSET.saturating_add(self.data_size as usize)
     }
 
     /// Byte offset of the root table in the raw file.
     pub fn root_table_offset(&self) -> usize {
-        self.reloc_table_offset() + self.reloc_count as usize * 4
+        self.reloc_table_offset()
+            .saturating_add((self.reloc_count as usize).saturating_mul(4))
     }
 
     /// Byte offset of the extern table in the raw file.
     pub fn extern_table_offset(&self) -> usize {
-        self.root_table_offset() + self.root_count as usize * 8
+        self.root_table_offset()
+            .saturating_add((self.root_count as usize).saturating_mul(8))
     }
 
     /// Byte offset of the symbol string table.
     pub fn symbol_table_offset(&self) -> usize {
-        self.extern_table_offset() + self.extern_count as usize * 8
+        self.extern_table_offset()
+            .saturating_add((self.extern_count as usize).saturating_mul(8))
     }
 }

@@ -13,6 +13,7 @@ use crate::decode::{
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TextureEncodeError {
     #[error("GX texture format {0} has no encoder")]
     UnsupportedFormat(u32),

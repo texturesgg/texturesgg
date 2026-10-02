@@ -23,6 +23,14 @@ fixed. References are to the Melee decompilation
   `ftPr_Init_UnkMtxFunc0` copies a fighter part's matrix
   (`FtPart_LLegJA`) onto it every frame. The scene renders the hat root in
   its bind pose, so during idle it stays still while the body moves.
+- **Mr. Game & Watch's outline is not drawn.** His fifth visibility table
+  (`ftgamewatch.c` sets `x5AC.xC[4]`) is drawn in two extra passes by
+  `ftDrawCommon_80080E18`; those parts stay hidden here.
+- **A fighter animation that doesn't loop restarts at its end.** The game
+  moves on to another action; the preview plays it again from frame 0
+  (`melee-dat`'s `fighter/playback.rs`).
+- **Textures are sampled without their LOD state.** One mip level, linear
+  minification, no LOD bias or anisotropy (`hsd-render`'s `renderer.rs`).
 - **Emboss bump mapping is not implemented.** BUMP TObjs (`TEX_BUMP`,
   emboss texgen) are left out of the TEV chain so the rest of the material
   renders; all stock Samus costumes carry two such stages.
@@ -73,6 +81,21 @@ fixed. References are to the Melee decompilation
   by quaternion at run time (`JOBJ_USE_QUATERNION`) keeps its Euler pose.
 - **A runtime scale outside the joint tree is not applied.** Flat Zone
   flattens its fighters this way.
+- **The joint lighting flag is ignored.** HSD loads a normal matrix only
+  for a joint with `JOBJ_LIGHTING` (`pobj.c`, `GetSetupFlags`);
+  `hsd/draw/` transforms normals for every joint.
+- **An envelope palette longer than ten entries is refused.** The game
+  loads the first ten (`pobj.c:1138`); `hsd/envelope.rs` returns
+  `PaletteTooLarge`.
+- **The depth compare location is not applied.** `HSD_SetupPEMode` sets
+  ZCompLoc from PEDesc bit 8; the scene carries it and `hsd-render` never
+  reads it, so depth is always tested before texturing.
+- **A light-map TObj is used whatever its texture map id.** The game also
+  requires `tobj->id != GX_TEXMAP_NULL` (`mobj.c:236`).
+- **A material with no color block draws 0.8 grey.** The game reads
+  `mat->diffuse` unconditionally.
+- **PATH tracks in a FigaTree are refused.** On the AnimJoint path they
+  are left out instead (see Stages).
 - **Vertex decode fails silently.** Unreadable indexed attributes leave
   zeros (`gx/vertex.rs`, `GxAttribute::decode_at` returns an empty `Vec`).
 

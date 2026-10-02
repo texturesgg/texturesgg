@@ -1,5 +1,5 @@
 use super::{DatFile, DescriptorParseError, DescriptorReader};
-use crate::gx::{GxAttrName, GxAttrType, GxCompType};
+use crate::gx::{GxAttrName, GxAttrType, GxCompType, GxCompTypeClr};
 
 /// GX exposes a small fixed attribute set; this higher guard prevents corrupt
 /// unterminated arrays from walking the rest of the DAT as descriptors.
@@ -32,13 +32,16 @@ pub mod flags {
 ///   0x08: comp_count (u32) — GXCompCnt (number of components)
 ///   0x0C: comp_type (u32) — GXCompType (UInt8/Int8/UInt16/Int16/Float)
 ///   0x10: scale (u8) — fractional bits (divide decoded value by 2^scale)
-///   0x12: stride (i16) — bytes between elements in the buffer
+///   0x12: stride (u16) — bytes between elements in the buffer
 ///   0x14: buffer_ptr (u32) — pointer to vertex attribute data buffer
 #[derive(Debug, Clone)]
 pub struct GxAttribute {
     pub attr_name: GxAttrName,
     pub attr_type: GxAttrType,
     pub comp_count: u32,
+    /// The component type of a position, normal or texture coordinate. A
+    /// color's is a [`GxCompTypeClr`] in `comp_type_raw`,
+    /// and this is `UInt8`.
     pub comp_type: GxCompType,
     pub scale: u8,
     pub stride: u16,
@@ -55,13 +58,28 @@ impl GxAttribute {
         if attr_name_raw == GxAttrName::Null as u32 {
             return Ok(None); // End of attribute list
         }
-        let attr_name = GxAttrName::from_u32(attr_name_raw);
         let source = source.require_extent(0x18)?;
+        let attr_name = GxAttrName::from_u32(attr_name_raw).ok_or(source.invalid_value(
+            "attr_name",
+            0x00,
+            attr_name_raw,
+        ))?;
 
-        let attr_type = GxAttrType::from_u32(source.u32(0x04)?);
+        let attr_type_raw = source.u32(0x04)?;
+        let attr_type = GxAttrType::from_u32(attr_type_raw).ok_or(source.invalid_value(
+            "attr_type",
+            0x04,
+            attr_type_raw,
+        ))?;
         let comp_count = source.u32(0x08)?;
         let comp_type_raw = source.u32(0x0C)?;
-        let comp_type = GxCompType::from_u32(comp_type_raw);
+        let invalid_comp_type = source.invalid_value("comp_type", 0x0C, comp_type_raw);
+        let comp_type = if matches!(attr_name, GxAttrName::Color0 | GxAttrName::Color1) {
+            GxCompTypeClr::from_u32(comp_type_raw).ok_or(invalid_comp_type)?;
+            GxCompType::UInt8
+        } else {
+            GxCompType::from_u32(comp_type_raw).ok_or(invalid_comp_type)?
+        };
         let scale = source.u8(0x10)?;
         let stride = source.u16(0x12)?;
         let buffer_ptr = source.pointer("buffer", 0x14)?;
@@ -78,15 +96,21 @@ impl GxAttribute {
         }))
     }
 
-    /// Number of float components this attribute decodes to.
+    /// Number of components one entry of this attribute holds, which GX
+    /// takes from the attribute and its component count (`GXSetVtxAttrFmt`),
+    /// never from the stride. Zero for a pair this decoder does not read. A
+    /// normal with binormal and tangent leads with its three normal components.
     pub fn component_count(&self) -> usize {
-        if self.stride == 0 {
-            return 0;
-        }
-        match self.comp_type {
-            GxCompType::UInt8 | GxCompType::Int8 => self.stride as usize,
-            GxCompType::UInt16 | GxCompType::Int16 => self.stride as usize / 2,
-            GxCompType::Float => self.stride as usize / 4,
+        match (self.attr_name, self.comp_count) {
+            // GX_POS_XY, GX_POS_XYZ.
+            (GxAttrName::Position, 0) => 2,
+            (GxAttrName::Position, 1) => 3,
+            // GX_NRM_XYZ, GX_NRM_NBT, GX_NRM_NBT3.
+            (GxAttrName::Normal, 0..=2) => 3,
+            // GX_TEX_S, GX_TEX_ST.
+            (name, 0) if name.is_tex_coord() => 1,
+            (name, 1) if name.is_tex_coord() => 2,
+            _ => 0,
         }
     }
 
@@ -104,24 +128,23 @@ impl GxAttribute {
         else {
             return Vec::new();
         };
-        let size = self.component_count().min(4);
-        let Some(scale_divisor) = 1u32
-            .checked_shl(self.scale as u32)
-            .map(|value| value as f32)
-        else {
-            return Vec::new();
-        };
-
         // Color attributes use a different type space
         if self.attr_name == GxAttrName::Color0 || self.attr_name == GxAttrName::Color1 {
             return self.decode_color_at(dat, data_offset);
         }
 
-        let bytes_per_component = match self.comp_type {
-            GxCompType::UInt8 | GxCompType::Int8 => 1,
-            GxCompType::UInt16 | GxCompType::Int16 => 2,
-            GxCompType::Float => 4,
+        let size = self.component_count();
+        // GX applies the fraction to integer components only.
+        let scale_divisor = if self.comp_type == GxCompType::Float {
+            1.0
+        } else {
+            match 1u32.checked_shl(self.scale as u32) {
+                Some(value) => value as f32,
+                None => return Vec::new(),
+            }
         };
+
+        let bytes_per_component = self.comp_type.byte_len();
         let Some(byte_len) = size.checked_mul(bytes_per_component) else {
             return Vec::new();
         };
@@ -289,6 +312,7 @@ pub struct EnvelopeEntry {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum EnvelopeParseError {
     #[error(transparent)]
     Descriptor(#[from] DescriptorParseError),
@@ -529,10 +553,57 @@ mod tests {
 
         let mut unknown_name = vec![0; 0x18];
         unknown_name[0..4].copy_from_slice(&0xFEu32.to_be_bytes());
-        let attribute = GxAttribute::parse(&dat_with_data(unknown_name), 0)
-            .unwrap()
-            .expect("only the exact GX_VA_NULL value terminates the array");
-        assert_eq!(attribute.attr_name, GxAttrName::Null);
+        // Only the exact GX_VA_NULL value ends the array; a name GX does not
+        // define is not skipped, because nothing says how many bytes it reads.
+        assert_eq!(
+            GxAttribute::parse(&dat_with_data(unknown_name), 0).unwrap_err(),
+            DescriptorParseError::InvalidValue {
+                descriptor: "GxAttribute",
+                field: "attr_name",
+                field_offset: 0,
+                value: 0xFE,
+            }
+        );
+
+        for (relative, field, value) in [(0x04, "attr_type", 4u32), (0x0C, "comp_type", 5)] {
+            let mut data = vec![0; 0x18];
+            data[0..4].copy_from_slice(&9u32.to_be_bytes());
+            data[relative..relative + 4].copy_from_slice(&value.to_be_bytes());
+            assert_eq!(
+                GxAttribute::parse(&dat_with_data(data), 0).unwrap_err(),
+                DescriptorParseError::InvalidValue {
+                    descriptor: "GxAttribute",
+                    field,
+                    field_offset: relative as u32,
+                    value,
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn an_entry_is_as_many_components_as_gx_reads_whatever_the_stride() {
+        // Two XYZ float positions spaced 16 bytes apart, with a fraction GX
+        // ignores for floats.
+        let mut data = vec![0; 32];
+        for (index, value) in [1.0f32, 2.0, 3.0, 9.0, 4.0, 5.0, 6.0]
+            .into_iter()
+            .enumerate()
+        {
+            data[index * 4..index * 4 + 4].copy_from_slice(&value.to_be_bytes());
+        }
+        let dat = dat_with_data(data);
+        let position = GxAttribute {
+            comp_type: GxCompType::Float,
+            comp_type_raw: 4,
+            ..attribute(16, 4, 0)
+        };
+        assert_eq!(position.decode_at(&dat, 0), [1.0, 2.0, 3.0]);
+        assert_eq!(position.decode_at(&dat, 1), [4.0, 5.0, 6.0]);
+
+        // An integer component is divided by two to the fraction.
+        let dat = dat_with_data(vec![8, 16, 24, 0]);
+        assert_eq!(attribute(3, 3, 0).decode_at(&dat, 0), [1.0, 2.0, 3.0]);
     }
 
     #[test]
@@ -748,14 +819,6 @@ mod tests {
                 offset: 0x20,
             })
         );
-    }
-
-    #[test]
-    fn attribute_decode_caps_stride_derived_component_work() {
-        let dat = dat_with_data(vec![0; 70_000]);
-        let decoded = attribute(u16::MAX, 0, 4).decode_at(&dat, 0);
-
-        assert_eq!(decoded.len(), 4);
     }
 
     #[test]

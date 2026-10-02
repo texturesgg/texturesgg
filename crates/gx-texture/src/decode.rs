@@ -3,6 +3,11 @@
 //! All formats decode to RGBA8 (4 bytes per pixel, in R, G, B, A order).
 //! Channel expansion and CMPR blending follow Dolphin's `TextureDecoder_Generic.cpp`
 //! (`Convert*To8`, `DecodeDXTBlock`), which the encoders invert.
+//!
+//! The walk over each format's tiles is adapted from libWiiSharp
+//! (Copyright (C) 2009 Leathl, GPL-3.0-or-later), as carried in HSDLib's
+//! `GXImageConverter`. It was ported to Rust, its per-texel math replaced with
+//! Dolphin's, and its early return for images narrower than a tile removed.
 
 /// Decode GX texel data to row-major RGBA8 (`width * height * 4` bytes).
 ///
@@ -93,8 +98,12 @@ pub fn image_data_size(format: u32, width: u16, height: u16) -> Option<usize> {
 }
 
 /// Decode `color_count` big-endian TLUT entries of `format` to RGBA8, or
-/// `None` when `raw` is too short.
+/// `None` when `raw` is too short or `format` is not IA8 (0), RGB565 (1) or
+/// RGB5A3 (2).
 pub fn decode_palette(raw: &[u8], format: u32, color_count: u16) -> Option<Vec<[u8; 4]>> {
+    if format > 2 {
+        return None;
+    }
     let raw = raw.get(..usize::from(color_count) * 2)?;
     Some(
         raw.as_chunks::<2>()
@@ -525,6 +534,7 @@ mod tests {
         assert_eq!(image_data_size(10, 8, 8), None);
         assert_eq!(image_data_size(14, 12, 4), Some(64));
         assert_eq!(decode_palette(&[0; 3], 1, 2), None);
+        assert_eq!(decode_palette(&[0; 2], 3, 1), None);
         assert_eq!(
             decode_palette(&[0x80, 0x40, 0xF8, 0x00], 0, 1),
             Some(vec![[0x40, 0x40, 0x40, 0x80]])

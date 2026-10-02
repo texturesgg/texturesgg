@@ -15,8 +15,7 @@
 //! decoded material-stage state and skinning inputs without selecting a renderer
 //! projection. It intentionally does not choose a GPU API, bake transforms,
 //! collapse texture stages, or merge geometry. The
-//! original [`crate::DatFile`] remains canonical; this is not the future round-trip
-//! editing model.
+//! original [`crate::DatFile`] remains canonical; nothing here writes it back.
 
 mod build;
 pub(crate) mod discovery;
@@ -379,6 +378,7 @@ pub struct HsdPaletteSource {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum HsdSceneError {
     #[error("HSD scene exceeds the {resource} budget of {limit}")]
     LimitExceeded {
@@ -403,6 +403,13 @@ pub enum HsdSceneError {
 
     #[error(transparent)]
     Descriptor(#[from] DescriptorParseError),
+
+    #[error("PObj {polygon:#010x} has a display list that cannot be read: {error}")]
+    DisplayList {
+        polygon: u32,
+        #[source]
+        error: crate::gx::display_list::DisplayListError,
+    },
 
     #[error(transparent)]
     ExternalFixup(#[from] crate::DatExternError),

@@ -74,5 +74,11 @@ GPL-3.0-or-later. See [`LICENSE`](LICENSE). The bundled fonts are under the SIL
 Open Font License; their license files sit beside them in
 `crates/tgg-ui/assets/fonts/`.
 
+Parts of this work build on others': `gx-texture` follows Dolphin's texture
+decoder and adapts its tile walk from libWiiSharp (see its README), and the
+structure tables in `docs/hal_dat/` derive from MKWiiki (see that folder's
+README). What the game does was learned from the
+[Melee decompilation](https://github.com/doldecomp/melee).
+
 Super Smash Bros. Melee is Nintendo's and HAL Laboratory's. This project is not
 affiliated with either.

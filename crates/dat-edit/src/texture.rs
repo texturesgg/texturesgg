@@ -8,6 +8,7 @@ use gx_texture::{TexelRect, TextureEncodeError, encode_texture_over, image_data_
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TexturePatchError {
     #[error(transparent)]
     Descriptor(#[from] DescriptorParseError),
@@ -17,9 +18,17 @@ pub enum TexturePatchError {
     NoPaletteData { descriptor: u32 },
     #[error("image descriptor {descriptor:#x} is mipmapped; mip chains cannot be patched yet")]
     Mipmapped { descriptor: u32 },
-    #[error("texture data at {data_offset:#x} runs past the data section")]
+    #[error(
+        "palette descriptor {descriptor:#x} holds {capacity} colors, fewer than the {colors} to write"
+    )]
+    PaletteTooLarge {
+        descriptor: u32,
+        colors: usize,
+        capacity: usize,
+    },
+    #[error("the data at {data_offset:#x} runs past the data section")]
     OutOfBounds { data_offset: u32 },
-    #[error("texture data at {data_offset:#x} overlaps the pointer field at {site:#x}")]
+    #[error("the data at {data_offset:#x} overlaps the pointer field at {site:#x}")]
     OverlapsPointer { data_offset: u32, site: u32 },
     #[error(transparent)]
     Encode(#[from] TextureEncodeError),
@@ -30,9 +39,8 @@ pub enum TexturePatchError {
 pub struct TexturePatch {
     /// Data-section offset of the texture's pixel data.
     pub data_offset: u32,
-    /// The texture's encoded pixel data after the edit, `byte_len` bytes.
+    /// The texture's encoded pixel data after the edit.
     pub bytes: Vec<u8>,
-    pub byte_len: usize,
     pub blocks: usize,
     pub changed_blocks: usize,
 }
@@ -47,8 +55,8 @@ pub struct TexturePatch {
 /// Only storage blocks whose pixels change are re-encoded, and with `dirty`
 /// only the blocks it overlaps are considered (see [`encode_texture_over`]).
 /// Every TObj or material animation sharing the image data sees the edit
-/// once the bytes are written. The patch is refused when its range isn't
-/// safe to overwrite (see [`writable`]).
+/// once the bytes are written. The patch is refused when its range runs
+/// past the data section or covers a relocated pointer.
 pub fn patch_texture(
     dat: &DatFile,
     image: u32,
@@ -86,7 +94,6 @@ pub fn patch_texture(
     Ok(TexturePatch {
         data_offset,
         bytes: overwrite.bytes,
-        byte_len,
         blocks: overwrite.blocks,
         changed_blocks: overwrite.changed_blocks,
     })
@@ -97,7 +104,7 @@ pub fn patch_texture(
 /// described at data-section offset `descriptor`: its data-section offset,
 /// once checked safe to overwrite. Nothing is written; every image drawn
 /// through the palette sees the change once the entries are.
-pub fn patch_palette(
+pub(crate) fn patch_palette(
     dat: &DatFile,
     descriptor: u32,
     entries: &[u8],
@@ -107,7 +114,11 @@ pub fn patch_palette(
         .data_ptr
         .ok_or(TexturePatchError::NoPaletteData { descriptor })?;
     if entries.len() > usize::from(tlut.color_count) * 2 {
-        return Err(TexturePatchError::NoPaletteData { descriptor });
+        return Err(TexturePatchError::PaletteTooLarge {
+            descriptor,
+            colors: entries.len() / 2,
+            capacity: usize::from(tlut.color_count),
+        });
     }
     writable(dat, data_offset, entries.len())?;
     Ok(data_offset)
@@ -117,7 +128,11 @@ pub fn patch_palette(
 /// overwrite: inside the data section, and holding no relocated pointer
 /// (that would mean a wrong descriptor, and overwriting it would corrupt the
 /// pointer).
-fn writable(dat: &DatFile, data_offset: u32, len: usize) -> Result<&[u8], TexturePatchError> {
+pub(crate) fn writable(
+    dat: &DatFile,
+    data_offset: u32,
+    len: usize,
+) -> Result<&[u8], TexturePatchError> {
     let original = dat
         .data_slice(data_offset, len)
         .ok_or(TexturePatchError::OutOfBounds { data_offset })?;
@@ -169,7 +184,7 @@ mod tests {
     fn patched(file: &[u8], patch: &TexturePatch) -> Vec<u8> {
         let mut file = file.to_vec();
         let start = DATA_SECTION_OFFSET + patch.data_offset as usize;
-        file[start..start + patch.byte_len].copy_from_slice(&patch.bytes);
+        file[start..start + patch.bytes.len()].copy_from_slice(&patch.bytes);
         file
     }
 
@@ -198,7 +213,7 @@ mod tests {
         assert_eq!(
             (
                 patch.data_offset,
-                patch.byte_len,
+                patch.bytes.len(),
                 patch.blocks,
                 patch.changed_blocks
             ),

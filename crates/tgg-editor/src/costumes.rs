@@ -60,8 +60,6 @@ pub(crate) fn roster<'a>(files: impl IntoIterator<Item = &'a str>) -> Vec<Fighte
         .collect()
 }
 
-/// Where a skin goes, in the player's words: "Falco · Red", "Final
-/// Destination", or "no slot" when its file doesn't say.
 /// Whether two slots are costumes of the same fighter, or the same stage.
 pub(crate) fn same_owner(slot: &str, other: &str) -> bool {
     match (parse_filename(slot), parse_filename(other)) {
@@ -91,6 +89,8 @@ pub(crate) fn slot_color(slot: &str) -> Option<&'static str> {
     }
 }
 
+/// Where a skin goes, in the player's words: "Falco · Red", "Final
+/// Destination", or "no slot" when its file doesn't say.
 pub(crate) fn slot_label(slot: Option<&str>) -> String {
     match slot.and_then(parse_filename) {
         Some(ParsedFilename::Character {

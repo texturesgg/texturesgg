@@ -38,6 +38,7 @@ impl Default for HsdJointPoseLimits {
 }
 
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum HsdJointPoseError {
     #[error("joint pose exceeds the {resource} budget of {limit}")]
     ResourceLimit {

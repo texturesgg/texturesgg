@@ -17,14 +17,14 @@ pub struct RawVertex {
     /// Direct color 0 (RGBA bytes), if attribute is DIRECT.
     pub color0: Option<[u8; 4]>,
     /// Where the display list holds that color: the data-section offset of
-    /// its bytes, in the attribute's component format. `None` when the list
-    /// ended before the whole color.
+    /// its bytes, in the attribute's component format.
     pub color0_offset: Option<u32>,
     /// Direct color 1 (RGBA bytes), if attribute is DIRECT.
     pub color1: Option<[u8; 4]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum DisplayListLimitExceeded {
     #[error("GX display list exceeds the vertex budget of {limit}")]
     Vertices { limit: usize },
@@ -34,39 +34,50 @@ pub enum DisplayListLimitExceeded {
     VertexAttributeDecodes { limit: usize },
 }
 
-/// Parse all primitive groups from a display list buffer.
+/// Why a display list was not read. Offsets are into the data section.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
+pub enum DisplayListError {
+    #[error(transparent)]
+    Limit(#[from] DisplayListLimitExceeded),
+    #[error("GX display list at {offset:#010x} runs past the data section")]
+    OutOfBounds { offset: u32 },
+    #[error("GX display list byte {opcode:#04x} at {offset:#010x} is not a draw command")]
+    UnknownOpcode { offset: u32, opcode: u8 },
+    #[error("GX display list ends inside the primitive group at {offset:#010x}")]
+    Truncated { offset: u32 },
+    #[error("vertex attribute {name:?} is direct; only colors and matrix indices are read direct")]
+    UnsupportedDirectAttribute { name: GxAttrName },
+    #[error("direct color component format {format} is not a GX color format")]
+    UnknownColorFormat { format: u32 },
+}
+
+/// How much one call may expand a display list into.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DisplayListLimits {
+    pub vertices: usize,
+    pub primitive_groups: usize,
+    pub vertex_attribute_decodes: usize,
+}
+
+/// Parse the primitive groups of a display list, within `limits`.
+///
+/// The list is a run of draw commands padded with NOPs (`pobj.c` hands it to
+/// `GXCallDisplayList` whole). Anything else in it, or a vertex layout this
+/// reader does not cover, is an error: skipping a byte would misread every
+/// vertex after it.
 pub fn parse_display_list(
     dat: &DatFile,
     dl_offset: u32,
     dl_size: usize,
     attributes: &[GxAttribute],
-) -> Vec<PrimitiveGroup> {
-    parse_display_list_limited(
-        dat,
-        dl_offset,
-        dl_size,
-        attributes,
-        usize::MAX,
-        usize::MAX,
-        usize::MAX,
-    )
-    .unwrap_or_default()
-}
-
-/// Parse primitive groups while bounding attacker-controlled vertex expansion.
-pub fn parse_display_list_limited(
-    dat: &DatFile,
-    dl_offset: u32,
-    dl_size: usize,
-    attributes: &[GxAttribute],
-    max_vertices: usize,
-    max_primitive_groups: usize,
-    max_vertex_attribute_decodes: usize,
-) -> Result<Vec<PrimitiveGroup>, DisplayListLimitExceeded> {
-    let dl_data = match dat.data_slice(dl_offset, dl_size) {
-        Some(data) => data,
-        None => return Ok(Vec::new()),
-    };
+    limits: DisplayListLimits,
+) -> Result<Vec<PrimitiveGroup>, DisplayListError> {
+    let dl_data = dat
+        .data_slice(dl_offset, dl_size)
+        .ok_or(DisplayListError::OutOfBounds { offset: dl_offset })?;
+    // `data_slice` checked the whole range, so an offset into it fits a u32.
+    let at = |pos: usize| dl_offset + pos as u32;
 
     let mut groups = Vec::new();
     let mut total_vertices = 0usize;
@@ -74,45 +85,51 @@ pub fn parse_display_list_limited(
     let mut pos = 0usize;
 
     while pos < dl_data.len() {
+        let group_start = pos;
         let opcode = dl_data[pos];
         pos += 1;
 
         if opcode == 0 {
-            // NOP / end of display list
+            // GX_NOP pads the list to its 32-byte length.
             continue;
         }
 
-        let prim_type = match GxPrimitiveType::from_byte(opcode) {
-            Some(pt) => pt,
-            None => continue, // Skip unknown opcodes
+        let prim_type =
+            GxPrimitiveType::from_byte(opcode).ok_or(DisplayListError::UnknownOpcode {
+                offset: at(group_start),
+                opcode,
+            })?;
+        let truncated = DisplayListError::Truncated {
+            offset: at(group_start),
         };
 
-        if pos + 2 > dl_data.len() {
-            break;
-        }
-        let vertex_count = u16::from_be_bytes([dl_data[pos], dl_data[pos + 1]]) as usize;
+        let vertex_count = dl_data
+            .get(pos..pos + 2)
+            .map(|count| usize::from(u16::from_be_bytes([count[0], count[1]])))
+            .ok_or(truncated)?;
         pos += 2;
-        if groups.len() >= max_primitive_groups {
+        if groups.len() >= limits.primitive_groups {
             return Err(DisplayListLimitExceeded::PrimitiveGroups {
-                limit: max_primitive_groups,
-            });
+                limit: limits.primitive_groups,
+            }
+            .into());
         }
         total_vertices = total_vertices
             .checked_add(vertex_count)
-            .filter(|total| *total <= max_vertices)
+            .filter(|total| *total <= limits.vertices)
             .ok_or(DisplayListLimitExceeded::Vertices {
-                limit: max_vertices,
+                limit: limits.vertices,
             })?;
         let attribute_decodes = vertex_count.checked_mul(attributes.len()).ok_or(
             DisplayListLimitExceeded::VertexAttributeDecodes {
-                limit: max_vertex_attribute_decodes,
+                limit: limits.vertex_attribute_decodes,
             },
         )?;
         total_vertex_attribute_decodes = total_vertex_attribute_decodes
             .checked_add(attribute_decodes)
-            .filter(|total| *total <= max_vertex_attribute_decodes)
+            .filter(|total| *total <= limits.vertex_attribute_decodes)
             .ok_or(DisplayListLimitExceeded::VertexAttributeDecodes {
-                limit: max_vertex_attribute_decodes,
+                limit: limits.vertex_attribute_decodes,
             })?;
 
         let mut vertices = Vec::with_capacity(vertex_count);
@@ -129,40 +146,38 @@ pub fn parse_display_list_limited(
                 }
 
                 match attr.attr_type {
-                    GxAttrType::Direct => {
-                        if attr.attr_name == GxAttrName::Color0
-                            || attr.attr_name == GxAttrName::Color1
-                        {
-                            // Read direct color from display list stream
+                    GxAttrType::Direct => match attr.attr_name {
+                        GxAttrName::Color0 | GxAttrName::Color1 => {
+                            let format = GxCompTypeClr::from_u32(attr.comp_type_raw).ok_or(
+                                DisplayListError::UnknownColorFormat {
+                                    format: attr.comp_type_raw,
+                                },
+                            )?;
                             let start = pos;
-                            let clr = read_direct_color(dl_data, &mut pos, attr.comp_type_raw);
+                            let color =
+                                read_direct_color(dl_data, &mut pos, format).ok_or(truncated)?;
                             if attr.attr_name == GxAttrName::Color0 {
-                                color0 = Some(clr);
-                                let whole = GxCompTypeClr::from_u32(attr.comp_type_raw)
-                                    .is_some_and(|format| pos - start == format.byte_len());
-                                color0_offset = whole.then(|| dl_offset + start as u32);
+                                color0 = Some(color);
+                                color0_offset = Some(at(start));
                             } else {
-                                color1 = Some(clr);
-                            }
-                        } else {
-                            // Direct non-color: single byte (matrix indices etc.)
-                            if pos < dl_data.len() {
-                                indices[i] = dl_data[pos] as u16;
-                                pos += 1;
+                                color1 = Some(color);
                             }
                         }
-                    }
-                    GxAttrType::Index8 => {
-                        if pos < dl_data.len() {
-                            indices[i] = dl_data[pos] as u16;
+                        // A direct matrix index is one byte.
+                        name if name.is_matrix_index() => {
+                            indices[i] = u16::from(*dl_data.get(pos).ok_or(truncated)?);
                             pos += 1;
                         }
+                        name => return Err(DisplayListError::UnsupportedDirectAttribute { name }),
+                    },
+                    GxAttrType::Index8 => {
+                        indices[i] = u16::from(*dl_data.get(pos).ok_or(truncated)?);
+                        pos += 1;
                     }
                     GxAttrType::Index16 => {
-                        if pos + 2 <= dl_data.len() {
-                            indices[i] = u16::from_be_bytes([dl_data[pos], dl_data[pos + 1]]);
-                            pos += 2;
-                        }
+                        let index = dl_data.get(pos..pos + 2).ok_or(truncated)?;
+                        indices[i] = u16::from_be_bytes([index[0], index[1]]);
+                        pos += 2;
                     }
                     GxAttrType::None => {}
                 }
@@ -214,73 +229,45 @@ pub fn encode_direct_color(format: GxCompTypeClr, rgba: [u8; 4]) -> Vec<u8> {
 /// The color `bytes` hold in a direct color attribute's component format;
 /// `None` when there are too few bytes for one.
 pub fn decode_direct_color(format: GxCompTypeClr, bytes: &[u8]) -> Option<[u8; 4]> {
-    let mut pos = 0;
-    let color = read_direct_color(bytes, &mut pos, format as u32);
-    (pos == format.byte_len()).then_some(color)
+    read_direct_color(bytes, &mut 0, format)
 }
 
-/// Read a direct GX color value from the display list stream.
-fn read_direct_color(data: &[u8], pos: &mut usize, comp_type_raw: u32) -> [u8; 4] {
-    let mut clr = [255u8; 4];
-
-    match GxCompTypeClr::from_u32(comp_type_raw) {
-        Some(GxCompTypeClr::Rgb565) => {
-            if *pos + 2 <= data.len() {
-                let b = u16::from_be_bytes([data[*pos], data[*pos + 1]]);
-                *pos += 2;
-                clr[0] = (((b >> 11) & 0x1F) << 3) as u8;
-                clr[1] = (((b >> 5) & 0x3F) << 2) as u8;
-                clr[2] = ((b & 0x1F) << 3) as u8;
-                clr[3] = 255;
-            }
+/// Read a direct GX color from the display list stream and step past it;
+/// `None`, with `pos` unmoved, when the stream ends inside it.
+fn read_direct_color(data: &[u8], pos: &mut usize, format: GxCompTypeClr) -> Option<[u8; 4]> {
+    let bytes = data.get(*pos..pos.checked_add(format.byte_len())?)?;
+    *pos += bytes.len();
+    Some(match format {
+        GxCompTypeClr::Rgb565 => {
+            let b = u16::from_be_bytes([bytes[0], bytes[1]]);
+            [
+                (((b >> 11) & 0x1F) << 3) as u8,
+                (((b >> 5) & 0x3F) << 2) as u8,
+                ((b & 0x1F) << 3) as u8,
+                255,
+            ]
         }
-        Some(GxCompTypeClr::Rgb8) => {
-            if *pos + 3 <= data.len() {
-                clr[0] = data[*pos];
-                clr[1] = data[*pos + 1];
-                clr[2] = data[*pos + 2];
-                clr[3] = 255;
-                *pos += 3;
-            }
+        GxCompTypeClr::Rgb8 => [bytes[0], bytes[1], bytes[2], 255],
+        GxCompTypeClr::Rgbx8 | GxCompTypeClr::Rgba8 => [bytes[0], bytes[1], bytes[2], bytes[3]],
+        GxCompTypeClr::Rgba4 => {
+            let b = u16::from_be_bytes([bytes[0], bytes[1]]);
+            [
+                (((b >> 12) & 0xF) * 17) as u8,
+                (((b >> 8) & 0xF) * 17) as u8,
+                (((b >> 4) & 0xF) * 17) as u8,
+                ((b & 0xF) * 17) as u8,
+            ]
         }
-        Some(GxCompTypeClr::Rgbx8) | Some(GxCompTypeClr::Rgba8) => {
-            if *pos + 4 <= data.len() {
-                clr[0] = data[*pos];
-                clr[1] = data[*pos + 1];
-                clr[2] = data[*pos + 2];
-                clr[3] = data[*pos + 3];
-                *pos += 4;
-            }
+        GxCompTypeClr::Rgba6 => {
+            let p = u32::from(bytes[0]) << 16 | u32::from(bytes[1]) << 8 | u32::from(bytes[2]);
+            [
+                (((p >> 18) & 0x3F) << 2) as u8,
+                (((p >> 12) & 0x3F) << 2) as u8,
+                (((p >> 6) & 0x3F) << 2) as u8,
+                ((p & 0x3F) << 2) as u8,
+            ]
         }
-        Some(GxCompTypeClr::Rgba4) => {
-            if *pos + 2 <= data.len() {
-                let b = u16::from_be_bytes([data[*pos], data[*pos + 1]]);
-                *pos += 2;
-                clr[0] = (((b >> 12) & 0xF) * 17) as u8;
-                clr[1] = (((b >> 8) & 0xF) * 17) as u8;
-                clr[2] = (((b >> 4) & 0xF) * 17) as u8;
-                clr[3] = ((b & 0xF) * 17) as u8;
-            }
-        }
-        Some(GxCompTypeClr::Rgba6) => {
-            if *pos + 3 <= data.len() {
-                let p = (data[*pos] as u32) << 16
-                    | (data[*pos + 1] as u32) << 8
-                    | data[*pos + 2] as u32;
-                *pos += 3;
-                clr[0] = (((p >> 18) & 0x3F) << 2) as u8;
-                clr[1] = (((p >> 12) & 0x3F) << 2) as u8;
-                clr[2] = (((p >> 6) & 0x3F) << 2) as u8;
-                clr[3] = ((p & 0x3F) << 2) as u8;
-            }
-        }
-        None => {
-            // Unknown color format, skip a byte
-            *pos += 1;
-        }
-    }
-
-    clr
+    })
 }
 
 #[cfg(test)]
@@ -296,8 +283,8 @@ mod tests {
         let dat = dat_with_data(vec![0, 0x90, 0xFF, 0xFF]);
 
         assert_eq!(
-            parse_display_list_limited(&dat, 1, 3, &[], 10, 10, 10).unwrap_err(),
-            DisplayListLimitExceeded::Vertices { limit: 10 }
+            parse_display_list(&dat, 1, 3, &[], limits(10, 10, 10)).unwrap_err(),
+            DisplayListLimitExceeded::Vertices { limit: 10 }.into()
         );
     }
 
@@ -306,8 +293,8 @@ mod tests {
         let dat = dat_with_data(vec![0, 0x90, 0, 0, 0x90, 0, 0]);
 
         assert_eq!(
-            parse_display_list_limited(&dat, 1, 6, &[], 10, 1, 10).unwrap_err(),
-            DisplayListLimitExceeded::PrimitiveGroups { limit: 1 }
+            parse_display_list(&dat, 1, 6, &[], limits(10, 1, 10)).unwrap_err(),
+            DisplayListLimitExceeded::PrimitiveGroups { limit: 1 }.into()
         );
     }
 
@@ -326,10 +313,87 @@ mod tests {
         }];
 
         assert_eq!(
-            parse_display_list_limited(&dat, 1, 3, &attributes, 10, 10, 1).unwrap_err(),
-            DisplayListLimitExceeded::VertexAttributeDecodes { limit: 1 }
+            parse_display_list(&dat, 1, 3, &attributes, limits(10, 10, 1)).unwrap_err(),
+            DisplayListLimitExceeded::VertexAttributeDecodes { limit: 1 }.into()
         );
     }
+
+    #[test]
+    fn a_list_it_cannot_read_exactly_is_an_error_not_a_guess() {
+        let position = |attr_type| GxAttribute {
+            attr_name: GxAttrName::Position,
+            attr_type,
+            comp_count: 1,
+            comp_type: super::super::GxCompType::Float,
+            scale: 0,
+            stride: 12,
+            buffer_ptr: Some(0),
+            comp_type_raw: 4,
+        };
+        let parse = |data: Vec<u8>, attributes: &[GxAttribute]| {
+            let size = data.len();
+            parse_display_list(
+                &dat_with_data(data),
+                0,
+                size,
+                attributes,
+                limits(10, 10, 10),
+            )
+        };
+
+        // A byte that is neither a NOP nor a draw command.
+        assert_eq!(
+            parse(vec![0, 0x61, 0, 0], &[]).unwrap_err(),
+            DisplayListError::UnknownOpcode {
+                offset: 1,
+                opcode: 0x61
+            }
+        );
+        // A group that ends before its count, and one that ends before its
+        // last vertex.
+        assert_eq!(
+            parse(vec![0x90, 0], &[]).unwrap_err(),
+            DisplayListError::Truncated { offset: 0 }
+        );
+        assert_eq!(
+            parse(vec![0x90, 0, 2, 7], &[position(GxAttrType::Index8)]).unwrap_err(),
+            DisplayListError::Truncated { offset: 0 }
+        );
+        // A direct position is twelve bytes this reader has nowhere to put.
+        assert_eq!(
+            parse(
+                vec![0x90, 0, 1, 0, 0, 0, 0],
+                &[position(GxAttrType::Direct)]
+            )
+            .unwrap_err(),
+            DisplayListError::UnsupportedDirectAttribute {
+                name: GxAttrName::Position
+            }
+        );
+        assert_eq!(
+            parse(vec![0x90, 0, 1, 0], &[direct_color(6)]).unwrap_err(),
+            DisplayListError::UnknownColorFormat { format: 6 }
+        );
+        // A list outside the data section.
+        assert_eq!(
+            parse_display_list(&dat_with_data(vec![0; 4]), 2, 4, &[], limits(10, 10, 10))
+                .unwrap_err(),
+            DisplayListError::OutOfBounds { offset: 2 }
+        );
+    }
+
+    fn limits(
+        vertices: usize,
+        primitive_groups: usize,
+        vertex_attribute_decodes: usize,
+    ) -> DisplayListLimits {
+        DisplayListLimits {
+            vertices,
+            primitive_groups,
+            vertex_attribute_decodes,
+        }
+    }
+
     fn direct_color(format: u32) -> GxAttribute {
         GxAttribute {
             attr_name: GxAttrName::Color0,
@@ -347,15 +411,12 @@ mod tests {
     fn direct_colors_record_where_the_display_list_holds_them() {
         // Pokemon Stadium's platform green, 0x670C, then its arrow yellow.
         let dat = dat_with_data(vec![0xAA, 0x90, 0, 2, 0x67, 0x0C, 0xFF, 0xE6]);
-        let groups = parse_display_list(&dat, 1, 7, &[direct_color(0)]);
+        let groups =
+            parse_display_list(&dat, 1, 7, &[direct_color(0)], limits(10, 10, 10)).unwrap();
         let vertices = &groups[0].vertices;
         assert_eq!(vertices[0].color0, Some([96, 224, 96, 255]));
         assert_eq!(vertices[0].color0_offset, Some(4));
         assert_eq!(vertices[1].color0_offset, Some(6));
-
-        // A list that ends inside a color has no place to write one.
-        let groups = parse_display_list(&dat, 1, 6, &[direct_color(0)]);
-        assert_eq!(groups[0].vertices[1].color0_offset, None);
     }
 
     #[test]
@@ -370,9 +431,7 @@ mod tests {
             ] {
                 let bytes = encode_direct_color(kind, rgba);
                 assert_eq!(bytes.len(), kind.byte_len());
-                let mut pos = 0;
-                let read = read_direct_color(&bytes, &mut pos, format);
-                assert_eq!(pos, bytes.len());
+                let read = decode_direct_color(kind, &bytes).unwrap();
                 // What was read encodes to the same bytes: it is a color the
                 // format holds exactly.
                 assert_eq!(encode_direct_color(kind, read), bytes, "{kind:?} {rgba:?}");

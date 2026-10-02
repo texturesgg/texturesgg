@@ -18,13 +18,13 @@ pub struct RootNode {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RootTableError {
+pub(crate) enum RootTableError {
     InvalidLayout,
     SymbolBudget,
 }
 
 /// Parse one root/extern table while bounding copied symbol bytes.
-pub fn parse_root_table(
+pub(crate) fn parse_root_table(
     raw: &[u8],
     root_table_offset: usize,
     symbol_table_offset: usize,
@@ -32,7 +32,8 @@ pub fn parse_root_table(
     max_symbol_bytes: usize,
 ) -> Result<Vec<RootNode>, RootTableError> {
     let mut reader = Reader::new(raw);
-    let mut roots = Vec::with_capacity(count as usize);
+    // Each entry is eight bytes of the input, so the input bounds the allocation.
+    let mut roots = Vec::with_capacity((count as usize).min(raw.len() / 8));
     let mut symbol_bytes = 0usize;
 
     for i in 0..count as usize {
@@ -67,7 +68,7 @@ pub fn parse_root_table(
 ///
 /// Unlike a public root's first word, an extern entry's first word names the head
 /// pointer-field site of a fixup chain.
-pub fn parse_extern_table(
+pub(crate) fn parse_extern_table(
     raw: &[u8],
     extern_table_offset: usize,
     symbol_table_offset: usize,

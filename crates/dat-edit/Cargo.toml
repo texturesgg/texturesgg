@@ -1,6 +1,6 @@
 [package]
 name = "dat-edit"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license.workspace = true
 authors.workspace = true
@@ -11,8 +11,8 @@ categories = ["game-development"]
 description = "In-place edits to HSD DAT archives"
 
 [dependencies]
-dat-parser = { version = "0.1.0", path = "../dat-parser" }
-gx-texture = { version = "0.1.0", path = "../gx-texture" }
+dat-parser = { version = "0.2.0", path = "../dat-parser" }
+gx-texture = { version = "0.2.0", path = "../gx-texture" }
 thiserror = "2"
 
 [lints]

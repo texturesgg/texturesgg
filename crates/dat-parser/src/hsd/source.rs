@@ -9,6 +9,7 @@ use crate::hsd::draw::{
 use crate::hsd::scene::{HSD_SCENE_MAX_DAT_BYTES, hsd_scene_limits};
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum HsdSourceError {
     #[error("HSD scene is invalid: {0}")]
     InvalidScene(String),
@@ -30,7 +31,7 @@ pub struct HsdFocus {
 pub struct HsdSource {
     pub policy: HsdDrawEvaluationPolicy,
     /// The part of the scene a viewer should frame, when the loader knows of
-    /// one (a Melee stage's camera range). `None` frames the whole scene.
+    /// one (a stage's camera range). `None` frames the whole scene.
     pub focus: Option<HsdFocus>,
     pub scene: HsdScene,
     pub evaluator: HsdDrawWorkEvaluator,

@@ -25,7 +25,8 @@ pub struct MeleeReferenceCatalog {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReferenceAsset {
-    /// Storage key under which the site serves this object.
+    /// A stable key for the file, unique in the catalog: a host that serves
+    /// or caches reference files can store them under it.
     pub key: String,
     pub file_name: String,
     pub sha256: String,
@@ -120,8 +121,8 @@ impl MeleeReferenceCatalog {
     }
 
     /// Catalog file names of the references a costume's idle needs, or
-    /// `None` when no profile recognizes its root. Lets a caller without a
-    /// filesystem (a browser) fetch only those before [`MeleeReferenceStore::from_bytes`].
+    /// `None` when no profile recognizes its root. Lets a host fetch only
+    /// those before [`MeleeReferenceStore::from_bytes`].
     pub fn idle_reference_files(&self, contract: &HsdScene) -> Option<Vec<&str>> {
         self.idle_reference_assets(contract).map(|assets| {
             assets
@@ -132,7 +133,7 @@ impl MeleeReferenceCatalog {
     }
 
     /// The reference assets a costume's idle needs, or `None` when no profile
-    /// recognizes its root. Browsers fetch them by `key`.
+    /// recognizes its root.
     pub fn idle_reference_assets(&self, contract: &HsdScene) -> Option<Vec<&ReferenceAsset>> {
         let (profile, _, _) = MeleeFighterPlayback::profile_for(contract, self)?;
         let entry = self.fighter(profile.fighter_kind).ok()?;

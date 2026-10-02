@@ -344,6 +344,7 @@ pub(crate) fn test_disc(game_id: &[u8; 6], revision: u8, contents: &[u8]) -> Vec
     let mut disc = vec![0; FILE + contents.len()];
     disc[0..6].copy_from_slice(game_id);
     disc[7] = revision;
+    disc[0x1C..0x20].copy_from_slice(&0xC233_9F3D_u32.to_be_bytes());
     disc[0x424..0x428].copy_from_slice(&(FST as u32).to_be_bytes());
     disc[0x428..0x42c].copy_from_slice(&((24 + NAME.len() + 1) as u32).to_be_bytes());
     disc[FST] = 1;

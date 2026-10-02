@@ -1,8 +1,7 @@
 //! Typed serialized material-animation descriptors.
 //!
 //! This module owns source descriptor validation and pointer classification.
-//! Bounded graph traversal lives in `crate::descriptor::traversal::material_animation`;
-//! receiver-specific names and audit formatting remain in `crate::audit`.
+//! Bounded graph traversal lives in `crate::descriptor::traversal::material_animation`.
 
 use super::{DatFile, DescriptorParseError, DescriptorReader};
 

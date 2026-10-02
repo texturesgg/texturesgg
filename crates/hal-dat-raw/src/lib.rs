@@ -7,7 +7,7 @@
 
 pub mod header;
 pub mod reader;
-pub mod reloc;
+mod reloc;
 pub mod root;
 
 use header::{DATA_SECTION_OFFSET, DatHeader};
@@ -42,6 +42,7 @@ pub struct DatFile {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DatPointerError {
     FieldOutOfBounds,
     MissingRelocation,
@@ -62,6 +63,7 @@ impl std::error::Error for DatPointerError {}
 
 /// Invalid external fixup-chain structure, distinct from ordinary relocation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DatExternError {
     FieldOutOfBounds { site: u32 },
     RepeatedSite { site: u32 },
@@ -93,11 +95,57 @@ impl std::fmt::Display for DatExternError {
 
 impl std::error::Error for DatExternError {}
 
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum DatParseError {
+    TooSmall,
+    InvalidHeader,
+    FileSizeMismatch {
+        declared: u32,
+        actual: usize,
+    },
+    InvalidTableLayout,
+    DuplicateRelocationSite,
+    InvalidRelocation(DatPointerError),
+    ResourceLimit {
+        resource: &'static str,
+        limit: usize,
+    },
+}
+
+impl std::fmt::Display for DatParseError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TooSmall => formatter.write_str("file too small to contain HSD header"),
+            Self::InvalidHeader => formatter.write_str("invalid or corrupt HSD header"),
+            Self::FileSizeMismatch { declared, actual } => write!(
+                formatter,
+                "declared DAT file size {declared} does not match input length {actual}"
+            ),
+            Self::InvalidTableLayout => {
+                formatter.write_str("header table counts exceed the file bounds")
+            }
+            Self::DuplicateRelocationSite => {
+                formatter.write_str("duplicate ordinary relocation site")
+            }
+            Self::InvalidRelocation(error) => {
+                write!(formatter, "invalid ordinary relocation: {error}")
+            }
+            Self::ResourceLimit { resource, limit } => {
+                write!(formatter, "DAT exceeds the {resource} budget of {limit}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for DatParseError {}
+
 impl DatFile {
-    /// A DAT from its data section, roots, and sorted relocation sites, with
-    /// the header those imply and no externs. For building one in code;
-    /// nothing here is validated as [`Self::parse`] validates a file.
-    pub fn from_parts(data: Vec<u8>, roots: Vec<RootNode>, relocation_sites: Vec<u32>) -> Self {
+    /// A DAT from its data section, roots, and relocation sites, with the
+    /// header those imply and no externs. For building one in code; nothing
+    /// here is validated as [`Self::parse`] validates a file.
+    pub fn from_parts(data: Vec<u8>, roots: Vec<RootNode>, mut relocation_sites: Vec<u32>) -> Self {
+        relocation_sites.sort_unstable();
         Self {
             header: DatHeader {
                 file_size: data.len() as u32 + 0x20,
@@ -166,7 +214,8 @@ impl DatFile {
 
         // Parse and validate the ordinary relocation table before exposing it to
         // descriptor parsers. Matching HAL trusts these values; untrusted DATs cannot.
-        let relocation_sites = reloc::parse_relocation_sites(raw, &header);
+        let relocation_sites =
+            reloc::parse_relocation_sites(raw, &header).ok_or(DatParseError::InvalidTableLayout)?;
         if relocation_sites
             .windows(2)
             .any(|sites| sites[0] == sites[1])
@@ -311,25 +360,28 @@ impl DatFile {
         let end = start.checked_add(len)?;
         self.data.get(start..end)
     }
+}
 
-    /// Print a summary of the parsed archive, for debugging.
-    pub fn print_summary(&self) {
-        println!("=== HSD .dat File ===");
-        println!("  File size:    {} bytes", self.header.file_size);
-        println!("  Data size:    {} bytes", self.header.data_size);
-        println!("  Reloc count:  {}", self.header.reloc_count);
-        println!("  Root count:   {}", self.header.root_count);
-        println!("  Extern count: {}", self.header.extern_count);
-        println!("  Roots:");
+/// A summary of the archive: its header counts, roots and externs.
+impl std::fmt::Display for DatFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "=== HSD .dat File ===")?;
+        writeln!(f, "  File size:    {} bytes", self.header.file_size)?;
+        writeln!(f, "  Data size:    {} bytes", self.header.data_size)?;
+        writeln!(f, "  Reloc count:  {}", self.header.reloc_count)?;
+        writeln!(f, "  Root count:   {}", self.header.root_count)?;
+        writeln!(f, "  Extern count: {}", self.header.extern_count)?;
+        writeln!(f, "  Roots:")?;
         for root in &self.roots {
-            println!("    {:?} @ 0x{:08X}", root.name, root.data_offset);
+            writeln!(f, "    {:?} @ 0x{:08X}", root.name, root.data_offset)?;
         }
         if !self.externs.is_empty() {
-            println!("  Externs:");
+            writeln!(f, "  Externs:")?;
             for ext in &self.externs {
-                println!("    {:?} @ 0x{:08X}", ext.name, ext.data_offset);
+                writeln!(f, "    {:?} @ 0x{:08X}", ext.name, ext.data_offset)?;
             }
         }
+        Ok(())
     }
 }
 
@@ -545,48 +597,58 @@ mod tests {
             Err(DatParseError::DuplicateRelocationSite)
         ));
     }
-}
 
-#[derive(Debug)]
-pub enum DatParseError {
-    TooSmall,
-    InvalidHeader,
-    FileSizeMismatch {
-        declared: u32,
-        actual: usize,
-    },
-    InvalidTableLayout,
-    DuplicateRelocationSite,
-    InvalidRelocation(DatPointerError),
-    ResourceLimit {
-        resource: &'static str,
-        limit: usize,
-    },
-}
+    /// A root table of one entry after `data`, naming a symbol at
+    /// `symbol_offset` in a string table holding `symbols`.
+    fn raw_dat_with_root(data: &[u8], symbol_offset: u32, symbols: &[u8]) -> Vec<u8> {
+        let mut raw = raw_dat(data, &[]);
+        raw.extend(0u32.to_be_bytes());
+        raw.extend(symbol_offset.to_be_bytes());
+        raw.extend(symbols);
+        let file_size = raw.len() as u32;
+        raw[0x00..0x04].copy_from_slice(&file_size.to_be_bytes());
+        raw[0x0C..0x10].copy_from_slice(&1u32.to_be_bytes());
+        raw
+    }
 
-impl std::fmt::Display for DatParseError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::TooSmall => formatter.write_str("file too small to contain HSD header"),
-            Self::InvalidHeader => formatter.write_str("invalid or corrupt HSD header"),
-            Self::FileSizeMismatch { declared, actual } => write!(
-                formatter,
-                "declared DAT file size {declared} does not match input length {actual}"
-            ),
-            Self::InvalidTableLayout => {
-                formatter.write_str("header table counts exceed the file bounds")
-            }
-            Self::DuplicateRelocationSite => {
-                formatter.write_str("duplicate ordinary relocation site")
-            }
-            Self::InvalidRelocation(error) => {
-                write!(formatter, "invalid ordinary relocation: {error}")
-            }
-            Self::ResourceLimit { resource, limit } => {
-                write!(formatter, "DAT exceeds the {resource} budget of {limit}")
-            }
+    #[test]
+    fn a_root_names_its_symbol_or_the_table_is_refused() {
+        let dat = DatFile::parse(&raw_dat_with_root(&[0; 4], 1, b"\0top\0")).unwrap();
+        assert_eq!(dat.roots[0].name, "top");
+
+        for (symbol_offset, symbols) in [
+            // Past the string table.
+            (64, &b"top\0"[..]),
+            // No terminator before the end of the file.
+            (0, &b"top"[..]),
+            // Not UTF-8.
+            (0, &b"\xFF\0"[..]),
+        ] {
+            assert!(matches!(
+                DatFile::parse(&raw_dat_with_root(&[0; 4], symbol_offset, symbols)),
+                Err(DatParseError::InvalidTableLayout)
+            ));
+        }
+    }
+
+    #[test]
+    fn header_counts_are_checked_before_anything_is_allocated() {
+        // A table the file is too short to hold.
+        let mut raw = raw_dat(&[0; 4], &[]);
+        raw[0x0C..0x10].copy_from_slice(&1u32.to_be_bytes());
+        assert!(matches!(
+            DatFile::parse(&raw),
+            Err(DatParseError::InvalidTableLayout)
+        ));
+
+        // A count over the crate's limit, however long the file claims to be.
+        for field in [0x08, 0x0C, 0x10] {
+            let mut raw = raw_dat(&[0; 4], &[]);
+            raw[field..field + 4].copy_from_slice(&u32::MAX.to_be_bytes());
+            assert!(matches!(
+                DatFile::parse(&raw),
+                Err(DatParseError::ResourceLimit { .. })
+            ));
         }
     }
 }
-
-impl std::error::Error for DatParseError {}

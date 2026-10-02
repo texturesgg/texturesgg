@@ -6,15 +6,17 @@ model format of Super Smash Bros. Melee and other HAL GameCube games.
 The original DAT bytes remain the source of truth. This crate validates hostile
 input, resolves the HSD pointer graph, decodes GX geometry and textures, and
 builds a bounded scene with its evaluated draw work. It knows nothing about a
-particular game (that is `melee-dat`), a GPU backend (`hsd-render`), or
-application policy.
+GPU backend (`hsd-render`) or application policy, and leaves a particular
+game to `melee-dat`, with three exceptions that are Melee's and live here
+because the evaluation they feed does: the fighter envelope weight policy,
+FigaTree joint animation, and the stage `map_head` descriptor.
 
 ## Layout
 
 - `hal-dat-raw` (re-exported as `dat_parser::raw`, with `DatFile` and its errors
   at the crate root): archive bytes, header, relocation, roots, externs.
 - `src/descriptor/`: parsers for serialized HSD descriptors.
-- `src/gx/`: GX display lists, vertex attributes, texture formats, PNG output.
+- `src/gx/`: GX display lists, vertex attributes, texture formats.
 - `src/math.rs`: matrix math shared by the semantic layers.
 - `src/hsd/`: scene construction (`scene/`), draw evaluation (`draw/`), a loaded `HsdSource` (`source.rs`), envelopes, PE and
   draw passes, color channels, texture coordinates, custom TEV, and animation.
@@ -22,7 +24,7 @@ application policy.
 
 Semantic modules must not depend on rendering backends, browser APIs, feature
 flags, or product policy. See
-[`docs/DAT_LAYERING_ARCHITECTURE.md`](../../docs/DAT_LAYERING_ARCHITECTURE.md)
+[`docs/DAT_LAYERING_ARCHITECTURE.md`](https://github.com/texturesgg/texturesgg/blob/main/docs/DAT_LAYERING_ARCHITECTURE.md)
 for the layers, contracts, and the source-backed rules they follow.
 
 ## Invariants

@@ -32,6 +32,7 @@ const MAX_POINTS: usize = 4096;
 const MAX_JOINTS: usize = 8192;
 
 #[derive(Debug, thiserror::Error, PartialEq)]
+#[non_exhaustive]
 pub enum StagePointsError {
     #[error(transparent)]
     Descriptor(#[from] DescriptorParseError),
@@ -79,7 +80,7 @@ impl StagePoints {
             let (Some(root), Some(pairs)) = (record.joint, record.pairs) else {
                 continue;
             };
-            if points.len() + pair_count > MAX_POINTS {
+            if points.len().saturating_add(pair_count) > MAX_POINTS {
                 return Err(StagePointsError::LimitExceeded { resource: "point" });
             }
             let positions = joint_positions(dat, root)?;

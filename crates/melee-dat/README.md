@@ -12,13 +12,14 @@ evaluate it, and hand the scene and draw work to a renderer such as
 use dat_parser::hsd::draw::HsdDrawEvaluationPolicy;
 use melee_dat::MeleeModel;
 
-let mut model = MeleeModel::open(&bytes, HsdDrawEvaluationPolicy::GENERIC_HSD)?;
+let mut model = MeleeModel::open(&bytes, HsdDrawEvaluationPolicy::MELEE_FIGHTER)?;
 model.advance()?;                      // one 60 Hz tick; a stage's animations move
 let (scene, work) = model.evaluate()?; // what a renderer draws this frame
 ```
 
 A stage plays as soon as it loads. A fighter costume needs the fighter's own
-files to move: `MeleeModel::attach_fighter` takes the reference catalog and a
+files to move, and the `MELEE_FIGHTER` policy it was opened with above:
+`MeleeModel::attach_fighter` takes the reference catalog and a
 `MeleeReferenceStore` of original game files, which the caller supplies and the
 store admits only by size and SHA-256.
 
@@ -51,4 +52,4 @@ disc image the developer supplies:
 `TGG_MELEE_ISO=melee.iso cargo test -p melee-dat --features melee-iso`.
 
 Known gaps in what plays are listed in
-[`docs/RENDERER_KNOWN_ISSUES.md`](../../docs/RENDERER_KNOWN_ISSUES.md).
+[`docs/RENDERER_KNOWN_ISSUES.md`](https://github.com/texturesgg/texturesgg/blob/main/docs/RENDERER_KNOWN_ISSUES.md).

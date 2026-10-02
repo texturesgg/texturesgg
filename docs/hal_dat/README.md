@@ -24,6 +24,11 @@ they leave out is in
 - The [MKWiiki page on the format](<https://mkwiiki.org/wiki/HAL_DAT_(File_Format)>),
   which the structure tables started from. Where the two disagree, the
   decompilation wins and the table states what the game does.
+  `ssbm_hal_dat_tables.md` is adapted from
+  [revision 323581](<https://mkwiiki.org/w/index.php?title=HAL_DAT_(File_Format)&oldid=323581>)
+  of that page, by its contributors. MKWiiki lets its content be
+  redistributed and adapted under a similar license with attribution; the
+  material taken from it stays available here on those terms.
 
 ## Rules for these documents
 

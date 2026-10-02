@@ -3,6 +3,7 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum HsdRenderError {
     #[error("HSD scene is invalid: {0}")]
     InvalidScene(String),

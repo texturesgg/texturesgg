@@ -3,7 +3,7 @@
 `hal-dat-raw` is a bounded parser for the HSD DAT archive container: the bytes,
 header, relocation table, roots and externs, with no knowledge of what the
 archive holds. It is the lowest layer of
-[`docs/DAT_LAYERING_ARCHITECTURE.md`](../../docs/DAT_LAYERING_ARCHITECTURE.md).
+[`docs/DAT_LAYERING_ARCHITECTURE.md`](https://github.com/texturesgg/texturesgg/blob/main/docs/DAT_LAYERING_ARCHITECTURE.md).
 
 ## Scope
 

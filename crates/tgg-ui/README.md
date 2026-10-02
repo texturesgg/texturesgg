@@ -19,5 +19,4 @@ bar. Keyboard operation and visible focus are part of each control;
 cargo run -p tgg-ui --example gallery
 ```
 
-The tokens mirror the textures.gg site's design system, and the site's tests
-fail when the two diverge.
+The tokens mirror the textures.gg site's design system.

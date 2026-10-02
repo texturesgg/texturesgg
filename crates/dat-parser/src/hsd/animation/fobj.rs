@@ -66,6 +66,7 @@ impl<'a> From<&RawFObjTrack<'a>> for FObjStream<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum FObjEvaluationError {
     #[error("packed stream does not make progress")]
     NoProgress,

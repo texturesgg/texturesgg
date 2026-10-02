@@ -100,7 +100,9 @@ fn decode_vertex(dat: &DatFile, attributes: &[GxAttribute], raw: &RawVertex) -> 
     };
 
     for (i, attr) in attributes.iter().enumerate() {
-        let index = raw.indices[i];
+        let Some(&index) = raw.indices.get(i) else {
+            continue;
+        };
 
         match attr.attr_name {
             GxAttrName::PnMtxIdx => {

@@ -1,6 +1,6 @@
 [package]
 name = "hsd-render"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license.workspace = true
 authors.workspace = true
@@ -23,11 +23,11 @@ required-features = ["cli"]
 
 [dependencies]
 bytemuck = "1"
-dat-parser = { version = "0.1.0", path = "../dat-parser" }
+dat-parser = { version = "0.2.0", path = "../dat-parser" }
 # The regression reads its inputs out of a disc image.
-gc-iso = { version = "0.1.0", path = "../gc-iso", optional = true }
+gc-iso = { version = "0.2.0", path = "../gc-iso", optional = true }
 # The CLI plays fighters and stages.
-melee-dat = { version = "0.1.0", path = "../melee-dat", optional = true }
+melee-dat = { version = "0.2.0", path = "../melee-dat", optional = true }
 png = { version = "0.18", optional = true }
 thiserror = "2"
 # Keep in lockstep with upstream Zed's gpui_wgpu so the editor can share the device.

@@ -84,7 +84,7 @@ pub enum TevAlphaOp {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StageSource {
-    /// TEX0 or TEX1.
+    /// One of the vertex's texture coordinate sets, TEX0 to TEX7.
     TexCoord(u8),
     /// Normalized camera-space normals.
     Reflection,
@@ -190,8 +190,8 @@ pub(crate) fn prepare_material(
         }
         stages.push(PreparedStage {
             texture_index: prepare_texture(scene, usage, textures, texture_cache)?,
-            address_u: address_mode(usage.wrap_s),
-            address_v: address_mode(usage.wrap_t),
+            address_u: address_mode(usage.wrap_s)?,
+            address_v: address_mode(usage.wrap_t)?,
             mag_filter: if usage.mag_filter == 0 {
                 FilterMode::Nearest
             } else {
@@ -340,9 +340,9 @@ fn tev_alpha_op(value: u32) -> Result<TevAlphaOp> {
     })
 }
 
-/// Returns `None` for a stage whose image did not decode; the renderer binds white.
 /// The prepared texture for a stage's scene texture, uploading each distinct
-/// decoded image once however many descriptors and TObjs reach it.
+/// decoded image once however many descriptors and TObjs reach it. `None` for
+/// a stage whose image did not decode; the renderer binds white.
 fn prepare_texture(
     scene: &HsdScene,
     usage: &HsdTextureObject,
@@ -445,12 +445,14 @@ impl PreparedTev {
     }
 }
 
-fn address_mode(mode: u32) -> AddressMode {
-    match mode {
+/// `GXTexWrapMode`: clamp, repeat, mirror.
+fn address_mode(mode: u32) -> Result<AddressMode> {
+    Ok(match mode {
         0 => AddressMode::ClampToEdge,
+        1 => AddressMode::Repeat,
         2 => AddressMode::MirrorRepeat,
-        _ => AddressMode::Repeat,
-    }
+        _ => return invalid_scene(format!("texture wrap mode {mode} is invalid")),
+    })
 }
 
 /// Hand-built stages and materials for shader and pick tests.
