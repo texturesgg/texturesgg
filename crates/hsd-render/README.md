@@ -10,6 +10,12 @@ surface can host it alike. The library knows nothing about a particular game;
 a caller poses a model (with `melee-dat`, for Melee) and hands each frame
 here. wgpu is pinned to gpui-ce's version so the editor can share its device.
 
+`PreparedGeometry::new` is the only way to build the geometry a renderer
+draws, so its buffers and index ranges are checked once, there. Scene textures
+are named by `dat-parser`'s `HsdTextureIndex` and packets by `PacketIndex`,
+which is what a pick answers with. A GPU failure is `HsdRenderError::Gpu`
+around the `wgpu` error that caused it.
+
 It draws the textures.gg site's 3D preview (compiled to WebAssembly) and the
 editor viewport. The pixel baseline (`pixel-baseline.json`, here) is a
 regression check, not an authority: the Melee decompilation and the game

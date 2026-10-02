@@ -1,6 +1,7 @@
 //! Headless device creation and texture readback for captures and tests.
 
-use crate::error::{HsdRenderError, Result};
+use crate::error::{GpuError, Result};
+use crate::geometry::PacketIndex;
 use crate::renderer::HsdRenderer;
 
 /// Captures use a raw 8-bit target, like the site's non-sRGB canvas.
@@ -23,12 +24,12 @@ impl Gpu {
             force_fallback_adapter: software,
             compatible_surface: None,
         }))
-        .map_err(|error| HsdRenderError::Gpu(format!("no compatible adapter: {error}")))?;
+        .map_err(GpuError::from)?;
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("hsd-render offscreen"),
             ..Default::default()
         }))
-        .map_err(|error| HsdRenderError::Gpu(format!("device request failed: {error}")))?;
+        .map_err(GpuError::from)?;
         Ok(Self {
             adapter,
             device,
@@ -43,11 +44,13 @@ pub struct RgbaImage {
     pub pixels: Vec<u8>,
 }
 
-/// Render one frame offscreen and read it back as opaque RGBA8.
+/// Render one frame offscreen, at the renderer's size, and read it back as
+/// opaque RGBA8.
 ///
 /// Alpha is forced to 255, matching an `alphaMode: "opaque"` canvas.
-pub fn capture(gpu: &Gpu, renderer: &HsdRenderer, width: u32, height: u32) -> Result<RgbaImage> {
+pub fn capture(gpu: &Gpu, renderer: &HsdRenderer) -> Result<RgbaImage> {
     let Gpu { device, queue, .. } = gpu;
+    let (width, height) = renderer.size();
     let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
     let target = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("hsd-render capture"),
@@ -86,7 +89,7 @@ pub fn capture(gpu: &Gpu, renderer: &HsdRenderer, width: u32, height: u32) -> Re
     );
     queue.submit([encoder.finish()]);
     if let Some(error) = pollster::block_on(scope.pop()) {
-        return Err(HsdRenderError::Gpu(error.to_string()));
+        return Err(GpuError::from(error).into());
     }
 
     let slice = readback.slice(..);
@@ -96,11 +99,11 @@ pub fn capture(gpu: &Gpu, renderer: &HsdRenderer, width: u32, height: u32) -> Re
     });
     device
         .poll(wgpu::PollType::wait_indefinitely())
-        .map_err(|error| HsdRenderError::Gpu(error.to_string()))?;
+        .map_err(GpuError::from)?;
     receiver
         .recv()
-        .map_err(|error| HsdRenderError::Gpu(error.to_string()))?
-        .map_err(|error| HsdRenderError::Gpu(error.to_string()))?;
+        .map_err(|_| GpuError::ReadbackLost)?
+        .map_err(GpuError::from)?;
     let mapped = slice.get_mapped_range();
     let mut pixels = Vec::with_capacity(width as usize * height as usize * 4);
     for row in mapped.chunks_exact(bytes_per_row as usize) {
@@ -119,7 +122,7 @@ pub fn capture(gpu: &Gpu, renderer: &HsdRenderer, width: u32, height: u32) -> Re
 
 /// Pick the packet drawing device pixel `(x, y)`, blocking until the readback
 /// arrives. `None` is background.
-pub fn pick(gpu: &Gpu, renderer: &mut HsdRenderer, x: u32, y: u32) -> Result<Option<usize>> {
+pub fn pick(gpu: &Gpu, renderer: &mut HsdRenderer, x: u32, y: u32) -> Result<Option<PacketIndex>> {
     let Gpu { device, queue, .. } = gpu;
     let mut encoder = device.create_command_encoder(&Default::default());
     let readback = renderer.encode_pick(device, &mut encoder, (x, y))?;
@@ -128,7 +131,7 @@ pub fn pick(gpu: &Gpu, renderer: &mut HsdRenderer, x: u32, y: u32) -> Result<Opt
     loop {
         device
             .poll(wgpu::PollType::wait_indefinitely())
-            .map_err(|error| HsdRenderError::Gpu(error.to_string()))?;
+            .map_err(GpuError::from)?;
         if let Some(picked) = pending.take() {
             return picked;
         }

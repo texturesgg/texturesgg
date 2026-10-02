@@ -20,8 +20,8 @@ pub mod renderer;
 pub mod shader;
 
 pub use camera::{Camera, CameraView, Focus, Orbit};
-pub use error::{HsdRenderError, Result};
-pub use geometry::PreparedGeometry;
+pub use error::{GpuError, HsdRenderError, Result};
+pub use geometry::{PacketIndex, PreparedGeometry};
 pub use lighting::{HsdLightingPreset, neutral_preview_lighting};
 pub use pick::{PendingPick, PickReadback, PickedTexture};
 pub use renderer::HsdRenderer;

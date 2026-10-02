@@ -3,6 +3,7 @@
 
 use super::{Gpu, Viewport, ViewportEvent};
 use crate::Error;
+use dat_parser::hsd::scene::HsdTextureIndex;
 use gpui::{Bounds, Context, DevicePixels, Pixels, SurfaceSource, Window, size};
 use gpui_wgpu::{WgpuContextHandle, WgpuRenderTarget};
 use hsd_render::{HsdRenderer, neutral_preview_lighting};
@@ -146,10 +147,12 @@ impl Viewport {
             };
             // A refused update is that edit's problem, not the renderer's:
             // forget it, so a rebuilt renderer never replays it, and carry on.
-            if let Err(error) =
-                gpu.renderer
-                    .update_scene_texture(context.queue(), index, *size, pixels)
-            {
+            if let Err(error) = gpu.renderer.update_scene_texture(
+                context.queue(),
+                HsdTextureIndex(index),
+                *size,
+                pixels,
+            ) {
                 crate::log(&format!("texture update rejected: {error}"));
                 self.edited.remove(&index);
                 self.rejected.push(error.to_string());
@@ -211,14 +214,14 @@ impl Viewport {
         };
         let scene = self.model.scene();
         let textures = packet
-            .map(|packet| gpu.renderer.packet_textures(packet))
+            .and_then(|packet| gpu.renderer.packet_textures(packet).ok())
             .unwrap_or_default()
             .into_iter()
             .map(|texture| {
                 texture
                     .scene_textures
                     .iter()
-                    .filter_map(|&index| Some(scene.textures.get(index as usize)?.id))
+                    .filter_map(|index| Some(scene.textures.get(index.0)?.id))
                     .collect()
             })
             .collect();

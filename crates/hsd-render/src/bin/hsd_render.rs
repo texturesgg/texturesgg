@@ -38,7 +38,9 @@
 use dat_parser::hsd::draw::HsdDrawEvaluationPolicy;
 use dat_parser::hsd::source::HsdSource;
 use hsd_render::offscreen::{CAPTURE_FORMAT, Gpu, RgbaImage, capture, pick};
-use hsd_render::{CameraView, HsdRenderer, PreparedGeometry, neutral_preview_lighting};
+use hsd_render::{
+    CameraView, HsdRenderer, PacketIndex, PreparedGeometry, neutral_preview_lighting,
+};
 use melee_dat::MeleeModel;
 use melee_dat::{FighterAttach, MeleeFighterPlayback, MeleeReferenceCatalog, MeleeReferenceStore};
 use sha2::{Digest, Sha256};
@@ -388,16 +390,20 @@ fn run_pick(args: &[String]) -> CliResult<ExitCode> {
         size,
         view.orbit(),
     )?;
-    let describe = |renderer: &HsdRenderer, packet: usize| {
-        let polygon = renderer.geometry().packets[packet].polygon_source_id;
+    let describe = |renderer: &HsdRenderer, packet: PacketIndex| -> CliResult<String> {
+        let polygon = renderer.geometry().packets()[packet.0].polygon_source_id.0;
         let textures: Vec<String> = renderer
-            .packet_textures(packet)
+            .packet_textures(packet)?
             .iter()
             .map(|texture| {
                 format!(
                     "stage {} scene {:?}{}",
                     texture.stage,
-                    texture.scene_textures,
+                    texture
+                        .scene_textures
+                        .iter()
+                        .map(|texture| texture.0)
+                        .collect::<Vec<_>>(),
                     if texture.reflection {
                         " (reflection)"
                     } else {
@@ -406,10 +412,11 @@ fn run_pick(args: &[String]) -> CliResult<ExitCode> {
                 )
             })
             .collect();
-        format!(
-            "packet {packet} (PObj {polygon:#x}): {}",
+        Ok(format!(
+            "packet {} (PObj {polygon:#x}): {}",
+            packet.0,
             textures.join(", ")
-        )
+        ))
     };
     if let Some(at) = options.flags.get("at") {
         let (x, y) = at.split_once(',').ok_or("--at must look like 320,200")?;
@@ -418,7 +425,7 @@ fn run_pick(args: &[String]) -> CliResult<ExitCode> {
         let picked = pick(&gpu, &mut renderer, parse(x)?, parse(y)?)?;
         let elapsed = started.elapsed();
         match picked {
-            Some(packet) => println!("{}", describe(&renderer, packet)),
+            Some(packet) => println!("{}", describe(&renderer, packet)?),
             None => println!("background"),
         }
         println!(
@@ -451,7 +458,7 @@ fn run_pick(args: &[String]) -> CliResult<ExitCode> {
             match pick(&gpu, &mut renderer, x, y)? {
                 Some(packet) => {
                     seen.insert(packet);
-                    line.push(GLYPHS[packet % GLYPHS.len()] as char);
+                    line.push(GLYPHS[packet.0 % GLYPHS.len()] as char);
                 }
                 None => line.push('.'),
             }
@@ -461,8 +468,8 @@ fn run_pick(args: &[String]) -> CliResult<ExitCode> {
     for packet in seen {
         println!(
             "{} {}",
-            GLYPHS[packet % GLYPHS.len()] as char,
-            describe(&renderer, packet)
+            GLYPHS[packet.0 % GLYPHS.len()] as char,
+            describe(&renderer, packet)?
         );
     }
     Ok(ExitCode::SUCCESS)
@@ -498,7 +505,7 @@ fn render_view(
         size,
         view.orbit(),
     )?;
-    Ok(capture(gpu, &renderer, size.0, size.1)?)
+    Ok(capture(gpu, &renderer)?)
 }
 
 /// The disc image to read: `--iso`, else `TGG_MELEE_ISO`.
@@ -768,7 +775,7 @@ fn run_idle(args: &[String]) -> CliResult<ExitCode> {
         size,
         view.orbit(),
     )?;
-    let first = capture(&gpu, &renderer, size.0, size.1)?;
+    let first = capture(&gpu, &renderer)?;
     write_png(&out.join(format!("{stem}-{}-t0000.png", view.id())), &first)?;
 
     let started = std::time::Instant::now();
@@ -782,7 +789,7 @@ fn run_idle(args: &[String]) -> CliResult<ExitCode> {
         frame_time += frame_started.elapsed();
         frames += 1;
         if playback.loops() > 0 {
-            let reset = capture(&gpu, &renderer, size.0, size.1)?;
+            let reset = capture(&gpu, &renderer)?;
             let exact = reset.pixels == first.pixels;
             println!(
                 "{}: {} ticks per cycle; reset frame {} the first frame",
@@ -795,7 +802,7 @@ fn run_idle(args: &[String]) -> CliResult<ExitCode> {
                 return Ok(ExitCode::FAILURE);
             }
         } else if playback.tick() % every == 0 {
-            let image = capture(&gpu, &renderer, size.0, size.1)?;
+            let image = capture(&gpu, &renderer)?;
             write_png(
                 &out.join(format!("{stem}-{}-t{:04}.png", view.id(), playback.tick())),
                 &image,

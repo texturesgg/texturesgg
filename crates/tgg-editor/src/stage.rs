@@ -12,12 +12,8 @@ use tgg_ui::tokens::space;
 /// The renderer's clear color, so the stage reads as one surface with the
 /// viewport on it.
 pub(crate) fn color() -> gpui::Rgba {
-    let background = hsd_render::renderer::BACKGROUND_COLOR;
-    let channel = |value: f64| (value * 255.0).round() as u32;
-    tgg_ui::Color::rgb(
-        channel(background.r) << 16 | channel(background.g) << 8 | channel(background.b),
-    )
-    .to_gpui()
+    let [red, green, blue] = hsd_render::renderer::BACKGROUND_RGB.map(u32::from);
+    tgg_ui::Color::rgb(red << 16 | green << 8 | blue).to_gpui()
 }
 
 /// The stage, keeping `clear` of its right edge for panes over it.
