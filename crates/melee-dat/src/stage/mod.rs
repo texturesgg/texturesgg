@@ -5,7 +5,9 @@ pub mod playback;
 pub mod points;
 pub mod texture_names;
 
-pub use points::{StagePoint, StagePoints, StagePointsError, StageRect, camera_focus};
+pub use points::{
+    StagePoint, StagePointKind, StagePoints, StagePointsError, StageRect, camera_focus,
+};
 pub use texture_names::StageTextureNames;
 
 #[cfg(test)]

@@ -2,6 +2,7 @@
 //! what each slot can do.
 
 use super::{GamePage, Tab};
+use crate::costumes::stage_name;
 use crate::costumes::{CostumesEvent, same_owner, slot_color};
 use crate::editor::TogglePlayback;
 use crate::install::SlotState;
@@ -12,7 +13,6 @@ use gpui::{
     AnyElement, Context, Div, ExternalPaths, InteractiveElement, IntoElement, ParentElement,
     Render, SharedString, StatefulInteractiveElement, Styled, Window, div,
 };
-use melee_dat::stage_name;
 use std::rc::Rc;
 use tgg_ui::page_header::INSET;
 use tgg_ui::pane::PANE_MARGIN;

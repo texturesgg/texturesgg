@@ -19,7 +19,7 @@ use dat_parser::descriptor::map_head::MapHead;
 use dat_parser::hsd::animation::{HsdJointPoseEvaluator, HsdJointPoseLimits, attach_anim_joints};
 use dat_parser::hsd::draw::{HsdDrawEvaluationPolicy, HsdEvaluatedDrawWork};
 use dat_parser::hsd::scene::HsdScene;
-use dat_parser::hsd::source::{HsdFocus, HsdSource, HsdSourceError};
+use dat_parser::hsd::source::{HsdFocus, HsdSource};
 
 const ANIMATION: u32 = 0;
 /// The furthest a seek plays to: ten minutes of frames. Seeking replays from
@@ -113,13 +113,11 @@ impl MeleeStagePlayback {
 
     pub fn set_rate(&mut self, rate: f32) -> Result<()> {
         if !(rate.is_finite() && rate > 0.0) {
-            return Err(playback_error(format!(
-                "playback rate {rate} must be positive"
-            )));
+            return Err(MeleeError::InvalidRate(rate));
         }
         self.rate = rate;
         for pose in &mut self.poses {
-            pose.set_rate(rate).map_err(playback_error)?;
+            pose.set_rate(rate)?;
         }
         Ok(())
     }
@@ -127,7 +125,7 @@ impl MeleeStagePlayback {
     /// Advance one 60 Hz tick.
     pub fn advance(&mut self) -> Result<()> {
         for pose in &mut self.poses {
-            pose.advance().map_err(playback_error)?;
+            pose.advance()?;
         }
         self.frame += self.rate;
         Ok(())
@@ -137,9 +135,9 @@ impl MeleeStagePlayback {
     /// ticked once (`HSD_JObjReqAnimAll`, then `HSD_JObjAnimAll`).
     pub fn reset(&mut self) -> Result<()> {
         for pose in &mut self.poses {
-            pose.set_rate(self.rate).map_err(playback_error)?;
-            pose.request(0.0).map_err(playback_error)?;
-            pose.advance().map_err(playback_error)?;
+            pose.set_rate(self.rate)?;
+            pose.request(0.0)?;
+            pose.advance()?;
         }
         self.frame = 0.0;
         Ok(())
@@ -150,7 +148,7 @@ impl MeleeStagePlayback {
     /// request reaches a later frame.
     pub fn seek(&mut self, frame: f32) -> Result<()> {
         if frame.is_nan() {
-            return Err(playback_error("frame to seek to is not a number"));
+            return Err(MeleeError::InvalidFrame);
         }
         let rate = self.rate;
         self.rate = 1.0;
@@ -170,19 +168,10 @@ impl MeleeStagePlayback {
             .poses
             .iter()
             .map(HsdJointPoseEvaluator::pose)
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(playback_error)?;
-        let work = self
-            .source
-            .evaluator
-            .evaluate(&self.source.scene, &poses)
-            .map_err(HsdSourceError::from)?;
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let work = self.source.evaluator.evaluate(&self.source.scene, &poses)?;
         Ok((&self.source.scene, work))
     }
-}
-
-fn playback_error(error: impl std::fmt::Display) -> MeleeError {
-    crate::error::playback_error(format!("stage animation: {error}"))
 }
 
 /// A model group's root joint with the joint animation it starts on.

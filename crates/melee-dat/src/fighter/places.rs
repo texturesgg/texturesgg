@@ -226,22 +226,19 @@ impl CostumePlaces {
         let Some(costume) = catalog.recognize(scene) else {
             return Ok(None);
         };
-        let parse = |bytes: Vec<u8>| {
-            DatFile::parse(&bytes).map_err(|error| MeleeError::Places(error.to_string()))
-        };
-        let common = parse(catalog.load_common(store)?)?;
-        let fighter = parse(catalog.load_fighter(store, costume.fighter_kind)?)?;
+        let common = store.load_dat(catalog.common_asset())?;
+        let fighter =
+            store.load_dat(catalog.data_asset(catalog.fighter_of_kind(costume.fighter_kind)))?;
         let root = &scene.roots[costume.root_index];
         let slots = fighter_part_slots(&common, costume.fighter_kind, root)
-            .map_err(|error| MeleeError::Places(format!("fighter parts: {error}")))?;
+            .map_err(MeleeError::FighterParts)?;
         let parts: HashMap<JObjId, u8> = slots
             .slots
             .iter()
             .zip(&slots.logical)
             .filter_map(|(joint, &part)| Some(((*joint)?, part)))
             .collect();
-        let models = FighterModelParts::load(&fighter, costume.fighter_kind, costume.costume)
-            .map_err(|error| MeleeError::Places(format!("model parts: {error}")))?;
+        let models = FighterModelParts::load(&fighter, costume.fighter_kind, costume.costume)?;
         let mut places = Self::place(scene, root, &parts, &models);
         places.add_animations(dat, scene, costume.root_index);
         Ok(Some(places))
@@ -260,15 +257,7 @@ impl CostumePlaces {
             .enumerate()
             .map(|(index, joint)| (joint.source_id, index))
             .collect();
-        let in_table = |table: usize, ordinal: usize| {
-            models.tables[table].as_ref().is_some_and(|table| {
-                table
-                    .iter()
-                    .flatten()
-                    .flatten()
-                    .any(|&named| usize::from(named) == ordinal)
-            })
-        };
+        let in_table = |table: usize, ordinal: usize| models.names(table, ordinal);
 
         let mut textures: HashMap<HsdTextureSourceId, Tally> = HashMap::new();
         // Display objects in `ftParts` ordinal order: preorder joints, then

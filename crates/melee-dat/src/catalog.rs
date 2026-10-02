@@ -1,29 +1,101 @@
 //! The reference catalog: the checked-in, source-verified table of every
 //! fighter's files, joint hierarchy and idle setup
-//! (`data/reference-catalog.json`, which the site reads too), and the costumes
-//! it recognizes.
+//! (`data/reference-catalog.json`), and the costumes it recognizes.
 
-use crate::error::{MeleeError, Result, playback_error};
 use crate::fighter::playback::MeleeFighterPlayback;
-use crate::references::MeleeReferenceStore;
+use crate::fighter::{CostumeIndex, FighterKind};
+use crate::file_names::{Character, CostumeColor, MeleeSlot};
 use dat_parser::hsd::HsdScene;
 use dat_parser::hsd::scene::HsdJoint;
-use serde::Deserialize;
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
+/// The text of the checked-in catalog, for a host that serves the same table
+/// from a copy of its own to check the copy against. Its layout is the
+/// file's, not an interface: read the catalog through
+/// [`MeleeReferenceCatalog`].
 pub const CATALOG_JSON: &str = include_str!("../data/reference-catalog.json");
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MeleeReferenceCatalog {
-    pub(crate) assets: Vec<ReferenceAsset>,
-    pub(crate) common_key: String,
-    pub(crate) fighters: Vec<ReferenceFighter>,
-    pub(crate) roster_idle_profiles: Vec<IdleProfile>,
+/// The file as it is written, read once into [`MeleeReferenceCatalog`].
+mod file {
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub(super) struct Catalog {
+        pub assets: Vec<Asset>,
+        pub common_key: String,
+        pub fighters: Vec<Fighter>,
+        pub roster_idle_profiles: Vec<Profile>,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub(super) struct Asset {
+        pub key: String,
+        pub file_name: String,
+        pub sha256: String,
+        pub byte_length: usize,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub(super) struct Fighter {
+        pub fighter_kind: u8,
+        pub label: String,
+        pub fighter_key: String,
+        pub animations_key: String,
+        pub animation_count: usize,
+        pub primary_idle: PrimaryIdle,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub(super) struct PrimaryIdle {
+        pub animation_index: usize,
+        pub record_fighter_kind: Option<u8>,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub(super) struct Profile {
+        pub fighter_kind: u8,
+        pub root_symbols: Vec<String>,
+        pub initialization: Initialization,
+        pub idle: Idle,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub(super) struct Initialization {
+        pub model_scaling: f64,
+        pub scale_receiver_index: usize,
+        pub joint_parents: Vec<Option<u32>>,
+        pub root_scale: [f64; 3],
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub(super) struct Idle {
+        pub end_frame: f32,
+        pub flags: u32,
+    }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// The checked-in table. Every reference it holds between its own entries (a
+/// fighter's files, a profile's fighter, Nana's use of Popo's records) is
+/// resolved when it is read, so a lookup within it cannot miss.
+#[derive(Debug)]
+pub struct MeleeReferenceCatalog {
+    assets: Vec<ReferenceAsset>,
+    /// `PlCo.dat`, as an index into `assets`.
+    common: usize,
+    fighters: Vec<ReferenceFighter>,
+    profiles: Vec<IdleProfile>,
+}
+
+/// One original game file the catalog names.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReferenceAsset {
     /// A stable key for the file, unique in the catalog: a host that serves
     /// or caches reference files can store them under it.
@@ -33,35 +105,32 @@ pub struct ReferenceAsset {
     pub byte_length: usize,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug)]
 pub(crate) struct ReferenceFighter {
-    pub(crate) fighter_kind: u8,
+    pub(crate) kind: FighterKind,
     pub(crate) label: String,
-    pub(crate) fighter_key: String,
-    pub(crate) animations_key: String,
+    /// The fighter's data file (`PlXx.dat`), as an index into the assets.
+    data: usize,
+    /// The fighter's animation archive (`PlXxAJ.dat`).
+    animations: usize,
     pub(crate) animation_count: usize,
-    pub(crate) primary_idle: PrimaryIdle,
+    /// The index of Wait1 in the fighter's animation table.
+    pub(crate) idle_animation: usize,
+    /// The fighter whose records and archive this one plays: itself, or Popo
+    /// for Nana (ftData_80085FD4). An index into the fighters.
+    record: usize,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct PrimaryIdle {
-    pub(crate) animation_index: usize,
-    pub(crate) record_fighter_kind: Option<u8>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug)]
 pub(crate) struct IdleProfile {
-    pub(crate) fighter_kind: u8,
+    /// An index into the fighters.
+    fighter: usize,
     pub(crate) root_symbols: Vec<String>,
     pub(crate) initialization: IdleInitialization,
     pub(crate) idle: IdleMetadata,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug)]
 pub(crate) struct IdleInitialization {
     pub(crate) model_scaling: f64,
     pub(crate) scale_receiver_index: usize,
@@ -70,8 +139,7 @@ pub(crate) struct IdleInitialization {
     pub(crate) root_scale: [f64; 3],
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug)]
 pub(crate) struct IdleMetadata {
     pub(crate) end_frame: f32,
     pub(crate) flags: u32,
@@ -98,15 +166,104 @@ impl IdleInitialization {
 }
 
 impl MeleeReferenceCatalog {
-    pub fn checked_in() -> Result<Self> {
-        serde_json::from_str(CATALOG_JSON).map_err(|error| MeleeError::Catalog(error.to_string()))
+    /// The catalog this crate ships.
+    pub fn checked_in() -> &'static Self {
+        static CATALOG: OnceLock<MeleeReferenceCatalog> = OnceLock::new();
+        CATALOG.get_or_init(|| {
+            let file: file::Catalog =
+                serde_json::from_str(CATALOG_JSON).expect("the checked-in catalog parses");
+            Self::resolve(file).expect("the checked-in catalog is consistent")
+        })
     }
 
-    pub(crate) fn asset(&self, key: &str) -> Result<&ReferenceAsset> {
-        self.assets
+    /// Resolve the file's keys and kinds; `None` when one names nothing.
+    fn resolve(file: file::Catalog) -> Option<Self> {
+        let asset = |key: &str| file.assets.iter().position(|asset| asset.key == key);
+        let fighter = |kind: u8| {
+            file.fighters
+                .iter()
+                .position(|fighter| fighter.fighter_kind == kind)
+        };
+        let fighters = file
+            .fighters
             .iter()
-            .find(|asset| asset.key == key)
-            .ok_or_else(|| playback_error(format!("reference asset {key} is not in the catalog")))
+            .map(|entry| {
+                Some(ReferenceFighter {
+                    kind: FighterKind::new(entry.fighter_kind)?,
+                    label: entry.label.clone(),
+                    data: asset(&entry.fighter_key)?,
+                    animations: asset(&entry.animations_key)?,
+                    animation_count: entry.animation_count,
+                    idle_animation: entry.primary_idle.animation_index,
+                    record: fighter(
+                        entry
+                            .primary_idle
+                            .record_fighter_kind
+                            .unwrap_or(entry.fighter_kind),
+                    )?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let profiles = file
+            .roster_idle_profiles
+            .into_iter()
+            .map(|profile| {
+                Some(IdleProfile {
+                    fighter: fighter(profile.fighter_kind)?,
+                    root_symbols: profile.root_symbols,
+                    initialization: IdleInitialization {
+                        model_scaling: profile.initialization.model_scaling,
+                        scale_receiver_index: profile.initialization.scale_receiver_index,
+                        joint_parents: profile.initialization.joint_parents,
+                        root_scale: profile.initialization.root_scale,
+                    },
+                    idle: IdleMetadata {
+                        end_frame: profile.idle.end_frame,
+                        flags: profile.idle.flags,
+                    },
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        Some(Self {
+            common: asset(&file.common_key)?,
+            assets: file
+                .assets
+                .into_iter()
+                .map(|asset| ReferenceAsset {
+                    key: asset.key,
+                    file_name: asset.file_name,
+                    sha256: asset.sha256,
+                    byte_length: asset.byte_length,
+                })
+                .collect(),
+            fighters,
+            profiles,
+        })
+    }
+
+    /// The fighter a profile describes.
+    pub(crate) fn fighter(&self, profile: &IdleProfile) -> &ReferenceFighter {
+        &self.fighters[profile.fighter]
+    }
+
+    /// The fighter whose records and animation archive `fighter` plays.
+    pub(crate) fn record_fighter(&self, fighter: &ReferenceFighter) -> &ReferenceFighter {
+        &self.fighters[fighter.record]
+    }
+
+    /// The fighter's data file (`PlXx.dat`).
+    pub(crate) fn data_asset(&self, fighter: &ReferenceFighter) -> &ReferenceAsset {
+        &self.assets[fighter.data]
+    }
+
+    /// The fighter's animation archive (`PlXxAJ.dat`).
+    pub(crate) fn animations_asset(&self, fighter: &ReferenceFighter) -> &ReferenceAsset {
+        &self.assets[fighter.animations]
+    }
+
+    /// `PlCo.dat`, the data every fighter shares.
+    pub(crate) fn common_asset(&self) -> &ReferenceAsset {
+        &self.assets[self.common]
     }
 
     pub(crate) fn asset_sizes(&self) -> HashMap<usize, Vec<&str>> {
@@ -122,7 +279,7 @@ impl MeleeReferenceCatalog {
 
     /// Catalog file names of the references a costume's idle needs, or
     /// `None` when no profile recognizes its root. Lets a host fetch only
-    /// those before [`MeleeReferenceStore::from_bytes`].
+    /// those before [`crate::MeleeReferenceStore::from_bytes`].
     pub fn idle_reference_files(&self, contract: &HsdScene) -> Option<Vec<&str>> {
         self.idle_reference_assets(contract).map(|assets| {
             assets
@@ -136,24 +293,17 @@ impl MeleeReferenceCatalog {
     /// recognizes its root.
     pub fn idle_reference_assets(&self, contract: &HsdScene) -> Option<Vec<&ReferenceAsset>> {
         let (profile, _, _) = MeleeFighterPlayback::profile_for(contract, self)?;
-        let entry = self.fighter(profile.fighter_kind).ok()?;
-        let record_kind = entry
-            .primary_idle
-            .record_fighter_kind
-            .unwrap_or(entry.fighter_kind);
-        let record = self.fighter(record_kind).ok()?;
-        let mut keys = vec![&entry.fighter_key, &self.common_key, &record.animations_key];
-        if record_kind != entry.fighter_kind {
-            keys.push(&record.fighter_key);
+        let fighter = self.fighter(profile);
+        let record = self.record_fighter(fighter);
+        let mut assets = vec![
+            self.data_asset(fighter),
+            self.common_asset(),
+            self.animations_asset(record),
+        ];
+        if record.kind != fighter.kind {
+            assets.push(self.data_asset(record));
         }
-        keys.into_iter().map(|key| self.asset(key).ok()).collect()
-    }
-
-    pub(crate) fn fighter(&self, kind: u8) -> Result<&ReferenceFighter> {
-        self.fighters
-            .iter()
-            .find(|fighter| fighter.fighter_kind == kind)
-            .ok_or_else(|| playback_error(format!("fighter kind {kind} is not in the catalog")))
+        Some(assets)
     }
 }
 
@@ -184,18 +334,18 @@ impl MeleeReferenceCatalog {
     pub(crate) fn profile_for_roots<'c, 'n>(
         &'c self,
         roots: impl Iterator<Item = Option<&'n str>> + Clone,
-    ) -> Option<(&'c IdleProfile, usize, usize)> {
+    ) -> Option<(&'c IdleProfile, usize, CostumeIndex)> {
         let mut vanilla = Vec::new();
         let mut expansion = Vec::new();
-        for profile in &self.roster_idle_profiles {
+        for profile in &self.profiles {
             for (index, name) in roots.clone().enumerate() {
                 let Some(name) = name else {
                     continue;
                 };
                 if let Some(costume) = profile.root_symbols.iter().position(|root| root == name) {
-                    vanilla.push((profile, index, costume));
+                    vanilla.push((profile, index, CostumeIndex(costume)));
                 } else if is_expansion_root(profile, name) {
-                    expansion.push((profile, index, 0));
+                    expansion.push((profile, index, CostumeIndex(0)));
                 }
             }
         }
@@ -210,27 +360,24 @@ impl MeleeReferenceCatalog {
         }
     }
 
-    /// The costume slot a DAT was made for (`PlFcRe.dat`), from a root the
-    /// catalog names: `PlyFalco5KRe_Share_joint` is Falco's Red slot, and
+    /// The costume slot a DAT was made for, from a root the catalog names:
+    /// `PlyFalco5KRe_Share_joint` is Falco's Red slot, and
     /// `PlyFalco5K_Share_joint` his Neutral one. Root names alone decide it,
     /// so a costume with a custom model still has its slot.
-    pub fn costume_slot<'n>(&self, roots: impl IntoIterator<Item = &'n str>) -> Option<String> {
+    pub fn costume_slot<'n>(&self, roots: impl IntoIterator<Item = &'n str>) -> Option<MeleeSlot> {
         roots.into_iter().find_map(|name| {
             let stem = name.strip_suffix("_Share_joint")?;
-            self.roster_idle_profiles.iter().find_map(|profile| {
+            self.profiles.iter().find_map(|profile| {
                 let base = profile.root_symbols.first()?.strip_suffix("_Share_joint")?;
-                let code = match stem.strip_prefix(base)? {
-                    "" => "Nr",
-                    code => code,
+                let color = match stem.strip_prefix(base)? {
+                    "" => CostumeColor::NEUTRAL,
+                    // Root names spell the code as file names do.
+                    code => CostumeColor::from_code(code).filter(|color| color.code() == code)?,
                 };
-                crate::COSTUMES
-                    .iter()
-                    .any(|(known, _)| *known == code)
-                    .then_some(())?;
-                let fighter = self.fighter(profile.fighter_kind).ok()?;
-                let file = &self.asset(&fighter.fighter_key).ok()?.file_name;
-                let character = file.strip_prefix("Pl")?.strip_suffix(".dat")?;
-                Some(format!("Pl{character}{code}.dat"))
+                let file = &self.data_asset(self.fighter(profile)).file_name;
+                let character =
+                    Character::from_code(file.strip_prefix("Pl")?.strip_suffix(".dat")?)?;
+                Some(MeleeSlot::Costume { character, color })
             })
         })
     }
@@ -244,31 +391,25 @@ impl MeleeReferenceCatalog {
         let root = &scene.roots[root_index];
         let matches = profile.initialization.has_hierarchy(&root.joints);
         matches.then_some(RecognizedCostume {
-            fighter_kind: profile.fighter_kind,
+            fighter_kind: self.fighter(profile).kind,
             costume,
             root_index,
         })
     }
 
-    /// `PlCo.dat`, the data every fighter shares.
-    pub(crate) fn load_common(&self, store: &MeleeReferenceStore) -> Result<Vec<u8>> {
-        store.load(self.asset(&self.common_key)?)
-    }
-
-    /// The fighter's own data file (`PlXx.dat`).
-    pub(crate) fn load_fighter(
-        &self,
-        store: &MeleeReferenceStore,
-        fighter_kind: u8,
-    ) -> Result<Vec<u8>> {
-        store.load(self.asset(&self.fighter(fighter_kind)?.fighter_key)?)
+    /// The fighter of a costume [`Self::recognize`] admitted.
+    pub(crate) fn fighter_of_kind(&self, kind: FighterKind) -> &ReferenceFighter {
+        self.fighters
+            .iter()
+            .find(|fighter| fighter.kind == kind)
+            .expect("a recognized costume's fighter is in the catalog")
     }
 }
 
 /// A costume [`MeleeReferenceCatalog::recognize`] admitted.
 pub(crate) struct RecognizedCostume {
-    pub fighter_kind: u8,
-    pub costume: usize,
+    pub fighter_kind: FighterKind,
+    pub costume: CostumeIndex,
     pub root_index: usize,
 }
 
@@ -276,29 +417,29 @@ pub(crate) struct RecognizedCostume {
 mod tests {
     use super::*;
 
+    /// `checked_in` resolves every key and kind the file holds, so reading it
+    /// at all is the check that none dangles.
     #[test]
-    fn checked_in_catalog_parses_with_every_profile_resolvable() {
-        let catalog = MeleeReferenceCatalog::checked_in().expect("catalog");
-        assert!(!catalog.roster_idle_profiles.is_empty());
-        catalog.asset(&catalog.common_key).expect("common asset");
-        for profile in &catalog.roster_idle_profiles {
-            let fighter = catalog.fighter(profile.fighter_kind).expect("fighter");
-            catalog.asset(&fighter.fighter_key).expect("fighter asset");
-            let record_kind = fighter
-                .primary_idle
-                .record_fighter_kind
-                .unwrap_or(fighter.fighter_kind);
-            let record = catalog.fighter(record_kind).expect("record fighter");
-            catalog
-                .asset(&record.animations_key)
-                .expect("animation asset");
-        }
+    fn checked_in_catalog_resolves_every_profile() {
+        let catalog = MeleeReferenceCatalog::checked_in();
+        assert_eq!(catalog.profiles.len(), 27);
+        assert_eq!(catalog.common_asset().file_name, "PlCo.dat");
+        let nana = catalog
+            .fighters
+            .iter()
+            .find(|fighter| fighter.kind == FighterKind::NANA)
+            .expect("Nana");
+        assert_eq!(catalog.record_fighter(nana).kind, FighterKind::POPO);
     }
 
     #[test]
     fn root_names_give_the_costume_slot() {
-        let catalog = MeleeReferenceCatalog::checked_in().expect("catalog");
-        let slot = |roots: &[&str]| catalog.costume_slot(roots.iter().copied());
+        let catalog = MeleeReferenceCatalog::checked_in();
+        let slot = |roots: &[&str]| {
+            catalog
+                .costume_slot(roots.iter().copied())
+                .map(|slot| slot.file_name())
+        };
         assert_eq!(
             slot(&["PlyFalco5KRe_Share_joint"]).as_deref(),
             Some("PlFcRe.dat")
@@ -313,11 +454,11 @@ mod tests {
 
     #[test]
     fn expansion_roots_follow_the_fighter_naming_only() {
-        let catalog = MeleeReferenceCatalog::checked_in().expect("catalog");
+        let catalog = MeleeReferenceCatalog::checked_in();
         let purin = catalog
-            .roster_idle_profiles
+            .profiles
             .iter()
-            .find(|profile| profile.fighter_kind == 0x0F)
+            .find(|profile| catalog.fighter(profile).kind.index() == 0x0F)
             .expect("Jigglypuff profile");
         assert!(is_expansion_root(purin, "PlyPurin5KWh_Share_joint"));
         assert!(!is_expansion_root(purin, "PlyPurin5KRe_Share_joint"));

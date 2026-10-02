@@ -13,7 +13,7 @@ use crate::disk::{ReadError, read_capped, write_atomically};
 use dat_parser::DatFile;
 use dat_parser::hsd::scene::HSD_SCENE_MAX_DAT_BYTES;
 use melee_dat::MeleeReferenceCatalog;
-use melee_dat::{ParsedFilename, parse_filename};
+use melee_dat::parse_filename;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::io::Read;
@@ -142,6 +142,7 @@ impl Library {
             .map_err(|error| reject(format!("it isn't a DAT file the app can read ({error})")))?;
         let slot = catalog
             .costume_slot(dat.roots.iter().map(|root| root.name.as_str()))
+            .map(|slot| slot.file_name())
             .or_else(|| slot_from_file_name(file_name));
         let id = format!("{:x}", Sha256::digest(&bytes));
         Ok(Candidate {
@@ -299,13 +300,7 @@ impl Library {
 /// The slot a costume or stage file names (`PlFcRe-waffle.dat` is Falco's
 /// Red slot).
 fn slot_from_file_name(file_name: &str) -> Option<String> {
-    match parse_filename(file_name)? {
-        ParsedFilename::Character {
-            character_code,
-            costume_code,
-        } => Some(format!("Pl{character_code}{costume_code}.dat")),
-        ParsedFilename::Stage { filename } => Some(filename.to_owned()),
-    }
+    parse_filename(file_name).map(|slot| slot.file_name())
 }
 
 /// A readable name from a file name, without the slot code it starts with:
@@ -444,12 +439,12 @@ mod tests {
     fn a_costume_is_identified_kept_once_and_read_back() {
         use super::{Library, SkinSource};
         let bytes = crate::test_dat::model_named("PlyFalco5KRe_Share_joint");
-        let catalog = melee_dat::MeleeReferenceCatalog::checked_in().expect("catalog");
+        let catalog = melee_dat::MeleeReferenceCatalog::checked_in();
         let folder = tempfile::tempdir().expect("temp folder");
         let mut library = Library::open_at(folder.path().to_owned());
         // A name that says nothing: the slot comes from the contents.
         let candidate = library
-            .inspect("falco final v3.dat", bytes.clone(), &catalog)
+            .inspect("falco final v3.dat", bytes.clone(), catalog)
             .expect("readable");
         assert_eq!(candidate.slot.as_deref(), Some("PlFcRe.dat"));
         assert_eq!(candidate.name, "falco final v3");
@@ -459,7 +454,7 @@ mod tests {
             .expect("stored");
 
         let again = library
-            .inspect("copy.dat", bytes.clone(), &catalog)
+            .inspect("copy.dat", bytes.clone(), catalog)
             .expect("readable");
         assert_eq!(again.known.as_ref(), Some(&skin));
         let moved = library
@@ -472,7 +467,7 @@ mod tests {
         assert_eq!(library.read(&skin.id).expect("read"), bytes);
         assert!(
             library
-                .inspect("notes.dat", b"hello".to_vec(), &catalog)
+                .inspect("notes.dat", b"hello".to_vec(), catalog)
                 .is_err()
         );
     }

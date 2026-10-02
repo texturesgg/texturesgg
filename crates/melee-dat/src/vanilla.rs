@@ -9,10 +9,10 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-pub const VANILLA_FILES_JSON: &str = include_str!("../data/vanilla-files.json");
+const VANILLA_FILES_JSON: &str = include_str!("../data/vanilla-files.json");
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+/// One file of the game as shipped.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VanillaFile {
     pub name: String,
     pub byte_length: usize,
@@ -21,7 +21,15 @@ pub struct VanillaFile {
 
 #[derive(Deserialize)]
 struct Table {
-    files: Vec<VanillaFile>,
+    files: Vec<Record>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Record {
+    name: String,
+    byte_length: usize,
+    sha256: String,
 }
 
 fn table() -> &'static HashMap<String, VanillaFile> {
@@ -32,7 +40,14 @@ fn table() -> &'static HashMap<String, VanillaFile> {
         table
             .files
             .into_iter()
-            .map(|file| (file.name.clone(), file))
+            .map(|file| {
+                let file = VanillaFile {
+                    name: file.name,
+                    byte_length: file.byte_length,
+                    sha256: file.sha256,
+                };
+                (file.name.clone(), file)
+            })
             .collect()
     })
 }
@@ -58,17 +73,22 @@ pub fn is_vanilla(name: &str, bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{is_vanilla, vanilla_file};
-    use crate::{CHARACTERS, STAGES};
+    use crate::{Character, Stage};
 
     #[test]
     fn every_stage_and_fighter_has_vanilla_files() {
-        for (stage, _) in STAGES {
-            assert!(vanilla_file(stage).is_some(), "{stage}");
-        }
-        for (code, name) in CHARACTERS {
+        for stage in Stage::all() {
             assert!(
-                vanilla_file(&format!("Pl{code}Nr.dat")).is_some(),
-                "{name}'s neutral costume"
+                vanilla_file(stage.file_name()).is_some(),
+                "{}",
+                stage.name()
+            );
+        }
+        for character in Character::all() {
+            assert!(
+                vanilla_file(&format!("Pl{}Nr.dat", character.code())).is_some(),
+                "{}'s neutral costume",
+                character.name()
             );
         }
     }

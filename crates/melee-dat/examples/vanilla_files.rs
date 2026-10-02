@@ -8,7 +8,7 @@
 //! Any ISO but the one the reference catalog records as its source is
 //! refused, so the table can only describe the game as shipped.
 
-use melee_dat::{ParsedFilename, catalog::CATALOG_JSON, parse_filename};
+use melee_dat::{MeleeSlot, catalog::CATALOG_JSON};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::error::Error;
@@ -33,14 +33,7 @@ struct Record {
 
 /// A costume slot's file (`PlFcRe.dat`) or a versus stage's (`GrNLa.dat`).
 fn belongs(name: &str) -> bool {
-    match parse_filename(name) {
-        Some(ParsedFilename::Character {
-            character_code,
-            costume_code,
-        }) => name == format!("Pl{character_code}{costume_code}.dat"),
-        Some(ParsedFilename::Stage { filename }) => name == filename,
-        None => false,
-    }
+    MeleeSlot::from_file_name(name).is_some()
 }
 
 fn main() -> Result<(), Box<dyn Error>> {

@@ -316,7 +316,7 @@ impl Listing {
         // Places come from the same parse as the document.
         let opened = TextureDocument::open_inspecting(dat, |dat, scene| {
             let places = references.map(|(references, store)| {
-                CostumePlaces::read(dat, scene, &references.catalog, store)
+                CostumePlaces::read(dat, scene, references.catalog, store)
             });
             (places, StageTextureNames::read(dat))
         });

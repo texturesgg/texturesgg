@@ -2,13 +2,18 @@ use dat_parser::DatFile;
 use dat_parser::descriptor::DescriptorParseError;
 use dat_parser::descriptor::jobj::flags;
 use dat_parser::hsd::scene::{HsdJoint, HsdJointIndex, HsdSceneRoot, HsdTransform, JObjId};
+use melee_dat::FighterKind;
 use melee_dat::fighter::animation::{
-    FighterAnimationBindingError as Error, bind_nana_fighter_animation,
-    bind_same_kind_fighter_animation,
+    FighterAnimationBinding, FighterAnimationBindingError as Error, FighterAnimationFiles,
+    bind_nana_fighter_animation, bind_same_kind_fighter_animation,
 };
 
 const SYMBOL: &str = "synthetic_ACTION_Wait_figatree";
 const KIND: u8 = 1;
+
+fn kind(value: u8) -> FighterKind {
+    FighterKind::new(value).expect("a source fighter kind")
+}
 const RECORD: usize = 0x38;
 
 fn put(data: &mut [u8], offset: usize, value: u32) {
@@ -127,16 +132,19 @@ impl Fixture {
         }
     }
 
-    fn bind(&self) -> Result<melee_dat::fighter::animation::FighterAnimationBinding, Error> {
-        bind_same_kind_fighter_animation(
-            &self.fighter,
-            &self.common,
-            &self.aj,
-            &self.root,
-            KIND,
-            1,
-            2,
-        )
+    /// The fixture's files, claiming `animation_count` records.
+    fn files(&self, animation_count: usize) -> FighterAnimationFiles<'_> {
+        FighterAnimationFiles {
+            fighter: &self.fighter,
+            common: &self.common,
+            aj: &self.aj,
+            root: &self.root,
+            animation_count,
+        }
+    }
+
+    fn bind(&self) -> Result<FighterAnimationBinding, Error> {
+        bind_same_kind_fighter_animation(&self.files(2), kind(KIND), 1)
     }
 }
 
@@ -182,39 +190,15 @@ fn accepts_absent_auxiliary_descriptor_without_inventing_slots() {
 fn explicit_animation_count_is_authoritative_and_checked_before_selection() {
     let fixture = Fixture::new(&[0, 0, 0]);
     assert!(matches!(
-        bind_same_kind_fighter_animation(
-            &fixture.fighter,
-            &fixture.common,
-            &fixture.aj,
-            &fixture.root,
-            KIND,
-            2,
-            2
-        ),
+        bind_same_kind_fighter_animation(&fixture.files(2), kind(KIND), 2),
         Err(Error::AnimationIndex { index: 2, count: 2 })
     ));
     assert!(matches!(
-        bind_same_kind_fighter_animation(
-            &fixture.fighter,
-            &fixture.common,
-            &fixture.aj,
-            &fixture.root,
-            KIND,
-            0,
-            usize::MAX
-        ),
+        bind_same_kind_fighter_animation(&fixture.files(usize::MAX), kind(KIND), 0),
         Err(Error::Metadata(_))
     ));
     assert!(matches!(
-        bind_same_kind_fighter_animation(
-            &fixture.fighter,
-            &fixture.common,
-            &fixture.aj,
-            &fixture.root,
-            KIND,
-            1,
-            11
-        ),
+        bind_same_kind_fighter_animation(&fixture.files(11), kind(KIND), 1),
         Err(Error::Descriptor(DescriptorParseError::Truncated { .. }))
     ));
 }
@@ -361,20 +345,17 @@ fn nana_fixture(counts: &[u8]) -> (Fixture, DatFile) {
     (fixture, nana)
 }
 
-fn bind_nana(
-    fixture: &Fixture,
-    nana: &DatFile,
-) -> Result<melee_dat::fighter::animation::FighterAnimationBinding, Error> {
-    bind_nana_fighter_animation(
-        nana,
-        &fixture.fighter,
-        &fixture.common,
-        &fixture.aj,
-        &fixture.root,
-        1,
-        2,
-        2,
-    )
+/// Nana's files over the fixture's, which are Popo's: his archive, and the
+/// shared common data and costume root.
+fn nana_files<'a>(fixture: &'a Fixture, nana: &'a DatFile) -> FighterAnimationFiles<'a> {
+    FighterAnimationFiles {
+        fighter: nana,
+        ..fixture.files(2)
+    }
+}
+
+fn bind_nana(fixture: &Fixture, nana: &DatFile) -> Result<FighterAnimationBinding, Error> {
+    bind_nana_fighter_animation(&nana_files(fixture, nana), &fixture.fighter, 2, 1)
 }
 
 #[test]
@@ -406,10 +387,8 @@ fn nana_motion_flags_select_the_attach_path_not_popo_flags() {
     put(&mut nana.data, RECORD + 0x10, u32::from(POPO));
     assert!(matches!(
         bind_nana(&fixture, &nana),
-        Err(Error::RemappedAnimation {
-            fighter_kind: NANA,
-            source_kind: POPO,
-        })
+        Err(Error::RemappedAnimation { fighter_kind, source_kind: POPO })
+            if fighter_kind == FighterKind::NANA
     ));
     let (fixture, mut nana) = nana_fixture(&[1, 0, 1]);
     put(&mut nana.data, RECORD + 0x10, 0x200 | u32::from(NANA));
@@ -423,16 +402,7 @@ fn nana_motion_flags_select_the_attach_path_not_popo_flags() {
 fn nana_fallback_checks_both_authenticated_counts() {
     let (fixture, nana) = nana_fixture(&[1, 0, 1]);
     assert!(matches!(
-        bind_nana_fighter_animation(
-            &nana,
-            &fixture.fighter,
-            &fixture.common,
-            &fixture.aj,
-            &fixture.root,
-            1,
-            2,
-            1,
-        ),
+        bind_nana_fighter_animation(&nana_files(&fixture, &nana), &fixture.fighter, 1, 1),
         Err(Error::AnimationIndex { index: 1, count: 1 })
     ));
 }

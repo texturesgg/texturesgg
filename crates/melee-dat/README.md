@@ -19,9 +19,17 @@ let (scene, work) = model.evaluate()?; // what a renderer draws this frame
 
 A stage plays as soon as it loads. A fighter costume needs the fighter's own
 files to move, and the `MELEE_FIGHTER` policy it was opened with above:
-`MeleeModel::attach_fighter` takes the reference catalog and a
-`MeleeReferenceStore` of original game files, which the caller supplies and the
-store admits only by size and SHA-256.
+`MeleeModel::attach_fighter` takes the reference catalog
+(`MeleeReferenceCatalog::checked_in()`) and a `MeleeReferenceStore` of original
+game files, which the caller supplies and the store admits only by size and
+SHA-256. It hands the model back with a `FighterAttachOutcome`: attached, not a
+fighter the catalog recognizes, or failed with the `MeleeError` that says why.
+
+The game's own numbers and names have types: `FighterKind` and `CostumeIndex`
+for the fighter tables, `StagePointKind` for a stage's general points, and
+`MeleeSlot` (a `Character` and `CostumeColor`, or a `Stage`) for the file a
+skin replaces. `parse_filename` finds the slot a descriptively named file was
+made for; `MeleeSlot::from_file_name` takes only the slot's own name.
 
 ## Layout
 
@@ -38,7 +46,7 @@ store admits only by size and SHA-256.
 | `stage::texture_names` | HAL's own names for a stage's textures.                                                                 |
 | `catalog`              | `MeleeReferenceCatalog`: the checked-in table of every fighter's files, joint hierarchy and idle setup. |
 | `references`           | `MeleeReferenceStore`: the original game files a caller supplies.                                       |
-| `file_names`           | How the game names its files (`PlFcRe.dat` is Falco's Red costume).                                     |
+| `file_names`           | `MeleeSlot` and how the game names its files (`PlFcRe.dat` is Falco's Red costume).                     |
 | `vanilla`              | The size and SHA-256 of every costume and stage file as shipped.                                        |
 
 Types a host holds carry the `Melee` prefix; their parts are named by subject

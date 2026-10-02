@@ -225,12 +225,12 @@ impl Game {
 /// The reference catalog and the player's game, which holds the files it
 /// names.
 pub struct References {
-    pub catalog: MeleeReferenceCatalog,
+    pub catalog: &'static MeleeReferenceCatalog,
     game: Game,
 }
 
 impl References {
-    pub fn new(catalog: MeleeReferenceCatalog, game: Game) -> Self {
+    pub fn new(catalog: &'static MeleeReferenceCatalog, game: Game) -> Self {
         Self { catalog, game }
     }
 
@@ -243,7 +243,7 @@ impl References {
     /// the game, or `None` when it isn't a stock costume the catalog knows.
     /// The store checks each file against the catalog.
     pub fn store_for(&self, scene: &HsdScene) -> Option<Rc<MeleeReferenceStore>> {
-        MeleeReferenceStore::for_costume(&self.catalog, scene, |name| {
+        MeleeReferenceStore::for_costume(self.catalog, scene, |name| {
             self.game
                 .read(name)
                 .inspect_err(|error| crate::log(&format!("reference unavailable: {error}")))

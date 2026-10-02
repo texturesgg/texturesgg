@@ -16,6 +16,8 @@
 use dat_parser::DatFile;
 use dat_parser::descriptor::{DescriptorParseError, DescriptorReader};
 
+use super::{CostumeIndex, FighterKind};
+
 /// `ftParts_8007487C` asserts `model_num <= 11`.
 pub const MAX_MODEL_GROUPS: usize = 11;
 /// Bounds for hostile data; stock tables stay far below both.
@@ -23,20 +25,13 @@ const MAX_ALTERNATIVES: usize = 128;
 const MAX_ORDINALS: usize = 255;
 const TABLE_COUNT: usize = 5;
 
-const FIGHTER_KIND_PEACH: u8 = 0x09;
-const FIGHTER_KIND_PICHU: u8 = 0x17;
-const FIGHTER_KIND_GAME_AND_WATCH: u8 = 0x18;
-const FIGHTER_KIND_COUNT: u8 = 0x21;
-
 /// One visibility table: per model group, per alternative, the display-object
 /// ordinals that alternative uses (`FtPartsVisLookup` / `TempS`).
-pub type VisibilityTable = Vec<Vec<Vec<u8>>>;
+type VisibilityTable = Vec<Vec<Vec<u8>>>;
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum ModelPartsError {
-    #[error("fighter kind {0} is outside the source FighterKind table")]
-    FighterKind(u8),
     #[error("missing or ambiguous ftData public root")]
     Root,
     #[error(transparent)]
@@ -54,11 +49,11 @@ pub enum ModelPartsError {
 /// The visibility tables `ftParts_8007487C` installs for one costume.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FighterModelParts {
-    pub model_count: usize,
+    model_count: usize,
     /// Tables 0–4 (`FtPartsVis.xC`): 0 is the normal main pass, 1 an
     /// alternate main pass, 2 the metal list (`x203C`), 3 suppressed in the
     /// main pass, and 4 set only by Game & Watch's `OnLoad` (`items[10]`).
-    pub tables: [Option<VisibilityTable>; TABLE_COUNT],
+    tables: [Option<VisibilityTable>; TABLE_COUNT],
 }
 
 impl FighterModelParts {
@@ -69,12 +64,9 @@ impl FighterModelParts {
     /// per-costume table falls back to costume 0's (`ftParts_8007487C`).
     pub fn load(
         fighter: &DatFile,
-        fighter_kind: u8,
-        costume: usize,
+        fighter_kind: FighterKind,
+        costume: CostumeIndex,
     ) -> Result<Self, ModelPartsError> {
-        if fighter_kind >= FIGHTER_KIND_COUNT {
-            return Err(ModelPartsError::FighterKind(fighter_kind));
-        }
         let root = unique_ftdata_root(fighter)?;
         let ft_data = DescriptorReader::new(fighter, "ftData", root);
         let parts_offset = required(ft_data, "ftData.x8", 0x08)?;
@@ -85,7 +77,7 @@ impl FighterModelParts {
             return Err(ModelPartsError::ResourceLimit("model group"));
         }
         let vis_table = required(parts, "FtPartsDesc.vis_table", 4)?;
-        let costume_offset = u32::try_from(costume)
+        let costume_offset = u32::try_from(costume.0)
             .ok()
             .and_then(|costume| costume.checked_mul(16))
             .ok_or(ModelPartsError::ResourceLimit("costume"))?;
@@ -101,7 +93,7 @@ impl FighterModelParts {
                 .map(|lookup| read_table(fighter, lookup, model_count))
                 .transpose()?;
         }
-        if fighter_kind == FIGHTER_KIND_GAME_AND_WATCH {
+        if fighter_kind == FighterKind::GAME_AND_WATCH {
             // ftGw_Init_OnLoad: fp->x5AC.xC[4] = ft_data->x48_items[10].
             let items = required(ft_data, "ftData.x48_items", 0x48)?;
             let items = DescriptorReader::new(fighter, "x48_items", items);
@@ -112,6 +104,22 @@ impl FighterModelParts {
         Ok(Self {
             model_count,
             tables,
+        })
+    }
+
+    /// How many model groups the fighter has: the length of a selection list.
+    pub fn model_count(&self) -> usize {
+        self.model_count
+    }
+
+    /// Whether visibility table `table` names display object `ordinal`.
+    pub(crate) fn names(&self, table: usize, ordinal: usize) -> bool {
+        self.tables[table].as_ref().is_some_and(|table| {
+            table
+                .iter()
+                .flatten()
+                .flatten()
+                .any(|&named| usize::from(named) == ordinal)
         })
     }
 
@@ -170,7 +178,12 @@ impl FighterModelParts {
 ///
 /// Kirby's copy-ability hat (a player setting, `ftKb_SpecialN_800F1BAC`) is
 /// not modeled: a preview has no copy ability.
-pub fn default_selections(fighter_kind: u8, costume: usize, model_count: usize) -> Vec<i32> {
+pub fn default_selections(
+    fighter_kind: FighterKind,
+    costume: CostumeIndex,
+    model_count: usize,
+) -> Vec<i32> {
+    let costume = costume.0;
     let mut selections = vec![-1; model_count];
     let mut request = |group: usize, value: i32| {
         if let Some(slot) = selections.get_mut(group) {
@@ -179,7 +192,7 @@ pub fn default_selections(fighter_kind: u8, costume: usize, model_count: usize) 
     };
     match fighter_kind {
         // ftPe_Init_OnDeath: costume 1 swaps groups 1, 5, and 6.
-        FIGHTER_KIND_PEACH => {
+        FighterKind::PEACH => {
             for (group, value) in [(0, 0), (2, 0), (3, -1), (4, 0)] {
                 request(group, value);
             }
@@ -194,7 +207,7 @@ pub fn default_selections(fighter_kind: u8, costume: usize, model_count: usize) 
         }
         // ftPc_Init_OnDeath: costumes 1–3 each show one of groups 1–3; the
         // switch has no default, so any other costume leaves them at -1.
-        FIGHTER_KIND_PICHU => {
+        FighterKind::PICHU => {
             request(0, 0);
             for group in 1..=3 {
                 request(group, if costume == group { 0 } else { -1 });
@@ -212,21 +225,21 @@ pub fn default_selections(fighter_kind: u8, costume: usize, model_count: usize) 
 /// The Wait1 script's `set_dobj_flags` commands (`ftAction_80071D40` ->
 /// `ftParts_80074B0C`), applied on top of [`default_selections`] when a
 /// fighter enters Wait1.
-pub fn wait1_script_selections(fighter_kind: u8) -> &'static [(usize, i32)] {
+pub fn wait1_script_selections(fighter_kind: FighterKind) -> &'static [(usize, i32)] {
     match fighter_kind {
         // Game & Watch's Wait1 script selects model 2, alternative 1.
-        FIGHTER_KIND_GAME_AND_WATCH => &[(2, 1)],
+        FighterKind::GAME_AND_WATCH => &[(2, 1)],
         _ => &[],
     }
 }
 
 /// `ftParts_80074A4C` calls in each costume-independent `OnDeath`, indexed by
 /// internal FighterKind (`ftData_OnDeath`, `ftdata.c:313`).
-fn on_death_requests(fighter_kind: u8) -> &'static [(usize, i32)] {
+fn on_death_requests(fighter_kind: FighterKind) -> &'static [(usize, i32)] {
     const ONE: &[(usize, i32)] = &[(0, 0)];
     const TWO: &[(usize, i32)] = &[(0, 0), (1, 0)];
     const THREE: &[(usize, i32)] = &[(0, 0), (1, 0), (2, 0)];
-    match fighter_kind {
+    match fighter_kind.index() {
         // Mario, Fox, Captain Falcon, Donkey Kong, Bowser, Ness, Samus, Yoshi,
         // Jigglypuff, Mewtwo, Luigi (`false`), Dr. Mario, Falco.
         0x00 | 0x01 | 0x02 | 0x03 | 0x05 | 0x08 | 0x0D | 0x0E | 0x0F | 0x10 | 0x11 | 0x15
@@ -371,19 +384,19 @@ mod tests {
     #[test]
     fn peach_and_pichu_defaults_follow_their_costume_switches() {
         assert_eq!(
-            default_selections(FIGHTER_KIND_PEACH, 1, 7),
+            default_selections(FighterKind::PEACH, CostumeIndex(1), 7),
             vec![0, -1, 0, -1, 0, 0, -1]
         );
         assert_eq!(
-            default_selections(FIGHTER_KIND_PEACH, 3, 7),
+            default_selections(FighterKind::PEACH, CostumeIndex(3), 7),
             vec![0, 0, 0, -1, 0, -1, 0]
         );
         assert_eq!(
-            default_selections(FIGHTER_KIND_PICHU, 2, 4),
+            default_selections(FighterKind::PICHU, CostumeIndex(2), 4),
             vec![0, -1, 0, -1]
         );
         assert_eq!(
-            default_selections(FIGHTER_KIND_PICHU, 0, 4),
+            default_selections(FighterKind::PICHU, CostumeIndex(0), 4),
             vec![0, -1, -1, -1]
         );
     }

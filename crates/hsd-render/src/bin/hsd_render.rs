@@ -40,7 +40,7 @@ use dat_parser::hsd::source::HsdSource;
 use hsd_render::offscreen::{CAPTURE_FORMAT, Gpu, RgbaImage, capture, pick};
 use hsd_render::{CameraView, HsdRenderer, PreparedGeometry, neutral_preview_lighting};
 use melee_dat::MeleeModel;
-use melee_dat::{MeleeFighterPlayback, MeleeReferenceCatalog, MeleeReferenceStore};
+use melee_dat::{FighterAttach, MeleeFighterPlayback, MeleeReferenceCatalog, MeleeReferenceStore};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -672,20 +672,19 @@ fn read_png(path: &Path) -> CliResult<RgbaImage> {
 /// Attach the catalog playback to the costume at `dat`, with the fighter
 /// files it plays with read from the disc image at `iso`.
 fn attach_playback(dat: &str, iso: &Path) -> CliResult<MeleeFighterPlayback> {
-    let catalog = MeleeReferenceCatalog::checked_in()?;
+    let catalog = MeleeReferenceCatalog::checked_in();
     let bytes = std::fs::read(dat).map_err(|error| format!("{dat}: {error}"))?;
     let source = HsdSource::from_dat(&bytes, HsdDrawEvaluationPolicy::MELEE_FIGHTER)?;
     let mut disc =
         gc_iso::Disc::open(iso).map_err(|error| format!("{}: {error}", iso.display()))?;
     let store =
-        MeleeReferenceStore::for_costume(&catalog, &source.scene, |name| disc.read(name).ok())
+        MeleeReferenceStore::for_costume(catalog, &source.scene, |name| disc.read(name).ok())
             .ok_or("no catalog idle profile admits this costume")?;
-    MeleeFighterPlayback::attach(source, &catalog, &store).map_err(|not_attached| {
-        not_attached.error.map_or_else(
-            || "no catalog idle profile admits this costume".into(),
-            |error| error.into(),
-        )
-    })
+    match MeleeFighterPlayback::attach(source, catalog, &store) {
+        FighterAttach::Attached(playback) => Ok(*playback),
+        FighterAttach::Unrecognized(_) => Err("no catalog idle profile admits this costume".into()),
+        FighterAttach::Failed { error, .. } => Err(error.into()),
+    }
 }
 
 fn run_animations(args: &[String]) -> CliResult<ExitCode> {

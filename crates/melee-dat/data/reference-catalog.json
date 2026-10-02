@@ -2904,12 +2904,9 @@
       "fighterKey": "reference/melee/gale01-r2/929cdf08c31bc75156ccef05238f2b16dc4d0b187ed1bb4f0a628a2466fb7f7a.dat",
       "animationsKey": "reference/melee/gale01-r2/4bd9593e6f0d980b4441891b62ea84a08c099471d695a614974c67223ab5872f.dat",
       "animationCount": 303,
-      "modelRootSymbol": "PlyMario5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyMario5K_Share_ACTION_Wait1_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 50,
           "flags": 0,
           "receiverCount": 61
@@ -2922,12 +2919,9 @@
       "fighterKey": "reference/melee/gale01-r2/846b075d3379de041ecfb5504f5442484c23783422a0851851c96489d697b690.dat",
       "animationsKey": "reference/melee/gale01-r2/a9f3865a0c085b321876543900625d7d54dfef5fe2438ea8068f6221073a6c7d.dat",
       "animationCount": 327,
-      "modelRootSymbol": "PlyFox5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyFox5K_Share_ACTION_Wait1_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 120,
           "flags": 0,
           "receiverCount": 73
@@ -2940,12 +2934,9 @@
       "fighterKey": "reference/melee/gale01-r2/4cf61a52737d464df9298fd15573345fb3b9a15c79ab47dce4fd2e3e707917af.dat",
       "animationsKey": "reference/melee/gale01-r2/a9a0ccc2382a2f02d5423675469719488540dd119a14577712c97348f70e1c1a.dat",
       "animationCount": 318,
-      "modelRootSymbol": "PlyCaptain5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyCaptain5K_Share_ACTION_Wait1_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 60,
           "flags": 0,
           "receiverCount": 63
@@ -2958,12 +2949,9 @@
       "fighterKey": "reference/melee/gale01-r2/c6cd090eda7e96da6fbd6d5dd4296a91eab7cab99c5b007244b090f5de799d6f.dat",
       "animationsKey": "reference/melee/gale01-r2/320ad74918bd4f93c872b2cd396e730b2234ecaea96dbea3fdcf3287d8a636d6.dat",
       "animationCount": 337,
-      "modelRootSymbol": "PlyDonkey5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyDonkey5K_Share_ACTION_Wait_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 506,
           "flags": 0,
           "receiverCount": 75
@@ -2976,12 +2964,9 @@
       "fighterKey": "reference/melee/gale01-r2/bae86007bbdcdd6bea67ddc0309280c47f7e94557de0f7d5469b5c19d0755cd7.dat",
       "animationsKey": "reference/melee/gale01-r2/f4999598dd9e4ca5f3c028894e894358a4a7bf18aaddec80ebda7a35756e1214.dat",
       "animationCount": 479,
-      "modelRootSymbol": "PlyKirby5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyKirby5K_Share_ACTION_Wait1_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 110,
           "flags": 0,
           "receiverCount": 46
@@ -2994,12 +2979,9 @@
       "fighterKey": "reference/melee/gale01-r2/a21afa0e015957170f48305fd9414c041955ccf6991ea1b18a6f9142e063d24d.dat",
       "animationsKey": "reference/melee/gale01-r2/bd1c49c324b987f8935efd23b2319c1c25627594878c94fc90de3346d60c0b71.dat",
       "animationCount": 316,
-      "modelRootSymbol": "PlyKoopa5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyKoopa5K_Share_ACTION_Wait1_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 200,
           "flags": 0,
           "receiverCount": 76
@@ -3012,12 +2994,9 @@
       "fighterKey": "reference/melee/gale01-r2/9f7c804278054b2cc7dfe0c4b87d69bcf1511df9fd673190c2ce84cc68e76bc8.dat",
       "animationsKey": "reference/melee/gale01-r2/b2a89662a36b72b3dcf0421208f1122151fb05422c3d7de3c1f048703ab71088.dat",
       "animationCount": 314,
-      "modelRootSymbol": "PlyLink5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyLink5K_Share_ACTION_Wait_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 120,
           "flags": 0,
           "receiverCount": 75
@@ -3030,12 +3009,9 @@
       "fighterKey": "reference/melee/gale01-r2/b75ee373521c4deb97ea8863e4d07e37b589dc7756c9e375e750e2043075ce89.dat",
       "animationsKey": "reference/melee/gale01-r2/448f2a9d660da98c64812ca3ac0d1e20e7ce70a5f630f44b753a8aedef91477c.dat",
       "animationCount": 317,
-      "modelRootSymbol": "PlySeak5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlySeak5K_Share_ACTION_Wait_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 74,
           "flags": 0,
           "receiverCount": 58
@@ -3048,12 +3024,9 @@
       "fighterKey": "reference/melee/gale01-r2/a190a1df18783d3ec2adbc44e6b63b395e75152e264f2f1d80843375a64a1070.dat",
       "animationsKey": "reference/melee/gale01-r2/ab9fc4150ee75572da14b412102e443658f01eac7e212ee5b26e231a31185737.dat",
       "animationCount": 326,
-      "modelRootSymbol": "PlyNess5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyNess5K_Share_ACTION_Wait_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 560,
           "flags": 0,
           "receiverCount": 63
@@ -3066,12 +3039,9 @@
       "fighterKey": "reference/melee/gale01-r2/f1e42fd826e7af28683cbf587f32d9c3c249b492487d124f888f8a0073b07de8.dat",
       "animationsKey": "reference/melee/gale01-r2/fc1f888d05ebc52a48c06681e0b1a52dde3a9113a3910952444f1b72539218ef.dat",
       "animationCount": 318,
-      "modelRootSymbol": "PlyPeach5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyPeach5K_Share_ACTION_Wait1_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 340,
           "flags": 0,
           "receiverCount": 114
@@ -3084,12 +3054,9 @@
       "fighterKey": "reference/melee/gale01-r2/5dd044b2ac5003f18dfca6e3a5197724f383419b4fc31bd4cb0a6205052507c0.dat",
       "animationsKey": "reference/melee/gale01-r2/353cf263457c03f4dc43e4d3dd560607d9e2e56a218ed33ff4141326ddd87635.dat",
       "animationCount": 321,
-      "modelRootSymbol": "PlyPopo5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyPopo5K_Share_ACTION_Wait_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 260,
           "flags": 0,
           "receiverCount": 49
@@ -3102,13 +3069,10 @@
       "fighterKey": "reference/melee/gale01-r2/83bc4d19539a9f9bc3f4e85d38e190899e9330eb424565dcb1605401582b0cc2.dat",
       "animationsKey": "reference/melee/gale01-r2/74b6a81a0aeea0bd986f389202cd45a0d640d461315c2f12de2821a53354ff82.dat",
       "animationCount": 321,
-      "modelRootSymbol": "PlyNana5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyPopo5K_Share_ACTION_Wait_figatree",
         "recordFighterKind": 10,
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 260,
           "flags": 0,
           "receiverCount": 49
@@ -3121,12 +3085,9 @@
       "fighterKey": "reference/melee/gale01-r2/4befcf5d68af080ad6a18364d126b62f852e3c7f0f3ee3070168aa156bda184b.dat",
       "animationsKey": "reference/melee/gale01-r2/1b0a8690a71e1927236c52ec3cfc2c32cf247f4aba3d3d882c9abbbe97ccd30c.dat",
       "animationCount": 320,
-      "modelRootSymbol": "PlyPikachu5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyPikachu5K_Share_ACTION_Wait_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 430,
           "flags": 0,
           "receiverCount": 53
@@ -3139,12 +3100,9 @@
       "fighterKey": "reference/melee/gale01-r2/8fc0047354d551c8854e9834a3aad08e377f9855ab2572f47d0b41adbf347c22.dat",
       "animationsKey": "reference/melee/gale01-r2/1c64ba70c454d67282b2b0817cbfd24036cf4bb9dfc24765229e87b402d6be70.dat",
       "animationCount": 313,
-      "modelRootSymbol": "PlySamus5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlySamus5K_Share_ACTION_Wait_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 81,
           "flags": 0,
           "receiverCount": 60
@@ -3157,12 +3115,9 @@
       "fighterKey": "reference/melee/gale01-r2/95649bbf535503832190c9f34f400f27ad9c17523cebed88c1925bad1884f52b.dat",
       "animationsKey": "reference/melee/gale01-r2/3282abc5431952243958af60e1d06e5aac6e3c185e02e2433d0c247581c1b3fd.dat",
       "animationCount": 314,
-      "modelRootSymbol": "PlyYoshi5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyYoshi5K_Share_ACTION_Wait_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 400,
           "flags": 0,
           "receiverCount": 70
@@ -3175,12 +3130,9 @@
       "fighterKey": "reference/melee/gale01-r2/17ff81bf214584db3619fffffb97727925ad5f03ce37c80141dd1bff783fb42e.dat",
       "animationsKey": "reference/melee/gale01-r2/d1ff1d09ef1100ba91159b63e9a72b8a8a2c00ccdd784a58e1586c3b6007f666.dat",
       "animationCount": 327,
-      "modelRootSymbol": "PlyPurin5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyPurin5K_Share_ACTION_Wait_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 464,
           "flags": 0,
           "receiverCount": 50
@@ -3193,12 +3145,9 @@
       "fighterKey": "reference/melee/gale01-r2/c59ce7ec4f303f9b647a8f1205a1be8a4d6466a984649df2dd7f038e1db631ed.dat",
       "animationsKey": "reference/melee/gale01-r2/839288f618597c2b0024a1c598c7de90fe0126b3767a7814b9e12e709e1673dd.dat",
       "animationCount": 314,
-      "modelRootSymbol": "PlyMewtwo5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyMewtwo5K_Share_ACTION_Wait1_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 200,
           "flags": 0,
           "receiverCount": 68
@@ -3211,12 +3160,9 @@
       "fighterKey": "reference/melee/gale01-r2/bbd86022d8a43109c69194a2361fb83d9705fa7c9e1723615e06c1e20bf7f1aa.dat",
       "animationsKey": "reference/melee/gale01-r2/7b95e82a45c58eb689d3c793980516147a2bff54a7b9503ea34be0e7a7d5edd4.dat",
       "animationCount": 312,
-      "modelRootSymbol": "PlyLuigi5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyLuigi5K_Share_ACTION_Wait1_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 60,
           "flags": 0,
           "receiverCount": 61
@@ -3229,12 +3175,9 @@
       "fighterKey": "reference/melee/gale01-r2/0c4b7e49c8d18bfb3f5fd8c463d7c00b70292fa971b1ee94caf99548ba5b45b2.dat",
       "animationsKey": "reference/melee/gale01-r2/a9560b7fdfca328dd3deeb6e999edc7ea1e89abe837c3846afdd46972b2ca308.dat",
       "animationCount": 327,
-      "modelRootSymbol": "PlyMars5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyMars5K_Share_ACTION_Wait1_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 90,
           "flags": 0,
           "receiverCount": 90
@@ -3247,12 +3190,9 @@
       "fighterKey": "reference/melee/gale01-r2/e523bb0fe551f64aa6ae5b3ae59cd1e62434baeded076d4a5e1ea993e122a79a.dat",
       "animationsKey": "reference/melee/gale01-r2/c01e3e509fc4daca840c2e38d8dc2158700c8e2dc8a3bb1523b24a260c14d3fa.dat",
       "animationCount": 311,
-      "modelRootSymbol": "PlyZelda5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyZelda5K_Share_ACTION_Wait1_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 130,
           "flags": 0,
           "receiverCount": 118
@@ -3265,12 +3205,9 @@
       "fighterKey": "reference/melee/gale01-r2/8714518ba47b4fb3eb622ad2bf51e054ffc53d567dcb810971eb3546c5c29f32.dat",
       "animationsKey": "reference/melee/gale01-r2/bebb0bec8cce4c559b9da1179008e10bbf17361a198988c9a1f4a3327724592b.dat",
       "animationCount": 314,
-      "modelRootSymbol": "PlyClink5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyClink5K_Share_ACTION_Wait_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 90,
           "flags": 0,
           "receiverCount": 79
@@ -3283,12 +3220,9 @@
       "fighterKey": "reference/melee/gale01-r2/dbd729b1e038a6da6a90a732416aca164f5e55dc2ec7024555a6eaa0a926bb8c.dat",
       "animationsKey": "reference/melee/gale01-r2/f718e88d7d1188d4e55ce66111788d7db6c6fcaeaf2db7c728e2cca5aa0931b3.dat",
       "animationCount": 303,
-      "modelRootSymbol": "PlyDrmario5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyDrmario5K_Share_ACTION_Wait1_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 60,
           "flags": 0,
           "receiverCount": 86
@@ -3301,12 +3235,9 @@
       "fighterKey": "reference/melee/gale01-r2/c3c21545bff00fc1d0926f0fb3913cefedbbb7f4af1b928d2e73eed6cff5188c.dat",
       "animationsKey": "reference/melee/gale01-r2/42a018073edad4d88255c3c2c38709ba71337712a70f594656040bc62ba30960.dat",
       "animationCount": 327,
-      "modelRootSymbol": "PlyFalco5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyFalco5K_Share_ACTION_Wait1_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 240,
           "flags": 0,
           "receiverCount": 67
@@ -3319,12 +3250,9 @@
       "fighterKey": "reference/melee/gale01-r2/b4683893f3face7492dfbb1141c0f17e8cb8a4cb9599657a4a997c462119f169.dat",
       "animationsKey": "reference/melee/gale01-r2/62d4611039faba41fce2c938b9332d7a67b8c31ec24b91fa7901835ec198591d.dat",
       "animationCount": 320,
-      "modelRootSymbol": "PlyPichu5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyPichu5K_Share_ACTION_Wait1_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 180,
           "flags": 0,
           "receiverCount": 46
@@ -3337,12 +3265,9 @@
       "fighterKey": "reference/melee/gale01-r2/1c057a2882b7b42f3184b96ddf5221cae50e69652b00f6c78819c819804e0a1f.dat",
       "animationsKey": "reference/melee/gale01-r2/d6551ac7c65c061451a18f55a3e5b1cbc8e6e89c20d0faaa0f4578386148e986.dat",
       "animationCount": 323,
-      "modelRootSymbol": "PlyGamewatch5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyGamewatch5K_Share_ACTION_Wait1_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 60,
           "flags": 0,
           "receiverCount": 53
@@ -3355,12 +3280,9 @@
       "fighterKey": "reference/melee/gale01-r2/5e38291dae0e0cb70e1d337ea824081f5f9a19a592a2427c7525b3ef3f8f2388.dat",
       "animationsKey": "reference/melee/gale01-r2/a114e63dba362a50a07fd6663233c6d1b4db6c8b3a2660a7a4825eb90828335a.dat",
       "animationCount": 318,
-      "modelRootSymbol": "PlyGanon5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyGanon5K_Share_ACTION_Wait1_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 160,
           "flags": 0,
           "receiverCount": 84
@@ -3373,12 +3295,9 @@
       "fighterKey": "reference/melee/gale01-r2/5d8ec1eb2821e8700ee3ed8020d1b57ca5f857468dad3eddfc28bbc398169648.dat",
       "animationsKey": "reference/melee/gale01-r2/8c235de3cd367e91c4db74e902f7b064dc8f1a2e34bb8515006c19f8e13fbd99.dat",
       "animationCount": 327,
-      "modelRootSymbol": "PlyEmblem5K_Share_joint",
       "primaryIdle": {
         "animationIndex": 2,
-        "symbol": "PlyEmblem5K_Share_ACTION_Wait1_figatree",
         "attachment": {
-          "status": "attached-metadata-only",
           "endFrame": 205,
           "flags": 0,
           "receiverCount": 92

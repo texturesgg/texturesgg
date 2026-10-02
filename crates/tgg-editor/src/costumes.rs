@@ -3,7 +3,7 @@
 //! them can ask the app to do.
 
 use gpui::SharedString;
-use melee_dat::{CHARACTERS, COSTUMES, ParsedFilename, costume_name, parse_filename, stage_name};
+use melee_dat::{Character, CostumeColor, MeleeSlot, Stage, parse_filename};
 use std::path::PathBuf;
 
 /// A fighter and the costume slots its game has for it.
@@ -26,34 +26,28 @@ pub(crate) struct Costume {
 /// The fighters with costume files among `files`, in the roster's order,
 /// each with its slots in color order.
 pub(crate) fn roster<'a>(files: impl IntoIterator<Item = &'a str>) -> Vec<Fighter> {
-    let mut found: Vec<(&'static str, &'static str, String)> = files
+    // Only the costume files themselves, not descriptive names.
+    let mut found: Vec<(Character, CostumeColor)> = files
         .into_iter()
-        .filter_map(|file| match parse_filename(file)? {
-            // Only the costume files themselves, not descriptive names.
-            ParsedFilename::Character {
-                character_code,
-                costume_code,
-            } if file == format!("Pl{character_code}{costume_code}.dat") => {
-                Some((character_code, costume_code, file.to_owned()))
-            }
-            _ => None,
+        .filter_map(|file| match MeleeSlot::from_file_name(file)? {
+            MeleeSlot::Costume { character, color } => Some((character, color)),
+            MeleeSlot::Stage(_) => None,
         })
         .collect();
-    found.sort_by_key(|(_, costume, _)| COSTUMES.iter().position(|(code, _)| code == costume));
-    CHARACTERS
-        .iter()
-        .filter_map(|&(code, name)| {
+    found.sort();
+    Character::all()
+        .filter_map(|character| {
             let costumes: Vec<Costume> = found
                 .iter()
-                .filter(|(character, _, _)| *character == code)
-                .map(|(_, costume, file)| Costume {
-                    name: costume_name(costume),
-                    file: file.clone(),
+                .filter(|(owner, _)| *owner == character)
+                .map(|&(character, color)| Costume {
+                    name: color.name(),
+                    file: MeleeSlot::Costume { character, color }.file_name(),
                 })
                 .collect();
             (!costumes.is_empty()).then_some(Fighter {
-                code,
-                name,
+                code: character.code(),
+                name: character.name(),
                 costumes,
             })
         })
@@ -63,29 +57,21 @@ pub(crate) fn roster<'a>(files: impl IntoIterator<Item = &'a str>) -> Vec<Fighte
 /// Whether two slots are costumes of the same fighter, or the same stage.
 pub(crate) fn same_owner(slot: &str, other: &str) -> bool {
     match (parse_filename(slot), parse_filename(other)) {
-        (
-            Some(ParsedFilename::Character {
-                character_code: fighter,
-                ..
-            }),
-            Some(ParsedFilename::Character {
-                character_code: other,
-                ..
-            }),
-        ) => fighter == other,
-        (
-            Some(ParsedFilename::Stage { filename: stage }),
-            Some(ParsedFilename::Stage { filename: other }),
-        ) => stage == other,
+        (Some(slot), Some(other)) => slot.same_owner(other),
         _ => false,
     }
 }
 
 /// A costume slot's color ("Orange"); a stage slot has none.
 pub(crate) fn slot_color(slot: &str) -> Option<&'static str> {
-    match parse_filename(slot)? {
-        ParsedFilename::Character { costume_code, .. } => Some(costume_name(costume_code)),
-        ParsedFilename::Stage { .. } => None,
+    parse_filename(slot)?.color().map(CostumeColor::name)
+}
+
+/// A stage's name from its file, or the file when it is no stage's.
+pub(crate) fn stage_name(file: &str) -> &str {
+    match Stage::from_file_name(file) {
+        Some(stage) => stage.name(),
+        None => file,
     }
 }
 
@@ -93,17 +79,10 @@ pub(crate) fn slot_color(slot: &str) -> Option<&'static str> {
 /// Destination", or "no slot" when its file doesn't say.
 pub(crate) fn slot_label(slot: Option<&str>) -> String {
     match slot.and_then(parse_filename) {
-        Some(ParsedFilename::Character {
-            character_code,
-            costume_code,
-        }) => {
-            let fighter = CHARACTERS
-                .iter()
-                .find(|(code, _)| *code == character_code)
-                .map_or(character_code, |(_, name)| name);
-            format!("{fighter} · {}", costume_name(costume_code))
+        Some(MeleeSlot::Costume { character, color }) => {
+            format!("{} · {}", character.name(), color.name())
         }
-        Some(ParsedFilename::Stage { filename }) => stage_name(filename).to_owned(),
+        Some(MeleeSlot::Stage(stage)) => stage.name().to_owned(),
         None => "no slot".into(),
     }
 }
