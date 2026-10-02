@@ -1,20 +1,32 @@
 //! A DAT loaded for drawing: the parsed scene and a prepared draw-work
 //! evaluator, within the budgets of [`hsd_scene_limits`].
 
-use crate::DatFile;
 use crate::hsd::HsdScene;
 use crate::hsd::draw::{
-    HsdDrawEvaluationPolicy, HsdDrawWorkEvaluator, HsdDrawWorkLimits, HsdEvaluatedDrawWork,
+    HsdDrawEvaluationPolicy, HsdDrawWorkError, HsdDrawWorkEvaluator, HsdDrawWorkLimits,
+    HsdEvaluatedDrawWork,
 };
-use crate::hsd::scene::{HSD_SCENE_MAX_DAT_BYTES, hsd_scene_limits};
+use crate::hsd::scene::{HSD_SCENE_MAX_DAT_BYTES, HsdSceneError, MObjId, hsd_scene_limits};
+use crate::{DatFile, DatParseError};
 
+/// Why a DAT did not load for drawing. Each variant carries the error of the
+/// stage that refused it, so a host can tell an oversized file from a
+/// truncated descriptor from a budget from state no contract represents.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum HsdSourceError {
+    #[error("the DAT is {len} bytes, over the scene input budget of {limit}")]
+    TooLarge { len: usize, limit: usize },
+    #[error("the DAT does not parse: {0}")]
+    Parse(#[from] DatParseError),
     #[error("HSD scene is invalid: {0}")]
-    InvalidScene(String),
+    InvalidScene(#[from] HsdSceneError),
+    /// A material's render mode names no display pass (NO_ZUPDATE without
+    /// XLU), so a renderer has nowhere to draw its display object.
+    #[error("MObj {:#x} render mode sets NO_ZUPDATE without XLU", .material.0)]
+    NoDrawPass { material: MObjId },
     #[error("HSD draw work is invalid: {0}")]
-    InvalidDrawWork(String),
+    InvalidDrawWork(#[from] HsdDrawWorkError),
 }
 
 pub type Result<T> = std::result::Result<T, HsdSourceError>;
@@ -44,11 +56,9 @@ impl HsdSource {
 
     /// [`Self::from_dat`] for a DAT [`parse`] already read.
     pub fn from_parsed(dat: &DatFile, policy: HsdDrawEvaluationPolicy) -> Result<Self> {
-        let invalid =
-            |error: &dyn std::fmt::Display| HsdSourceError::InvalidScene(error.to_string());
         let limits = hsd_scene_limits();
-        let scene = HsdScene::from_dat_with_limits(dat, limits).map_err(|error| invalid(&error))?;
-        scene.validate().map_err(|error| invalid(&error))?;
+        let scene = HsdScene::from_dat_with_limits(dat, limits)?;
+        scene.validate()?;
         require_draw_passes(&scene)?;
         let evaluator = HsdDrawWorkEvaluator::prepare_with_limits(
             &scene,
@@ -58,8 +68,7 @@ impl HsdSource {
                 max_packets: limits.max_polygons,
                 max_vertices: limits.max_vertices,
             },
-        )
-        .map_err(|error| invalid(&error))?;
+        )?;
         Ok(Self {
             policy,
             focus: None,
@@ -70,10 +79,7 @@ impl HsdSource {
 
     /// Evaluate the bind pose; returns the scene with its draw work.
     pub fn evaluate_bind_pose(&mut self) -> Result<(&HsdScene, &HsdEvaluatedDrawWork)> {
-        let work = self
-            .evaluator
-            .evaluate_bind_pose(&self.scene)
-            .map_err(|error| HsdSourceError::InvalidDrawWork(error.to_string()))?;
+        let work = self.evaluator.evaluate_bind_pose(&self.scene)?;
         Ok((&self.scene, work))
     }
 }
@@ -81,11 +87,12 @@ impl HsdSource {
 /// Parse a DAT no larger than [`HSD_SCENE_MAX_DAT_BYTES`].
 pub fn parse(bytes: &[u8]) -> Result<DatFile> {
     if bytes.len() > HSD_SCENE_MAX_DAT_BYTES {
-        return Err(HsdSourceError::InvalidScene(
-            "DAT exceeds the scene input budget".into(),
-        ));
+        return Err(HsdSourceError::TooLarge {
+            len: bytes.len(),
+            limit: HSD_SCENE_MAX_DAT_BYTES,
+        });
     }
-    DatFile::parse(bytes).map_err(|error| HsdSourceError::InvalidScene(error.to_string()))
+    Ok(DatFile::parse(bytes)?)
 }
 
 /// Every display object must name a display pass: a renderer has nowhere to
@@ -97,14 +104,13 @@ fn require_draw_passes(scene: &HsdScene) -> Result<()> {
         .flat_map(|root| &root.joints)
         .flat_map(|joint| &joint.display_objects);
     for display_object in display_objects {
-        if display_object.pass().is_none() {
-            return Err(HsdSourceError::InvalidScene(format!(
-                "MObj {:#x} render mode sets NO_ZUPDATE without XLU",
-                display_object
-                    .material
-                    .as_ref()
-                    .map_or(0, |material| material.source_id.0)
-            )));
+        // Without a material the render mode is zero, which names a pass.
+        if let Some(material) = &display_object.material
+            && display_object.pass().is_none()
+        {
+            return Err(HsdSourceError::NoDrawPass {
+                material: material.source_id,
+            });
         }
     }
     Ok(())
@@ -114,7 +120,7 @@ fn require_draw_passes(scene: &HsdScene) -> Result<()> {
 mod tests {
     use super::*;
     use crate::hsd::scene::{
-        DObjId, HsdDisplayObject, HsdJoint, HsdMaterial, HsdSceneRoot, HsdTransform, JObjId, MObjId,
+        DObjId, HsdDisplayObject, HsdJoint, HsdMaterial, HsdSceneRoot, HsdTransform, JObjId,
     };
 
     fn scene(render_flags: u32) -> HsdScene {
@@ -154,7 +160,11 @@ mod tests {
     fn a_render_mode_with_no_display_pass_fails_the_model() {
         assert!(require_draw_passes(&scene(0x6000_0000)).is_ok());
         // NO_ZUPDATE without XLU.
-        let refused = require_draw_passes(&scene(0x2000_0000)).unwrap_err();
-        assert!(refused.to_string().contains("MObj 0x10"), "{refused}");
+        assert!(matches!(
+            require_draw_passes(&scene(0x2000_0000)),
+            Err(HsdSourceError::NoDrawPass {
+                material: MObjId(0x10)
+            })
+        ));
     }
 }

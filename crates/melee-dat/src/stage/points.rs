@@ -75,7 +75,7 @@ impl StagePoints {
         }
 
         let mut points = Vec::new();
-        for record in map_head.general_points(record_count)? {
+        for record in map_head.general_points()? {
             let pair_count = record.pair_count;
             let (Some(root), Some(pairs)) = (record.joint, record.pairs) else {
                 continue;

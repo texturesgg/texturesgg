@@ -148,13 +148,8 @@ fn decode_vertex(dat: &DatFile, attributes: &[GxAttribute], raw: &RawVertex) -> 
                 }
             }
             GxAttrName::Color0 => {
-                if let Some(clr) = &raw.color0 {
-                    vtx.color0 = [
-                        clr[0] as f32 / 255.0,
-                        clr[1] as f32 / 255.0,
-                        clr[2] as f32 / 255.0,
-                        clr[3] as f32 / 255.0,
-                    ];
+                if let Some(color) = &raw.color0 {
+                    vtx.color0 = color.rgba.map(|channel| f32::from(channel) / 255.0);
                 } else if attr.attr_type != super::GxAttrType::Direct {
                     let f = attr.decode_at(dat, index);
                     if f.len() >= 4 {

@@ -14,7 +14,7 @@ use crate::stage::playback::MeleeStagePlayback;
 use dat_parser::descriptor::map_head::MapHead;
 use dat_parser::hsd::draw::{HsdDrawEvaluationPolicy, HsdEvaluatedDrawWork};
 use dat_parser::hsd::scene::HsdScene;
-use dat_parser::hsd::source::{self, HsdFocus, HsdSource, HsdSourceError};
+use dat_parser::hsd::source::{self, HsdFocus, HsdSource};
 
 pub enum MeleeModel {
     Fighter(Box<MeleeFighterPlayback>),
@@ -26,10 +26,7 @@ impl MeleeModel {
     /// Load a DAT. One with a `map_head` is a stage; anything else is drawn
     /// under `policy` in its serialized pose until
     /// [`Self::attach_fighter`] gives it a fighter's animations.
-    pub fn open(
-        bytes: &[u8],
-        policy: HsdDrawEvaluationPolicy,
-    ) -> std::result::Result<Self, HsdSourceError> {
+    pub fn open(bytes: &[u8], policy: HsdDrawEvaluationPolicy) -> Result<Self> {
         let dat = source::parse(bytes)?;
         Ok(if MapHead::find(&dat).is_some() {
             Self::Stage(Box::new(MeleeStagePlayback::attach(&dat)?))
@@ -127,7 +124,7 @@ impl MeleeModel {
     pub fn set_rate(&mut self, rate: f32) -> Result<()> {
         match self {
             Self::Fighter(playback) => playback.set_rate(rate),
-            Self::Stage(playback) => Ok(playback.set_rate(rate)?),
+            Self::Stage(playback) => playback.set_rate(rate),
             Self::Static(_) => Ok(()),
         }
     }
@@ -136,7 +133,7 @@ impl MeleeModel {
     pub fn seek(&mut self, frame: f32) -> Result<()> {
         match self {
             Self::Fighter(playback) => playback.seek(frame),
-            Self::Stage(playback) => Ok(playback.seek(frame)?),
+            Self::Stage(playback) => playback.seek(frame),
             Self::Static(_) => Ok(()),
         }
     }
@@ -145,7 +142,7 @@ impl MeleeModel {
     pub fn advance(&mut self) -> Result<()> {
         match self {
             Self::Fighter(playback) => playback.advance(),
-            Self::Stage(playback) => Ok(playback.advance()?),
+            Self::Stage(playback) => playback.advance(),
             Self::Static(_) => Ok(()),
         }
     }
@@ -154,7 +151,7 @@ impl MeleeModel {
     pub fn evaluate(&mut self) -> Result<(&HsdScene, &HsdEvaluatedDrawWork)> {
         match self {
             Self::Fighter(playback) => playback.evaluate(),
-            Self::Stage(playback) => Ok(playback.evaluate()?),
+            Self::Stage(playback) => playback.evaluate(),
             Self::Static(source) => Ok(source.evaluate_bind_pose()?),
         }
     }

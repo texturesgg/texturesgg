@@ -65,11 +65,12 @@ pub enum RawGenericAnimationError {
         resource: &'static str,
         source_offset: u32,
     },
-    #[error("{resource} pointer at data offset {field_offset:#x} is invalid: {error:?}")]
+    #[error("{resource} pointer at data offset {field_offset:#x} is invalid: {source}")]
     InvalidPointer {
         resource: &'static str,
         field_offset: u32,
-        error: DatPointerError,
+        #[source]
+        source: DatPointerError,
     },
     #[error("{resource} linked structure cycles at data offset {source_offset:#x}")]
     Cycle {
@@ -98,14 +99,14 @@ struct Work {
     path_components: usize,
 }
 
-pub(super) fn aobj_limits(limits: RawGenericAnimationLimits) -> RawAObjLimits {
+fn aobj_limits(limits: RawGenericAnimationLimits) -> RawAObjLimits {
     RawAObjLimits {
         max_aobjs: limits.max_aobjs,
         max_fobjs: limits.max_fobjs,
         max_packed_bytes: limits.max_packed_bytes,
     }
 }
-pub(super) fn aobj_error(error: RawAObjError) -> RawGenericAnimationError {
+fn aobj_error(error: RawAObjError) -> RawGenericAnimationError {
     match error {
         RawAObjError::Descriptor(error) => material_descriptor_error(error),
         RawAObjError::Cycle {
@@ -220,14 +221,14 @@ fn material_descriptor_error(error: DescriptorParseError) -> RawGenericAnimation
             RawGenericAnimationError::InvalidPointer {
                 resource,
                 field_offset,
-                error: source,
+                source,
             }
         }
         error => RawGenericAnimationError::Descriptor(error),
     }
 }
 
-pub(super) fn descriptor<'a>(
+fn descriptor<'a>(
     dat: &'a DatFile,
     source_offset: u32,
     size: usize,
@@ -240,7 +241,7 @@ pub(super) fn descriptor<'a>(
         })
 }
 
-pub(super) fn read_u32(
+fn read_u32(
     dat: &DatFile,
     source_offset: u32,
     relative_offset: u32,
@@ -259,7 +260,7 @@ pub(super) fn read_u32(
         })
 }
 
-pub(super) fn pointer(
+fn pointer(
     dat: &DatFile,
     source_offset: u32,
     relative_offset: u32,
@@ -272,10 +273,10 @@ pub(super) fn pointer(
         },
     )?;
     dat.resolve_pointer(field_offset)
-        .map_err(|error| RawGenericAnimationError::InvalidPointer {
+        .map_err(|source| RawGenericAnimationError::InvalidPointer {
             resource,
             field_offset,
-            error,
+            source,
         })
 }
 
@@ -415,7 +416,7 @@ mod tests {
             Err(RawGenericAnimationError::InvalidPointer {
                 resource: "AnimJoint child",
                 field_offset: 0,
-                error: DatPointerError::MissingRelocation,
+                source: DatPointerError::MissingRelocation,
             })
         ));
     }

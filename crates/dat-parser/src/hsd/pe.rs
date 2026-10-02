@@ -59,8 +59,56 @@ pub enum HsdBlendMode {
         source: HsdBlendFactor,
         destination: HsdBlendFactor,
     },
+    /// A bitwise operation on the source and the framebuffer; GX ignores the
+    /// factors. [`HsdLogicOp::Copy`] writes the source, as `None` does.
+    Logic(HsdLogicOp),
     /// `destination - source`; GX ignores the factors.
     Subtract,
+}
+
+/// GX framebuffer logic operation, in `GXLogicOp` order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum HsdLogicOp {
+    Clear,
+    And,
+    ReverseAnd,
+    Copy,
+    InverseAnd,
+    NoOp,
+    Xor,
+    Or,
+    Nor,
+    Equivalent,
+    Inverse,
+    ReverseOr,
+    InverseCopy,
+    InverseOr,
+    Nand,
+    Set,
+}
+
+impl HsdLogicOp {
+    const fn from_gx(value: u8) -> Option<Self> {
+        Some(match value {
+            0 => Self::Clear,
+            1 => Self::And,
+            2 => Self::ReverseAnd,
+            3 => Self::Copy,
+            4 => Self::InverseAnd,
+            5 => Self::NoOp,
+            6 => Self::Xor,
+            7 => Self::Or,
+            8 => Self::Nor,
+            9 => Self::Equivalent,
+            10 => Self::Inverse,
+            11 => Self::ReverseOr,
+            12 => Self::InverseCopy,
+            13 => Self::InverseOr,
+            14 => Self::Nand,
+            15 => Self::Set,
+            _ => return None,
+        })
+    }
 }
 
 impl HsdBlendMode {
@@ -232,8 +280,7 @@ impl HsdPixelEngineState {
 
     /// Resolve the custom-PEDesc branch of `HSD_SetupPEMode` (state.c:205).
     ///
-    /// `None` when the descriptor holds a value outside its GX enum, or a
-    /// logic op other than COPY: wgpu has no framebuffer logic ops.
+    /// `None` when the descriptor holds a value outside its GX enum.
     pub const fn from_descriptor(descriptor: &PEDesc) -> Option<Self> {
         const COLOR_UPDATE: u8 = 0x01;
         const ALPHA_UPDATE: u8 = 0x02;
@@ -242,7 +289,6 @@ impl HsdPixelEngineState {
         const DEPTH_TEST: u8 = 0x10;
         const DEPTH_WRITE: u8 = 0x20;
         const DITHER: u8 = 0x40;
-        const LOGIC_COPY: u8 = 3;
         let flags = descriptor.flags;
         let blend = match descriptor.blend_mode {
             0 => HsdBlendMode::None,
@@ -258,7 +304,10 @@ impl HsdPixelEngineState {
                     destination,
                 }
             }
-            2 if descriptor.logic_op == LOGIC_COPY => HsdBlendMode::None,
+            2 => match HsdLogicOp::from_gx(descriptor.logic_op) {
+                Some(op) => HsdBlendMode::Logic(op),
+                None => return None,
+            },
             3 => HsdBlendMode::Subtract,
             _ => return None,
         };

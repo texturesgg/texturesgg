@@ -505,7 +505,7 @@ impl MeleeFighterPlayback {
             .source
             .evaluator
             .evaluate(&self.source.scene, &[pose])
-            .map_err(|error| HsdSourceError::InvalidDrawWork(error.to_string()))?;
+            .map_err(HsdSourceError::from)?;
         Ok((&self.source.scene, work))
     }
 }

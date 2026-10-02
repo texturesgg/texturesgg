@@ -1,5 +1,5 @@
 use super::{DatFile, DescriptorParseError, DescriptorReader};
-use crate::gx::{GxAttrName, GxAttrType, GxCompType, GxCompTypeClr};
+use crate::gx::{GxAttrName, GxAttrType, GxCompType, GxCompTypeClr, GxComponent};
 
 /// GX exposes a small fixed attribute set; this higher guard prevents corrupt
 /// unterminated arrays from walking the rest of the DAT as descriptors.
@@ -30,7 +30,8 @@ pub mod flags {
 ///   0x00: attr_name (u32) — GXAttribName enum
 ///   0x04: attr_type (u32) — GXAttribType (NONE/DIRECT/INDEX8/INDEX16)
 ///   0x08: comp_count (u32) — GXCompCnt (number of components)
-///   0x0C: comp_type (u32) — GXCompType (UInt8/Int8/UInt16/Int16/Float)
+///   0x0C: comp_type (u32) — GXCompType (UInt8/Int8/UInt16/Int16/Float), or
+///         for a color the color format (RGB565 through RGBA8)
 ///   0x10: scale (u8) — fractional bits (divide decoded value by 2^scale)
 ///   0x12: stride (u16) — bytes between elements in the buffer
 ///   0x14: buffer_ptr (u32) — pointer to vertex attribute data buffer
@@ -39,15 +40,12 @@ pub struct GxAttribute {
     pub attr_name: GxAttrName,
     pub attr_type: GxAttrType,
     pub comp_count: u32,
-    /// The component type of a position, normal or texture coordinate. A
-    /// color's is a [`GxCompTypeClr`] in `comp_type_raw`,
-    /// and this is `UInt8`.
-    pub comp_type: GxCompType,
+    /// A color format on `GX_VA_CLR0` and `GX_VA_CLR1`, a number type on
+    /// every other attribute.
+    pub comp_type: GxComponent,
     pub scale: u8,
     pub stride: u16,
     pub buffer_ptr: Option<u32>,
-    /// Raw comp_type value (needed for color format detection).
-    pub comp_type_raw: u32,
 }
 
 impl GxAttribute {
@@ -75,10 +73,9 @@ impl GxAttribute {
         let comp_type_raw = source.u32(0x0C)?;
         let invalid_comp_type = source.invalid_value("comp_type", 0x0C, comp_type_raw);
         let comp_type = if matches!(attr_name, GxAttrName::Color0 | GxAttrName::Color1) {
-            GxCompTypeClr::from_u32(comp_type_raw).ok_or(invalid_comp_type)?;
-            GxCompType::UInt8
+            GxComponent::Color(GxCompTypeClr::from_u32(comp_type_raw).ok_or(invalid_comp_type)?)
         } else {
-            GxCompType::from_u32(comp_type_raw).ok_or(invalid_comp_type)?
+            GxComponent::Number(GxCompType::from_u32(comp_type_raw).ok_or(invalid_comp_type)?)
         };
         let scale = source.u8(0x10)?;
         let stride = source.u16(0x12)?;
@@ -92,7 +89,6 @@ impl GxAttribute {
             scale,
             stride,
             buffer_ptr,
-            comp_type_raw,
         }))
     }
 
@@ -128,14 +124,14 @@ impl GxAttribute {
         else {
             return Vec::new();
         };
-        // Color attributes use a different type space
-        if self.attr_name == GxAttrName::Color0 || self.attr_name == GxAttrName::Color1 {
-            return self.decode_color_at(dat, data_offset);
-        }
+        let comp_type = match self.comp_type {
+            GxComponent::Color(format) => return decode_color_at(dat, data_offset, format),
+            GxComponent::Number(comp_type) => comp_type,
+        };
 
         let size = self.component_count();
         // GX applies the fraction to integer components only.
-        let scale_divisor = if self.comp_type == GxCompType::Float {
+        let scale_divisor = if comp_type == GxCompType::Float {
             1.0
         } else {
             match 1u32.checked_shl(self.scale as u32) {
@@ -144,7 +140,7 @@ impl GxAttribute {
             }
         };
 
-        let bytes_per_component = self.comp_type.byte_len();
+        let bytes_per_component = comp_type.byte_len();
         let Some(byte_len) = size.checked_mul(bytes_per_component) else {
             return Vec::new();
         };
@@ -154,7 +150,7 @@ impl GxAttribute {
 
         let mut result = Vec::with_capacity(size);
         for i in 0..size {
-            let val = match self.comp_type {
+            let val = match comp_type {
                 GxCompType::UInt8 => dat.read_u8(data_offset + i as u32).unwrap_or(0) as f32,
                 GxCompType::Int8 => dat.read_u8(data_offset + i as u32).unwrap_or(0) as i8 as f32,
                 GxCompType::UInt16 => dat.read_u16(data_offset + i as u32 * 2).unwrap_or(0) as f32,
@@ -178,11 +174,8 @@ impl GxAttribute {
         {
             return None;
         }
-        let bytes_per_component = match self.comp_type {
-            GxCompType::UInt8 | GxCompType::Int8 => 1usize,
-            GxCompType::UInt16 | GxCompType::Int16 => 2,
-            GxCompType::Float => 4,
-        };
+        let comp_type = self.comp_type.number()?;
+        let bytes_per_component = comp_type.byte_len();
         let byte_len = 9usize.checked_mul(bytes_per_component)?;
         if usize::from(self.stride) < byte_len {
             return None;
@@ -196,7 +189,7 @@ impl GxAttribute {
         for (component, value) in values.iter_mut().enumerate() {
             let relative = component.checked_mul(bytes_per_component)?;
             let component_offset = offset.checked_add(u32::try_from(relative).ok()?)?;
-            let raw = match self.comp_type {
+            let raw = match comp_type {
                 GxCompType::UInt8 => f32::from(dat.read_u8(component_offset)?),
                 GxCompType::Int8 => f32::from(dat.read_u8(component_offset)? as i8),
                 GxCompType::UInt16 => f32::from(dat.read_u16(component_offset)?),
@@ -211,66 +204,56 @@ impl GxAttribute {
             [values[6], values[7], values[8]],
         ])
     }
+}
 
-    fn decode_color_at(&self, dat: &DatFile, offset: u32) -> Vec<f32> {
-        let mut c = vec![1.0f32; 4]; // Default white, full alpha
-        let byte_len = match self.comp_type_raw {
-            0 | 3 => 2,
-            1 | 4 => 3,
-            2 | 5 => 4,
-            _ => return c,
-        };
-        if dat.data_slice(offset, byte_len).is_none() {
-            return c;
-        }
-
-        match self.comp_type_raw {
-            0 => {
-                // RGB565
-                let pixel = dat.read_u16(offset).unwrap_or(0);
-                c[0] = (((pixel >> 11) & 0x1F) << 3) as f32 / 255.0;
-                c[1] = (((pixel >> 5) & 0x3F) << 2) as f32 / 255.0;
-                c[2] = ((pixel & 0x1F) << 3) as f32 / 255.0;
-                c[3] = 1.0;
-            }
-            1 => {
-                // RGB8
-                c[0] = dat.read_u8(offset).unwrap_or(0) as f32 / 255.0;
-                c[1] = dat.read_u8(offset + 1).unwrap_or(0) as f32 / 255.0;
-                c[2] = dat.read_u8(offset + 2).unwrap_or(0) as f32 / 255.0;
-                c[3] = 1.0;
-            }
-            2 | 5 => {
-                // RGBX8 / RGBA8
-                c[0] = dat.read_u8(offset).unwrap_or(0) as f32 / 255.0;
-                c[1] = dat.read_u8(offset + 1).unwrap_or(0) as f32 / 255.0;
-                c[2] = dat.read_u8(offset + 2).unwrap_or(0) as f32 / 255.0;
-                c[3] = dat.read_u8(offset + 3).unwrap_or(0) as f32 / 255.0;
-            }
-            3 => {
-                // RGBA4
-                let b0 = dat.read_u8(offset).unwrap_or(0);
-                let b1 = dat.read_u8(offset + 1).unwrap_or(0);
-                c[0] = ((b0 >> 4) * 17) as f32 / 255.0;
-                c[1] = ((b0 & 0xF) * 17) as f32 / 255.0;
-                c[2] = ((b1 >> 4) * 17) as f32 / 255.0;
-                c[3] = ((b1 & 0xF) * 17) as f32 / 255.0;
-            }
-            4 => {
-                // RGBA6
-                let b0 = dat.read_u8(offset).unwrap_or(0) as u32;
-                let b1 = dat.read_u8(offset + 1).unwrap_or(0) as u32;
-                let b2 = dat.read_u8(offset + 2).unwrap_or(0) as u32;
-                let p = (b0 << 16) | (b1 << 8) | b2;
-                c[0] = ((p >> 18) & 0x3F) as f32 / 63.0;
-                c[1] = ((p >> 12) & 0x3F) as f32 / 63.0;
-                c[2] = ((p >> 6) & 0x3F) as f32 / 63.0;
-                c[3] = (p & 0x3F) as f32 / 63.0;
-            }
-            _ => {}
-        }
-        c
+/// An indexed color as RGBA in 0..=1; opaque white when the buffer ends
+/// before it.
+fn decode_color_at(dat: &DatFile, offset: u32, format: GxCompTypeClr) -> Vec<f32> {
+    let mut c = vec![1.0f32; 4];
+    if dat.data_slice(offset, format.byte_len()).is_none() {
+        return c;
     }
+
+    match format {
+        GxCompTypeClr::Rgb565 => {
+            let pixel = dat.read_u16(offset).unwrap_or(0);
+            c[0] = (((pixel >> 11) & 0x1F) << 3) as f32 / 255.0;
+            c[1] = (((pixel >> 5) & 0x3F) << 2) as f32 / 255.0;
+            c[2] = ((pixel & 0x1F) << 3) as f32 / 255.0;
+            c[3] = 1.0;
+        }
+        GxCompTypeClr::Rgb8 => {
+            c[0] = dat.read_u8(offset).unwrap_or(0) as f32 / 255.0;
+            c[1] = dat.read_u8(offset + 1).unwrap_or(0) as f32 / 255.0;
+            c[2] = dat.read_u8(offset + 2).unwrap_or(0) as f32 / 255.0;
+            c[3] = 1.0;
+        }
+        GxCompTypeClr::Rgbx8 | GxCompTypeClr::Rgba8 => {
+            c[0] = dat.read_u8(offset).unwrap_or(0) as f32 / 255.0;
+            c[1] = dat.read_u8(offset + 1).unwrap_or(0) as f32 / 255.0;
+            c[2] = dat.read_u8(offset + 2).unwrap_or(0) as f32 / 255.0;
+            c[3] = dat.read_u8(offset + 3).unwrap_or(0) as f32 / 255.0;
+        }
+        GxCompTypeClr::Rgba4 => {
+            let b0 = dat.read_u8(offset).unwrap_or(0);
+            let b1 = dat.read_u8(offset + 1).unwrap_or(0);
+            c[0] = ((b0 >> 4) * 17) as f32 / 255.0;
+            c[1] = ((b0 & 0xF) * 17) as f32 / 255.0;
+            c[2] = ((b1 >> 4) * 17) as f32 / 255.0;
+            c[3] = ((b1 & 0xF) * 17) as f32 / 255.0;
+        }
+        GxCompTypeClr::Rgba6 => {
+            let b0 = dat.read_u8(offset).unwrap_or(0) as u32;
+            let b1 = dat.read_u8(offset + 1).unwrap_or(0) as u32;
+            let b2 = dat.read_u8(offset + 2).unwrap_or(0) as u32;
+            let p = (b0 << 16) | (b1 << 8) | b2;
+            c[0] = ((p >> 18) & 0x3F) as f32 / 63.0;
+            c[1] = ((p >> 12) & 0x3F) as f32 / 63.0;
+            c[2] = ((p >> 6) & 0x3F) as f32 / 63.0;
+            c[3] = (p & 0x3F) as f32 / 63.0;
+        }
+    }
+    c
 }
 
 /// Polygon Object — contains vertex attribute descriptors and display list data.
@@ -475,11 +458,10 @@ mod tests {
             attr_name: GxAttrName::Position,
             attr_type: GxAttrType::Index16,
             comp_count: 1,
-            comp_type: GxCompType::UInt8,
+            comp_type: GxComponent::Number(GxCompType::UInt8),
             scale,
             stride,
             buffer_ptr: Some(buffer_ptr),
-            comp_type_raw: 0,
         }
     }
 
@@ -594,8 +576,7 @@ mod tests {
         }
         let dat = dat_with_data(data);
         let position = GxAttribute {
-            comp_type: GxCompType::Float,
-            comp_type_raw: 4,
+            comp_type: GxComponent::Number(GxCompType::Float),
             ..attribute(16, 4, 0)
         };
         assert_eq!(position.decode_at(&dat, 0), [1.0, 2.0, 3.0]);
@@ -846,11 +827,10 @@ mod tests {
             attr_name: GxAttrName::Nbt,
             attr_type: GxAttrType::Index16,
             comp_count: 1,
-            comp_type: GxCompType::Float,
+            comp_type: GxComponent::Number(GxCompType::Float),
             scale: 0,
             stride: 36,
             buffer_ptr: Some(0),
-            comp_type_raw: 4,
         };
 
         assert_eq!(nbt.decode_nbt_at(&dat, 0), Some(expected));
@@ -863,11 +843,10 @@ mod tests {
             attr_name: GxAttrName::Nbt,
             attr_type: GxAttrType::Index16,
             comp_count: 1,
-            comp_type: GxCompType::Float,
+            comp_type: GxComponent::Number(GxCompType::Float),
             scale: 0,
             stride: 36,
             buffer_ptr: Some(0),
-            comp_type_raw: 4,
         };
 
         let mut direct = nbt.clone();

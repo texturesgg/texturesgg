@@ -70,7 +70,7 @@ never interpret raw HSD flags that a contract already resolves.
 | JObj hierarchy, Euler SRT, INSTANCE draws                                                                           | Implemented.                                                                              |
 | Rigid and envelope skinning (generic and fighter policies)                                                          | Implemented.                                                                              |
 | Draw passes (opaque → texEdge → translucent)                                                                        | Implemented.                                                                              |
-| PE state (standard and the admitted custom mode)                                                                    | Implemented; dither and destination-alpha overrides are rejected.                         |
+| PE state (standard and the admitted custom mode)                                                                    | Implemented; dither, destination-alpha overrides and logic ops but COPY are rejected.     |
 | Color channels and GX per-vertex lighting                                                                           | Implemented with presets; the default is a neutral preview, not a Melee scene.            |
 | Multi-stage TObj TEV (color/alpha maps, light-map phases)                                                           | Implemented, up to GX's 8 stages (stock costumes use 2).                                  |
 | Texture coordinates: TEX0-TEX7 matrices, reflection                                                                 | Implemented.                                                                              |
@@ -94,12 +94,13 @@ serialized form.
   a target through an INSTANCE edge.
 - **Display objects** resolve their own state: `pixel_engine()`, `pass()`, and
   `channels()`. Materials carry colors and ordered TObjs, each with canonical
-  `coordinates()`. Raw render flags and texgen selectors stay as provenance;
-  consumers call the resolvers instead of re-deriving them. `HsdSource` refuses
-  a scene with a display object that has no pass.
+  `coordinates()`, `light_map()`, `color_map()`, `alpha_map()` and
+  `is_bump()`. Raw render flags, TObj flags and texgen selectors stay as
+  provenance; consumers call the resolvers instead of re-deriving them.
+  `HsdSource` refuses a scene with a display object that has no pass.
 - **Polygons** carry decoded vertices, triangles, their binding (rigid or
-  envelope), and `tex_coord_attribute_mask()`, so a missing attribute never
-  becomes a plausible zero UV.
+  envelope), their `cull()` mode, and `tex_coord_attribute_mask()`, so a
+  missing attribute never becomes a plausible zero UV.
 - **Textures** carry decoded RGBA, deduplicated by descriptor identity;
   `content_key()` names the pixels, which several descriptors can share.
 
@@ -146,9 +147,10 @@ References are to the [Melee decompilation](https://github.com/doldecomp/melee).
   decode or encode.
 - **PE.** `HSD_SetupPEMode` (`state.c`) resolves blending, depth, and alpha
   compare from the render mode, or from the MObj's PEDesc when it has one.
-  hsd-render lowers every blend factor, depth compare, and alpha test; it
-  does not lower logic ops other than COPY (those fail the scene build) or
-  the destination-alpha override.
+  The scene carries all of it, including the logic op of a logic blend.
+  hsd-render lowers every blend factor, depth compare, and alpha test, and
+  a COPY logic op as a plain write; it refuses the other logic ops, dither,
+  and the destination-alpha override, which wgpu cannot express.
 
 ## Working rules
 

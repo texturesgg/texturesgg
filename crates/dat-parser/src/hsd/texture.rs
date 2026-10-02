@@ -14,12 +14,6 @@ use crate::math::Mat4;
 
 // tobj.c spells this f32 value 1.00000001335e-10F, NOT machine epsilon.
 const TOBJ_SCALE_EPSILON: f32 = 1.0e-10;
-const IDENTITY: [[f32; 4]; 3] = [
-    [1.0, 0.0, 0.0, 0.0],
-    [0.0, 1.0, 0.0, 0.0],
-    [0.0, 0.0, 1.0, 0.0],
-];
-
 /// Actual input-row selection for GX's matrix texgen dispatch, not enum names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HsdTextureSource {
@@ -62,26 +56,151 @@ pub enum HsdTextureCoordinates {
     },
 }
 
-impl HsdTextureCoordinates {
-    pub fn tex_coord_index(&self) -> Option<u8> {
-        match self {
-            Self::Matrix {
-                source: HsdTextureSource::TexCoord { index },
-                ..
-            } => Some(*index),
-            _ => None,
+/// The lighting phases a TObj takes part in (`TEX_LIGHTMAP_*`): where
+/// `MObjMakeTExp` applies its stage. A TObj with none of the first four is
+/// not a TEV stage.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct HsdLightMap {
+    pub diffuse: bool,
+    pub specular: bool,
+    pub ambient: bool,
+    pub ext: bool,
+    pub shadow: bool,
+}
+
+impl HsdLightMap {
+    pub const NONE: Self = Self {
+        diffuse: false,
+        specular: false,
+        ambient: false,
+        ext: false,
+        shadow: false,
+    };
+    pub const DIFFUSE: Self = Self {
+        diffuse: true,
+        ..Self::NONE
+    };
+    pub const SPECULAR: Self = Self {
+        specular: true,
+        ..Self::NONE
+    };
+    pub const AMBIENT: Self = Self {
+        ambient: true,
+        ..Self::NONE
+    };
+    pub const EXT: Self = Self {
+        ext: true,
+        ..Self::NONE
+    };
+
+    pub const fn from_flags(flags: u32) -> Self {
+        Self {
+            diffuse: flags & texture_flags::LIGHTMAP_DIFFUSE != 0,
+            specular: flags & texture_flags::LIGHTMAP_SPECULAR != 0,
+            ambient: flags & texture_flags::LIGHTMAP_AMBIENT != 0,
+            ext: flags & texture_flags::LIGHTMAP_EXT != 0,
+            shadow: flags & texture_flags::LIGHTMAP_SHADOW != 0,
         }
     }
 
-    /// An exact semantic identity check for preview selection policy. This does
-    /// not round source SRT or confuse a mirrored offset with an identity matrix.
-    /// Reflection always generates coordinates, even with identity source SRT.
-    pub fn has_transform(&self) -> bool {
-        match self {
-            Self::Matrix { matrix, .. } => *matrix != IDENTITY,
-            Self::Reflection { .. } => true,
-            Self::Unsupported { .. } => false,
+    /// Whether `MObjMakeTExp` applies the TObj as a TEV stage: it is in the
+    /// diffuse, specular, ambient or ext phase.
+    pub const fn is_stage(self) -> bool {
+        self.diffuse || self.specular || self.ambient || self.ext
+    }
+}
+
+impl std::ops::BitOr for HsdLightMap {
+    type Output = Self;
+
+    fn bitor(self, other: Self) -> Self {
+        Self {
+            diffuse: self.diffuse || other.diffuse,
+            specular: self.specular || other.specular,
+            ambient: self.ambient || other.ambient,
+            ext: self.ext || other.ext,
+            shadow: self.shadow || other.shadow,
         }
+    }
+}
+
+/// How a TObj's stage combines with the running color (`TEX_COLORMAP_*`,
+/// applied by `TObjMakeTExp`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum HsdColorMap {
+    None,
+    AlphaMask,
+    RgbMask,
+    Blend,
+    Modulate,
+    Replace,
+    Pass,
+    Add,
+    Sub,
+}
+
+/// How a TObj's stage combines with the running alpha (`TEX_ALPHAMAP_*`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum HsdAlphaMap {
+    None,
+    AlphaMask,
+    Blend,
+    Modulate,
+    Replace,
+    Pass,
+    Add,
+    Sub,
+}
+
+/// A TObj color or alpha map field holding a value `tobj.h` does not define.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("TObj {map} map {value} is not one HSD defines")]
+pub struct HsdUndefinedTextureMap {
+    /// `"color"` or `"alpha"`.
+    pub map: &'static str,
+    pub value: u32,
+}
+
+impl HsdColorMap {
+    pub const fn from_flags(flags: u32) -> Result<Self, HsdUndefinedTextureMap> {
+        Ok(match flags & texture_flags::COLORMAP_MASK {
+            texture_flags::COLORMAP_NONE => Self::None,
+            texture_flags::COLORMAP_ALPHA_MASK => Self::AlphaMask,
+            texture_flags::COLORMAP_RGB_MASK => Self::RgbMask,
+            texture_flags::COLORMAP_BLEND => Self::Blend,
+            texture_flags::COLORMAP_MODULATE => Self::Modulate,
+            texture_flags::COLORMAP_REPLACE => Self::Replace,
+            texture_flags::COLORMAP_PASS => Self::Pass,
+            texture_flags::COLORMAP_ADD => Self::Add,
+            texture_flags::COLORMAP_SUB => Self::Sub,
+            field => {
+                return Err(HsdUndefinedTextureMap {
+                    map: "color",
+                    value: field >> 16,
+                });
+            }
+        })
+    }
+}
+
+impl HsdAlphaMap {
+    pub const fn from_flags(flags: u32) -> Result<Self, HsdUndefinedTextureMap> {
+        Ok(match flags & texture_flags::ALPHAMAP_MASK {
+            texture_flags::ALPHAMAP_NONE => Self::None,
+            texture_flags::ALPHAMAP_ALPHA_MASK => Self::AlphaMask,
+            texture_flags::ALPHAMAP_BLEND => Self::Blend,
+            texture_flags::ALPHAMAP_MODULATE => Self::Modulate,
+            texture_flags::ALPHAMAP_REPLACE => Self::Replace,
+            texture_flags::ALPHAMAP_PASS => Self::Pass,
+            texture_flags::ALPHAMAP_ADD => Self::Add,
+            texture_flags::ALPHAMAP_SUB => Self::Sub,
+            field => {
+                return Err(HsdUndefinedTextureMap {
+                    map: "alpha",
+                    value: field >> 20,
+                });
+            }
+        })
     }
 }
 
@@ -202,4 +321,42 @@ pub fn resolve_texture_coordinates(
         return HsdTextureCoordinates::Reflection { matrix };
     }
     HsdTextureCoordinates::Matrix { source, matrix }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{HsdAlphaMap, HsdColorMap, HsdLightMap, HsdUndefinedTextureMap};
+
+    /// Source words from `tobj.h`, not the resolver's own masks.
+    #[test]
+    fn tobj_flags_resolve_to_their_light_color_and_alpha_maps() {
+        // LIGHTMAP_DIFFUSE | LIGHTMAP_EXT, COLORMAP_MODULATE, ALPHAMAP_REPLACE.
+        let flags = 0x0044_0090;
+        assert_eq!(
+            HsdLightMap::from_flags(flags),
+            HsdLightMap::DIFFUSE | HsdLightMap::EXT
+        );
+        assert_eq!(HsdColorMap::from_flags(flags), Ok(HsdColorMap::Modulate));
+        assert_eq!(HsdAlphaMap::from_flags(flags), Ok(HsdAlphaMap::Replace));
+
+        // A shadow map alone is not a TEV stage.
+        assert!(HsdLightMap::from_flags(0x10).is_stage());
+        assert!(!HsdLightMap::from_flags(0x100).is_stage());
+
+        // The fields are wider than the values the header defines.
+        assert_eq!(
+            HsdColorMap::from_flags(0x0009_0000),
+            Err(HsdUndefinedTextureMap {
+                map: "color",
+                value: 9
+            })
+        );
+        assert_eq!(
+            HsdAlphaMap::from_flags(0x0080_0000),
+            Err(HsdUndefinedTextureMap {
+                map: "alpha",
+                value: 8
+            })
+        );
+    }
 }

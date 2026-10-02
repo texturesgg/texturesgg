@@ -165,6 +165,33 @@ impl GxCompType {
     }
 }
 
+/// What a vertex attribute's components are stored as. GX numbers the formats
+/// of colors and of every other attribute in separate enums, so the same
+/// descriptor value means one or the other by the attribute it sits on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GxComponent {
+    /// A position, normal, texture coordinate or matrix index.
+    Number(GxCompType),
+    /// `GX_VA_CLR0` or `GX_VA_CLR1`.
+    Color(GxCompTypeClr),
+}
+
+impl GxComponent {
+    pub fn number(self) -> Option<GxCompType> {
+        match self {
+            Self::Number(number) => Some(number),
+            Self::Color(_) => None,
+        }
+    }
+
+    pub fn color(self) -> Option<GxCompTypeClr> {
+        match self {
+            Self::Number(_) => None,
+            Self::Color(color) => Some(color),
+        }
+    }
+}
+
 /// GX color component type (different enum space from GxCompType).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]

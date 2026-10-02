@@ -14,13 +14,19 @@ pub struct PrimitiveGroup {
 pub struct RawVertex {
     /// One index per attribute (parallel to the attribute array).
     pub indices: Vec<u16>,
-    /// Direct color 0 (RGBA bytes), if attribute is DIRECT.
-    pub color0: Option<[u8; 4]>,
-    /// Where the display list holds that color: the data-section offset of
-    /// its bytes, in the attribute's component format.
-    pub color0_offset: Option<u32>,
-    /// Direct color 1 (RGBA bytes), if attribute is DIRECT.
-    pub color1: Option<[u8; 4]>,
+    /// Color 0, if the attribute is DIRECT.
+    pub color0: Option<DirectColor>,
+    /// Color 1, if the attribute is DIRECT.
+    pub color1: Option<DirectColor>,
+}
+
+/// A color a display list holds beside its vertex.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DirectColor {
+    pub rgba: [u8; 4],
+    /// The data-section offset of its bytes, which are in the attribute's
+    /// component format.
+    pub offset: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
@@ -48,8 +54,8 @@ pub enum DisplayListError {
     Truncated { offset: u32 },
     #[error("vertex attribute {name:?} is direct; only colors and matrix indices are read direct")]
     UnsupportedDirectAttribute { name: GxAttrName },
-    #[error("direct color component format {format} is not a GX color format")]
-    UnknownColorFormat { format: u32 },
+    #[error("direct {name:?} has a number component type, not a color format")]
+    NotAColorFormat { name: GxAttrName },
 }
 
 /// How much one call may expand a display list into.
@@ -137,7 +143,6 @@ pub fn parse_display_list(
         for _ in 0..vertex_count {
             let mut indices = vec![0u16; attributes.len()];
             let mut color0 = None;
-            let mut color0_offset = None;
             let mut color1 = None;
 
             for (i, attr) in attributes.iter().enumerate() {
@@ -148,19 +153,19 @@ pub fn parse_display_list(
                 match attr.attr_type {
                     GxAttrType::Direct => match attr.attr_name {
                         GxAttrName::Color0 | GxAttrName::Color1 => {
-                            let format = GxCompTypeClr::from_u32(attr.comp_type_raw).ok_or(
-                                DisplayListError::UnknownColorFormat {
-                                    format: attr.comp_type_raw,
+                            let format = attr.comp_type.color().ok_or(
+                                DisplayListError::NotAColorFormat {
+                                    name: attr.attr_name,
                                 },
                             )?;
-                            let start = pos;
-                            let color =
+                            let offset = at(pos);
+                            let rgba =
                                 read_direct_color(dl_data, &mut pos, format).ok_or(truncated)?;
+                            let color = Some(DirectColor { rgba, offset });
                             if attr.attr_name == GxAttrName::Color0 {
-                                color0 = Some(color);
-                                color0_offset = Some(at(start));
+                                color0 = color;
                             } else {
-                                color1 = Some(color);
+                                color1 = color;
                             }
                         }
                         // A direct matrix index is one byte.
@@ -186,7 +191,6 @@ pub fn parse_display_list(
             vertices.push(RawVertex {
                 indices,
                 color0,
-                color0_offset,
                 color1,
             });
         }
@@ -273,6 +277,7 @@ fn read_direct_color(data: &[u8], pos: &mut usize, format: GxCompTypeClr) -> Opt
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gx::{GxCompType, GxComponent};
 
     fn dat_with_data(data: Vec<u8>) -> DatFile {
         DatFile::from_parts(data, Vec::new(), Vec::new())
@@ -305,11 +310,10 @@ mod tests {
             attr_name: GxAttrName::Position,
             attr_type: GxAttrType::Index8,
             comp_count: 1,
-            comp_type: super::super::GxCompType::UInt8,
+            comp_type: GxComponent::Number(GxCompType::UInt8),
             scale: 0,
             stride: 1,
             buffer_ptr: Some(0),
-            comp_type_raw: 0,
         }];
 
         assert_eq!(
@@ -324,11 +328,10 @@ mod tests {
             attr_name: GxAttrName::Position,
             attr_type,
             comp_count: 1,
-            comp_type: super::super::GxCompType::Float,
+            comp_type: GxComponent::Number(GxCompType::Float),
             scale: 0,
             stride: 12,
             buffer_ptr: Some(0),
-            comp_type_raw: 4,
         };
         let parse = |data: Vec<u8>, attributes: &[GxAttribute]| {
             let size = data.len();
@@ -370,9 +373,16 @@ mod tests {
                 name: GxAttrName::Position
             }
         );
+        // A color attribute built with a number type has no color format.
+        let miscast = GxAttribute {
+            comp_type: GxComponent::Number(GxCompType::UInt8),
+            ..direct_color(GxCompTypeClr::Rgb565)
+        };
         assert_eq!(
-            parse(vec![0x90, 0, 1, 0], &[direct_color(6)]).unwrap_err(),
-            DisplayListError::UnknownColorFormat { format: 6 }
+            parse(vec![0x90, 0, 1, 0], &[miscast]).unwrap_err(),
+            DisplayListError::NotAColorFormat {
+                name: GxAttrName::Color0
+            }
         );
         // A list outside the data section.
         assert_eq!(
@@ -394,16 +404,15 @@ mod tests {
         }
     }
 
-    fn direct_color(format: u32) -> GxAttribute {
+    fn direct_color(format: GxCompTypeClr) -> GxAttribute {
         GxAttribute {
             attr_name: GxAttrName::Color0,
             attr_type: GxAttrType::Direct,
             comp_count: 1,
-            comp_type: super::super::GxCompType::UInt8,
+            comp_type: GxComponent::Color(format),
             scale: 0,
             stride: 0,
             buffer_ptr: None,
-            comp_type_raw: format,
         }
     }
 
@@ -411,12 +420,17 @@ mod tests {
     fn direct_colors_record_where_the_display_list_holds_them() {
         // Pokemon Stadium's platform green, 0x670C, then its arrow yellow.
         let dat = dat_with_data(vec![0xAA, 0x90, 0, 2, 0x67, 0x0C, 0xFF, 0xE6]);
-        let groups =
-            parse_display_list(&dat, 1, 7, &[direct_color(0)], limits(10, 10, 10)).unwrap();
+        let attributes = [direct_color(GxCompTypeClr::Rgb565)];
+        let groups = parse_display_list(&dat, 1, 7, &attributes, limits(10, 10, 10)).unwrap();
         let vertices = &groups[0].vertices;
-        assert_eq!(vertices[0].color0, Some([96, 224, 96, 255]));
-        assert_eq!(vertices[0].color0_offset, Some(4));
-        assert_eq!(vertices[1].color0_offset, Some(6));
+        assert_eq!(
+            vertices[0].color0,
+            Some(DirectColor {
+                rgba: [96, 224, 96, 255],
+                offset: 4
+            })
+        );
+        assert_eq!(vertices[1].color0.map(|color| color.offset), Some(6));
     }
 
     #[test]

@@ -4,21 +4,15 @@
 use crate::error::{Result, invalid_scene};
 use crate::geometry::MAX_TEX_COORD_SETS;
 use dat_parser::hsd::channel::HsdChannelBase;
-use dat_parser::hsd::pe::{HsdAlphaCompare, HsdBlendMode, HsdCompare};
+use dat_parser::hsd::pe::{HsdAlphaCompare, HsdBlendMode, HsdCompare, HsdLogicOp};
 use dat_parser::hsd::scene::{
     HsdCustomTev, HsdDisplayObject, HsdScene, HsdTextureContentKey, HsdTextureObject,
 };
 use dat_parser::hsd::tev::{HsdTObjTevAlphaInput, HsdTObjTevColorInput};
+pub use dat_parser::hsd::texture::{HsdAlphaMap, HsdColorMap, HsdLightMap};
 use dat_parser::hsd::texture::{HsdTextureCoordinates, HsdTextureSource};
 use std::collections::HashMap;
 
-const TOBJ_LIGHTMAP_DIFFUSE: u32 = 1 << 4;
-const TOBJ_LIGHTMAP_SPECULAR: u32 = 1 << 5;
-const TOBJ_LIGHTMAP_AMBIENT: u32 = 1 << 6;
-const TOBJ_LIGHTMAP_EXT: u32 = 1 << 7;
-const TOBJ_LIGHTMAP_APPLIED: u32 =
-    TOBJ_LIGHTMAP_DIFFUSE | TOBJ_LIGHTMAP_SPECULAR | TOBJ_LIGHTMAP_AMBIENT | TOBJ_LIGHTMAP_EXT;
-const TOBJ_BUMP: u32 = 1 << 24;
 /// GX's limit. Stock costumes use at most two; Kongo Jungle N64 uses five.
 pub const MAX_TEXTURE_STAGES: usize = 8;
 
@@ -55,33 +49,6 @@ pub(crate) struct TextureCache {
     by_scene_texture: HashMap<u32, usize>,
 }
 
-/// TObj color map (TObjMakeTExp): how a stage combines with the running color.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TevColorOp {
-    None,
-    AlphaMask,
-    RgbMask,
-    Blend,
-    Modulate,
-    Replace,
-    Pass,
-    Add,
-    Sub,
-}
-
-/// TObj alpha map (TObjMakeTExp): how a stage combines with the running alpha.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TevAlphaOp {
-    None,
-    AlphaMask,
-    Blend,
-    Modulate,
-    Replace,
-    Pass,
-    Add,
-    Sub,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StageSource {
     /// One of the vertex's texture coordinate sets, TEX0 to TEX7.
@@ -101,8 +68,8 @@ pub struct PreparedStage {
     pub source: StageSource,
     /// Row-major 3x4 texture postmatrix.
     pub matrix: [[f32; 4]; 3],
-    pub color_op: TevColorOp,
-    pub alpha_op: TevAlphaOp,
+    pub color_op: HsdColorMap,
+    pub alpha_op: HsdAlphaMap,
     /// TObj blending factor for the BLEND color and alpha maps.
     pub blending: f32,
     /// Replaces the stage texel as the color/alpha input (MakeColorGenTExp).
@@ -145,7 +112,8 @@ pub struct PreparedMaterial {
     pub specular: [f32; 3],
     pub shininess: f32,
     /// Lowered canonical PE state, never inferred from material colors or flags.
-    /// A destination-alpha override is not lowered.
+    /// A destination-alpha override is not lowered, and a logic blend never
+    /// reaches here: COPY lowers to `None` and the other ops are refused.
     pub blend: HsdBlendMode,
     pub color_update: bool,
     pub alpha_update: bool,
@@ -175,8 +143,8 @@ pub(crate) fn prepare_material(
         .iter()
         .flat_map(|material| &material.textures)
     {
-        let lightmap = usage.flags & TOBJ_LIGHTMAP_APPLIED;
-        if lightmap == 0 || usage.flags & TOBJ_BUMP != 0 {
+        let lightmap = usage.light_map();
+        if !lightmap.is_stage() || usage.is_bump() {
             continue;
         }
         if stages.len() == MAX_TEXTURE_STAGES {
@@ -199,8 +167,12 @@ pub(crate) fn prepare_material(
             },
             source,
             matrix,
-            color_op: tev_color_op((usage.flags >> 16) & 0xf)?,
-            alpha_op: tev_alpha_op((usage.flags >> 20) & 0xf)?,
+            color_op: usage
+                .color_map()
+                .or_else(|error| invalid_scene(error.to_string()))?,
+            alpha_op: usage
+                .alpha_map()
+                .or_else(|error| invalid_scene(error.to_string()))?,
             blending: usage.blending,
             custom_tev: usage.custom_tev.map(PreparedTev::new).transpose()?,
         });
@@ -229,6 +201,16 @@ pub(crate) fn prepare_material(
     if pixel_engine.dither || pixel_engine.destination_alpha.is_some() {
         return invalid_scene("the wgpu backend does not support PE dither or destination alpha");
     }
+    let blend = match pixel_engine.blend {
+        // COPY writes the source: no blending.
+        HsdBlendMode::Logic(HsdLogicOp::Copy) => HsdBlendMode::None,
+        HsdBlendMode::Logic(op) => {
+            return invalid_scene(format!(
+                "the wgpu backend has no framebuffer logic ops ({op:?})"
+            ));
+        }
+        blend => blend,
+    };
     let ambient = colors.map_or([0.0; 3], |colors| unit(colors.ambient));
     let specular = colors.map_or([0.0; 3], |colors| unit(colors.specular));
     let shininess = colors.map_or(0.0, |colors| colors.shininess);
@@ -255,7 +237,7 @@ pub(crate) fn prepare_material(
         ambient,
         specular,
         shininess,
-        blend: pixel_engine.blend,
+        blend,
         color_update: pixel_engine.color_update,
         alpha_update: pixel_engine.alpha_update,
         alpha_compare: (!pixel_engine.alpha_compare.always_passes())
@@ -275,69 +257,44 @@ pub(crate) fn prepare_material(
 /// several phases applies its alpha op only in the first one it reaches
 /// (TObjMakeTExp's `repeat`).
 pub fn tev_plan(
-    stage_lightmaps: &[u32],
+    stage_lightmaps: &[HsdLightMap],
     diffuse_lighting: bool,
     specular_lighting: bool,
 ) -> Vec<TevStep> {
     let mut steps = Vec::new();
-    let mut done = 0;
-    let mut phase = |steps: &mut Vec<TevStep>, mask: u32, target: TevTarget| {
-        for (stage, &lightmap) in stage_lightmaps.iter().enumerate() {
-            if lightmap & mask != 0 {
-                steps.push(TevStep::Stage {
-                    stage,
-                    target,
-                    alpha: done & lightmap == 0,
-                });
+    // Stages that already applied their alpha op in an earlier phase.
+    let mut reached = vec![false; stage_lightmaps.len()];
+    let mut phase =
+        |steps: &mut Vec<TevStep>, in_phase: fn(&HsdLightMap) -> bool, target: TevTarget| {
+            for (stage, lightmap) in stage_lightmaps.iter().enumerate() {
+                if in_phase(lightmap) {
+                    steps.push(TevStep::Stage {
+                        stage,
+                        target,
+                        alpha: !reached[stage],
+                    });
+                    reached[stage] = true;
+                }
             }
-        }
-        done |= mask;
-    };
+        };
     phase(
         &mut steps,
-        TOBJ_LIGHTMAP_DIFFUSE | TOBJ_LIGHTMAP_AMBIENT,
+        |lightmap| lightmap.diffuse || lightmap.ambient,
         TevTarget::Color,
     );
     if diffuse_lighting {
         steps.push(TevStep::DiffuseLighting);
     }
     if specular_lighting {
-        phase(&mut steps, TOBJ_LIGHTMAP_SPECULAR, TevTarget::Specular);
+        phase(
+            &mut steps,
+            |lightmap| lightmap.specular,
+            TevTarget::Specular,
+        );
         steps.push(TevStep::SpecularLighting);
     }
-    phase(&mut steps, TOBJ_LIGHTMAP_EXT, TevTarget::Color);
+    phase(&mut steps, |lightmap| lightmap.ext, TevTarget::Color);
     steps
-}
-
-fn tev_color_op(value: u32) -> Result<TevColorOp> {
-    use TevColorOp::*;
-    Ok(match value {
-        0 => None,
-        1 => AlphaMask,
-        2 => RgbMask,
-        3 => Blend,
-        4 => Modulate,
-        5 => Replace,
-        6 => Pass,
-        7 => Add,
-        8 => Sub,
-        _ => return invalid_scene(format!("texture stage color operation {value} is invalid")),
-    })
-}
-
-fn tev_alpha_op(value: u32) -> Result<TevAlphaOp> {
-    use TevAlphaOp::*;
-    Ok(match value {
-        0 => None,
-        1 => AlphaMask,
-        2 => Blend,
-        3 => Modulate,
-        4 => Replace,
-        5 => Pass,
-        6 => Add,
-        7 => Sub,
-        _ => return invalid_scene(format!("texture stage alpha operation {value} is invalid")),
-    })
 }
 
 /// The prepared texture for a stage's scene texture, uploading each distinct
@@ -361,7 +318,7 @@ fn prepare_texture(
     let Some(source) = scene.textures.get(scene_texture.0) else {
         return Ok(None);
     };
-    let Some(rgba) = source.rgba.as_ref() else {
+    let Ok(rgba) = source.rgba.as_ref() else {
         return Ok(None);
     };
     let content = source.content_key();
@@ -460,11 +417,15 @@ fn address_mode(mode: u32) -> Result<AddressMode> {
 pub(crate) mod test_support {
     use super::*;
 
-    pub const DIFFUSE: u32 = 1 << 4;
-    pub const SPECULAR: u32 = 1 << 5;
-    pub const EXT: u32 = 1 << 7;
+    pub const DIFFUSE: HsdLightMap = HsdLightMap::DIFFUSE;
+    pub const SPECULAR: HsdLightMap = HsdLightMap::SPECULAR;
+    pub const EXT: HsdLightMap = HsdLightMap::EXT;
 
-    pub fn stage(source: StageSource, color_op: TevColorOp, alpha_op: TevAlphaOp) -> PreparedStage {
+    pub fn stage(
+        source: StageSource,
+        color_op: HsdColorMap,
+        alpha_op: HsdAlphaMap,
+    ) -> PreparedStage {
         PreparedStage {
             texture_index: Some(0),
             address_u: AddressMode::Repeat,
@@ -483,7 +444,7 @@ pub(crate) mod test_support {
         }
     }
 
-    pub fn material(stages: Vec<PreparedStage>, lightmaps: &[u32]) -> PreparedMaterial {
+    pub fn material(stages: Vec<PreparedStage>, lightmaps: &[HsdLightMap]) -> PreparedMaterial {
         PreparedMaterial {
             base_color: [0.8, 0.8, 0.8, 1.0],
             vertex_color: true,
@@ -512,8 +473,8 @@ mod tests {
     fn plan_orders_lighting_between_light_map_phases() {
         let plan = tev_plan(
             &[
-                TOBJ_LIGHTMAP_DIFFUSE,
-                TOBJ_LIGHTMAP_EXT | TOBJ_LIGHTMAP_SPECULAR,
+                HsdLightMap::DIFFUSE,
+                HsdLightMap::EXT | HsdLightMap::SPECULAR,
             ],
             true,
             true,
@@ -543,9 +504,49 @@ mod tests {
         );
     }
 
+    /// A logic blend is the backend's to lower: COPY is a plain write, and
+    /// wgpu has no other framebuffer logic op.
+    #[test]
+    fn a_copy_logic_blend_is_a_plain_write_and_other_logic_ops_are_refused() {
+        use dat_parser::hsd::pe::HsdPixelEngineState;
+        use dat_parser::hsd::scene::{DObjId, HsdCustomPe, HsdMaterial, MObjId, PeDescId};
+
+        let prepare = |op| {
+            let display_object = HsdDisplayObject {
+                source_id: DObjId(4),
+                material: Some(HsdMaterial {
+                    source_id: MObjId(16),
+                    render_flags: 0,
+                    custom_pe: Some(HsdCustomPe {
+                        source_id: PeDescId(64),
+                        state: HsdPixelEngineState {
+                            blend: HsdBlendMode::Logic(op),
+                            ..HsdPixelEngineState::from_render_flags(0)
+                        },
+                    }),
+                    colors: None,
+                    textures: Vec::new(),
+                }),
+                polygons: Vec::new(),
+            };
+            let scene = HsdScene {
+                roots: Vec::new(),
+                textures: Vec::new(),
+            };
+            prepare_material(
+                &display_object,
+                &scene,
+                &mut Vec::new(),
+                &mut TextureCache::default(),
+            )
+        };
+        assert_eq!(prepare(HsdLogicOp::Copy).unwrap().blend, HsdBlendMode::None);
+        assert!(prepare(HsdLogicOp::Xor).is_err());
+    }
+
     #[test]
     fn specular_stages_are_skipped_without_specular_lighting() {
-        let plan = tev_plan(&[TOBJ_LIGHTMAP_SPECULAR], true, false);
+        let plan = tev_plan(&[HsdLightMap::SPECULAR], true, false);
         assert_eq!(plan, vec![TevStep::DiffuseLighting]);
     }
 }

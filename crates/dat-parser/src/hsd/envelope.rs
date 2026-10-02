@@ -157,7 +157,7 @@ impl HsdEnvelopeMatrix {
 
 /// A bounded HSD envelope palette. Unused GX slots are never addressable.
 #[derive(Debug)]
-pub struct HsdEnvelopePalette {
+pub(crate) struct HsdEnvelopePalette {
     matrices: [HsdEnvelopeMatrix; HSD_ENVELOPE_PALETTE_LEN],
     len: usize,
 }
@@ -171,7 +171,7 @@ impl HsdEnvelopePalette {
     /// skeleton-root model node. The resolver must provide current world and
     /// serialized inverse-bind matrices for referenced joints. View and
     /// fighter-specific draw-state normal corrections are intentionally absent.
-    pub fn build<F>(
+    pub(crate) fn build<F>(
         entries: &[HsdEnvelope],
         single_weight_policy: HsdEnvelopeSingleWeightPolicy,
         model_node_correction: Option<Mat4>,
@@ -264,10 +264,6 @@ impl HsdEnvelopePalette {
         self.len
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
     /// Resolve GX's position/normal matrix-row address (`0, 3, ... 27`).
     pub fn matrix_for_selector(
         &self,
@@ -287,7 +283,8 @@ impl HsdEnvelopePalette {
             })
     }
 
-    pub fn deform(
+    #[cfg(test)]
+    fn deform(
         &self,
         pn_mtx_idx: u16,
         position: [f32; 3],

@@ -82,7 +82,6 @@ fn full_xyz_rotation_and_positive_translation_z_survive_s_r_t() {
     // Rz(-90)*Ry(90)*Rx(90) sends X→-Z, Y→-Y, Z→-X.
     // Therefore T=(-.25,-1,+2), R*T=(-2,+1,+.25), then scale rows.
     let resolved = resolve_texture_coordinates(4, 0, &transform, [2, 8], 2);
-    assert!(resolved.has_transform());
     assert_matrix(
         matrix(resolved),
         [
@@ -126,19 +125,18 @@ fn matrix_texgen_uses_active_gx_dispatch_not_generated_enum_names() {
     let identity = identity();
     // GXAttr.c:475–515 initializes row=5, then TEX1 selects row6. The
     // TEXCOORD1 case does not change row; only BUMP uses src-12 as its source.
-    assert_eq!(
-        resolve_texture_coordinates(5, 0, &identity, [1, 1], 0).tex_coord_index(),
-        Some(1)
-    );
-    assert_eq!(
-        resolve_texture_coordinates(13, 0, &identity, [1, 1], 0).tex_coord_index(),
-        Some(0)
-    );
-    // TEX2 remains TEX2, even though today's vertex decoder cannot supply it.
-    assert_eq!(
-        resolve_texture_coordinates(6, 0, &identity, [1, 1], 0).tex_coord_index(),
-        Some(2)
-    );
+    let tex_coord_index =
+        |tex_gen_src| match resolve_texture_coordinates(tex_gen_src, 0, &identity, [1, 1], 0) {
+            HsdTextureCoordinates::Matrix {
+                source: HsdTextureSource::TexCoord { index },
+                ..
+            } => Some(index),
+            _ => None,
+        };
+    assert_eq!(tex_coord_index(5), Some(1));
+    assert_eq!(tex_coord_index(13), Some(0));
+    // TEX2 remains TEX2.
+    assert_eq!(tex_coord_index(6), Some(2));
     assert!(matches!(
         resolve_texture_coordinates(0, 0, &identity, [1, 1], 0),
         HsdTextureCoordinates::Matrix {
@@ -158,8 +156,6 @@ fn reflection_hardwires_normal_and_is_generated_even_with_identity_srt() {
             [1, 1],
             0,
         );
-        assert_eq!(coordinates.tex_coord_index(), None);
-        assert!(coordinates.has_transform());
         assert_matrix(
             reflection_matrix(coordinates),
             [
@@ -177,7 +173,6 @@ fn reflection_hardwires_normal_and_is_generated_even_with_identity_srt() {
             ..
         }
     ));
-    assert!(!ordinary.has_transform());
     assert_matrix(
         matrix(ordinary),
         [
@@ -315,7 +310,6 @@ fn unsupported_dependencies_and_invalid_arithmetic_never_become_uv0() {
     ] {
         let coordinates = resolve_texture_coordinates(4, flags, &identity, [1, 1], 0);
         assert_eq!(coordinates, HsdTextureCoordinates::Unsupported { reason });
-        assert_eq!(coordinates.tex_coord_index(), None);
     }
     for (source, repeat, transform, reason) in [
         (21, [1, 1], identity, Reason::TexGenSource),
@@ -363,7 +357,7 @@ fn texture_attribute_availability_tracks_decoding_not_default_zero_values() {
     use dat_parser::descriptor::pobj::GxAttribute;
     use dat_parser::gx::display_list::{PrimitiveGroup, RawVertex};
     use dat_parser::gx::vertex::decode_primitives;
-    use dat_parser::gx::{GxAttrName, GxAttrType, GxCompType, GxPrimitiveType};
+    use dat_parser::gx::{GxAttrName, GxAttrType, GxCompType, GxComponent, GxPrimitiveType};
 
     let dat = DatFile::from_parts(vec![0; 8], Vec::new(), Vec::new());
     let mut attributes = [
@@ -371,21 +365,19 @@ fn texture_attribute_availability_tracks_decoding_not_default_zero_values() {
             attr_name: GxAttrName::Tex0,
             attr_type: GxAttrType::Index8,
             comp_count: 1,
-            comp_type: GxCompType::Float,
+            comp_type: GxComponent::Number(GxCompType::Float),
             scale: 0,
             stride: 8,
             buffer_ptr: Some(0),
-            comp_type_raw: 4,
         },
         GxAttribute {
             attr_name: GxAttrName::Tex1,
             attr_type: GxAttrType::Index8,
             comp_count: 1,
-            comp_type: GxCompType::Float,
+            comp_type: GxComponent::Number(GxCompType::Float),
             scale: 0,
             stride: 8,
             buffer_ptr: Some(4), // Truncated: only one float remains.
-            comp_type_raw: 4,
         },
     ];
     let groups = [PrimitiveGroup {
@@ -393,7 +385,6 @@ fn texture_attribute_availability_tracks_decoding_not_default_zero_values() {
         vertices: vec![RawVertex {
             indices: vec![0, 0],
             color0: None,
-            color0_offset: None,
             color1: None,
         }],
     }];

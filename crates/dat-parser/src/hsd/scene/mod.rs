@@ -33,6 +33,7 @@ use crate::descriptor::mobj::Material;
 use crate::descriptor::pobj::GxAttribute;
 use crate::descriptor::traversal::DescriptorKind;
 use crate::gx::display_list::PrimitiveGroup;
+use crate::gx::texture::TextureReadError;
 use crate::gx::vertex::DecodedPrimitive;
 use crate::gx::{GxAttrName, GxAttrType};
 use crate::math::Mat4;
@@ -180,7 +181,8 @@ impl HsdDisplayObject {
 #[derive(Debug)]
 pub struct HsdPolygon {
     pub source_id: PObjId,
-    /// Raw PObj flags, including front/back culling and envelope mode.
+    /// Raw PObj flags. Consumers read culling through [`Self::cull`] and the
+    /// envelope mode through `binding`.
     pub flags: u16,
     /// GX attribute layout, analogous to a vertex input declaration.
     pub attributes: Vec<GxAttribute>,
@@ -206,7 +208,29 @@ pub enum HsdPolygonBinding {
     },
 }
 
+/// The faces GX culls (`GXCullMode`). GX takes clockwise triangles as
+/// front-facing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum HsdCullMode {
+    None,
+    Front,
+    Back,
+    /// Both faces: the polygon draws nothing.
+    All,
+}
+
 impl HsdPolygon {
+    /// The cull mode `HSD_PObjDisp` hands to `GXSetCullMode`.
+    pub fn cull(&self) -> HsdCullMode {
+        use crate::descriptor::pobj::flags::{CULLBACK, CULLFRONT};
+        match (self.flags & CULLFRONT != 0, self.flags & CULLBACK != 0) {
+            (false, false) => HsdCullMode::None,
+            (true, false) => HsdCullMode::Front,
+            (false, true) => HsdCullMode::Back,
+            (true, true) => HsdCullMode::All,
+        }
+    }
+
     pub fn has_envelope(&self) -> bool {
         matches!(self.binding, HsdPolygonBinding::Envelope { .. })
     }
@@ -220,13 +244,6 @@ impl HsdPolygon {
                 mask
             }
         })
-    }
-
-    pub fn envelopes(&self) -> &[HsdEnvelope] {
-        match &self.binding {
-            HsdPolygonBinding::Envelope { entries, .. } => entries,
-            HsdPolygonBinding::Rigid { .. } => &[],
-        }
     }
 }
 
@@ -292,11 +309,38 @@ pub struct HsdTextureObject {
     pub tev_descriptor: Option<TevDescId>,
     /// Validated only when either serialized custom color/alpha gate is active.
     pub custom_tev: Option<HsdCustomTev>,
-    /// Raw TObj state, including coordinate and color/alpha combiner behavior.
+    /// Raw TObj state. Consumers read it through [`Self::coordinates`],
+    /// [`Self::light_map`], [`Self::color_map`], [`Self::alpha_map`] and
+    /// [`Self::is_bump`].
     pub flags: u32,
 }
 
 impl HsdTextureObject {
+    /// The lighting phases the TObj takes part in.
+    pub fn light_map(&self) -> super::texture::HsdLightMap {
+        super::texture::HsdLightMap::from_flags(self.flags)
+    }
+
+    /// How the stage combines with the running color.
+    pub fn color_map(
+        &self,
+    ) -> Result<super::texture::HsdColorMap, super::texture::HsdUndefinedTextureMap> {
+        super::texture::HsdColorMap::from_flags(self.flags)
+    }
+
+    /// How the stage combines with the running alpha.
+    pub fn alpha_map(
+        &self,
+    ) -> Result<super::texture::HsdAlphaMap, super::texture::HsdUndefinedTextureMap> {
+        super::texture::HsdAlphaMap::from_flags(self.flags)
+    }
+
+    /// Whether the TObj feeds GX emboss texgen (`TEX_BUMP`) instead of a
+    /// TEV stage.
+    pub fn is_bump(&self) -> bool {
+        self.flags & crate::descriptor::tobj::texture_flags::BUMP != 0
+    }
+
     /// Resolve source texture semantics without allocating or copying image data.
     pub fn coordinates(&self) -> super::texture::HsdTextureCoordinates {
         super::texture::resolve_texture_coordinates(
@@ -325,9 +369,10 @@ pub struct HsdTexture {
     pub id: HsdTextureSourceId,
     pub image: HsdImageSource,
     pub palette: Option<HsdPaletteSource>,
-    /// Renderer-friendly RGBA8. `None` retains a valid source reference whose
-    /// format/data could not be decoded by the current GX decoder.
-    pub rgba: Option<Vec<u8>>,
+    /// Renderer-friendly RGBA8, or why the image did not decode. A texture
+    /// that did not decode keeps its source reference, and the scene still
+    /// builds: what to draw in its place is the backend's choice.
+    pub rgba: Result<Vec<u8>, TextureReadError>,
 }
 
 impl HsdTexture {
@@ -377,7 +422,7 @@ pub struct HsdPaletteSource {
     pub color_count: u16,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 #[non_exhaustive]
 pub enum HsdSceneError {
     #[error("HSD scene exceeds the {resource} budget of {limit}")]
@@ -424,40 +469,8 @@ pub enum HsdSceneError {
 impl HsdScene {
     pub fn validate(&self) -> Result<(), HsdSceneError> {
         for root in &self.roots {
-            let joint_count = root.joints.len();
-            for (joint_index, joint) in root.joints.iter().enumerate() {
-                if let Some(parent) = joint.parent
-                    && parent.0 >= joint_index
-                {
-                    return Err(HsdSceneError::InvalidReference {
-                        resource: "parent joint",
-                        index: parent.0,
-                        len: joint_index,
-                    });
-                }
-                if joint.flags & crate::descriptor::jobj::flags::INSTANCE != 0
-                    && joint.children.len() != 1
-                {
-                    return Err(HsdSceneError::InvalidData {
-                        context: "INSTANCE requires exactly one referenced joint",
-                    });
-                }
-                for child in &joint.children {
-                    if child.0 >= joint_count {
-                        return Err(HsdSceneError::InvalidReference {
-                            resource: "child joint",
-                            index: child.0,
-                            len: joint_count,
-                        });
-                    }
-                    if joint.flags & crate::descriptor::jobj::flags::INSTANCE == 0
-                        && root.joints[child.0].parent != Some(HsdJointIndex(joint_index))
-                    {
-                        return Err(HsdSceneError::InvalidData {
-                            context: "owned child does not point back to its parent",
-                        });
-                    }
-                }
+            root.validate_joint_graph()?;
+            for joint in &root.joints {
                 for display_object in &joint.display_objects {
                     if let Some(material) = &display_object.material {
                         for texture_object in &material.textures {
@@ -492,6 +505,50 @@ impl HsdScene {
     }
 }
 
+impl HsdSceneRoot {
+    /// Check that the joints form the tree the evaluators walk: a parent
+    /// comes before its children, every child index is in range, an owned
+    /// child points back at its parent, and an INSTANCE names one target.
+    /// A parent that precedes its children cannot be part of a cycle.
+    pub(crate) fn validate_joint_graph(&self) -> Result<(), HsdSceneError> {
+        use crate::descriptor::jobj::flags::INSTANCE;
+        let joint_count = self.joints.len();
+        for (joint_index, joint) in self.joints.iter().enumerate() {
+            if let Some(parent) = joint.parent
+                && parent.0 >= joint_index
+            {
+                return Err(HsdSceneError::InvalidReference {
+                    resource: "parent joint",
+                    index: parent.0,
+                    len: joint_index,
+                });
+            }
+            if joint.flags & INSTANCE != 0 && joint.children.len() != 1 {
+                return Err(HsdSceneError::InvalidData {
+                    context: "INSTANCE requires exactly one referenced joint",
+                });
+            }
+            for child in &joint.children {
+                if child.0 >= joint_count {
+                    return Err(HsdSceneError::InvalidReference {
+                        resource: "child joint",
+                        index: child.0,
+                        len: joint_count,
+                    });
+                }
+                if joint.flags & INSTANCE == 0
+                    && self.joints[child.0].parent != Some(HsdJointIndex(joint_index))
+                {
+                    return Err(HsdSceneError::InvalidData {
+                        context: "owned child does not point back to its parent",
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 pub(super) fn root_has_renderable_geometry(root: &HsdSceneRoot) -> bool {
     root.joints.iter().any(|joint| {
         joint.display_objects.iter().any(|dobj| {
@@ -517,6 +574,9 @@ impl From<crate::descriptor::map_head::MapHeadError> for HsdSceneError {
             MapHeadError::NullGeneralPointTable => Self::InvalidData {
                 context: "stage general-point table has a count without a pointer",
             },
+            MapHeadError::GeneralPointCountExceedsData => Self::InvalidData {
+                context: "stage general-point count exceeds its data table",
+            },
         }
     }
 }
@@ -524,7 +584,7 @@ impl From<crate::descriptor::map_head::MapHeadError> for HsdSceneError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gx::GxCompType;
+    use crate::gx::{GxCompType, GxComponent};
 
     fn display_object(render_flags: Option<u32>) -> HsdDisplayObject {
         HsdDisplayObject {
@@ -562,11 +622,10 @@ mod tests {
                     attr_name,
                     attr_type,
                     comp_count: 1,
-                    comp_type: GxCompType::Float,
+                    comp_type: GxComponent::Number(GxCompType::Float),
                     scale: 0,
                     stride: 8,
                     buffer_ptr: None,
-                    comp_type_raw: 4,
                 })
                 .collect(),
             primitive_groups: Vec::new(),
@@ -579,6 +638,31 @@ mod tests {
         assert_eq!(polygon(GxAttrType::Direct).tex_coord_attribute_mask(), 0x83);
         assert_eq!(polygon(GxAttrType::Index8).tex_coord_attribute_mask(), 0x83);
         assert_eq!(polygon(GxAttrType::None).tex_coord_attribute_mask(), 0);
+    }
+
+    #[test]
+    fn cull_flags_resolve_to_the_gx_cull_mode() {
+        // Source words: POBJ_CULLFRONT is bit 14, POBJ_CULLBACK bit 15; the
+        // type bits beside them do not select a mode.
+        for (flags, cull) in [
+            (0x2000, HsdCullMode::None),
+            (0x4000, HsdCullMode::Front),
+            (0x8000, HsdCullMode::Back),
+            (0xC000, HsdCullMode::All),
+        ] {
+            let polygon = HsdPolygon {
+                source_id: PObjId(8),
+                flags,
+                attributes: Vec::new(),
+                primitive_groups: Vec::new(),
+                decoded: DecodedPrimitive {
+                    vertices: Vec::new(),
+                    triangles: Vec::new(),
+                },
+                binding: HsdPolygonBinding::Rigid { joint: None },
+            };
+            assert_eq!(polygon.cull(), cull, "{flags:#06x}");
+        }
     }
 
     #[test]
@@ -601,7 +685,7 @@ mod tests {
                 format: 1,
                 color_count: 16,
             }),
-            rgba: None,
+            rgba: Err(TextureReadError::NoImageData),
         };
         // Two image descriptors over one pixel block and one palette.
         assert_eq!(

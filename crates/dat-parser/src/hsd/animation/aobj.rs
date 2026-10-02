@@ -121,7 +121,7 @@ impl<'a, M> HsdAObjEvaluator<'a, M> {
 
     /// Checked aggregate size; overlapping or duplicate byte ranges count once
     /// per track because each borrowed track is copied during ownership conversion.
-    pub fn checked_packed_byte_len(&self) -> Option<usize> {
+    pub(super) fn checked_packed_byte_len(&self) -> Option<usize> {
         self.tracks.iter().try_fold(0usize, |total, track| {
             total.checked_add(track.evaluator.packed_byte_len())
         })
@@ -139,20 +139,12 @@ impl<'a, M> HsdAObjEvaluator<'a, M> {
         self.current_frame
     }
 
-    pub fn rewind_frame(&self) -> f32 {
-        self.rewind_frame
-    }
-
     pub fn end_frame(&self) -> f32 {
         self.end_frame
     }
 
     pub fn is_stopped(&self) -> bool {
         self.flags & aobj_flags::NO_ANIM != 0
-    }
-
-    pub fn updates_suppressed(&self) -> bool {
-        self.flags & aobj_flags::NO_UPDATE != 0
     }
 
     pub fn set_looping(&mut self, looping: bool) {

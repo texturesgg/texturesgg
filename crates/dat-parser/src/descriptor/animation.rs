@@ -65,19 +65,21 @@ pub enum RawFigaTreeError {
     DescriptorOutOfBounds,
     #[error("FigaTree {resource} pointer field overflows")]
     PointerFieldOverflow { resource: &'static str },
-    #[error("FigaTree {resource} pointer at data offset {field_offset:#x} is invalid: {error:?}")]
+    #[error("FigaTree {resource} pointer at data offset {field_offset:#x} is invalid: {source}")]
     InvalidPointer {
         resource: &'static str,
         field_offset: u32,
-        error: DatPointerError,
+        #[source]
+        source: DatPointerError,
     },
     #[error(
-        "FObj packed-data pointer at data offset {field_offset:#x} is invalid for count-list ordinal {count_list_ordinal}: {error:?}"
+        "FObj packed-data pointer at data offset {field_offset:#x} is invalid for count-list ordinal {count_list_ordinal}: {source}"
     )]
     InvalidTrackPointer {
         count_list_ordinal: usize,
         field_offset: u32,
-        error: DatPointerError,
+        #[source]
+        source: DatPointerError,
     },
     #[error("FigaTree track-count list is unterminated")]
     UnterminatedTrackCounts,
@@ -196,10 +198,10 @@ impl<'a> RawFigaTree<'a> {
                     .ok_or(RawFigaTreeError::PackedDataRangeOverflow { count_list_ordinal })?;
                 let packed_data_offset =
                     dat.resolve_required_pointer(packed_field)
-                        .map_err(|error| RawFigaTreeError::InvalidTrackPointer {
+                        .map_err(|source| RawFigaTreeError::InvalidTrackPointer {
                             count_list_ordinal,
                             field_offset: packed_field,
-                            error,
+                            source,
                         })?;
                 let packed_end = (packed_data_offset as usize)
                     .checked_add(length as usize)
@@ -243,10 +245,10 @@ fn resolve_pointer(
     field_offset: u32,
 ) -> Result<u32, RawFigaTreeError> {
     dat.resolve_required_pointer(field_offset)
-        .map_err(|error| RawFigaTreeError::InvalidPointer {
+        .map_err(|source| RawFigaTreeError::InvalidPointer {
             resource,
             field_offset,
-            error,
+            source,
         })
 }
 
