@@ -1,0 +1,20 @@
+[package]
+name = "gc-iso"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["gamecube", "iso", "gcm", "disc-image"]
+categories = ["parser-implementations", "game-development"]
+description = "Read GameCube (GCM) disc images a file at a time, and replace one file in place"
+
+[dependencies]
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

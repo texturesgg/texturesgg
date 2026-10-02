@@ -1,0 +1,775 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "discRevision": 2,
+    "gameId": "GALE01",
+    "isoSha256": "0de05981a34156b9cedcef73c73d4244ac05cf6149ab3c9cfed917698819e464"
+  },
+  "files": [
+    {
+      "name": "GrBb.dat",
+      "byteLength": 2284151,
+      "sha256": "40b9dd1eaf8ae9135de38527c5a279258205d171bfa0ebd7c113a4c71e5b0c7b"
+    },
+    {
+      "name": "GrCn.dat",
+      "byteLength": 1730938,
+      "sha256": "0127e55983f2d43bec79bdf9f9c43ec88a0a6807e5b1f6069022b5cac3ed1a7a"
+    },
+    {
+      "name": "GrCs.dat",
+      "byteLength": 1514568,
+      "sha256": "f6ed4deab4eed356f4045383cf5d9fa0f792e53c4ba15008d60a9006d8cdc692"
+    },
+    {
+      "name": "GrFs.dat",
+      "byteLength": 897718,
+      "sha256": "ce58e00829b40a983affedea1642ad146ccc166734669b0c245c2c25f5cf649f"
+    },
+    {
+      "name": "GrFz.dat",
+      "byteLength": 499357,
+      "sha256": "93e2f393730b8614433ee5cb3cbf07385b6f57aa02a32579f97603b6b523c375"
+    },
+    {
+      "name": "GrGb.dat",
+      "byteLength": 867404,
+      "sha256": "7bda23c5d2e6742bdd82feb9fa4bb7cb79579f40d927b0651c8af984f45a6bd8"
+    },
+    {
+      "name": "GrGd.dat",
+      "byteLength": 595699,
+      "sha256": "cf43a6b0912543358a263295bd301e4b278c061b7995bd0466175806b8630c59"
+    },
+    {
+      "name": "GrGr.dat",
+      "byteLength": 876433,
+      "sha256": "3e6bef427d62247cfc25c7ebc230253212578b10be1e8006c961b3162efb33b7"
+    },
+    {
+      "name": "GrI1.dat",
+      "byteLength": 260447,
+      "sha256": "451e38f84924238731f6d76ad868857c075597f83050e542974d275fe0407278"
+    },
+    {
+      "name": "GrI2.dat",
+      "byteLength": 188279,
+      "sha256": "510692cb7b26d037203d9c8f1b0a7c39177f27c714871f27161975f4e0ff3a54"
+    },
+    {
+      "name": "GrIm.dat",
+      "byteLength": 1571065,
+      "sha256": "d3efb6d3b57d21adee11672abce12cf1fc5ace30a053a7ca26db4c416e08704b"
+    },
+    {
+      "name": "GrIz.dat",
+      "byteLength": 1118546,
+      "sha256": "a1f4c93bf47b159e132979cf041db84ac46a5e8b23e7b6e3d53ee09d8b2c30f4"
+    },
+    {
+      "name": "GrKg.dat",
+      "byteLength": 477007,
+      "sha256": "c2a0d7ae214c5c30e078faa16d1f0124845ee06f06c0a409008113ae23e379e4"
+    },
+    {
+      "name": "GrKr.dat",
+      "byteLength": 1136729,
+      "sha256": "14d50017f9fdbc6c0fe31a92684383b3ad5e3e4c66fa8f7c00bbe05fd22967c6"
+    },
+    {
+      "name": "GrMc.dat",
+      "byteLength": 1358923,
+      "sha256": "fc71acfd2a04641981c2216c7293b62c3f87d18fc2f90b36e6f58a35ab580b44"
+    },
+    {
+      "name": "GrNBa.dat",
+      "byteLength": 452171,
+      "sha256": "5b914b8f28c0dc16b1bafad68704e743d495ead41f0b954cca84479d6868a3b7"
+    },
+    {
+      "name": "GrNLa.dat",
+      "byteLength": 611125,
+      "sha256": "2a295a733414fb65a7061a5c092144fb197570682562b87ba5567ff3f08abb02"
+    },
+    {
+      "name": "GrOk.dat",
+      "byteLength": 1136999,
+      "sha256": "598e40ee4788320a81477316e318b181821af353b0fa12695cce0dfa4f5c60f0"
+    },
+    {
+      "name": "GrOp.dat",
+      "byteLength": 656823,
+      "sha256": "44ef32a76216c3f47b79c430167e915953c3da0664f121c270be11fd5af2574d"
+    },
+    {
+      "name": "GrOt.dat",
+      "byteLength": 1145019,
+      "sha256": "50734fbb6c50acfa67e7a761890f2e7e59c506db62a5ffa243e213bd8dfa47cd"
+    },
+    {
+      "name": "GrOy.dat",
+      "byteLength": 247034,
+      "sha256": "31338847be3e4d0ed52d8c404d2b750369a4cb76e31a7217071ef186283d8d8c"
+    },
+    {
+      "name": "GrPs.dat",
+      "byteLength": 1468544,
+      "sha256": "0b55e7ba6234b882a35edf80d2d6c7f84d9fc887cbd4fe9c85b38ed7c3ea4e18"
+    },
+    {
+      "name": "GrPu.dat",
+      "byteLength": 1005853,
+      "sha256": "048780b71cd08047cee32a98c7622ceea1eb318c0c1c52278dca65a68ad8d012"
+    },
+    {
+      "name": "GrRc.dat",
+      "byteLength": 961722,
+      "sha256": "743d7c372b795d12c33c044dc0afea8a3aeb0f8edcc79109b6e9bb6475c2a9da"
+    },
+    {
+      "name": "GrSh.dat",
+      "byteLength": 1228117,
+      "sha256": "3129fe18a0fc954a07467a65e1d3649a6868e32c0ab4a89d484ddfb230acfdd8"
+    },
+    {
+      "name": "GrSt.dat",
+      "byteLength": 824648,
+      "sha256": "1ef0ccc51fc69bf2e06f55377111ec1b67e00438df0597bf6195c3032ae29f83"
+    },
+    {
+      "name": "GrVe.dat",
+      "byteLength": 2315996,
+      "sha256": "832c9caa5981092e84e57c38c233c7708fb0a85e3b47f5eb3ab7259f876154d5"
+    },
+    {
+      "name": "GrYt.dat",
+      "byteLength": 569164,
+      "sha256": "75725f0da278d039e1294718528a6a4bff8f3a82b982e151d1d34eac99f42b24"
+    },
+    {
+      "name": "GrZe.dat",
+      "byteLength": 856428,
+      "sha256": "460e6ee9c8c8f2a734c818ebb20ee0074d823e5dda835f9d07337dcbbc50b5a6"
+    },
+    {
+      "name": "PlCaBu.dat",
+      "byteLength": 525771,
+      "sha256": "4aaa5e2d321ca338de03861388ff4b40a3a1cff41f1b6007a6cc92f2c6c59167"
+    },
+    {
+      "name": "PlCaGr.dat",
+      "byteLength": 525739,
+      "sha256": "0b12baf26ce9072fca50467b4701124230b2ec72e8b96129c75d90eb4ac3b601"
+    },
+    {
+      "name": "PlCaGy.dat",
+      "byteLength": 525707,
+      "sha256": "dcc34bbb428f978858e95b18e29d4a476b4582d59cdc5daca3814dcaf2eef872"
+    },
+    {
+      "name": "PlCaNr.dat",
+      "byteLength": 525805,
+      "sha256": "bdc91f7bde1da16ceefe332876c20b65b36ba2f30a1e94b59bb24a2f9fcfe163"
+    },
+    {
+      "name": "PlCaRe.dat",
+      "byteLength": 525771,
+      "sha256": "16f23de2fe53a10f8b2c885691d0aa6073abe4ecc1b6300d0d5b78a3d35544ad"
+    },
+    {
+      "name": "PlCaWh.dat",
+      "byteLength": 526027,
+      "sha256": "c4e0b8e5423d47a1c87b68212b6ae5d36d051f21bb71f15e9cb1eca3b727adde"
+    },
+    {
+      "name": "PlClBk.dat",
+      "byteLength": 452050,
+      "sha256": "de87b3ae7b67e60e11a6018ede312ee267fcd3720911d1717c3331c908e44910"
+    },
+    {
+      "name": "PlClBu.dat",
+      "byteLength": 452050,
+      "sha256": "015d41a9288c9df57aa7ef71f612b9f2f9909245e8e17f767bd5a2f5ff5b56ea"
+    },
+    {
+      "name": "PlClNr.dat",
+      "byteLength": 452046,
+      "sha256": "98bfb9e26a6fc6b7ebf7b1d1afdc0697b9368aa39fbee7f7c3a84e938922d964"
+    },
+    {
+      "name": "PlClRe.dat",
+      "byteLength": 452050,
+      "sha256": "1e83d7afe46d05533783617320c3e8697c27e47cec84bddad6b1c490b943ba1a"
+    },
+    {
+      "name": "PlClWh.dat",
+      "byteLength": 452050,
+      "sha256": "0d037950ec8cd509c78b7611fa02dc17ee3e0b3825c7fffb88eb01b4909b3fe6"
+    },
+    {
+      "name": "PlDkBk.dat",
+      "byteLength": 641744,
+      "sha256": "6b4ebf8397ccdd9516ec444d5445d47402ccc4ee2f41ad1abf4efcc6d1e05770"
+    },
+    {
+      "name": "PlDkBu.dat",
+      "byteLength": 641744,
+      "sha256": "fa15065c640dd566c04417a43a6104e73fee6b175f9c9793d9cc2c5b2862eb9e"
+    },
+    {
+      "name": "PlDkGr.dat",
+      "byteLength": 641744,
+      "sha256": "59c3216b52907a8f4890e1e4960ecdf424b10986c2e2d3047edfa4f4196d24ef"
+    },
+    {
+      "name": "PlDkNr.dat",
+      "byteLength": 641740,
+      "sha256": "7e8a90c28adb183dca3a652eb3796b65ddecff07c8664705e31057a599b76cb6"
+    },
+    {
+      "name": "PlDkRe.dat",
+      "byteLength": 641744,
+      "sha256": "acd91fb0043cca1746fb312f0d3099192f36630e384a42681300d99044fec3e6"
+    },
+    {
+      "name": "PlDrBk.dat",
+      "byteLength": 483018,
+      "sha256": "8d8132347a5651158aaa425c1f01f13e41b23fc845002cce3040e7e99d837139"
+    },
+    {
+      "name": "PlDrBu.dat",
+      "byteLength": 483018,
+      "sha256": "0a35e13100f8f2fb2d9cc519501800a5bce069b9e7fb15422d48197dcc1d7b1f"
+    },
+    {
+      "name": "PlDrGr.dat",
+      "byteLength": 483018,
+      "sha256": "4cc8279000b4b50aad68685a9c9264deb8d449972dd7844a273d841a5f48b088"
+    },
+    {
+      "name": "PlDrNr.dat",
+      "byteLength": 483014,
+      "sha256": "c1be714a4f9c4a5ef24770f427fc13d9b9d315e6ef7eb71a13b9d78d67d7f672"
+    },
+    {
+      "name": "PlDrRe.dat",
+      "byteLength": 483018,
+      "sha256": "a791283f1e5746f24376aefaaaa0292070eda7e255ae0863c87175cc1f6a6acb"
+    },
+    {
+      "name": "PlFcBu.dat",
+      "byteLength": 243998,
+      "sha256": "0a9fb3f5bcd6117722fcb7cbd91865ae5b471adf66ba6b35ef3b770f88b44081"
+    },
+    {
+      "name": "PlFcGr.dat",
+      "byteLength": 243998,
+      "sha256": "35b53a7f0c8241ffe3177e08bdb65e2c56a2f7bfc9fa063d2c434718fd31d306"
+    },
+    {
+      "name": "PlFcNr.dat",
+      "byteLength": 243994,
+      "sha256": "c03edcf21d5a0eeee0e36fd28c68db7fd5f7b33e249f149c931b26ceefb03317"
+    },
+    {
+      "name": "PlFcRe.dat",
+      "byteLength": 243998,
+      "sha256": "415970782e49539eafcb45ee7bd397458dc6ae2e24177c7bce1d89f53bcef0d3"
+    },
+    {
+      "name": "PlFeBu.dat",
+      "byteLength": 660288,
+      "sha256": "3068ac9502f0767be1b83c040d63d42249a877402f75dbdca52e6e746396c401"
+    },
+    {
+      "name": "PlFeGr.dat",
+      "byteLength": 660288,
+      "sha256": "216d540811aa49f293826b669b90385d75d8cbce09d7296c5c6194b99a85525e"
+    },
+    {
+      "name": "PlFeNr.dat",
+      "byteLength": 660284,
+      "sha256": "0e861f97db059e2672b7102601ff66e55430a1fe24a530d1a6f4630f5af642a7"
+    },
+    {
+      "name": "PlFeRe.dat",
+      "byteLength": 660288,
+      "sha256": "e7a7e080b2cb3bdadd6bb59ba7faf58c5798d2f34a5b0e426b7b61f30a2daf36"
+    },
+    {
+      "name": "PlFeYe.dat",
+      "byteLength": 660288,
+      "sha256": "520f1bf9c759eb459fe840287d9fd7b4451cec0e88c2f4861ddcb6059d831b9a"
+    },
+    {
+      "name": "PlFxGr.dat",
+      "byteLength": 362982,
+      "sha256": "b8a41b28a72c5ce2adc0705075662f73763553838356557ecd302e40c066e6d4"
+    },
+    {
+      "name": "PlFxLa.dat",
+      "byteLength": 362982,
+      "sha256": "4fc636ad964a8011b3cec119adfdbf92128f9ced8034146c6293415a45925b19"
+    },
+    {
+      "name": "PlFxNr.dat",
+      "byteLength": 362978,
+      "sha256": "f1ebe2af74d34be113614da3204730ea6d09b078ebf8a82d2a9036d58d8e4f8b"
+    },
+    {
+      "name": "PlFxOr.dat",
+      "byteLength": 362982,
+      "sha256": "3d233ecd659a8fa4462baf6795a37f8ec29a0db87da653b2cf2d68c086f269e2"
+    },
+    {
+      "name": "PlGnBu.dat",
+      "byteLength": 391121,
+      "sha256": "40183f89e0292da870d89b1578c1434d9eb2a96ae0d0ae84cbd075c66f58b421"
+    },
+    {
+      "name": "PlGnGr.dat",
+      "byteLength": 391121,
+      "sha256": "2c5b108ee19431d5dc4c0aad885c1a6bac930315b1617ce1950f6ac19f7411e0"
+    },
+    {
+      "name": "PlGnLa.dat",
+      "byteLength": 391121,
+      "sha256": "706c3fdaafa5dac3aa808bfd6343ddeec2e0fbce37386e4d4276aa193b46b0a3"
+    },
+    {
+      "name": "PlGnNr.dat",
+      "byteLength": 387979,
+      "sha256": "0d95bb9a89a9f5703f0edbc298d8083ac9c960843eea993eed9c0781403c6f8f"
+    },
+    {
+      "name": "PlGnRe.dat",
+      "byteLength": 391121,
+      "sha256": "39126b8cf1d2d726baf5920cb90cbee9f1565119022cf9067e9b7a73bad8581f"
+    },
+    {
+      "name": "PlGwNr.dat",
+      "byteLength": 113895,
+      "sha256": "7b264bd18e48285890719ab335a731a62fa0857720368c891e8cc31a2ad65a34"
+    },
+    {
+      "name": "PlKbBu.dat",
+      "byteLength": 283774,
+      "sha256": "f7ededc0cc3a0faf491e47697a707c82874aa1c802df07304a11ecd5ca6ece2f"
+    },
+    {
+      "name": "PlKbGr.dat",
+      "byteLength": 283710,
+      "sha256": "56b598933f738863cd1e15a6f7bb5ed3199e3295309810bb9d5281eb546f3321"
+    },
+    {
+      "name": "PlKbNr.dat",
+      "byteLength": 283994,
+      "sha256": "e3db48105d6d76316f64481567472fa17212c3d35f8d6130c18b06473e9445d5"
+    },
+    {
+      "name": "PlKbRe.dat",
+      "byteLength": 283742,
+      "sha256": "bd4d6b8b7c7fe76ce918ec3b7093691bc6561465805deccce6ff541f65166e8c"
+    },
+    {
+      "name": "PlKbWh.dat",
+      "byteLength": 283934,
+      "sha256": "d13e8e6553c9821ddbc8345665472c176184fa3205f4d60dbc78e5ef73c4757a"
+    },
+    {
+      "name": "PlKbYe.dat",
+      "byteLength": 283678,
+      "sha256": "501c4578ee1806116daa499ed31e6eb1e35cd45540bc609bd90356a076136e7e"
+    },
+    {
+      "name": "PlKpBk.dat",
+      "byteLength": 493586,
+      "sha256": "17239f2a6ddbac0f782fa3e511d9da6c2895d3ef618bedc80ec01dd07985ccee"
+    },
+    {
+      "name": "PlKpBu.dat",
+      "byteLength": 493650,
+      "sha256": "1a8c41fb28c69fd8eeaec03c8bbd0d356b88b5b9f6f49e360be7ad91260d0c3c"
+    },
+    {
+      "name": "PlKpNr.dat",
+      "byteLength": 518222,
+      "sha256": "bc180ce36b615e684d2a5a8cb5b55da4e9c66df901b5d0fb160a7e0f385e890f"
+    },
+    {
+      "name": "PlKpRe.dat",
+      "byteLength": 493522,
+      "sha256": "0c2b02b12c9ab70f3ceecf91119c32df4ba6a35b57df990a0373a0bca456b4c1"
+    },
+    {
+      "name": "PlLgAq.dat",
+      "byteLength": 373098,
+      "sha256": "a5000eefd16e5349c7a84f1e6085241a39695a8da61a0bf794c3716725d6258f"
+    },
+    {
+      "name": "PlLgNr.dat",
+      "byteLength": 373094,
+      "sha256": "da57296c284d41dbd6410958ed228818be7a48a8f355aed7e7e5037d18b3dd09"
+    },
+    {
+      "name": "PlLgPi.dat",
+      "byteLength": 373098,
+      "sha256": "9d6187840d3cfed5530c2c13348158ebb0ee731e5ceb9f322695b168b7cd8f99"
+    },
+    {
+      "name": "PlLgWh.dat",
+      "byteLength": 487174,
+      "sha256": "32428c0ca7b88e9f6efdf3ac38b52d57dd9d7ad0611eb152f1665108ddff1d4f"
+    },
+    {
+      "name": "PlLkBk.dat",
+      "byteLength": 491576,
+      "sha256": "68944ad8c5f391e11a786f263e2bfa9317cb98cfc28f8bc3e85515eb5226eae4"
+    },
+    {
+      "name": "PlLkBu.dat",
+      "byteLength": 491576,
+      "sha256": "358f05d11ed78156bf6b56973f3e2cc735e7657e3cbcc092205baa229eb08ffe"
+    },
+    {
+      "name": "PlLkNr.dat",
+      "byteLength": 491572,
+      "sha256": "f16c7c62a42c20965111c851a7096e91008c4420d5273aed144e090d061911c1"
+    },
+    {
+      "name": "PlLkRe.dat",
+      "byteLength": 491576,
+      "sha256": "c4fc5acfc0e46326ed844e82dad2a78631cffa58518d636e2c2796b168c51711"
+    },
+    {
+      "name": "PlLkWh.dat",
+      "byteLength": 491576,
+      "sha256": "44cb64ec09e56fb4025e8d91a942a3f7f853b1fe51b37c0aa709c71726e080f7"
+    },
+    {
+      "name": "PlMrBk.dat",
+      "byteLength": 473526,
+      "sha256": "deeb3bc478d720ba432f15c731638629e132269922dd03f05b7f2a9fd07d8c4c"
+    },
+    {
+      "name": "PlMrBu.dat",
+      "byteLength": 473526,
+      "sha256": "6888f68e434817d336b13d29bbb3d79544941f9748a0aa84355ae22640d9d960"
+    },
+    {
+      "name": "PlMrGr.dat",
+      "byteLength": 473526,
+      "sha256": "cdb2ea9b7dac639d7aa602e48a4296fdace23ce9c64a4bb35df20fc8a2a019c5"
+    },
+    {
+      "name": "PlMrNr.dat",
+      "byteLength": 473522,
+      "sha256": "518df5b1d1ce6775a636f4ca8e8e62fb24be65013cd586451c21a181824903ae"
+    },
+    {
+      "name": "PlMrYe.dat",
+      "byteLength": 473526,
+      "sha256": "c6047de9aaa5f136f72e47cc4e12d2dd606fd1dba36ef773dd3f89007dc669f2"
+    },
+    {
+      "name": "PlMsBk.dat",
+      "byteLength": 594964,
+      "sha256": "3e54661fe43c8edba617e9f0cdcac0c0cd50172ee67953c413ac26626f53e8c5"
+    },
+    {
+      "name": "PlMsGr.dat",
+      "byteLength": 594964,
+      "sha256": "fa8771bd99690868dfd0fb3508be131a5ccb1b904aa348955d4176aa4315974c"
+    },
+    {
+      "name": "PlMsNr.dat",
+      "byteLength": 594960,
+      "sha256": "e4f2b635373f23510d81cdb395b9633501ca52135f7694eb9a31af7aebe38c72"
+    },
+    {
+      "name": "PlMsRe.dat",
+      "byteLength": 594964,
+      "sha256": "930cd89313b0e73b3113d9e9421fae55998e1aa69abbaab5953fda762ce89eb4"
+    },
+    {
+      "name": "PlMsWh.dat",
+      "byteLength": 594964,
+      "sha256": "51bf4a608510b43a74c71cb5f22637aab33ab4dd66658c88506af22c44a5bfad"
+    },
+    {
+      "name": "PlMtBu.dat",
+      "byteLength": 255156,
+      "sha256": "e5faa704d61e8f30342e72616e69da58bfbb923b668634c7d2d54d5b5beefddd"
+    },
+    {
+      "name": "PlMtGr.dat",
+      "byteLength": 255156,
+      "sha256": "b8676a39b02ee17558f65883b3657c7d354e361cb6e0c5eb157ab7c8fe7b033b"
+    },
+    {
+      "name": "PlMtNr.dat",
+      "byteLength": 263344,
+      "sha256": "70b92d06abc9ea94773151b8771b79b4184ebc8505bbc42b4450e29b347af7d3"
+    },
+    {
+      "name": "PlMtRe.dat",
+      "byteLength": 255156,
+      "sha256": "af93e42b01800f38ea311bb1bf754eaa28a5c372c07841644242fdd5bfa29227"
+    },
+    {
+      "name": "PlNnAq.dat",
+      "byteLength": 350684,
+      "sha256": "a86967401aa0d4fb95b34f6874eae93282a21ed940008ebbb93315d366b69109"
+    },
+    {
+      "name": "PlNnNr.dat",
+      "byteLength": 350748,
+      "sha256": "b49241ac2c1f8743ebfc5ae0c35250459e328d121d1a670d5d5a37794347fdd2"
+    },
+    {
+      "name": "PlNnWh.dat",
+      "byteLength": 350684,
+      "sha256": "e5c65fafbe3eca8e160a4618433dd7974b12d48d38a7ec1442bc64fcce5aa8d4"
+    },
+    {
+      "name": "PlNnYe.dat",
+      "byteLength": 350720,
+      "sha256": "55f9a305b84f6209bdc279ca945e5f51154e9863d6303a6d3639326642b2bddf"
+    },
+    {
+      "name": "PlNsBu.dat",
+      "byteLength": 375368,
+      "sha256": "d274ecb0aa9d0642ad9dfa270886f7a7af77f3106083f0e8243d7ab0383b80fc"
+    },
+    {
+      "name": "PlNsGr.dat",
+      "byteLength": 375368,
+      "sha256": "8126b69c23b1b5b63f7c9edc4c08b872b9aedf463002db5a3e324cab19262379"
+    },
+    {
+      "name": "PlNsNr.dat",
+      "byteLength": 373256,
+      "sha256": "cbab9be273be3d833445fbda5dca7c4e4f91f01449083ecc818e4b344a055c53"
+    },
+    {
+      "name": "PlNsYe.dat",
+      "byteLength": 375336,
+      "sha256": "686c695dfe156ba3b9f82b46f889ea1721106a3648774fb839cb832398ecfb08"
+    },
+    {
+      "name": "PlPcBu.dat",
+      "byteLength": 230146,
+      "sha256": "fd0778804f498db4bea5a90a35c215aea8165fb2dde23c4ec0158e4cc047a207"
+    },
+    {
+      "name": "PlPcGr.dat",
+      "byteLength": 316154,
+      "sha256": "b55650986879999b60e11a7c748764ea3bafbea05827ba28a8be1e3ecd488697"
+    },
+    {
+      "name": "PlPcNr.dat",
+      "byteLength": 168974,
+      "sha256": "1ef41aca56265468d34fafe146577637c2d01b4be0cc3aafe17253739509a3b9"
+    },
+    {
+      "name": "PlPcRe.dat",
+      "byteLength": 206334,
+      "sha256": "64c0ce9c31f53df9c16f0f4010490484d9adccb7e4895910bb66815af6113044"
+    },
+    {
+      "name": "PlPeBu.dat",
+      "byteLength": 806990,
+      "sha256": "92b3af87273464e3915471e5a8a558d31d096dc9590bb4195b4b3e14f2dd0f63"
+    },
+    {
+      "name": "PlPeGr.dat",
+      "byteLength": 806862,
+      "sha256": "d8493ca5a9726c514c44bb76e0c76be9ee5cab2ccd636ef72d913aff0174971d"
+    },
+    {
+      "name": "PlPeNr.dat",
+      "byteLength": 809794,
+      "sha256": "60e309f0a91dd9243b2a283caeabb6fcb0c734b681f6a85ff185e0b81c960c0d"
+    },
+    {
+      "name": "PlPeWh.dat",
+      "byteLength": 806798,
+      "sha256": "ea1891013f6159421d7a16b6becb720629a3145b259c092a9862ca6e02fe7b06"
+    },
+    {
+      "name": "PlPeYe.dat",
+      "byteLength": 764870,
+      "sha256": "c68fbfb3ba9383f9fbe4b7f037176d3a247fd95e5916bb2bc4a075aa256c0e93"
+    },
+    {
+      "name": "PlPkBu.dat",
+      "byteLength": 158102,
+      "sha256": "d4e244f00d598250ea1642f58f20f66b0ede5f611b4271d04442abe4f7981bf2"
+    },
+    {
+      "name": "PlPkGr.dat",
+      "byteLength": 159922,
+      "sha256": "f04b29da1b2f5bbabc3cc61cdf4705c86e12bf88d390673262143028b3795a6c"
+    },
+    {
+      "name": "PlPkNr.dat",
+      "byteLength": 135634,
+      "sha256": "97d8799247c710371a4ada9799a3333ec454bd5cfd5191ed7ff16542dba55001"
+    },
+    {
+      "name": "PlPkRe.dat",
+      "byteLength": 166982,
+      "sha256": "cd9b9f24b06625e1a9abc877912bd0537c44c376b590d795af9956080f316515"
+    },
+    {
+      "name": "PlPpGr.dat",
+      "byteLength": 350624,
+      "sha256": "2ae621a65da95281721db39b30a0a7803e40fa53589547db568c1d491157b438"
+    },
+    {
+      "name": "PlPpNr.dat",
+      "byteLength": 350620,
+      "sha256": "59b82867ced89124e83025fbbd423cec0ad9ce65ebe177e6351ebfeba7c73cdc"
+    },
+    {
+      "name": "PlPpOr.dat",
+      "byteLength": 350620,
+      "sha256": "2869b0188575eda120edd445035c8f2780786f6b0db101f195517a46f5fce446"
+    },
+    {
+      "name": "PlPpRe.dat",
+      "byteLength": 350744,
+      "sha256": "0014407dad2cec89457f7d921815895e89c580ab3d6733b41b072fbec240934c"
+    },
+    {
+      "name": "PlPrBu.dat",
+      "byteLength": 258435,
+      "sha256": "c142c744a5720d0f0b75470cbcb1fbd370520e00afc57407d45fc08e57b7f994"
+    },
+    {
+      "name": "PlPrGr.dat",
+      "byteLength": 255987,
+      "sha256": "dc4caf4abb66843903cb897bf42ff0f248a2d4b0f067c37e7d1c59f755e07cf9"
+    },
+    {
+      "name": "PlPrNr.dat",
+      "byteLength": 244518,
+      "sha256": "7ff214d08007029a6841a76f8bd730989c352cb52ed704c13f5df13a9bc474c5"
+    },
+    {
+      "name": "PlPrRe.dat",
+      "byteLength": 254695,
+      "sha256": "80f744f012af59d691408d3407ba65707d72acec331847a643534b90b24bf018"
+    },
+    {
+      "name": "PlPrYe.dat",
+      "byteLength": 264147,
+      "sha256": "775345f806e6c9151e7219af74d01c303b37fcd3098bd00ad6e08234fb5ee28a"
+    },
+    {
+      "name": "PlSkBu.dat",
+      "byteLength": 380180,
+      "sha256": "4c2b1541df5d62e9cfeb72b1fde4fb68dc9d14a239346b575533614632b4ba2c"
+    },
+    {
+      "name": "PlSkGr.dat",
+      "byteLength": 380084,
+      "sha256": "4031e46af79adb3445776447ccbec3e559938fdfb58f3db5c86a6dd39463f81e"
+    },
+    {
+      "name": "PlSkNr.dat",
+      "byteLength": 380176,
+      "sha256": "46dc4659d7112beeb7d0190f9ad8ae28d47a9db8877f6ec503e3c48044b8d29f"
+    },
+    {
+      "name": "PlSkRe.dat",
+      "byteLength": 380020,
+      "sha256": "358c9e37942475382f6a3660ade10aa68adeada69ac85bec3594043faac0abd5"
+    },
+    {
+      "name": "PlSkWh.dat",
+      "byteLength": 380180,
+      "sha256": "702dab8a9b932829fc3c65cdda2b8422b7a6169a76e186174cab117f0a20d1ba"
+    },
+    {
+      "name": "PlSsBk.dat",
+      "byteLength": 401741,
+      "sha256": "581aef31fd1ead4067902c13a3592edb3492e281e4680e9375a7647651f07f94"
+    },
+    {
+      "name": "PlSsGr.dat",
+      "byteLength": 407885,
+      "sha256": "85a4430f2b3ad54363ef91374f4db3741ecd8925a7c048703743ab4c22821470"
+    },
+    {
+      "name": "PlSsLa.dat",
+      "byteLength": 401741,
+      "sha256": "c8dd8e5d201df1e9fff6b3c21c04bd75158d9019b7b0cc8a4f066a15164b2a25"
+    },
+    {
+      "name": "PlSsNr.dat",
+      "byteLength": 401739,
+      "sha256": "3d14d8e66612ed11c5522608b5f3d50ffd571263c47f4767ae03fdedcc00f291"
+    },
+    {
+      "name": "PlSsPi.dat",
+      "byteLength": 407885,
+      "sha256": "71269d0fd4a92bbfa9e7b80f525574082687fb09dd1f37c8d5244e0727d5b85c"
+    },
+    {
+      "name": "PlYsAq.dat",
+      "byteLength": 295166,
+      "sha256": "637bc33c8da9abab38ae432febe526417d80bb5a850d3f2d1c0cb2ba1da7f289"
+    },
+    {
+      "name": "PlYsBu.dat",
+      "byteLength": 294942,
+      "sha256": "b56cbb5bebc169c261917e529525ea7081f20725156fed3289101c668e91023a"
+    },
+    {
+      "name": "PlYsNr.dat",
+      "byteLength": 294834,
+      "sha256": "34145fa82daf1180bfb3930c712ecc3b0adccb2342953e522e201c136b9c834f"
+    },
+    {
+      "name": "PlYsPi.dat",
+      "byteLength": 295198,
+      "sha256": "0507e2f95841611331e670e1b9b9da6eed8a1564ea2d991a11704aa716f13aa1"
+    },
+    {
+      "name": "PlYsRe.dat",
+      "byteLength": 295258,
+      "sha256": "2a2cff935b88f41cc802314c7bce523483b9bcc11fdaf1c11b9222cd48bbf570"
+    },
+    {
+      "name": "PlYsYe.dat",
+      "byteLength": 295166,
+      "sha256": "15c3fae3fc94510ef767d8f5cfa8cd660bc2c9349e0ccf7aa565f5bbaee2e6c1"
+    },
+    {
+      "name": "PlZdBu.dat",
+      "byteLength": 345374,
+      "sha256": "d9b13c45adf2317349b26591207975661141e91096f08a024c86a01ac29f6885"
+    },
+    {
+      "name": "PlZdGr.dat",
+      "byteLength": 345374,
+      "sha256": "85a4c2219c209a5a8d1de58dafa7c469093b2e8d13ff4254894a7ab04d0ff211"
+    },
+    {
+      "name": "PlZdNr.dat",
+      "byteLength": 350082,
+      "sha256": "aad695c91d980a19f8a355ee4d027601962a7b3882fb0ab768dd0e8d7cd65512"
+    },
+    {
+      "name": "PlZdRe.dat",
+      "byteLength": 345374,
+      "sha256": "bb07b2827deec70febf82f8f1d71421d74359d71de6a352dc49e2c05c09168b2"
+    },
+    {
+      "name": "PlZdWh.dat",
+      "byteLength": 349214,
+      "sha256": "890781004398089d64b9db4ed7bea35217227263fa5bc46d6074515c01a1ff56"
+    }
+  ]
+}

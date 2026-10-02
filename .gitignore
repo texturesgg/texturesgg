@@ -1,0 +1,7 @@
+/target
+.direnv/
+
+# Game files are never committed.
+*.dat
+*.iso
+*.gcm

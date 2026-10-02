@@ -1,0 +1,76 @@
+[package]
+name = "tgg-editor"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "The texture editor: a desktop gpui-ce app hosting the hsd-render viewport"
+publish = false
+
+[features]
+# Tests that read a clean Melee disc image named by TGG_MELEE_ISO; CI
+# compiles them.
+melee-iso = []
+
+[dependencies]
+dat-edit = { path = "../dat-edit" }
+dat-parser = { path = "../dat-parser" }
+melee-dat = { path = "../melee-dat" }
+# Where settings live.
+dirs = "5"
+# Reading costumes and references from the player's ISO.
+gc-iso = { path = "../gc-iso" }
+gx-texture = { path = "../gx-texture" }
+hsd-render = { path = "../hsd-render", default-features = false }
+# PNG import and export.
+image = { version = "0.25", default-features = false, features = ["png"] }
+# Costume renders arrive from their own thread.
+async-channel = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Skins are kept by content hash.
+sha2 = "0.10"
+tgg-ui = { path = "../tgg-ui" }
+thiserror = "2"
+# The update check, and sending a problem report the player chose to send.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+# Keep in lockstep with gpui-ce's wgpu so the renderer can share its device.
+wgpu = "29.0.4"
+# Skins dropped as zip archives.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+# gpui-ce pinned past its custom GPU rendering API (gpui-ce#237) and its
+# macOS WGPU renderer (gpui-ce#287); crates.io releases predate them. Bump
+# every gpui-ce rev together.
+[dependencies.gpui]
+git = "https://github.com/gpui-ce/gpui-ce"
+rev = "5c4915924db0081ca9dcecffa6eef8d6bc16fa8e"
+package = "gpui-ce"
+features = ["custom-gpu"]
+
+[dependencies.gpui_wgpu]
+git = "https://github.com/gpui-ce/gpui-ce"
+rev = "5c4915924db0081ca9dcecffa6eef8d6bc16fa8e"
+package = "gpui_ce_wgpu"
+features = ["custom-gpu"]
+
+[dependencies.gpui_platform]
+git = "https://github.com/gpui-ce/gpui-ce"
+rev = "5c4915924db0081ca9dcecffa6eef8d6bc16fa8e"
+package = "gpui_ce_platform"
+# macOS windows draw with WGPU so the viewport can share gpui's device.
+features = ["font-kit", "macos-wgpu", "wayland", "x11"]
+
+# The flow tests drive the editor through gpui's test app.
+[dev-dependencies.gpui]
+git = "https://github.com/gpui-ce/gpui-ce"
+rev = "5c4915924db0081ca9dcecffa6eef8d6bc16fa8e"
+package = "gpui-ce"
+features = ["custom-gpu", "test-support"]
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

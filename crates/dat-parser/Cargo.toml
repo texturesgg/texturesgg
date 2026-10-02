@@ -1,0 +1,27 @@
+[package]
+name = "dat-parser"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["melee", "gamecube", "hsd", "dat", "parser"]
+categories = ["parser-implementations", "graphics", "game-development"]
+description = "HAL's HSD DAT format: descriptors, GX geometry and textures, scenes, draw evaluation, and animation"
+
+[[bin]]
+name = "parse-dat"
+path = "src/bin/parse_dat.rs"
+
+[[bin]]
+name = "extract-textures"
+path = "src/bin/extract_textures.rs"
+
+[dependencies]
+gx-texture = { version = "0.1.0", path = "../gx-texture" }
+hal-dat-raw = { version = "0.1.0", path = "../hal-dat-raw" }
+thiserror = "2"
+
+[lints]
+workspace = true

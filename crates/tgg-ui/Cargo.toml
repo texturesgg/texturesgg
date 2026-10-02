@@ -1,0 +1,37 @@
+[package]
+name = "tgg-ui"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "The editor's theme and components on gpui-ce, in the web design language"
+publish = false
+
+[dependencies]
+anyhow = "1"
+# The same image crate gpui-ce uses for RenderImage frames.
+image = { version = "0.25", default-features = false }
+
+# The same gpui-ce revision as tgg-editor; bump every gpui-ce rev together.
+[dependencies.gpui]
+git = "https://github.com/gpui-ce/gpui-ce"
+rev = "5c4915924db0081ca9dcecffa6eef8d6bc16fa8e"
+package = "gpui-ce"
+
+# The gallery example opens a window.
+[dev-dependencies.gpui_platform]
+git = "https://github.com/gpui-ce/gpui-ce"
+rev = "5c4915924db0081ca9dcecffa6eef8d6bc16fa8e"
+package = "gpui_ce_platform"
+features = ["font-kit", "wayland", "x11"]
+
+# The keyboard tests drive components through gpui's test app.
+[dev-dependencies.gpui]
+git = "https://github.com/gpui-ce/gpui-ce"
+rev = "5c4915924db0081ca9dcecffa6eef8d6bc16fa8e"
+package = "gpui-ce"
+features = ["test-support"]
+
+[lints]
+workspace = true

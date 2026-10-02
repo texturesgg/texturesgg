@@ -1,0 +1,761 @@
+{
+  "adapter": "llvmpipe (LLVM 21.1.8, 256 bits) (Vulkan)",
+  "cases": [
+    {
+      "input_sha256": "bdc91f7bde1da16ceefe332876c20b65b36ba2f30a1e94b59bb24a2f9fcfe163",
+      "name": "stock-captain-falcon",
+      "note": "PlCaNr.dat: XLU DObj before OPA DObjs, 20 multi-texture materials, reflection",
+      "views": {
+        "back": "8d69ff3bee2ee3223cbc3bbc15eb27001d143e4f7d647d0ae9a370aa648598c9",
+        "front": "a3c6a47812921d2bdb8a5251975fd9c0dff1ec4cccee30269118e21748691541",
+        "negative-x": "047079b44c96d383514a7764971fc02d7076435ad6ba955be4f297b77cb81abb",
+        "positive-x": "26182e3d072d09ad2c0626e1d3702cdb8c806b8b34f5293943aa13b17c5bebe7"
+      }
+    },
+    {
+      "input_sha256": "c03edcf21d5a0eeee0e36fd28c68db7fd5f7b33e249f149c931b26ceefb03317",
+      "name": "stock-falco",
+      "note": "PlFcNr.dat: all-opaque control",
+      "views": {
+        "back": "8f4ba4cc93537df0b2890b69dd96b30217fee27e62586d355532c9deab75236f",
+        "front": "a81b71bb54a45c353500863b1a166ad3cfea45a1ceda467095413e8895123db6",
+        "negative-x": "fbee61920529cadc34b101acd1b276dc9b54dd4d92e02997d560c6f84ff28a85",
+        "positive-x": "62d2d41c6abe755f863979322a7ecc382ea8d90c2f3bae9d2b380fedd94b72d9"
+      }
+    },
+    {
+      "input_sha256": "0d95bb9a89a9f5703f0edbc298d8083ac9c960843eea993eed9c0781403c6f8f",
+      "name": "stock-ganondorf",
+      "note": "PlGnNr.dat: 12 XLU materials, multi-texture",
+      "views": {
+        "back": "a79ef004705cd2079d987b1473316cb279514edd809da22d66b25b1e67172564",
+        "front": "63839998878096ab4113bdc6a4ff39a5df6a721791e086cb1d8412ded625ddcd",
+        "negative-x": "8a0de691d96809489bc799306a79ba2991e09bf96b6d6883cde5a1007dd55ef0",
+        "positive-x": "4e397f5530b6560a296a31f8c908aa2a07f8cdcbf2d1d1a3668a8d34d7c8ee5b"
+      }
+    },
+    {
+      "input_sha256": "bc180ce36b615e684d2a5a8cb5b55da4e9c66df901b5d0fb160a7e0f385e890f",
+      "name": "stock-bowser",
+      "note": "PlKpNr.dat: 22 multi-texture materials, reflection",
+      "views": {
+        "back": "f3fc2a92683751db86b36ffaa21a5b1c432af07b8ce6d599375000931917c102",
+        "front": "a055e5b85e22a9206d3bd9c6930e08d90467d73a5c5702cb1d9172c9301a2fba",
+        "negative-x": "ad6f687db1d84acba4dc0e7a1958fb2c0337bde2706e1c759d94483856db55c9",
+        "positive-x": "5a60d96b7d3b81d8beb5b1275ef796abaab1318bd4948b04363bbece405f9cbe"
+      }
+    },
+    {
+      "input_sha256": "60e309f0a91dd9243b2a283caeabb6fcb0c734b681f6a85ff185e0b81c960c0d",
+      "name": "stock-peach",
+      "note": "PlPeNr.dat: XLU before OPA, 10 reflection stages",
+      "views": {
+        "back": "d3d53ad4b734295d88110e20a402062ac2822284cdb02a2d5e1d0d347ed82974",
+        "front": "efa7aa2feb4109fa2deaa798541d9e7dc11bee232ceffc9f92f739f7eed2ad9f",
+        "negative-x": "ab354409ec4917e33c7d33958c8dfaf0de38b6eef1b1a63e3a2c5da9e9f11b62",
+        "positive-x": "d1bb3b1def1d88c219fd5a9bc3a43ac31a8b0cc08c30629cf0859c01514210d7"
+      }
+    },
+    {
+      "input_sha256": "e3db48105d6d76316f64481567472fa17212c3d35f8d6130c18b06473e9445d5",
+      "name": "stock-kirby",
+      "note": "PlKbNr.dat: 10 reflection stages, multi-texture",
+      "views": {
+        "back": "a89dd998069b49c2ff8b65ca4d9b632b54ed75e1989469c48299a2db779f6c00",
+        "front": "ae85e938fa2ec8d007c1317af9ad9cbc39099e77399af82aff4171fa14996b65",
+        "negative-x": "8b50fe14f0843467e904b7bd16fe29725b1cff277988148423ee0c360e8471ad",
+        "positive-x": "29629e07d68dfb5e34c2f6631d9a8db49291ad82f7cdec82181e2c2aafe2ae9d"
+      }
+    },
+    {
+      "input_sha256": "aad695c91d980a19f8a355ee4d027601962a7b3882fb0ab768dd0e8d7cd65512",
+      "name": "stock-zelda",
+      "note": "PlZdNr.dat: XLU before OPA, 10 multi-texture materials",
+      "views": {
+        "back": "19a218105f962726d1dee80699641ca9874f6ecee7ed7ddf33ff9efab721346d",
+        "front": "5f25b8235a78a7573d4506ad309e2a926438f622e7d4f46e4fad687970691c13",
+        "negative-x": "334c48f17fa77a33c5c6cb69b1a74c3049bfffd80c2cb0b41ac3481ba93b927b",
+        "positive-x": "354d698db2dda679091b9f49cc896e6c1c3494f01f2570c49020fc5f57f4a309"
+      }
+    },
+    {
+      "input_sha256": "7b264bd18e48285890719ab335a731a62fa0857720368c891e8cc31a2ad65a34",
+      "name": "stock-game-and-watch",
+      "note": "PlGwNr.dat: flat, untextured",
+      "views": {
+        "back": "f906375cadc97d400466b03a38567719cd4d4e446cb6a18af5e6229d49a9d043",
+        "front": "7c2a25d2eaef9a5ea74add5eebec399d14a8eb713da79ffcb7779dab31e936ac",
+        "negative-x": "6ce1819e6a15c4bc451091b22acf73a74e57a7c3453b3ffa283ce26c34ccfc62",
+        "positive-x": "26f548457264fd6958533cb003ff78b99c74d69623f61f576fd40e69da750e54"
+      }
+    },
+    {
+      "input_sha256": "518df5b1d1ce6775a636f4ca8e8e62fb24be65013cd586451c21a181824903ae",
+      "name": "stock-mario",
+      "note": "PlMrNr.dat: plain control",
+      "views": {
+        "back": "357d95b86d35c30ceb79db2b67dc6cee30bb1a7cafeade52861d6d7006506765",
+        "front": "53d3f400d36ceed3e07c2a731f394bfbc8c9995bfc446c877a793e8b6d173c83",
+        "negative-x": "7419307ddfc9a727e5e2ad767a53efa7d5af5f7ff47dd40c01cd52805181b4e3",
+        "positive-x": "66fddacfed3738b6aa88febf17df3f901266b417275d24bb9ee82aa37f72cc06"
+      }
+    },
+    {
+      "input_sha256": "3d14d8e66612ed11c5522608b5f3d50ffd571263c47f4767ae03fdedcc00f291",
+      "name": "stock-samus",
+      "note": "PlSsNr.dat: emboss BUMP stages (skipped), XLU before OPA, multi-texture",
+      "views": {
+        "back": "7798e6f007947eb741c6c667c2d0ef26fea37f7e8b6571fda618c6dfdf9945f2",
+        "front": "e3bb2be41239eda6153baeb29408b7479c32b3cfef86c8b574316f03befae47f",
+        "negative-x": "c2fc8145b59480ec10773902dd025ae2182a455c4629881265cee3a783d86d0a",
+        "positive-x": "6a665df2f435e2432f3621cadbf87ae85a93f544839f123a86e090988262054c"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "40b9dd1eaf8ae9135de38527c5a279258205d171bfa0ebd7c113a4c71e5b0c7b",
+      "name": "stage-GrBb",
+      "note": "GrBb.dat: Big Blue, as it loads plus 90 frames",
+      "views": {
+        "front": "2175568f56c047370f77d60f12f50f1e37ec1c69eb9eada1b83a60561b2a5fcd"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "0127e55983f2d43bec79bdf9f9c43ec88a0a6807e5b1f6069022b5cac3ed1a7a",
+      "name": "stage-GrCn",
+      "note": "GrCn.dat: Corneria, as it loads plus 90 frames",
+      "views": {
+        "front": "315abc70ebedf4d11820bbf4840e5b60aab446ecb115aef2c4152fca66288e40"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "f6ed4deab4eed356f4045383cf5d9fa0f792e53c4ba15008d60a9006d8cdc692",
+      "name": "stage-GrCs",
+      "note": "GrCs.dat: Princess Peach's Castle, as it loads plus 90 frames",
+      "views": {
+        "front": "244755c5458c7a68e473318bdddb07776851c61213cc172ce135aa383393268c"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "3d2f1da0ead34dbe85e1283316bee0c8e0b6c4ed54b1db6e77fe49700cb0370c",
+      "name": "stage-GrEF1",
+      "note": "GrEF1.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "01e73b3a9b087d8eb1d17770d8f72f9d63819678f4047e68750fdef95ed51bd1"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "936071272c1be2e8c63331271e9933051bd673f3f46f4254f07a3cea91a3f6ea",
+      "name": "stage-GrEF2",
+      "note": "GrEF2.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "ac9dfc324437a8effda4f99e2b07ef35bc1ab20549fefc686cfeaf2a36170c12"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "047f17387272ade8fe9b48a2f28ad3be0b7282487fb8b7a2417149b89946f8c0",
+      "name": "stage-GrEF3",
+      "note": "GrEF3.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "b0f5b8a0c2531edefcf30840c1dbb2197d4db9618cd2822a7f18cc1e6aa75497"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "ce58e00829b40a983affedea1642ad146ccc166734669b0c245c2c25f5cf649f",
+      "name": "stage-GrFs",
+      "note": "GrFs.dat: Fourside, as it loads plus 90 frames",
+      "views": {
+        "front": "747b63a549690460f5c03cbf70da9bdf69737a0032dd7bddcdea8e2a743fca9c"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "93e2f393730b8614433ee5cb3cbf07385b6f57aa02a32579f97603b6b523c375",
+      "name": "stage-GrFz",
+      "note": "GrFz.dat: Flat Zone, as it loads plus 90 frames",
+      "views": {
+        "front": "c7c8549706cd79c8a3957f2992fba71593053ac6ca911d996a8152caf39125c7"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "7bda23c5d2e6742bdd82feb9fa4bb7cb79579f40d927b0651c8af984f45a6bd8",
+      "name": "stage-GrGb",
+      "note": "GrGb.dat: Great Bay, as it loads plus 90 frames",
+      "views": {
+        "front": "be6a99e5f23d7503062a1b0028b4fabbc1d50c4640f1a2e46d643906f53670fc"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "cf43a6b0912543358a263295bd301e4b278c061b7995bd0466175806b8630c59",
+      "name": "stage-GrGd",
+      "note": "GrGd.dat: Jungle Japes, as it loads plus 90 frames",
+      "views": {
+        "front": "89bfdda24e1effce8950f28d99b31758f4c3616883c4c18af8e8d2c705d41a96"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "3e6bef427d62247cfc25c7ebc230253212578b10be1e8006c961b3162efb33b7",
+      "name": "stage-GrGr",
+      "note": "GrGr.dat: Green Greens, as it loads plus 90 frames",
+      "views": {
+        "front": "0eb9b7038be61d26d42d2f3c5bd56c36087f3eefdfbd529975c4cd0c10a2336c"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "989358555294879db2eda7865ec32690ce20816dce8c5db6dd5a45f0a88cbf61",
+      "name": "stage-GrHe",
+      "note": "GrHe.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "5c7aee31468ba0e5edcecc9a648e4b2e5414b571ce099d297cf58ad8ac4fa8f1"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "a35e015d065f5ac78c75577f6a3471778fc62c6f4b4fc7d9445df5a45f077b72",
+      "name": "stage-GrHr",
+      "note": "GrHr.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "e692a8617498157ff37c0b6acf7cd5204913b019c6c355fd2ff6987a47c84e23"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "451e38f84924238731f6d76ad868857c075597f83050e542974d275fe0407278",
+      "name": "stage-GrI1",
+      "note": "GrI1.dat: Mushroom Kingdom, as it loads plus 90 frames",
+      "views": {
+        "front": "7aa13336adf507f3c510830ec5f3e4f981a0677e7a1161bc9463b71b6fe741c3"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "510692cb7b26d037203d9c8f1b0a7c39177f27c714871f27161975f4e0ff3a54",
+      "name": "stage-GrI2",
+      "note": "GrI2.dat: Mushroom Kingdom II, as it loads plus 90 frames",
+      "views": {
+        "front": "e5d60a3e82fc10270842aafe486e6740235b75d5c8dad858a0c70be011bc2eb6"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "d3efb6d3b57d21adee11672abce12cf1fc5ace30a053a7ca26db4c416e08704b",
+      "name": "stage-GrIm",
+      "note": "GrIm.dat: Icicle Mountain, as it loads plus 90 frames",
+      "views": {
+        "front": "8df5946b0b542aade265c55f916e0ed962297d32d3df4dae01847cacb65eddd8"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "a1f4c93bf47b159e132979cf041db84ac46a5e8b23e7b6e3d53ee09d8b2c30f4",
+      "name": "stage-GrIz",
+      "note": "GrIz.dat: Fountain of Dreams, as it loads plus 90 frames",
+      "views": {
+        "front": "ac80f489befd3eaa7953f713fc4375e57e11c6f4dd46efb06879de1ce053c92f"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "c2a0d7ae214c5c30e078faa16d1f0124845ee06f06c0a409008113ae23e379e4",
+      "name": "stage-GrKg",
+      "note": "GrKg.dat: Kongo Jungle, as it loads plus 90 frames",
+      "views": {
+        "front": "871400b9c496328613f114e40e421afa127acb7223c2109c069969757407401d"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "14d50017f9fdbc6c0fe31a92684383b3ad5e3e4c66fa8f7c00bbe05fd22967c6",
+      "name": "stage-GrKr",
+      "note": "GrKr.dat: Brinstar Depths, as it loads plus 90 frames",
+      "views": {
+        "front": "44509aaaf188df06e4cb770123747d800df501adee8c774b98865d10cb83599c"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "fc71acfd2a04641981c2216c7293b62c3f87d18fc2f90b36e6f58a35ab580b44",
+      "name": "stage-GrMc",
+      "note": "GrMc.dat: Mute City, as it loads plus 90 frames",
+      "views": {
+        "front": "ad4ed0ad8f041959580a07ed44a8a8da59227080b6a83533fdc9378d19337540"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "5b914b8f28c0dc16b1bafad68704e743d495ead41f0b954cca84479d6868a3b7",
+      "name": "stage-GrNBa",
+      "note": "GrNBa.dat: Battlefield, as it loads plus 90 frames",
+      "views": {
+        "front": "57080017c60329bf04252a986ab74e169f8899ab256716c8ae771bf4b366152c"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "92c836954cda75068ea12fed17e9acfb39adc9457df045759636a56aeb10cd27",
+      "name": "stage-GrNBr",
+      "note": "GrNBr.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "f5dd812775e37e8cbbac5aa0f636deab543f400c5861d1f92f1b77681c48c64d"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "d0c6c162fc22bb9b19ebd5a7e39fc569fbd2ba820a825b0dad8e14d188ad55ce",
+      "name": "stage-GrNFg",
+      "note": "GrNFg.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "1f319a11832db7a1c0404ef109bdd87a50615cd52669a3794faf59fd529c53a3"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "1408cfb7b8b36da16bf3f06f26d8cbe9b459ac32907277df81ab98188bbc77b5",
+      "name": "stage-GrNKr",
+      "note": "GrNKr.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "a7e980e58a24a5ea2c197cb23471ce71cba4a31a13ba703830b3622537907f05"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "2a295a733414fb65a7061a5c092144fb197570682562b87ba5567ff3f08abb02",
+      "name": "stage-GrNLa",
+      "note": "GrNLa.dat: Final Destination, as it loads plus 90 frames",
+      "views": {
+        "front": "8e1c6f1aee339fcb9e1b93b37d884da547fa55bf71a1b406f89659b3911b9e2a"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "96e0918d4ad76e35104aaddbc566f847373fe78f0c4bdbd89d8e59275602a738",
+      "name": "stage-GrNPo",
+      "note": "GrNPo.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "ab0d673d68917d9ac0fa4bf4ff56d69ab00afaa7746d5bed565218334678022d"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "9f4b03f1c1e13e23109cb03bb4910caf9a71b3410b2e6c10f759648bb00b613e",
+      "name": "stage-GrNSr",
+      "note": "GrNSr.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "a971955fde50793e36fbfce2de9b60efa15bc328e3f0387fdde07f23e2d37d0e"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "64c2020e6b3abfc62ad20bfed6182dce9afd6470fae29282489a539ae0a91cf5",
+      "name": "stage-GrNZr",
+      "note": "GrNZr.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "9522e60c42bb3350b8e0f8104fdfd24fc31ee35b9bf1342d5bcb70e19e565add"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "598e40ee4788320a81477316e318b181821af353b0fa12695cce0dfa4f5c60f0",
+      "name": "stage-GrOk",
+      "note": "GrOk.dat: Kongo Jungle N64, as it loads plus 90 frames",
+      "views": {
+        "front": "66689b43d02121c64451e14addc945585c25643143832135857c308fbf8f5cd5"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "44ef32a76216c3f47b79c430167e915953c3da0664f121c270be11fd5af2574d",
+      "name": "stage-GrOp",
+      "note": "GrOp.dat: Dream Land N64, as it loads plus 90 frames",
+      "views": {
+        "front": "c2d14941cbc87f02637c9c12c87d7f80b2fe90c0bc242e2d893a5d6f635b5785"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "50734fbb6c50acfa67e7a761890f2e7e59c506db62a5ffa243e213bd8dfa47cd",
+      "name": "stage-GrOt",
+      "note": "GrOt.dat: Onett, as it loads plus 90 frames",
+      "views": {
+        "front": "b89483d1647861f18000228e8b090c415390c9e82d0aadf1f28399019669dc91"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "31338847be3e4d0ed52d8c404d2b750369a4cb76e31a7217071ef186283d8d8c",
+      "name": "stage-GrOy",
+      "note": "GrOy.dat: Yoshi's Island N64, as it loads plus 90 frames",
+      "views": {
+        "front": "2fb1453ea9bb7a1df33bfbe67694047d283da47da147007752e03b97e18a94a8"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "0b55e7ba6234b882a35edf80d2d6c7f84d9fc887cbd4fe9c85b38ed7c3ea4e18",
+      "name": "stage-GrPs",
+      "note": "GrPs.dat: Pokemon Stadium, as it loads plus 90 frames",
+      "views": {
+        "front": "3667f806eac80287ed80ffb3ca40736e8dac1846c7b9814b357d227893b13052"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "ea94e509953a024cb72d6c917b9ad3bf9ebc7c6a40d5d091daa613adafdb3ad7",
+      "name": "stage-GrPs1",
+      "note": "GrPs1.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "37ff2024af8ce2b831b89c4840672b0a470582ee7e6afc474d1cbe8ef170a8f7"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "0232063e3393ee08cce329207e06bf237059b9585cfba96d2e4ab7274ca26375",
+      "name": "stage-GrPs2",
+      "note": "GrPs2.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "c6e8787a629b290d7a9c18eb88f68df2b176913f24206c4859ef1ddc975be6ad"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "aa167c82d65d93a7ac85aff513e3a0d02963a12bb50d1d8f76fc73b2e09205a8",
+      "name": "stage-GrPs3",
+      "note": "GrPs3.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "8a01bfee56d7be15fae8a271796a5f66446b326bd0c8830c29d8f6cdb6d72450"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "861a04b08dcaa98f098bdb5c5237e6710e27cbafbb74814005407789cb3bfce9",
+      "name": "stage-GrPs4",
+      "note": "GrPs4.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "bc8990e1013ba904e373ca4ebd69be77949fddd08ec099daf5e7fbf65663c85f"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "048780b71cd08047cee32a98c7622ceea1eb318c0c1c52278dca65a68ad8d012",
+      "name": "stage-GrPu",
+      "note": "GrPu.dat: Poke Floats, as it loads plus 90 frames",
+      "views": {
+        "front": "e406ec8805ba7bd84b2384d6983b8e2b3633807218dea525f3d27f87561b820c"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "743d7c372b795d12c33c044dc0afea8a3aeb0f8edcc79109b6e9bb6475c2a9da",
+      "name": "stage-GrRc",
+      "note": "GrRc.dat: Rainbow Cruise, as it loads plus 90 frames",
+      "views": {
+        "front": "4e26aa5458da13870a392ce66e155369c64e6ffc62127e57ebfaec034df9c4bb"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "3129fe18a0fc954a07467a65e1d3649a6868e32c0ab4a89d484ddfb230acfdd8",
+      "name": "stage-GrSh",
+      "note": "GrSh.dat: Temple, as it loads plus 90 frames",
+      "views": {
+        "front": "a3c5df18bbcad989b8344889a9c7820e2ed84a69f60e76e907732a14fcfa36b3"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "1ef0ccc51fc69bf2e06f55377111ec1b67e00438df0597bf6195c3032ae29f83",
+      "name": "stage-GrSt",
+      "note": "GrSt.dat: Yoshi's Story, as it loads plus 90 frames",
+      "views": {
+        "front": "3506669d2354267188db0510a2d7826f5d8678415a6088d40b9f95328d955451"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "2d86b1a4a785a4afa0bef2385caca208ccbf9bef8c1910bc5daa6e0167d5c492",
+      "name": "stage-GrTCa",
+      "note": "GrTCa.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "c44df78b5d0c52660adfdd85a4c689bdb4f86f97b234a4efa85fb23c855c76cd"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "34f2be537589cf843bffbb8f81a710cca35cf6408a8372f407700d1d29b95418",
+      "name": "stage-GrTCl",
+      "note": "GrTCl.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "c9c4d31d5ab3193a36442bb90d3a4c457fff8473029f7598a2747606d2a1cc0f"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "d4d5e64f40b95ac874107eee8318bfb93a435df88a5295125d2b8adb5762af3c",
+      "name": "stage-GrTDk",
+      "note": "GrTDk.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "8ee5182eb7eb2381a66ef7761e546f4a058dae688d093954be200693ad98ffb4"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "dab20443e66cf7ed55b976934e68799de297ede1a7c94200c295397e5026c357",
+      "name": "stage-GrTDr",
+      "note": "GrTDr.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "1e9e7d942e1c55f40e79c04080d1bd82f0c58c7e9143e643790f5623928f5a66"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "128c99aff7c8671b4831d86570cee7dea685d5bf4860c68ef51a9553a65b61c4",
+      "name": "stage-GrTFc",
+      "note": "GrTFc.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "8452313a5ea93595e8435ee4871fa90acc584847199f4d732b275b09e51ee349"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "e35290e3f59b8b9f530ecdae2d833b9356f9cfeefe515041116b8e0d7a62337e",
+      "name": "stage-GrTFe",
+      "note": "GrTFe.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "1c7eb0e4ef34c0e3d651c7cf289dfde74cdd9b7698a89feffba0d3aa3e5eb0d4"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "1cbe99c391ed027fe87b582f4891cb5f4c80b30d9ba703a804d61010ee6682c2",
+      "name": "stage-GrTFx",
+      "note": "GrTFx.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "cb9b8f2d6f37bf08343473ff0d9068b5c0b0fe7478a47d4ec123e8c3a8ed9747"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "df40eb475cf898898d85af02e8bac189f8d315fcbe8ddfab231457b334eaad57",
+      "name": "stage-GrTGn",
+      "note": "GrTGn.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "9b882d2999da2d5f6992698ec65f41a1b74b368bcc82913ce2047e68ef9b1599"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "82b061517221fe124d3223939bcba7ef94d0899c8b22a20207e0b0de08442158",
+      "name": "stage-GrTGw",
+      "note": "GrTGw.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "55eb7b85e9d1d3a433032eeb5ee2d3b8afe750f6759cd1d06a742548b9a7f3f7"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "ba0d34d5c4850e8a49a2c5f956774cb40541c78fd1526c0672db81b3b5ea392f",
+      "name": "stage-GrTIc",
+      "note": "GrTIc.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "ef42c2c6d6d50111003d44c20a198b15ca4f1dd8e3cee2c0a15a05b30d856826"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "132df6c2a09d3043501619612f9714d0de3f7a3d94d0331baf3e1d5978955827",
+      "name": "stage-GrTKb",
+      "note": "GrTKb.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "697296a5b85db53e26c6569f6ec742520624e71f088f102c21a3a8972179963b"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "3b50c1bcee5dd20bb3e72f1ceae5edcfd863acd20588717e83dd46ba08f072ff",
+      "name": "stage-GrTKp",
+      "note": "GrTKp.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "036eda0fb275d99bdb6f37f2b785d6c35cf9e50ab4b3e74a3f41990d46170eda"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "c8b3cc08f438e161f382c19b435a07c4f28f78ee862fa7c20b716d8ec5166e8f",
+      "name": "stage-GrTLg",
+      "note": "GrTLg.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "1e5f9d7aac5d74cc20e0ed387f687ca5ee68391eeb5055006f98ad37f19d55d5"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "bc562b16b0b780fa2c58038293df6ab4dba88f37c5ab499e41329f8a1374f438",
+      "name": "stage-GrTLk",
+      "note": "GrTLk.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "117357be2f4462aba0b9ec38620e69323a8867ba224aa999eae2ad69da4b9d4e"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "50d3d77fc60270bc9ab2204f4d7b8db4c64d486e6994a2a28425e30f334c484c",
+      "name": "stage-GrTMr",
+      "note": "GrTMr.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "d7db1272d45359d3c4e70a66a406a2d017ede6c6209e210467aa88ab82c7e47d"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "6cdcc31aa50b2fba46bbc5be47ea621b199271728570a8acc8c1551d1eff8207",
+      "name": "stage-GrTMs",
+      "note": "GrTMs.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "ffe962101e4b3598c2e8725a6e975caba71668f90664b1a41cd26d26daf98df2"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "ec98e6ccfc59e8c8f48057bed213d7a4a3973773001f9f63965e0054bf8b6427",
+      "name": "stage-GrTMt",
+      "note": "GrTMt.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "05608b0b4b78e6c49f851ad1976095c0605c6f3cfc8160ce0cbcf3081095831d"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "614521666cabb14bc0cc8c667780490fa7da228c6fbfc65f42bddb7bb7eb0054",
+      "name": "stage-GrTNs",
+      "note": "GrTNs.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "0237ce53bf1bbb1aad251aa16f082f6fa700009d5a6df638dbdbb1daabac7097"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "28e5f51396feca0d19e06f4628cc1a1bea85fbf3c9279c0848b33fcefc40ea82",
+      "name": "stage-GrTPc",
+      "note": "GrTPc.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "42ac9bc95dabcbf16a2a8de44ec7829fc28af251acf8bc9be14cc251b2b99b13"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "e1334941d4118c04a3ae3f3c2cbf568dffa8e00ecd0d7a528cb31a54140d885f",
+      "name": "stage-GrTPe",
+      "note": "GrTPe.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "cee1252e2fc25770a973b0dab59c19fff154d8c87a03d53e9a8711abcc021ae4"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "1638ba94480cd5c03da1f80559c93d66d2d51b570631fac04cb10dc2a7ec5b0b",
+      "name": "stage-GrTPk",
+      "note": "GrTPk.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "0d0daeac55cb9945762cd2af72eb13e642f3a0801fd7f21cc17c279ff0dbe441"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "b156214888fee920c2c497a84c79832b2dee72817a8e72a0489688e5b88b16a0",
+      "name": "stage-GrTPr",
+      "note": "GrTPr.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "38b1f26ce9e6e9747bb66170d3594eb92b4eabaa0b546fad6c01fc2bfc0fb880"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "96b0d2066b22c8f1b284ecb0a87d8e3fb3725bc30c11648becfeabea59927800",
+      "name": "stage-GrTSk",
+      "note": "GrTSk.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "0bb10fbe7baa954e5e787bc6935209fee60763eefa3d973a47b39b650e9de8e5"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "7cfade1b7cd02823fcae1d8eb5bfd28d4b30b52714b9298bb2a0a0b5fe5e2ab3",
+      "name": "stage-GrTSs",
+      "note": "GrTSs.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "2cf897520a9b7fa30d43900ea3dfff3bd698c5b3e1f787e98f171bdc1b15fc19"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "96d660fb574e22d4acfe49e3e26d28094318e000239990ba575443b0983e7f34",
+      "name": "stage-GrTYs",
+      "note": "GrTYs.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "f4c4fc890ff8e4cc25669198b15799b4e9652a5c536408077e3014d8227c8b78"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "7a559b4dd2e70b7a45be22e3c9c9c0350e9b19d71f0547e88a04fe2761cd87ac",
+      "name": "stage-GrTZd",
+      "note": "GrTZd.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "2c95f6033f99f103863e15deccc74fa36531fddf50c9ae469252c7adb698459f"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "c628693843dc24a12ccb8246040657c12f8eb605d3202673815aa52e1176a8ff",
+      "name": "stage-GrTe",
+      "note": "GrTe.dat, as it loads plus 90 frames",
+      "views": {
+        "front": "255da382e2b1fd393aaa110298326b4229c54b84cc293ab33a142aa7f9544265"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "832c9caa5981092e84e57c38c233c7708fb0a85e3b47f5eb3ab7259f876154d5",
+      "name": "stage-GrVe",
+      "note": "GrVe.dat: Venom, as it loads plus 90 frames",
+      "views": {
+        "front": "32492ca012b597b92c0dc3c15be9e61dec4bd791006e9f173770c96a8c375eca"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "75725f0da278d039e1294718528a6a4bff8f3a82b982e151d1d34eac99f42b24",
+      "name": "stage-GrYt",
+      "note": "GrYt.dat: Yoshi's Island, as it loads plus 90 frames",
+      "views": {
+        "front": "f806dd55a651bfc432585fa28a12c5c4ed1221f12b5a607822a18178945f9c14"
+      }
+    },
+    {
+      "frame": 90,
+      "input_sha256": "460e6ee9c8c8f2a734c818ebb20ee0074d823e5dda835f9d07337dcbbc50b5a6",
+      "name": "stage-GrZe",
+      "note": "GrZe.dat: Brinstar, as it loads plus 90 frames",
+      "views": {
+        "front": "3b0c7843d61941d242a4629328302f301849f0310499870ce1ae9c0ba35a0892"
+      }
+    }
+  ],
+  "pixel_hash": "sha256 of width and height (u32 little-endian) then RGBA8 rows",
+  "renderer": "hsd-render",
+  "schema_version": 3,
+  "size": [
+    642,
+    528
+  ]
+}

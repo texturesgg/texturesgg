@@ -1,0 +1,22 @@
+[package]
+name = "gx-texture"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["gamecube", "wii", "texture", "codec", "cmpr"]
+categories = ["encoding", "graphics", "game-development"]
+description = "GameCube GX texture codec: decode and encode texel data, palettes, and CMPR"
+
+[dependencies]
+thiserror = "2"
+
+# Blocks encode independently, so native builds spread them across cores. The
+# browser builds have no threads without SharedArrayBuffer and stay serial.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+rayon = "1"
+
+[lints]
+workspace = true

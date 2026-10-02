@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install gpui-ce's Linux dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends -y -qq \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libx11-dev libxcb1-dev libx11-xcb-dev \
+            libfontconfig1-dev libfreetype-dev libasound2-dev \
+            libvulkan-dev pkg-config cmake
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Lint
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+      # These tests read a Melee disc image, which CI does not have. Compile
+      # them so a change cannot silently break them.
+      - name: Lint the melee-iso tests
+        run: |
+          cargo clippy --locked -p melee-dat --features melee-iso --all-targets -- -D warnings
+          cargo clippy --locked -p tgg-editor --features melee-iso --all-targets -- -D warnings
+
+      # The textures.gg site runs the renderer and the crates beneath it in
+      # the browser; keep them building for wasm.
+      - name: Lint for wasm
+        run: cargo clippy --locked -p hsd-render -p melee-dat -p dat-edit --no-default-features --target wasm32-unknown-unknown -- -D warnings
+
+      - name: Test
+        run: cargo test --locked --workspace

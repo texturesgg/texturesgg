@@ -1,0 +1,47 @@
+[package]
+name = "hsd-render"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["melee", "gamecube", "hsd", "wgpu", "renderer"]
+categories = ["rendering", "graphics", "game-development"]
+description = "wgpu renderer for dat-parser's evaluated HSD draw work"
+
+[features]
+default = ["cli"]
+# The capture, regression and idle CLI, and what only it needs. Hosts that
+# embed the renderer (the site's wasm adapter, the editor) turn it off.
+cli = ["dep:gc-iso", "dep:melee-dat", "dep:png", "dep:serde_json", "dep:sha2"]
+
+[[bin]]
+name = "hsd-render"
+path = "src/bin/hsd_render.rs"
+required-features = ["cli"]
+
+[dependencies]
+bytemuck = "1"
+dat-parser = { version = "0.1.0", path = "../dat-parser" }
+# The regression reads its inputs out of a disc image.
+gc-iso = { version = "0.1.0", path = "../gc-iso", optional = true }
+# The CLI plays fighters and stages.
+melee-dat = { version = "0.1.0", path = "../melee-dat", optional = true }
+png = { version = "0.18", optional = true }
+thiserror = "2"
+# Keep in lockstep with upstream Zed's gpui_wgpu so the editor can share the device.
+wgpu = "29.0.4"
+serde_json = { version = "1", optional = true }
+sha2 = { version = "0.10", optional = true }
+
+# Blocks on GPU futures, which only a native host can do (`offscreen`, and
+# `finish_error_scope`'s native path).
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+pollster = "1"
+
+[dev-dependencies]
+naga = { version = "29.0.4", features = ["wgsl-in"] }
+
+[lints]
+workspace = true

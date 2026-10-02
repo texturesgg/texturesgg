@@ -1,0 +1,22 @@
+[workspace.package]
+license = "GPL-3.0-or-later"
+authors = ["SaavyLab LLC <jayson@saavylab.com>"]
+repository = "https://github.com/texturesgg/texturesgg"
+
+[workspace]
+members = [
+  "crates/hal-dat-raw",
+  "crates/gx-texture",
+  "crates/gc-iso",
+  "crates/dat-parser",
+  "crates/melee-dat",
+  "crates/dat-edit",
+  "crates/hsd-render",
+  "crates/tgg-ui",
+  "crates/tgg-editor",
+]
+resolver = "2"
+
+# No crate here needs `unsafe`; the parsers read untrusted files.
+[workspace.lints.rust]
+unsafe_code = "forbid"

@@ -1,0 +1,14 @@
+[package]
+name = "hal-dat-raw"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["melee", "gamecube", "hsd", "dat", "parser"]
+categories = ["parser-implementations", "game-development"]
+description = "Bounded raw HSD DAT archive parser"
+
+[lints]
+workspace = true
