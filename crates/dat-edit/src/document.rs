@@ -26,7 +26,7 @@ use dat_parser::hsd::scene::{HsdScene, HsdSceneError, HsdTextureSourceId};
 use dat_parser::hsd::texture_animation::texture_animations;
 use dat_parser::raw::header::DATA_SECTION_OFFSET;
 use dat_parser::{DatFile, DatParseError};
-use gx_texture::{TexelRect, image_data_size};
+use gx_texture::{PaletteFormat, TexelRect, TextureFormat, image_data_size};
 use std::collections::{BTreeMap, HashSet, VecDeque};
 use thiserror::Error;
 
@@ -90,8 +90,7 @@ pub struct DocumentTexture {
     pub data_offset: u32,
     pub width: u16,
     pub height: u16,
-    /// `GXTexFmt`.
-    pub format: u32,
+    pub format: TextureFormat,
     /// Image and palette descriptors the scene draws this data with, in
     /// descriptor order. CI data drawn through several palettes has several.
     /// A frame only a texture animation shows has none; see
@@ -147,7 +146,7 @@ pub struct TextureEdit {
     /// other edits and formats.
     pub palette: Option<PaletteOutcome>,
     /// Texels that decode differently from the pixels asked for: CMPR's
-    /// lossy blocks, or colours a CI palette lacks. Counted over the edited
+    /// lossy blocks, or colors a CI palette lacks. Counted over the edited
     /// region, widened for CMPR to the 8x8 tiles it re-encodes whole.
     pub lossy_texels: usize,
     /// The largest difference in any channel (0–255) between an edited texel
@@ -262,7 +261,8 @@ pub struct TextureDocument {
 }
 
 impl TextureDocument {
-    /// Parse a DAT and list the textures its scene draws.
+    /// Parse a DAT and list the textures its scene draws. A texture in a
+    /// format the codec does not handle is not listed.
     pub fn open(file: Vec<u8>) -> Result<Self, DocumentError> {
         Self::open_inspecting(file, |_, _| ()).map(|(document, ())| document)
     }
@@ -279,13 +279,8 @@ impl TextureDocument {
         let drawn = scene.textures.iter().filter_map(|texture| {
             let image = &texture.image;
             let data_offset = image.data_offset?;
-            Some((
-                texture.id,
-                data_offset,
-                image.width,
-                image.height,
-                image.format,
-            ))
+            let format = TextureFormat::try_from(image.format).ok()?;
+            Some((texture.id, data_offset, image.width, image.height, format))
         });
         let animations = texture_animations(&dat, &scene);
         let drawn_ids: HashSet<HsdTextureSourceId> =
@@ -297,7 +292,8 @@ impl TextureDocument {
             .filter(|id| !drawn_ids.contains(id))
             .filter_map(|&id| {
                 let image = ImageDesc::parse(&dat, id.image.0).ok()?;
-                Some((id, image.data_ptr?, image.width, image.height, image.format))
+                let format = TextureFormat::try_from(image.format).ok()?;
+                Some((id, image.data_ptr?, image.width, image.height, format))
             })
             .collect();
         let (mut textures, undrawn) = group(drawn, frames);
@@ -372,11 +368,7 @@ impl TextureDocument {
 
     /// A document of drawn texture uses only, for tests.
     #[cfg(test)]
-    fn from_parts(
-        file: Vec<u8>,
-        dat: DatFile,
-        uses: impl IntoIterator<Item = (HsdTextureSourceId, u32, u16, u16, u32)>,
-    ) -> Self {
+    fn from_parts(file: Vec<u8>, dat: DatFile, uses: impl IntoIterator<Item = Use>) -> Self {
         let (textures, _) = group(uses, []);
         Self::new(file, dat, textures, Vec::new())
     }
@@ -594,7 +586,7 @@ impl TextureDocument {
         self.decode(texture, id)
     }
 
-    /// Replace a texture's pixels with row-major RGBA8 `rgba`, mapping colours
+    /// Replace a texture's pixels with row-major RGBA8 `rgba`, mapping colors
     /// through use `usage`'s palette when the format is CI4 or CI8. With
     /// `dirty`, only the blocks it overlaps are re-encoded.
     pub fn apply(
@@ -629,15 +621,15 @@ impl TextureDocument {
     fn owns_its_pixels(&self, texture: usize) -> Result<(), DocumentError> {
         let extent = |entry: &DocumentTexture| {
             let start = u64::from(entry.data_offset);
-            image_data_size(entry.format, entry.width, entry.height)
+            image_data_size(entry.width, entry.height, entry.format)
                 .map(|len| start..start + len as u64)
         };
-        let Some(own) = extent(self.texture(texture)?) else {
+        let Ok(own) = extent(self.texture(texture)?) else {
             return Ok(());
         };
         let shared = self.textures.iter().enumerate().find(|&(other, entry)| {
             other != texture
-                && extent(entry).is_some_and(|range| own.start < range.end && range.start < own.end)
+                && extent(entry).is_ok_and(|range| own.start < range.end && range.start < own.end)
         });
         match shared {
             Some((other, _)) => Err(DocumentError::SharedPixels { texture, other }),
@@ -650,7 +642,7 @@ impl TextureDocument {
     /// Returns the palette descriptor.
     pub fn rebuildable_palette(&self, texture: usize) -> Result<u32, PaletteLock> {
         let entry = self.textures.get(texture).ok_or(PaletteLock::Unreadable)?;
-        if !matches!(entry.format, 8 | 9) {
+        if entry.format.palette_entries().is_none() {
             return Err(PaletteLock::NotPaletted);
         }
         // Palettes are identified by the colors they point at: descriptors
@@ -695,7 +687,7 @@ impl TextureDocument {
     /// palette and pixels are one undo step. Any other CI texture keeps its
     /// palette, and the result says why.
     pub fn import(&mut self, texture: usize, rgba: &[u8]) -> Result<TextureEdit, DocumentError> {
-        if !matches!(self.texture(texture)?.format, 8 | 9) {
+        if self.texture(texture)?.format.palette_entries().is_none() {
             return self.apply(texture, 0, rgba, None);
         }
         match self.rebuildable_palette(texture) {
@@ -717,8 +709,10 @@ impl TextureDocument {
         let entry = self.texture(texture)?.clone();
         self.owns_its_pixels(texture)?;
         let tlut = TlutDesc::parse(&self.dat, descriptor).map_err(TexturePatchError::from)?;
-        let count = usize::from(tlut.color_count).min(if entry.format == 8 { 16 } else { 256 });
-        let (colors, entries) = gx_texture::build_palette(rgba, tlut.format, count)?;
+        let reachable = entry.format.palette_entries().unwrap_or(0);
+        let count = usize::from(tlut.color_count).min(reachable);
+        let format = PaletteFormat::try_from(tlut.format).map_err(TexturePatchError::from)?;
+        let (colors, entries) = gx_texture::build_palette(rgba, format, count)?;
         // Write the palette, then encode the pixels through it.
         let palette_offset = patch_palette(&self.dat, descriptor, &entries)?;
         let mut changes = Vec::new();
@@ -767,7 +761,7 @@ impl TextureDocument {
         // CMPR re-encodes every tile the region touches, so texels beside
         // the painted ones can move too.
         let measured = match dirty {
-            Some(rect) if entry.format == 14 => {
+            Some(rect) if entry.format == TextureFormat::Cmpr => {
                 let (x, y) = (rect.x & !7, rect.y & !7);
                 let end = |start: u16, length: u16| {
                     (u32::from(start) + u32::from(length)).next_multiple_of(8)
@@ -852,13 +846,13 @@ impl TextureDocument {
             entry.format,
             tlut.as_ref(),
         )
-        .ok_or(DocumentError::Undecodable(texture))
+        .map_err(|_| DocumentError::Undecodable(texture))
     }
 }
 
 /// A descriptor pair and the image data it reads: data offset, width,
 /// height, format.
-type Use = (HsdTextureSourceId, u32, u16, u16, u32);
+type Use = (HsdTextureSourceId, u32, u16, u16, TextureFormat);
 
 /// Group descriptor pairs by the image data they read: one texture per block
 /// of data, with the pairs the scene draws as its `uses`. Returns, per
@@ -868,15 +862,16 @@ fn group(
     undrawn: impl IntoIterator<Item = Use>,
 ) -> (Vec<DocumentTexture>, Vec<Vec<HsdTextureSourceId>>) {
     type Pairs = (Vec<HsdTextureSourceId>, Vec<HsdTextureSourceId>);
-    let mut grouped: BTreeMap<(u32, u32, u16, u16), Pairs> = BTreeMap::new();
+    // Ordered by data offset, then the format's GX value.
+    let mut grouped: BTreeMap<(u32, u32, u16, u16), (TextureFormat, Pairs)> = BTreeMap::new();
     let tagged = drawn
         .into_iter()
         .map(|entry| (entry, true))
         .chain(undrawn.into_iter().map(|entry| (entry, false)));
     for ((id, data_offset, width, height, format), is_drawn) in tagged {
-        let pairs = grouped
-            .entry((data_offset, format, width, height))
-            .or_default();
+        let (_, pairs) = grouped
+            .entry((data_offset, u32::from(format), width, height))
+            .or_insert_with(|| (format, Pairs::default()));
         if is_drawn {
             pairs.0.push(id);
         } else {
@@ -887,7 +882,7 @@ fn group(
     grouped
         .into_iter()
         .map(
-            |((data_offset, format, width, height), (mut uses, mut undrawn))| {
+            |((data_offset, _, width, height), (format, (mut uses, mut undrawn)))| {
                 uses.sort_by_key(order);
                 uses.dedup();
                 undrawn.sort_by_key(order);
@@ -931,6 +926,7 @@ mod tests {
     use dat_parser::hsd::scene::{HsdTextureSourceId, ImageDescId, TlutDescId};
     use dat_parser::raw::header::DATA_SECTION_OFFSET;
     use gx_texture::TexelRect;
+    use gx_texture::TextureFormat::{Ci8, Cmpr};
 
     const TLUT: u32 = 0x18;
     const COLORS: u32 = 0x28;
@@ -940,7 +936,7 @@ mod tests {
     const SECOND_COLORS: u32 = 0xA8;
 
     /// An 8x8 CI8 image drawn through two image descriptors, each with its own
-    /// four-colour RGB565 palette: red/green/blue/white, and the reverse.
+    /// four-color RGB565 palette: red/green/blue/white, and the reverse.
     fn archive() -> Vec<u8> {
         archive_with(&[])
     }
@@ -1004,7 +1000,7 @@ mod tests {
         TextureDocument::from_parts(
             file,
             dat,
-            [(second, PIXELS, 8, 8, 9), (first, PIXELS, 8, 8, 9)],
+            [(second, PIXELS, 8, 8, Ci8), (first, PIXELS, 8, 8, Ci8)],
         )
     }
 
@@ -1059,12 +1055,12 @@ mod tests {
             document.textures()[0]
                 .uses
                 .iter()
-                .map(|&id| (id, PIXELS, 8, 8, 9)),
+                .map(|&id| (id, PIXELS, 8, 8, Ci8)),
         );
         assert_eq!(reparsed.pixels(0, 0).unwrap(), edit.decoded[0].1);
     }
 
-    /// Set texel 0 to palette colour `index` through the first use.
+    /// Set texel 0 to palette color `index` through the first use.
     fn paint(document: &mut TextureDocument, index: usize) {
         let colors = [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255]];
         let mut rgba = document.pixels(0, 0).unwrap();
@@ -1143,7 +1139,7 @@ mod tests {
             image: ImageDescId(0),
             palette: Some(TlutDescId(TLUT)),
         };
-        TextureDocument::from_parts(file, dat, [(first, PIXELS, 8, 8, 9)])
+        TextureDocument::from_parts(file, dat, [(first, PIXELS, 8, 8, Ci8)])
     }
 
     #[test]
@@ -1216,8 +1212,11 @@ mod tests {
         // Base data drawn by 0x10 and read by frame 0's 0x20; a frame the
         // scene never draws, read by 0x30.
         let (textures, undrawn) = group(
-            [(pair(0x10), 0x100, 8, 8, 14)],
-            [(pair(0x20), 0x100, 8, 8, 14), (pair(0x30), 0x200, 8, 8, 14)],
+            [(pair(0x10), 0x100, 8, 8, Cmpr)],
+            [
+                (pair(0x20), 0x100, 8, 8, Cmpr),
+                (pair(0x30), 0x200, 8, 8, Cmpr),
+            ],
         );
         assert_eq!(textures[0].uses, [pair(0x10)]);
         assert_eq!(undrawn[0], [pair(0x20)]);
@@ -1247,8 +1246,8 @@ mod tests {
             file,
             dat,
             [
-                (pair(0, TLUT), PIXELS, 8, 8, 9),
-                (pair(SECOND_IMAGE, SECOND_TLUT), PIXELS, 4, 4, 9),
+                (pair(0, TLUT), PIXELS, 8, 8, Ci8),
+                (pair(SECOND_IMAGE, SECOND_TLUT), PIXELS, 4, 4, Ci8),
             ],
         );
         assert_eq!(document.textures().len(), 2);

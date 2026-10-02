@@ -9,124 +9,136 @@
 //! `GXImageConverter`. It was ported to Rust, its per-texel math replaced with
 //! Dolphin's, and its early return for images narrower than a tile removed.
 
+use crate::format::{PaletteFormat, TextureFormat};
+use thiserror::Error;
+
+/// Why texel or palette bytes did not decode.
+#[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TextureDecodeError {
+    #[error("a {width}x{height} {format} image is too large to address")]
+    ImageTooLarge {
+        width: u16,
+        height: u16,
+        format: TextureFormat,
+    },
+    #[error("the texel data is {actual} bytes; the image needs {expected}")]
+    DataLength { expected: usize, actual: usize },
+    #[error("the palette data is {actual} bytes; its entries need {expected}")]
+    PaletteLength { expected: usize, actual: usize },
+    #[error("paletted format {0} needs a palette")]
+    MissingPalette(TextureFormat),
+}
+
 /// Decode GX texel data to row-major RGBA8 (`width * height * 4` bytes).
 ///
-/// CI4 and CI8 need their decoded `palette` (see [`decode_palette`]); other
-/// formats ignore it. Returns `None` for an unsupported format, a missing
-/// palette, or `raw` shorter than [`image_data_size`].
+/// `raw` may run past the image; only its first [`image_data_size`] bytes are
+/// read. CI4 and CI8 need their decoded `palette` (see [`decode_palette`]);
+/// other formats ignore it. A texel whose index is past the end of the palette
+/// decodes as transparent black: the hardware would read whatever follows the
+/// loaded palette in texture memory, so the file defines no color for it.
 pub fn decode_image(
     raw: &[u8],
     width: u16,
     height: u16,
-    format: u32,
+    format: TextureFormat,
     palette: Option<&[[u8; 4]]>,
-) -> Option<Vec<u8>> {
+) -> Result<Vec<u8>, TextureDecodeError> {
+    let too_large = TextureDecodeError::ImageTooLarge {
+        width,
+        height,
+        format,
+    };
     let (w, h) = (usize::from(width), usize::from(height));
-    w.checked_mul(h)?.checked_mul(4)?;
-    let raw = raw.get(..image_data_size(format, width, height)?)?;
-    decode_unchecked(raw, w, h, format, palette)
+    w.checked_mul(h)
+        .and_then(|texels| texels.checked_mul(4))
+        .ok_or(too_large)?;
+    let expected = image_data_size(width, height, format)?;
+    let raw = raw.get(..expected).ok_or(TextureDecodeError::DataLength {
+        expected,
+        actual: raw.len(),
+    })?;
+    decode_unchecked(raw, w, h, format, palette).ok_or(TextureDecodeError::MissingPalette(format))
 }
 
-/// [`decode_image`] once `raw` is known to hold the whole image.
+/// [`decode_image`] once `raw` is known to hold the whole image. `None` when
+/// a paletted format has no palette.
 pub(crate) fn decode_unchecked(
     raw: &[u8],
     width: usize,
     height: usize,
-    format: u32,
+    format: TextureFormat,
     palette: Option<&[[u8; 4]]>,
 ) -> Option<Vec<u8>> {
     Some(match format {
-        8 => decode_ci4(raw, palette?, width, height),
-        9 => decode_ci8(raw, palette?, width, height),
-        0 => decode_i4(raw, width, height),
-        1 => decode_i8(raw, width, height),
-        2 => decode_ia4(raw, width, height),
-        3 => decode_ia8(raw, width, height),
-        4 => decode_rgb565(raw, width, height),
-        5 => decode_rgb5a3(raw, width, height),
-        6 => decode_rgba8(raw, width, height),
-        14 => decode_cmp(raw, width, height),
-        _ => return None,
-    })
-}
-
-/// The short name of a `GXTexFmt` this codec handles ("CMPR", "CI8"), or
-/// `None` for one it doesn't.
-pub fn format_name(format: u32) -> Option<&'static str> {
-    Some(match format {
-        0 => "I4",
-        1 => "I8",
-        2 => "IA4",
-        3 => "IA8",
-        4 => "RGB565",
-        5 => "RGB5A3",
-        6 => "RGBA8",
-        8 => "CI4",
-        9 => "CI8",
-        14 => "CMPR",
-        _ => return None,
+        TextureFormat::Ci4 => decode_ci4(raw, palette?, width, height),
+        TextureFormat::Ci8 => decode_ci8(raw, palette?, width, height),
+        TextureFormat::I4 => decode_i4(raw, width, height),
+        TextureFormat::I8 => decode_i8(raw, width, height),
+        TextureFormat::Ia4 => decode_ia4(raw, width, height),
+        TextureFormat::Ia8 => decode_ia8(raw, width, height),
+        TextureFormat::Rgb565 => decode_rgb565(raw, width, height),
+        TextureFormat::Rgb5a3 => decode_rgb5a3(raw, width, height),
+        TextureFormat::Rgba8 => decode_rgba8(raw, width, height),
+        TextureFormat::Cmpr => decode_cmp(raw, width, height),
     })
 }
 
 /// Bytes of texel data a `width` x `height` image of `format` occupies,
-/// including the padding of partial edge tiles, or `None` for a format this
-/// codec does not handle.
-pub fn image_data_size(format: u32, width: u16, height: u16) -> Option<usize> {
-    // Tile dimensions per format (width, height)
-    let (bw, bh) = match format {
-        0 => (8, 8),  // I4
-        1 => (8, 4),  // I8
-        2 => (8, 4),  // IA4
-        3 => (4, 4),  // IA8
-        4 => (4, 4),  // RGB565
-        5 => (4, 4),  // RGB5A3
-        6 => (4, 4),  // RGBA8
-        8 => (8, 8),  // CI4
-        9 => (8, 4),  // CI8
-        14 => (8, 8), // CMP
-        _ => return None,
-    };
-    let w = usize::from(width).div_ceil(bw) * bw;
-    let h = usize::from(height).div_ceil(bh) * bh;
-    let size = w.checked_mul(h)?;
-    match format {
-        0 | 8 | 14 => Some(size / 2), // 4bpp
-        1 | 2 | 9 => Some(size),      // 8bpp
-        3..=5 => size.checked_mul(2), // 16bpp
-        _ => size.checked_mul(4),     // RGBA8, 32bpp
-    }
+/// including the padding of partial edge tiles.
+pub fn image_data_size(
+    width: u16,
+    height: u16,
+    format: TextureFormat,
+) -> Result<usize, TextureDecodeError> {
+    let (tile_width, tile_height) = format.tile_size();
+    let w = (usize::from(width).div_ceil(tile_width) * tile_width) as u64;
+    let h = (usize::from(height).div_ceil(tile_height) * tile_height) as u64;
+    // Two padded u16 dimensions at 32 bits per texel fit in a u64.
+    usize::try_from(w * h * format.bits_per_texel() / 8).map_err(|_| {
+        TextureDecodeError::ImageTooLarge {
+            width,
+            height,
+            format,
+        }
+    })
 }
 
-/// Decode `color_count` big-endian TLUT entries of `format` to RGBA8, or
-/// `None` when `raw` is too short or `format` is not IA8 (0), RGB565 (1) or
-/// RGB5A3 (2).
-pub fn decode_palette(raw: &[u8], format: u32, color_count: u16) -> Option<Vec<[u8; 4]>> {
-    if format > 2 {
-        return None;
+/// Decode `color_count` big-endian TLUT entries of `format` to RGBA8.
+pub fn decode_palette(
+    raw: &[u8],
+    format: PaletteFormat,
+    color_count: u16,
+) -> Result<Vec<[u8; 4]>, TextureDecodeError> {
+    let expected = usize::from(color_count) * 2;
+    let raw = raw
+        .get(..expected)
+        .ok_or(TextureDecodeError::PaletteLength {
+            expected,
+            actual: raw.len(),
+        })?;
+    Ok(raw
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&entry| decode_palette_entry(u16::from_be_bytes(entry), format))
+        .collect())
+}
+
+/// One stored palette entry as RGBA8.
+pub(crate) fn decode_palette_entry(entry: u16, format: PaletteFormat) -> [u8; 4] {
+    match format {
+        // IA8: alpha in the high byte.
+        PaletteFormat::Ia8 => {
+            let intensity = (entry & 0xFF) as u8;
+            [intensity, intensity, intensity, (entry >> 8) as u8]
+        }
+        PaletteFormat::Rgb565 => rgb565(entry),
+        PaletteFormat::Rgb5a3 => {
+            let (r, g, b, a) = decode_rgb5a3_pixel(entry);
+            [r, g, b, a]
+        }
     }
-    let raw = raw.get(..usize::from(color_count) * 2)?;
-    Some(
-        raw.as_chunks::<2>()
-            .0
-            .iter()
-            .map(|&entry| {
-                let pixel = u16::from_be_bytes(entry);
-                match format {
-                    // IA8: alpha in the high byte.
-                    0 => {
-                        let intensity = (pixel & 0xFF) as u8;
-                        [intensity, intensity, intensity, (pixel >> 8) as u8]
-                    }
-                    1 => rgb565(pixel),
-                    // RGB5A3
-                    _ => {
-                        let (r, g, b, a) = decode_rgb5a3_pixel(pixel);
-                        [r, g, b, a]
-                    }
-                }
-            })
-            .collect(),
-    )
 }
 
 // --- Format decoders ---
@@ -523,22 +535,54 @@ fn decode_cmp(data: &[u8], width: usize, height: usize) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_image, decode_palette, image_data_size};
+    use super::{TextureDecodeError, decode_image, decode_palette, image_data_size};
+    use crate::format::{PaletteFormat, TextureFormat};
 
     #[test]
     fn decoding_checks_its_input() {
-        assert!(decode_image(&[0; 32], 8, 8, 0, None).is_some());
-        assert!(decode_image(&[0; 31], 8, 8, 0, None).is_none());
-        assert!(decode_image(&[0; 64], 8, 8, 7, None).is_none());
-        assert!(decode_image(&[0; 32], 8, 8, 8, None).is_none());
-        assert_eq!(image_data_size(10, 8, 8), None);
-        assert_eq!(image_data_size(14, 12, 4), Some(64));
-        assert_eq!(decode_palette(&[0; 3], 1, 2), None);
-        assert_eq!(decode_palette(&[0; 2], 3, 1), None);
+        assert!(decode_image(&[0; 32], 8, 8, TextureFormat::I4, None).is_ok());
+        // Bytes past the image are not read.
+        assert!(decode_image(&[0; 40], 8, 8, TextureFormat::I4, None).is_ok());
         assert_eq!(
-            decode_palette(&[0x80, 0x40, 0xF8, 0x00], 0, 1),
-            Some(vec![[0x40, 0x40, 0x40, 0x80]])
+            decode_image(&[0; 31], 8, 8, TextureFormat::I4, None),
+            Err(TextureDecodeError::DataLength {
+                expected: 32,
+                actual: 31,
+            })
         );
+        assert_eq!(
+            decode_image(&[0; 32], 8, 8, TextureFormat::Ci4, None),
+            Err(TextureDecodeError::MissingPalette(TextureFormat::Ci4))
+        );
+        assert_eq!(image_data_size(12, 4, TextureFormat::Cmpr), Ok(64));
+        assert_eq!(
+            decode_palette(&[0; 3], PaletteFormat::Rgb565, 2),
+            Err(TextureDecodeError::PaletteLength {
+                expected: 4,
+                actual: 3,
+            })
+        );
+        assert_eq!(
+            decode_palette(&[0x80, 0x40, 0xF8, 0x00], PaletteFormat::Ia8, 1),
+            Ok(vec![[0x40, 0x40, 0x40, 0x80]])
+        );
+    }
+
+    /// The file defines no color for an index past its palette, so the texel
+    /// is transparent black and its neighbors still decode.
+    #[test]
+    fn an_index_past_the_palette_is_transparent_black() {
+        let palette = [[10, 20, 30, 255], [40, 50, 60, 255]];
+        // CI8 8x4: texel 0 uses entry 1, texel 1 the missing entry 2.
+        let mut ci8 = [0u8; 32];
+        ci8[..2].copy_from_slice(&[1, 2]);
+        let rgba = decode_image(&ci8, 8, 4, TextureFormat::Ci8, Some(&palette)).unwrap();
+        assert_eq!(rgba[..8], [40, 50, 60, 255, 0, 0, 0, 0]);
+        // CI4 8x8: the first byte holds entry 1, then the missing entry 15.
+        let mut ci4 = [0u8; 32];
+        ci4[0] = 0x1F;
+        let rgba = decode_image(&ci4, 8, 8, TextureFormat::Ci4, Some(&palette)).unwrap();
+        assert_eq!(rgba[..8], [40, 50, 60, 255, 0, 0, 0, 0]);
     }
 
     #[test]
@@ -548,7 +592,7 @@ mod tests {
         let mut data = vec![0; 32];
         data[0..2].copy_from_slice(&0x2123u16.to_be_bytes());
         data[2..4].copy_from_slice(&(0x8000u16 | (1 << 10) | (16 << 5) | 31).to_be_bytes());
-        let rgba = decode_image(&data, 4, 4, 5, None).unwrap();
+        let rgba = decode_image(&data, 4, 4, TextureFormat::Rgb5a3, None).unwrap();
         assert_eq!(&rgba[0..4], &[0x11, 0x22, 0x33, 73]);
         assert_eq!(&rgba[4..8], &[8, 132, 255, 255]);
     }
@@ -561,14 +605,14 @@ mod tests {
         data[0..2].copy_from_slice(&0xF800u16.to_be_bytes());
         data[2..4].copy_from_slice(&0x0000u16.to_be_bytes());
         data[4] = 0b00_01_10_11;
-        let rgba = decode_image(&data.clone(), 8, 8, 14, None).unwrap();
+        let rgba = decode_image(&data, 8, 8, TextureFormat::Cmpr, None).unwrap();
         let reds: Vec<u8> = rgba[0..16].chunks(4).map(|texel| texel[0]).collect();
         assert_eq!(reds, [255, 0, 159, 95]);
 
         // Transparent mode (c0 <= c1): index 3 is the average with zero alpha.
         data[0..2].copy_from_slice(&0x0000u16.to_be_bytes());
         data[2..4].copy_from_slice(&0xF800u16.to_be_bytes());
-        let rgba = decode_image(&data, 8, 8, 14, None).unwrap();
+        let rgba = decode_image(&data, 8, 8, TextureFormat::Cmpr, None).unwrap();
         assert_eq!(&rgba[8..12], &[127, 0, 0, 255]);
         assert_eq!(&rgba[12..16], &[127, 0, 0, 0]);
     }

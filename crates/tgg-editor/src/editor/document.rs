@@ -408,7 +408,7 @@ pub(crate) fn thumbnails(document: &TextureDocument, names: &[String]) -> Rc<[Th
             let image = document.pixels(index, 0).ok().and_then(|rgba| {
                 tgg_ui::render_image(&rgba, texture.width.into(), texture.height.into())
             });
-            let format = gx_texture::format_name(texture.format).unwrap_or("unknown");
+            let format = texture.format.name();
             let uses = match texture.uses.len() {
                 1 => String::new(),
                 uses => format!(" · {uses} uses"),

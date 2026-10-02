@@ -10,13 +10,12 @@ use crate::decode::{
     cmpr_palette, decode_rgb5a3_pixel, decode_unchecked, expand3, expand4, expand5, expand6,
     image_data_size,
 };
+use crate::format::TextureFormat;
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TextureEncodeError {
-    #[error("GX texture format {0} has no encoder")]
-    UnsupportedFormat(u32),
     #[error("a {width}x{height} image needs {expected} bytes of RGBA8, got {actual}")]
     PixelLength {
         width: u16,
@@ -27,7 +26,13 @@ pub enum TextureEncodeError {
     #[error("the original texture data is {actual} bytes, not {expected}")]
     OriginalLength { expected: usize, actual: usize },
     #[error("paletted format {0} needs a non-empty palette")]
-    MissingPalette(u32),
+    MissingPalette(TextureFormat),
+    #[error("a {width}x{height} {format} image is too large to address")]
+    ImageTooLarge {
+        width: u16,
+        height: u16,
+        format: TextureFormat,
+    },
 }
 
 /// Texture data re-encoded over an original, with how much of it changed.
@@ -78,7 +83,7 @@ pub fn encode_texture_over(
     rgba: &[u8],
     width: u16,
     height: u16,
-    format: u32,
+    format: TextureFormat,
     palette: Option<&[[u8; 4]]>,
     dirty: Option<TexelRect>,
 ) -> Result<TextureOverwrite, TextureEncodeError> {
@@ -92,7 +97,7 @@ pub fn encode_texture_over(
     let (w, h) = (encoder.width, encoder.height);
     let (block_width, block_height) = storage_block_size(format);
     let before =
-        decode_unchecked(original, w, h, format, palette).expect("encodable formats decode");
+        decode_unchecked(original, w, h, format, palette).expect("the encoder has its palette");
 
     let origins = storage_blocks(format, w, h);
     let blocks = origins.len();
@@ -125,30 +130,20 @@ pub fn encode_texture_over(
     })
 }
 
-/// The texel dimensions of one storage tile of an encodable format.
-fn tile_size(format: u32) -> Option<(usize, usize)> {
-    match format {
-        0 | 8 | 14 => Some((8, 8)),
-        1 | 2 | 9 => Some((8, 4)),
-        3..=6 => Some((4, 4)),
-        _ => None,
-    }
-}
-
 /// The texel dimensions of the smallest independently encoded block: the tile,
 /// except CMPR, whose 8x8 tile holds four 4x4 sub-blocks.
-fn storage_block_size(format: u32) -> (usize, usize) {
+fn storage_block_size(format: TextureFormat) -> (usize, usize) {
     match format {
-        14 => (4, 4),
-        _ => tile_size(format).expect("an encodable format"),
+        TextureFormat::Cmpr => (4, 4),
+        _ => format.tile_size(),
     }
 }
 
 /// Origins of the independently encoded blocks, in storage order. CMPR stores
 /// each tile's sub-blocks top left, top right, bottom left, bottom right; a
 /// sub-block wholly in padding still occupies its eight bytes.
-fn storage_blocks(format: u32, width: usize, height: usize) -> Vec<(usize, usize)> {
-    let (tile_width, tile_height) = tile_size(format).expect("an encodable format");
+fn storage_blocks(format: TextureFormat, width: usize, height: usize) -> Vec<(usize, usize)> {
+    let (tile_width, tile_height) = format.tile_size();
     let (block_width, block_height) = storage_block_size(format);
     let tiles_x = width.div_ceil(tile_width);
     (0..height.div_ceil(tile_height) * tiles_x)
@@ -177,7 +172,7 @@ pub fn encode_texture(
     rgba: &[u8],
     width: u16,
     height: u16,
-    format: u32,
+    format: TextureFormat,
     palette: Option<&[[u8; 4]]>,
 ) -> Result<Vec<u8>, TextureEncodeError> {
     let encoder = BlockEncoder::new(rgba, width, height, format, palette)?;
@@ -231,7 +226,7 @@ struct BlockEncoder<'a> {
     rgba: &'a [u8],
     width: usize,
     height: usize,
-    format: u32,
+    format: TextureFormat,
     /// The palette entries CI4 or CI8 can index; empty for other formats.
     palette: &'a [[u8; 4]],
     /// Encoded byte length of the whole image.
@@ -243,13 +238,11 @@ impl<'a> BlockEncoder<'a> {
         rgba: &'a [u8],
         width: u16,
         height: u16,
-        format: u32,
+        format: TextureFormat,
         palette: Option<&'a [[u8; 4]]>,
     ) -> Result<Self, TextureEncodeError> {
         let (w, h) = (usize::from(width), usize::from(height));
-        tile_size(format).ok_or(TextureEncodeError::UnsupportedFormat(format))?;
-        let expected = w
-            .checked_mul(h)
+        w.checked_mul(h)
             .and_then(|texels| texels.checked_mul(4))
             .filter(|&expected| expected == rgba.len())
             .ok_or(TextureEncodeError::PixelLength {
@@ -258,23 +251,21 @@ impl<'a> BlockEncoder<'a> {
                 expected: w.saturating_mul(h).saturating_mul(4),
                 actual: rgba.len(),
             })?;
-        // The block sizes are the decoder's, so the size is defined whenever
-        // the pixel buffer fits in memory.
-        let size =
-            image_data_size(format, width, height).ok_or(TextureEncodeError::PixelLength {
+        let size = image_data_size(width, height, format).map_err(|_| {
+            TextureEncodeError::ImageTooLarge {
                 width,
                 height,
-                expected,
-                actual: rgba.len(),
-            })?;
-        let palette = match format {
-            8 | 9 => {
+                format,
+            }
+        })?;
+        let palette = match format.palette_entries() {
+            Some(reachable) => {
                 let palette = palette
                     .filter(|palette| !palette.is_empty())
                     .ok_or(TextureEncodeError::MissingPalette(format))?;
-                &palette[..palette.len().min(if format == 8 { 16 } else { 256 })]
+                &palette[..palette.len().min(reachable)]
             }
-            _ => &[],
+            None => &[],
         };
         Ok(Self {
             rgba,
@@ -316,40 +307,45 @@ impl<'a> BlockEncoder<'a> {
             .map(|(x, y)| self.texel(x, y));
         match self.format {
             // I4 and CI4: two texels per byte, the first in the high nibble.
-            0 | 8 => {
+            TextureFormat::I4 | TextureFormat::Ci4 => {
                 let nibble = |texel: Option<[u8; 4]>| match self.format {
-                    0 => quantize4(luma(texel.unwrap_or_default())),
+                    TextureFormat::I4 => quantize4(luma(texel.unwrap_or_default())),
                     _ => texel.map_or(0, |texel| nearest_index(self.palette, texel)),
                 };
                 while let (Some(first), Some(second)) = (texels.next(), texels.next()) {
                     out.push(nibble(first) << 4 | nibble(second));
                 }
             }
-            1 => out.extend(texels.map(|p| luma(p.unwrap_or_default()))),
+            TextureFormat::I8 => out.extend(texels.map(|p| luma(p.unwrap_or_default()))),
             // IA4: alpha in the high nibble.
-            2 => out.extend(texels.map(|p| {
+            TextureFormat::Ia4 => out.extend(texels.map(|p| {
                 let p = p.unwrap_or_default();
                 quantize4(p[3]) << 4 | quantize4(luma(p))
             })),
-            3 => texels.for_each(|p| {
+            TextureFormat::Ia8 => texels.for_each(|p| {
                 let p = p.unwrap_or_default();
                 out.extend([p[3], luma(p)]);
             }),
-            4 => texels.for_each(|p| out.extend(rgb565(p.unwrap_or_default()).to_be_bytes())),
-            5 => texels.for_each(|p| out.extend(rgb5a3(p.unwrap_or_default()).to_be_bytes())),
+            TextureFormat::Rgb565 => {
+                texels.for_each(|p| out.extend(rgb565(p.unwrap_or_default()).to_be_bytes()))
+            }
+            TextureFormat::Rgb5a3 => {
+                texels.for_each(|p| out.extend(rgb5a3(p.unwrap_or_default()).to_be_bytes()))
+            }
             // RGBA8: each 4x4 tile stores its 16 AR pairs, then its 16 GB pairs.
-            6 => {
+            TextureFormat::Rgba8 => {
                 let tile: Vec<[u8; 4]> = texels.map(Option::unwrap_or_default).collect();
                 out.extend(tile.iter().flat_map(|p| [p[3], p[0]]));
                 out.extend(tile.iter().flat_map(|p| [p[1], p[2]]));
             }
-            9 => out.extend(texels.map(|p| p.map_or(0, |p| nearest_index(self.palette, p)))),
-            14 => {
+            TextureFormat::Ci8 => {
+                out.extend(texels.map(|p| p.map_or(0, |p| nearest_index(self.palette, p))))
+            }
+            TextureFormat::Cmpr => {
                 let block: [Option<[u8; 4]>; 16] =
                     std::array::from_fn(|_| texels.next().expect("a 4x4 sub-block"));
                 out.extend(encode_cmpr_block(&block));
             }
-            _ => unreachable!("BlockEncoder::new accepted the format"),
         }
     }
 }
@@ -699,10 +695,11 @@ mod tests {
         Expand, TexelRect, TextureEncodeError, encode_texture, encode_texture_over, quantize,
     };
     use crate::decode::{decode_image, expand3, expand4, expand5, expand6};
+    use crate::format::TextureFormat::{self, *};
 
-    const DIRECT_FORMATS: [u32; 7] = [0, 1, 2, 3, 4, 5, 6];
+    const DIRECT_FORMATS: [TextureFormat; 7] = [I4, I8, Ia4, Ia8, Rgb565, Rgb5a3, Rgba8];
 
-    fn decode(data: &[u8], width: u16, height: u16, format: u32) -> Vec<u8> {
+    fn decode(data: &[u8], width: u16, height: u16, format: TextureFormat) -> Vec<u8> {
         decode_image(data, width, height, format, None).expect("decodable test texture")
     }
 
@@ -743,15 +740,15 @@ mod tests {
     fn every_texel_code_round_trips() {
         // (format, width, height): one texel per code, or two I4 codes per byte.
         let cases = [
-            (0, 32, 16),
-            (1, 16, 16),
-            (2, 16, 16),
-            (3, 256, 256),
-            (4, 256, 256),
+            (I4, 32, 16),
+            (I8, 16, 16),
+            (Ia4, 16, 16),
+            (Ia8, 256, 256),
+            (Rgb565, 256, 256),
         ];
         for (format, width, height) in cases {
             let raw: Vec<u8> = match format {
-                0..=2 => (0..=255).collect(),
+                I4 | I8 | Ia4 => (0..=255).collect(),
                 _ => (0..=u16::MAX).flat_map(u16::to_be_bytes).collect(),
             };
             let rgba = decode(&raw, width, height, format);
@@ -760,9 +757,9 @@ mod tests {
         }
 
         let raw: Vec<u8> = (0..=u16::MAX).flat_map(u16::to_be_bytes).collect();
-        let rgba = decode(&raw, 256, 256, 5);
-        let encoded = encode_texture(&rgba, 256, 256, 5, None).unwrap();
-        assert_eq!(decode(&encoded, 256, 256, 5), rgba);
+        let rgba = decode(&raw, 256, 256, Rgb5a3);
+        let encoded = encode_texture(&rgba, 256, 256, Rgb5a3, None).unwrap();
+        assert_eq!(decode(&encoded, 256, 256, Rgb5a3), rgba);
         let (mut exact, mut switched) = (0, 0);
         for (original, encoded) in raw.chunks(2).zip(encoded.chunks(2)) {
             let code = u16::from_be_bytes([original[0], original[1]]);
@@ -783,8 +780,8 @@ mod tests {
         assert_eq!((exact, switched), (65536 - 8, 8));
 
         let raw = noise(64 * 64 * 4, 0x2545_F491);
-        let rgba = decode(&raw, 64, 64, 6);
-        assert!(encode_texture(&rgba, 64, 64, 6, None).unwrap() == raw);
+        let rgba = decode(&raw, 64, 64, Rgba8);
+        assert!(encode_texture(&rgba, 64, 64, Rgba8, None).unwrap() == raw);
     }
 
     /// Sizes that are not block multiples: visible texels keep their codes and
@@ -812,20 +809,20 @@ mod tests {
     fn color_input_quantizes_to_the_nearest_code() {
         let orange = [255, 128, 0, 200];
         let rgba = orange.repeat(16);
-        let expect = |format: u32, texel: &[u8]| {
+        let expect = |format: TextureFormat, texel: &[u8]| {
             let encoded = encode_texture(&rgba, 4, 4, format, None).unwrap();
             assert_eq!(&encoded[..texel.len()], texel, "format {format}");
         };
         // Luma: (299 * 255 + 587 * 128 + 500) / 1000 = 151.
-        expect(1, &[151]);
-        expect(3, &[200, 151]);
+        expect(I8, &[151]);
+        expect(Ia8, &[200, 151]);
         // I4 and IA4 round 151 to 9 (153) and alpha 200 to 12 (204).
-        expect(0, &[0x99]);
-        expect(2, &[0xC9]);
+        expect(I4, &[0x99]);
+        expect(Ia4, &[0xC9]);
         // RGB565: 31, 32 (130), 0.
-        expect(4, &(31u16 << 11 | 32 << 5).to_be_bytes());
+        expect(Rgb565, &(31u16 << 11 | 32 << 5).to_be_bytes());
         // RGB5A3 keeps alpha: 3-bit 5 (182) against 555's 255.
-        expect(5, &(5u16 << 12 | 15 << 8 | 8 << 4).to_be_bytes());
+        expect(Rgb5a3, &(5u16 << 12 | 15 << 8 | 8 << 4).to_be_bytes());
     }
 
     /// Asking again for pixels a lossy format could only approximate
@@ -839,16 +836,16 @@ mod tests {
                 [x * 16, y * 16, x.wrapping_mul(y), 255]
             })
             .collect();
-        let original = encode_texture(&[0; 16 * 16 * 4], width, height, 14, None).unwrap();
+        let original = encode_texture(&[0; 16 * 16 * 4], width, height, Cmpr, None).unwrap();
         let first =
-            encode_texture_over(&original, &gradient, width, height, 14, None, None).unwrap();
+            encode_texture_over(&original, &gradient, width, height, Cmpr, None, None).unwrap();
         assert!(first.changed_blocks > 0);
         assert!(
-            decode(&first.bytes, width, height, 14) != gradient,
+            decode(&first.bytes, width, height, Cmpr) != gradient,
             "CMPR is lossy here"
         );
         let again =
-            encode_texture_over(&first.bytes, &gradient, width, height, 14, None, None).unwrap();
+            encode_texture_over(&first.bytes, &gradient, width, height, Cmpr, None, None).unwrap();
         assert_eq!(again.changed_blocks, 0);
         assert!(again.bytes == first.bytes);
     }
@@ -857,7 +854,7 @@ mod tests {
     /// blocks with a changed visible pixel are re-encoded.
     #[test]
     fn overwrite_keeps_unchanged_blocks_byte_identical() {
-        for (seed, format) in (1u32..).zip(DIRECT_FORMATS.into_iter().chain([14])) {
+        for (seed, format) in (1u32..).zip(DIRECT_FORMATS.into_iter().chain([Cmpr])) {
             let (width, height) = (13, 7);
             let len = encode_texture(&[0; 13 * 7 * 4], width, height, format, None)
                 .unwrap()
@@ -886,12 +883,12 @@ mod tests {
             let untouched = len - block_bytes;
             assert!(edited.bytes[..untouched] == original[..untouched]);
             // CMPR is lossy: the edited block need not reproduce exactly.
-            if format != 14 {
+            if format != Cmpr {
                 assert_eq!(decode(&edited.bytes, width, height, format), rgba);
             }
         }
         assert_eq!(
-            encode_texture_over(&[0; 3], &[0; 4 * 4 * 4], 4, 4, 6, None, None),
+            encode_texture_over(&[0; 3], &[0; 4 * 4 * 4], 4, 4, Rgba8, None, None),
             Err(TextureEncodeError::OriginalLength {
                 expected: 64,
                 actual: 3,
@@ -908,10 +905,10 @@ mod tests {
         for sub_block in raw.chunks_mut(8) {
             sub_block[4] = 0b00_01_10_11;
         }
-        let rgba = decode(&raw, width, height, 14);
-        let encoded = encode_texture(&rgba, width, height, 14, None).unwrap();
+        let rgba = decode(&raw, width, height, Cmpr);
+        let encoded = encode_texture(&rgba, width, height, Cmpr, None).unwrap();
         assert_eq!(encoded.len(), raw.len());
-        assert_eq!(decode(&encoded, width, height, 14), rgba);
+        assert_eq!(decode(&encoded, width, height, Cmpr), rgba);
     }
 
     #[test]
@@ -923,8 +920,8 @@ mod tests {
             .into_iter()
             .flat_map(|red| [red, 0, 0, 255])
             .collect();
-        let encoded = encode_texture(&rgba, 4, 4, 14, None).unwrap();
-        assert_eq!(decode(&encoded, 4, 4, 14), rgba);
+        let encoded = encode_texture(&rgba, 4, 4, Cmpr, None).unwrap();
+        assert_eq!(decode(&encoded, 4, 4, Cmpr), rgba);
     }
 
     #[test]
@@ -940,10 +937,10 @@ mod tests {
                 }
             })
             .collect();
-        let encoded = encode_texture(&rgba, 4, 4, 14, None).unwrap();
+        let encoded = encode_texture(&rgba, 4, 4, Cmpr, None).unwrap();
         assert_eq!(encoded.len(), 32);
         assert_eq!(encoded[8..], [0; 24]);
-        let decoded = decode(&encoded, 4, 4, 14);
+        let decoded = decode(&encoded, 4, 4, Cmpr);
         for (texel, source) in decoded.chunks(4).zip(rgba.chunks(4)) {
             assert_eq!(texel[3], source[3]);
             if source[3] == 255 {
@@ -966,10 +963,10 @@ mod tests {
             })
             .collect();
         let decoded = decode(
-            &encode_texture(&rgba, width, height, 14, None).unwrap(),
+            &encode_texture(&rgba, width, height, Cmpr, None).unwrap(),
             width,
             height,
-            14,
+            Cmpr,
         );
         let errors: Vec<u8> = decoded
             .iter()
@@ -992,7 +989,7 @@ mod tests {
         data: &[u8],
         width: u16,
         height: u16,
-        format: u32,
+        format: TextureFormat,
         palette: &[[u8; 4]],
     ) -> Vec<u8> {
         decode_image(data, width, height, format, Some(palette)).expect("decodable test texture")
@@ -1001,7 +998,7 @@ mod tests {
     #[test]
     fn every_palette_index_round_trips() {
         // CI8: all 256 indices in a 16x16 image; CI4: all 256 index pairs.
-        for (format, colors, width, height) in [(9, 256, 16, 16), (8, 16, 32, 16)] {
+        for (format, colors, width, height) in [(Ci8, 256, 16, 16), (Ci4, 16, 32, 16)] {
             let palette = distinct_palette(colors);
             let raw: Vec<u8> = (0..=255).collect();
             let rgba = decode_with(&raw, width, height, format, &palette);
@@ -1018,10 +1015,10 @@ mod tests {
         palette[3] = [190, 100, 50, 255];
         palette[5] = palette[3];
         let rgba = [200u8, 100, 50, 255].repeat(64);
-        let ci4 = encode_texture(&rgba, 8, 8, 8, Some(&palette)).unwrap();
+        let ci4 = encode_texture(&rgba, 8, 8, Ci4, Some(&palette)).unwrap();
         // The tie between entries 3 and 5 goes to 3.
         assert!(ci4.iter().all(|&byte| byte == 0x33));
-        let ci8 = encode_texture(&rgba, 8, 8, 9, Some(&palette)).unwrap();
+        let ci8 = encode_texture(&rgba, 8, 8, Ci8, Some(&palette)).unwrap();
         assert!(ci8.iter().all(|&index| index == 16));
     }
 
@@ -1039,25 +1036,20 @@ mod tests {
             width: 2,
             height: 2,
         };
-        let edited = encode_texture_over(&original, &rgba, 16, 8, 4, None, Some(dirty)).unwrap();
+        let edited =
+            encode_texture_over(&original, &rgba, 16, 8, Rgb565, None, Some(dirty)).unwrap();
         assert_eq!((edited.blocks, edited.changed_blocks), (8, 1));
         assert!(edited.bytes[..32] == original[..32]);
         assert!(edited.bytes[32..64] != original[32..64]);
         assert!(edited.bytes[64..] == original[64..]);
 
-        let everything = encode_texture_over(&original, &rgba, 16, 8, 4, None, None).unwrap();
+        let everything = encode_texture_over(&original, &rgba, 16, 8, Rgb565, None, None).unwrap();
         assert_eq!(everything.changed_blocks, 8);
     }
 
     #[test]
-    fn rejects_unsupported_formats_and_wrong_lengths() {
-        for format in [7, 10] {
-            assert_eq!(
-                encode_texture(&[0; 64 * 4], 8, 8, format, None),
-                Err(TextureEncodeError::UnsupportedFormat(format))
-            );
-        }
-        for format in [8, 9] {
+    fn rejects_missing_palettes_and_wrong_lengths() {
+        for format in [Ci4, Ci8] {
             for palette in [None, Some(&[][..])] {
                 assert_eq!(
                     encode_texture(&[0; 64 * 4], 8, 8, format, palette),
@@ -1066,7 +1058,7 @@ mod tests {
             }
         }
         assert_eq!(
-            encode_texture(&[0; 10], 2, 2, 6, None),
+            encode_texture(&[0; 10], 2, 2, Rgba8, None),
             Err(TextureEncodeError::PixelLength {
                 width: 2,
                 height: 2,

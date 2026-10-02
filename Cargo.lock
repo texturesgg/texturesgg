@@ -5354,7 +5354,6 @@ dependencies = [
  "gpui-ce",
  "gpui_ce_platform",
  "gpui_ce_wgpu",
- "gx-texture",
  "hsd-render",
  "image",
  "melee-dat",

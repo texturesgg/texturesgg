@@ -4,7 +4,10 @@ use dat_parser::DatFile;
 use dat_parser::descriptor::DescriptorParseError;
 use dat_parser::descriptor::tobj::{ImageDesc, TlutDesc};
 use dat_parser::gx::texture::decode_palette;
-use gx_texture::{TexelRect, TextureEncodeError, encode_texture_over, image_data_size};
+use gx_texture::{
+    TexelRect, TextureEncodeError, TextureFormat, UnsupportedPaletteFormat,
+    UnsupportedTextureFormat, encode_texture_over, image_data_size,
+};
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
@@ -30,6 +33,10 @@ pub enum TexturePatchError {
     OutOfBounds { data_offset: u32 },
     #[error("the data at {data_offset:#x} overlaps the pointer field at {site:#x}")]
     OverlapsPointer { data_offset: u32, site: u32 },
+    #[error(transparent)]
+    Format(#[from] UnsupportedTextureFormat),
+    #[error(transparent)]
+    PaletteFormat(#[from] UnsupportedPaletteFormat),
     #[error(transparent)]
     Encode(#[from] TextureEncodeError),
 }
@@ -75,11 +82,17 @@ pub fn patch_texture(
     let colors = palette
         .map(|descriptor| {
             let tlut = TlutDesc::parse(dat, descriptor)?;
-            decode_palette(dat, &tlut).ok_or(TexturePatchError::NoPaletteData { descriptor })
+            decode_palette(dat, &tlut).map_err(|_| TexturePatchError::NoPaletteData { descriptor })
         })
         .transpose()?;
-    let byte_len = image_data_size(image.format, image.width, image.height)
-        .ok_or(TextureEncodeError::UnsupportedFormat(image.format))?;
+    let format = TextureFormat::try_from(image.format)?;
+    let byte_len = image_data_size(image.width, image.height, format).map_err(|_| {
+        TextureEncodeError::ImageTooLarge {
+            width: image.width,
+            height: image.height,
+            format,
+        }
+    })?;
     let original = writable(dat, data_offset, byte_len)?;
 
     let overwrite = encode_texture_over(
@@ -87,7 +100,7 @@ pub fn patch_texture(
         rgba,
         image.width,
         image.height,
-        image.format,
+        format,
         colors.as_deref(),
         dirty,
     )?;
@@ -153,7 +166,7 @@ mod tests {
     use dat_parser::descriptor::tobj::TlutDesc;
     use dat_parser::gx::texture::decode_texture;
     use dat_parser::raw::header::DATA_SECTION_OFFSET;
-    use gx_texture::TextureEncodeError;
+    use gx_texture::{TextureEncodeError, TextureFormat, UnsupportedTextureFormat};
 
     const DESCRIPTOR: u32 = 0;
     const PIXELS: u32 = 0x20;
@@ -190,6 +203,7 @@ mod tests {
 
     fn decode(file: &[u8], format: u32) -> Vec<u8> {
         let dat = DatFile::parse(file).expect("patched file reparses");
+        let format = TextureFormat::try_from(format).expect("a supported format");
         decode_texture(&dat, PIXELS, 8, 8, format, None).expect("texture decodes")
     }
 
@@ -279,11 +293,11 @@ mod tests {
         );
         check(
             archive(10, &[0; 64], 0, &[]),
-            TexturePatchError::Encode(TextureEncodeError::UnsupportedFormat(10)),
+            TexturePatchError::Format(UnsupportedTextureFormat(10)),
         );
         check(
             archive(9, &[0; 64], 0, &[]),
-            TexturePatchError::Encode(TextureEncodeError::MissingPalette(9)),
+            TexturePatchError::Encode(TextureEncodeError::MissingPalette(TextureFormat::Ci8)),
         );
     }
 
@@ -309,7 +323,8 @@ mod tests {
         let tlut = TlutDesc::parse(&dat, TLUT).unwrap();
         let decode = |file: &[u8]| {
             let dat = DatFile::parse(file).expect("patched file reparses");
-            decode_texture(&dat, PIXELS, 8, 8, 9, Some(&tlut)).expect("texture decodes")
+            decode_texture(&dat, PIXELS, 8, 8, TextureFormat::Ci8, Some(&tlut))
+                .expect("texture decodes")
         };
 
         let mut rgba = decode(&original);
