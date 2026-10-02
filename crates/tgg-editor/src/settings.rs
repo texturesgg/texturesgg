@@ -5,6 +5,8 @@
 //! Settings are a convenience: a missing or unreadable file falls back to the
 //! defaults, and a failed write is logged, never shown as an error.
 
+use crate::ids::slot_list;
+use melee_dat::MeleeSlot;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tgg_ui::Appearance;
@@ -29,8 +31,9 @@ pub(crate) struct Settings {
     pub(crate) game_folders: Vec<PathBuf>,
     /// The sidebar shows beside the player's places (default: shown).
     pub(crate) sidebar: Option<bool>,
-    /// The game's costume files edited lately, the latest first.
-    pub(crate) recent: Vec<String>,
+    /// The game's slots edited lately, the latest first.
+    #[serde(with = "slot_list")]
+    pub(crate) recent: Vec<MeleeSlot>,
     /// Look for a newer version at launch (default on).
     pub(crate) check_for_updates: Option<bool>,
 }
@@ -73,10 +76,10 @@ impl Default for PaneLayout {
 const RECENT: usize = 5;
 
 impl Settings {
-    /// Put `file` first among the recent edits.
-    pub(crate) fn remember_edit(&mut self, file: &str) {
-        self.recent.retain(|recent| recent != file);
-        self.recent.insert(0, file.to_owned());
+    /// Put `slot` first among the recent edits.
+    pub(crate) fn remember_edit(&mut self, slot: MeleeSlot) {
+        self.recent.retain(|recent| *recent != slot);
+        self.recent.insert(0, slot);
         self.recent.truncate(RECENT);
     }
 }
@@ -229,7 +232,7 @@ mod tests {
         };
         // ...then the shell records the edit and hides the sidebar...
         let mut on_disk = opened.clone();
-        on_disk.remember_edit("PlFxOr.dat");
+        on_disk.remember_edit(slot("PlFxOr.dat"));
         on_disk.sidebar = Some(false);
         // ...and the editor, later, changes only its highlight.
         let mut editors = opened.clone();
@@ -237,7 +240,7 @@ mod tests {
 
         on_disk.apply_changes(&opened, &editors);
         assert_eq!(on_disk.highlight_selection, Some(false));
-        assert_eq!(on_disk.recent, ["PlFxOr.dat"]);
+        assert_eq!(on_disk.recent, [slot("PlFxOr.dat")]);
         assert_eq!(on_disk.sidebar, Some(false));
     }
 
@@ -245,13 +248,27 @@ mod tests {
     fn recent_edits_put_the_latest_first_once_and_keep_five() {
         let mut settings = Settings::default();
         for file in ["PlFcRe.dat", "PlFxOr.dat", "PlFcRe.dat"] {
-            settings.remember_edit(file);
+            settings.remember_edit(slot(file));
         }
-        assert_eq!(settings.recent, ["PlFcRe.dat", "PlFxOr.dat"]);
-        for index in 0..6 {
-            settings.remember_edit(&format!("PlMr{index:02}.dat"));
+        assert_eq!(settings.recent, [slot("PlFcRe.dat"), slot("PlFxOr.dat")]);
+        let stages = ["GrNBa", "GrNLa", "GrPs", "GrSt", "GrOp", "GrIz"];
+        for stage in stages {
+            settings.remember_edit(slot(&format!("{stage}.dat")));
         }
         assert_eq!(settings.recent.len(), 5);
-        assert_eq!(settings.recent[0], "PlMr05.dat");
+        assert_eq!(settings.recent[0], slot("GrIz.dat"));
+        // On disk the list is file names, and a name that is no slot's is
+        // left out when it is read.
+        let text = serde_json::to_string(&settings).expect("serializes");
+        assert!(
+            text.contains(r#""recent":["GrIz.dat","GrOp.dat""#),
+            "{text}"
+        );
+        let read = Settings::parse(r#"{"recent":["PlFcRe.dat","notes.txt"]}"#);
+        assert_eq!(read.recent, [slot("PlFcRe.dat")]);
+    }
+
+    fn slot(file: &str) -> melee_dat::MeleeSlot {
+        file.parse().expect("a slot")
     }
 }

@@ -10,14 +10,14 @@ use gpui::{
     Context, EventEmitter, FontWeight, IntoElement, ParentElement, Render, SharedString, Styled,
     Window, div,
 };
-use melee_dat::{CostumeColor, parse_filename};
+use melee_dat::MeleeSlot;
 use tgg_ui::tokens::{space, text};
 use tgg_ui::{ButtonVariant, Dialog, MenuButton, MenuItem, Theme, rem};
 
 /// A file to add, and the slot the player has settled on for it.
 pub(crate) struct ReviewItem {
     pub candidate: Candidate,
-    pub slot: Option<String>,
+    pub slot: Option<MeleeSlot>,
 }
 
 pub(crate) enum ReviewEvent {
@@ -39,42 +39,41 @@ impl EventEmitter<ReviewEvent> for Review {}
 
 impl Review {
     /// The fighter a costume slot belongs to, among the player's fighters.
-    fn fighter_of(&self, slot: Option<&str>) -> Option<&Fighter> {
-        let character = slot.and_then(parse_filename)?.character()?;
+    fn fighter_of(&self, slot: Option<MeleeSlot>) -> Option<&Fighter> {
+        let character = slot?.character()?;
         self.fighters
             .iter()
-            .find(|fighter| fighter.code == character.code())
+            .find(|fighter| fighter.character == character)
     }
 
     /// Menus to choose item `index`'s fighter and color.
     fn slot_menus(&self, index: usize, cx: &mut Context<Self>) -> gpui::Div {
-        let slot = self.items[index].slot.clone();
-        let fighter = self.fighter_of(slot.as_deref());
+        let slot = self.items[index].slot;
+        let fighter = self.fighter_of(slot);
+        let color = slot.and_then(MeleeSlot::color);
         let fighters = self.fighters.iter().fold(
             MenuButton::new(
                 SharedString::from(format!("fighter-{index}")),
-                fighter.map_or("Choose fighter", |fighter| fighter.name),
+                fighter.map_or("Choose fighter", |fighter| fighter.character.name()),
             )
             .select(),
             |menu, choice| {
                 let this = cx.entity();
                 // Keep the color when the new fighter has it.
-                let color = slot.as_deref().and_then(|slot| slot.get(4..6));
                 let target = choice
                     .costumes
                     .iter()
-                    .find(|costume| costume.file.get(4..6) == color)
+                    .find(|costume| Some(costume.color) == color)
                     .or_else(|| choice.costumes.first())
-                    .map(|costume| costume.file.clone());
+                    .map(|costume| costume.slot(choice));
                 menu.item(
-                    MenuItem::new(choice.name, move |_, cx| {
-                        let target = target.clone();
+                    MenuItem::new(choice.character.name(), move |_, cx| {
                         this.update(cx, |review, cx| {
                             review.items[index].slot = target;
                             cx.notify();
                         })
                     })
-                    .checked(fighter.is_some_and(|fighter| fighter.code == choice.code)),
+                    .checked(fighter.is_some_and(|fighter| fighter.character == choice.character)),
                 )
             },
         );
@@ -82,32 +81,26 @@ impl Review {
             fighter.costumes.iter().fold(
                 MenuButton::new(
                     SharedString::from(format!("color-{index}")),
-                    slot.as_deref()
-                        .and_then(parse_filename)
-                        .and_then(|slot| slot.color())
-                        .map_or("Color", CostumeColor::name),
+                    color.map_or("Color", |color| color.name()),
                 )
                 .select(),
                 |menu, costume| {
                     let this = cx.entity();
-                    let target = costume.file.clone();
+                    let target = costume.slot(fighter);
                     menu.item(
-                        MenuItem::new(costume.name, move |_, cx| {
-                            let target = target.clone();
+                        MenuItem::new(costume.color.name(), move |_, cx| {
                             this.update(cx, |review, cx| {
                                 review.items[index].slot = Some(target);
                                 cx.notify();
                             })
                         })
-                        .checked(slot.as_deref() == Some(costume.file.as_str())),
+                        .checked(slot == Some(target)),
                     )
                 },
             )
         });
         let stage = slot
-            .as_deref()
-            .filter(|_| fighter.is_none())
-            .filter(|slot| slot.starts_with("Gr"))
+            .filter(|slot| matches!(slot, MeleeSlot::Stage(_)))
             .map(|slot| slot_label(Some(slot)));
         div()
             .flex()

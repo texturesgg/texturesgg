@@ -2,6 +2,7 @@
 //! a notice starts ("Couldn't save: …"), so they read as clauses.
 
 use crate::game::GameError;
+use melee_dat::MeleeSlot;
 use std::io;
 
 #[derive(Debug, thiserror::Error)]
@@ -56,12 +57,12 @@ pub enum Error {
     #[error("the install history couldn't be saved ({0})")]
     HistorySave(#[source] io::Error),
     #[error("{0} has no install to undo")]
-    NothingToUndo(String),
+    NothingToUndo(MeleeSlot),
     #[error(
         "No vanilla copy of {0} is at hand. It comes back once the app has seen it: \
          in this ISO before an install, or in another vanilla ISO in your game folders."
     )]
-    NoVanilla(String),
+    NoVanilla(MeleeSlot),
 
     #[error("a {0} quote isn't closed")]
     UnclosedQuote(char),

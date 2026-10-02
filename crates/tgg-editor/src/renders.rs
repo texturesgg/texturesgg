@@ -9,9 +9,11 @@
 //! ```
 
 use crate::Error;
+use crate::ids::SkinId;
 use crate::{Game, game_references, load_model};
 use hsd_render::offscreen::{CAPTURE_FORMAT, Gpu, capture};
 use hsd_render::{CameraView, HsdRenderer, Orbit, neutral_preview_lighting};
+use melee_dat::MeleeSlot;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
@@ -24,25 +26,28 @@ pub const SIZE: u32 = 192;
 /// square render.
 const STAGE_ZOOM: f64 = 0.55;
 
+/// What a render is a picture of.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum RenderKey {
+    /// What a slot of the game holds.
+    Slot(MeleeSlot),
+    /// A skin in the library.
+    Skin(SkinId),
+}
+
 /// A costume to render, with the game at `iso` for its references.
 struct Job {
     iso: PathBuf,
-    /// What the render arrives as: the game's file, or the skin's id.
-    key: String,
-    costume: Costume,
+    key: RenderKey,
+    /// The slot it fills, or was made for.
+    slot: MeleeSlot,
+    /// A skin's file on disk; `None` reads the slot from the game.
+    path: Option<PathBuf>,
 }
 
-enum Costume {
-    /// A costume file in the game.
-    Game(String),
-    /// A skin's file on disk, made for the game's costume `slot`.
-    File { path: PathBuf, slot: String },
-}
-
-/// A finished render: what was asked for (the game's costume file, or a
-/// skin's id), and its RGBA pixels, `SIZE` square.
+/// A finished render: what it is of, and its RGBA pixels, `SIZE` square.
 pub struct Rendered {
-    pub file: String,
+    pub key: RenderKey,
     pub rgba: Vec<u8>,
 }
 
@@ -64,26 +69,24 @@ impl Renders {
         Self { jobs, rendered }
     }
 
-    /// Render the costume `file` of the game at `iso`, from the cache when it
+    /// Render what `slot` of the game at `iso` holds, from the cache when it
     /// has it.
-    pub fn request(&self, iso: &Path, file: &str) {
+    pub fn request(&self, iso: &Path, slot: MeleeSlot) {
         let _ = self.jobs.try_send(Job {
             iso: iso.to_owned(),
-            key: file.to_owned(),
-            costume: Costume::Game(file.to_owned()),
+            key: RenderKey::Slot(slot),
+            slot,
+            path: None,
         });
     }
 
-    /// Render the skin `id`, its file at `path`, made for the game's costume
-    /// `slot`; it arrives under its id.
-    pub fn request_skin(&self, iso: &Path, id: &str, path: PathBuf, slot: &str) {
+    /// Render the skin `id`, its file at `path`, made for `slot`.
+    pub fn request_skin(&self, iso: &Path, id: SkinId, path: PathBuf, slot: MeleeSlot) {
         let _ = self.jobs.try_send(Job {
             iso: iso.to_owned(),
-            key: id.to_owned(),
-            costume: Costume::File {
-                path,
-                slot: slot.to_owned(),
-            },
+            key: RenderKey::Skin(id),
+            slot,
+            path: Some(path),
         });
     }
 }
@@ -110,17 +113,11 @@ fn work(jobs: &async_channel::Receiver<Job>, done: &async_channel::Sender<Render
     while let Ok(job) = jobs.recv_blocking() {
         match render(&job, &mut gpu, &mut game) {
             Ok(rgba) => {
-                if done
-                    .send_blocking(Rendered {
-                        file: job.key,
-                        rgba,
-                    })
-                    .is_err()
-                {
+                if done.send_blocking(Rendered { key: job.key, rgba }).is_err() {
                     return;
                 }
             }
-            Err(error) => crate::log(&format!("render of {} failed: {error}", job.key)),
+            Err(error) => crate::log(&format!("render of {:?} failed: {error}", job.key)),
         }
     }
 }
@@ -142,9 +139,10 @@ fn render(job: &Job, gpu: &mut Option<Gpu>, game: &mut Option<OpenGame>) -> Resu
         });
     }
     let references = &game.as_ref().expect("opened above").references;
-    let (name, bytes) = match &job.costume {
-        Costume::Game(file) => (file.as_str(), references.game().read(file)?),
-        Costume::File { path, slot } => (slot.as_str(), std::fs::read(path)?),
+    let name = job.slot.file_name();
+    let bytes = match &job.path {
+        None => references.game().read_slot(job.slot)?,
+        Some(path) => std::fs::read(path)?,
     };
     let cached = cache_folder().join(format!(
         "{:x}-{RENDER_VERSION}-{SIZE}.png",
@@ -157,7 +155,7 @@ fn render(job: &Job, gpu: &mut Option<Gpu>, game: &mut Option<OpenGame>) -> Resu
         *gpu = Some(Gpu::request(false)?);
     }
     let gpu = gpu.as_ref().expect("requested above");
-    let mut model = load_model(name, &bytes, Some(references))?.model;
+    let mut model = load_model(&name, &bytes, Some(references))?.model;
     let geometry = crate::geometry_of(&mut model)?;
     let front = CameraView::Front.orbit();
     let orbit = if geometry.focus().is_some() {

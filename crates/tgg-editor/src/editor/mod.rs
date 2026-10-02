@@ -28,8 +28,8 @@ use external::ExternalEdits;
 use gpui::{
     AppContext, Context, Entity, EventEmitter, SharedString, Subscription, Task, Window, actions,
 };
-use melee_dat::MeleeReferenceStore;
 use melee_dat::fighter::places::TexturePlace;
+use melee_dat::{MeleeReferenceStore, MeleeSlot};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
@@ -139,8 +139,8 @@ pub(crate) struct Editor {
     /// The top bar keeps clear of the window buttons and the sidebar toggle,
     /// the sidebar being hidden.
     pub(crate) clear_toggle: bool,
-    /// The game slot being edited (`PlFcRe.dat`); saving installs into it.
-    pub(crate) slot: Option<String>,
+    /// The game slot being edited; saving installs into it.
+    pub(crate) slot: Option<MeleeSlot>,
     pub(crate) title: SharedString,
     /// The open file's name, suggested by save and export dialogs.
     pub(crate) name: String,

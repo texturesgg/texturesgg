@@ -6,6 +6,7 @@ use crate::costumes::slot_label;
 use crate::editor::{self};
 use crate::menus;
 use crate::page::GameChip;
+use crate::renders::RenderKey;
 use crate::settings;
 use crate::{OpenSettings, Quit, ReportProblem, ToggleSidebar};
 use gpui::{
@@ -92,14 +93,13 @@ impl Shell {
             Screen::Game(page) => page.read(cx).editable(),
             _ => None,
         }
-        .map(|file| {
+        .map(|slot| {
             let open = cx.entity();
             Button::new("edit-textures", "Edit textures")
                 .variant(ButtonVariant::Primary)
                 .size(ButtonSize::Sm)
                 .on_press(move |window, cx| {
-                    let file = file.clone();
-                    open.update(cx, |shell, cx| shell.open_costume(file, window, cx))
+                    open.update(cx, |shell, cx| shell.open_costume(slot, window, cx))
                 })
         });
         let update = self.update.as_ref().map(|version| {
@@ -148,9 +148,9 @@ impl Shell {
             let entries = self
                 .recent
                 .iter()
-                .map(|file| SidebarEntry {
-                    image: self.images.get(file).cloned(),
-                    label: slot_label(Some(file)).into(),
+                .map(|&slot| SidebarEntry {
+                    image: self.images.get(&RenderKey::Slot(slot)).cloned(),
+                    label: slot_label(Some(slot)).into(),
                     detail: None,
                 })
                 .collect();
