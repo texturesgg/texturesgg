@@ -14,7 +14,7 @@ mod camera;
 mod frame;
 
 use crate::Error;
-use dat_parser::hsd::scene::HsdTextureSourceId;
+use dat_parser::hsd::scene::{HsdTextureIndex, HsdTextureSourceId};
 use gpui::{
     Bounds, Context, EventEmitter, FocusHandle, InteractiveElement, IntoElement, MouseButton,
     ParentElement, Pixels, Point, Render, Styled, Window, canvas, div,
@@ -121,8 +121,8 @@ pub(crate) struct Viewport {
     model: MeleeModel,
     /// The latest edited pixels, and their size, per scene texture. Uploaded
     /// on the next frame, and again whenever the GPU resources are rebuilt.
-    edited: BTreeMap<u32, ((u32, u32), Vec<u8>)>,
-    pending: Vec<u32>,
+    edited: BTreeMap<usize, ((u32, u32), Vec<u8>)>,
+    pending: Vec<usize>,
     /// Edits the renderer refused, to report once painting is done.
     rejected: Vec<String>,
     focus: FocusHandle,
@@ -136,7 +136,7 @@ pub(crate) struct Viewport {
     picks: Picks<PendingPick>,
     /// Scene textures tinted for the editor's selection, and whether the
     /// renderer still needs them.
-    highlight: Vec<u32>,
+    highlight: Vec<HsdTextureIndex>,
     highlight_dirty: bool,
     /// Whether the model or camera changed since the last rendered frame; a
     /// repaint without a change shows the last frame again.
@@ -333,12 +333,12 @@ impl Viewport {
     /// descriptor pairs); empty clears the tint.
     pub fn set_highlight(&mut self, uses: &[HsdTextureSourceId], cx: &mut Context<Self>) {
         let scene = self.model.scene();
-        let scene_textures: Vec<u32> = scene
+        let scene_textures: Vec<HsdTextureIndex> = scene
             .textures
             .iter()
             .enumerate()
             .filter(|(_, texture)| uses.contains(&texture.id))
-            .map(|(index, _)| index as u32)
+            .map(|(index, _)| HsdTextureIndex(index))
             .collect();
         if scene_textures != self.highlight {
             self.highlight = scene_textures;
@@ -359,8 +359,8 @@ impl Viewport {
         for (id, size, pixels) in decoded {
             let scene_texture = scene.textures.iter().position(|texture| texture.id == id);
             if let Some(index) = scene_texture {
-                self.edited.insert(index as u32, (size, pixels.to_vec()));
-                self.pending.push(index as u32);
+                self.edited.insert(index, (size, pixels.to_vec()));
+                self.pending.push(index);
             }
         }
         self.redraw(cx);

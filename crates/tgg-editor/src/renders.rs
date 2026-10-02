@@ -160,7 +160,7 @@ fn render(job: &Job, gpu: &mut Option<Gpu>, game: &mut Option<OpenGame>) -> Resu
     let mut model = load_model(name, &bytes, Some(references))?.model;
     let geometry = crate::geometry_of(&mut model)?;
     let front = CameraView::Front.orbit();
-    let orbit = if geometry.focus.is_some() {
+    let orbit = if geometry.focus().is_some() {
         Orbit {
             zoom: STAGE_ZOOM,
             ..front
@@ -177,7 +177,7 @@ fn render(job: &Job, gpu: &mut Option<Gpu>, game: &mut Option<OpenGame>) -> Resu
         (SIZE, SIZE),
         orbit,
     )?;
-    let rgba = capture(gpu, &renderer, SIZE, SIZE)?.pixels;
+    let rgba = capture(gpu, &renderer)?.pixels;
     let _ = std::fs::create_dir_all(cache_folder());
     if let Some(image) = image::RgbaImage::from_raw(SIZE, SIZE, rgba.clone()) {
         let _ = image.save(&cached);

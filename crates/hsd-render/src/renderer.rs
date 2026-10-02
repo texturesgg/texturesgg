@@ -9,8 +9,8 @@
 use crate::camera::{Camera, Orbit};
 use crate::error::{HsdRenderError, Result, invalid_scene};
 use crate::geometry::{
-    BASE_TEX_COORD_SETS, CullMode, PreparedGeometry, floats_per_vertex, tex_coord_location,
-    tex_coord_offset,
+    BASE_TEX_COORD_SETS, CullMode, PacketIndex, PreparedGeometry, floats_per_vertex,
+    tex_coord_location, tex_coord_offset,
 };
 use crate::lighting::HsdLightingPreset;
 use crate::material::{AddressMode, FilterMode, MAX_TEXTURE_STAGES};
@@ -21,15 +21,17 @@ use crate::shader::{
 };
 use dat_parser::hsd::draw::HsdEvaluatedDrawWork;
 use dat_parser::hsd::pe::{HsdBlendFactor, HsdBlendMode, HsdCompare};
-use dat_parser::hsd::scene::HsdScene;
+use dat_parser::hsd::scene::{HsdScene, HsdTextureIndex};
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
 
-/// Raw background color, matching the site preview.
-pub const BACKGROUND_COLOR: wgpu::Color = wgpu::Color {
-    r: 5.0 / 255.0,
-    g: 5.0 / 255.0,
-    b: 9.0 / 255.0,
+/// The raw 8-bit color the renderer clears to, matching the site preview. A
+/// host that surrounds the viewport paints the same.
+pub const BACKGROUND_RGB: [u8; 3] = [5, 5, 9];
+const BACKGROUND_COLOR: wgpu::Color = wgpu::Color {
+    r: BACKGROUND_RGB[0] as f64 / 255.0,
+    g: BACKGROUND_RGB[1] as f64 / 255.0,
+    b: BACKGROUND_RGB[2] as f64 / 255.0,
     a: 1.0,
 };
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
@@ -86,9 +88,7 @@ impl HsdRenderer {
     ) -> Result<Self> {
         lighting.validate()?;
         if target_format.is_srgb() {
-            return Err(HsdRenderError::Gpu(
-                "HSD output is raw GX color and needs a non-sRGB target".into(),
-            ));
+            return Err(HsdRenderError::SrgbTarget(target_format));
         }
         validate_dimensions(device, width, height)?;
         let orbit = clamp_orbit(&geometry, orbit, width, height)?;
@@ -229,7 +229,7 @@ impl HsdRenderer {
             let material_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(&format!(
                     "HSD material PObj {:#x}",
-                    packet.polygon_source_id
+                    packet.polygon_source_id.0
                 )),
                 contents: bytemuck::cast_slice(&material_uniforms(
                     material,
@@ -318,6 +318,11 @@ impl HsdRenderer {
 
     pub fn orbit(&self) -> Orbit {
         self.orbit
+    }
+
+    /// The color target's size in device pixels.
+    pub fn size(&self) -> (u32, u32) {
+        (self.width, self.height)
     }
 
     /// Clear `target` and draw every visible packet in HSD pass order.
@@ -507,12 +512,14 @@ impl HsdRenderer {
 
     /// The textures a picked packet samples, most defining first (see
     /// [`PickedTexture`]).
-    pub fn packet_textures(&self, packet: usize) -> Vec<PickedTexture> {
-        let Some(packet) = self.geometry.packets.get(packet) else {
-            return Vec::new();
-        };
-        let material = &packet.material;
-        stages_by_prominence(material)
+    pub fn packet_textures(&self, packet: PacketIndex) -> Result<Vec<PickedTexture>> {
+        let material = &self
+            .geometry
+            .packets
+            .get(packet.0)
+            .ok_or(HsdRenderError::UnknownPacket(packet))?
+            .material;
+        Ok(stages_by_prominence(material)
             .into_iter()
             .filter_map(|stage| {
                 let prepared = &material.stages[stage];
@@ -523,13 +530,17 @@ impl HsdRenderer {
                     reflection: prepared.source == crate::material::StageSource::Reflection,
                 })
             })
-            .collect()
+            .collect())
     }
 
     /// Tint every packet that samples one of `scene_textures`, for an
     /// editor's selection; an empty slice clears it. Returns how many packets
     /// are tinted.
-    pub fn set_highlight(&mut self, queue: &wgpu::Queue, scene_textures: &[u32]) -> usize {
+    pub fn set_highlight(
+        &mut self,
+        queue: &wgpu::Queue,
+        scene_textures: &[HsdTextureIndex],
+    ) -> usize {
         for (index, packet) in self.geometry.packets.iter().enumerate() {
             let highlighted = packet.material.stages.iter().any(|stage| {
                 stage.texture_index.is_some_and(|texture| {
@@ -552,8 +563,8 @@ impl HsdRenderer {
         self.highlighted.iter().filter(|&&on| on).count()
     }
 
-    /// Replace the decoded pixels of `HsdScene::textures[scene_texture]`,
-    /// for example after an editor patches its image data. The GPU texture is
+    /// Replace the decoded pixels of scene texture `scene_texture`, for
+    /// example after an editor patches its image data. The GPU texture is
     /// shared by every scene texture with the same content key, so they all
     /// change. `rgba` is `size` (width, height) RGBA8 pixels, and `size` must
     /// be the texture's: a transposed image has the right byte length but
@@ -562,7 +573,7 @@ impl HsdRenderer {
     pub fn update_scene_texture(
         &mut self,
         queue: &wgpu::Queue,
-        scene_texture: u32,
+        scene_texture: HsdTextureIndex,
         size: (u32, u32),
         rgba: &[u8],
     ) -> Result<bool> {
@@ -954,7 +965,7 @@ fn create_depth_view(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Te
 /// `size` and `bytes` describe the same RGBA8 image, and it is `expected`'s
 /// shape.
 fn check_texture_update(
-    scene_texture: u32,
+    scene_texture: HsdTextureIndex,
     expected: (u32, u32),
     (width, height): (u32, u32),
     bytes: usize,
@@ -976,9 +987,11 @@ fn check_texture_update(
 fn validate_dimensions(device: &wgpu::Device, width: u32, height: u32) -> Result<()> {
     let maximum = device.limits().max_texture_dimension_2d;
     if width == 0 || height == 0 || width > maximum || height > maximum {
-        return Err(HsdRenderError::Gpu(format!(
-            "render size {width}x{height} is outside 1..={maximum}"
-        )));
+        return Err(HsdRenderError::RenderSize {
+            width,
+            height,
+            maximum,
+        });
     }
     Ok(())
 }
@@ -1004,7 +1017,7 @@ fn filter_mode(mode: FilterMode) -> wgpu::FilterMode {
 pub(crate) fn finish_error_scope(scope: wgpu::ErrorScopeGuard) -> Result<()> {
     #[cfg(not(target_family = "wasm"))]
     if let Some(error) = pollster::block_on(scope.pop()) {
-        return Err(HsdRenderError::Gpu(error.to_string()));
+        return Err(crate::error::GpuError::from(error).into());
     }
     #[cfg(target_family = "wasm")]
     drop(scope.pop());
@@ -1019,16 +1032,18 @@ mod tests {
     use crate::material::test_support::{DIFFUSE, material, stage};
     use crate::material::{HsdAlphaMap, HsdColorMap, StageSource};
     use dat_parser::hsd::pe::HsdBlendMode;
+    use dat_parser::hsd::scene::HsdTextureIndex;
 
     #[test]
     fn a_texture_update_must_have_the_textures_shape() {
-        assert!(check_texture_update(3, (32, 64), (32, 64), 32 * 64 * 4).is_ok());
+        let texture = HsdTextureIndex(3);
+        assert!(check_texture_update(texture, (32, 64), (32, 64), 32 * 64 * 4).is_ok());
         // Same byte length, transposed.
-        let error = check_texture_update(3, (32, 64), (64, 32), 32 * 64 * 4).unwrap_err();
+        let error = check_texture_update(texture, (32, 64), (64, 32), 32 * 64 * 4).unwrap_err();
         assert!(matches!(
             error,
             HsdRenderError::TextureSizeMismatch {
-                scene_texture: 3,
+                scene_texture: HsdTextureIndex(3),
                 width: 32,
                 height: 64,
                 actual_width: 64,
@@ -1041,7 +1056,7 @@ mod tests {
             "{error}"
         );
         // The right size claimed for the wrong number of bytes.
-        assert!(check_texture_update(3, (32, 64), (32, 64), 32 * 64 * 3).is_err());
+        assert!(check_texture_update(texture, (32, 64), (32, 64), 32 * 64 * 3).is_err());
     }
 
     #[test]

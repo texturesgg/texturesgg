@@ -6,7 +6,8 @@ use crate::geometry::MAX_TEX_COORD_SETS;
 use dat_parser::hsd::channel::HsdChannelBase;
 use dat_parser::hsd::pe::{HsdAlphaCompare, HsdBlendMode, HsdCompare, HsdLogicOp};
 use dat_parser::hsd::scene::{
-    HsdCustomTev, HsdDisplayObject, HsdScene, HsdTextureContentKey, HsdTextureObject,
+    HsdCustomTev, HsdDisplayObject, HsdScene, HsdTextureContentKey, HsdTextureIndex,
+    HsdTextureObject,
 };
 use dat_parser::hsd::tev::{HsdTObjTevAlphaInput, HsdTObjTevColorInput};
 pub use dat_parser::hsd::texture::{HsdAlphaMap, HsdColorMap, HsdLightMap};
@@ -34,8 +35,8 @@ pub enum FilterMode {
 #[derive(Clone, Debug)]
 pub struct PreparedTexture {
     pub content: HsdTextureContentKey,
-    /// Every `HsdScene::textures` index that decodes to these pixels.
-    pub scene_textures: Vec<u32>,
+    /// Every scene texture that decodes to these pixels.
+    pub scene_textures: Vec<HsdTextureIndex>,
     pub width: u32,
     pub height: u32,
     pub rgba: Vec<u8>,
@@ -46,7 +47,7 @@ pub struct PreparedTexture {
 #[derive(Default)]
 pub(crate) struct TextureCache {
     by_content: HashMap<HsdTextureContentKey, usize>,
-    by_scene_texture: HashMap<u32, usize>,
+    by_scene_texture: HashMap<HsdTextureIndex, usize>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -309,10 +310,7 @@ fn prepare_texture(
     let Some(scene_texture) = usage.texture else {
         return Ok(None);
     };
-    let Ok(scene_texture_index) = u32::try_from(scene_texture.0) else {
-        return invalid_scene("a scene texture index exceeds u32");
-    };
-    if let Some(&cached) = cache.by_scene_texture.get(&scene_texture_index) {
+    if let Some(&cached) = cache.by_scene_texture.get(&scene_texture) {
         return Ok(Some(cached));
     }
     let Some(source) = scene.textures.get(scene_texture.0) else {
@@ -324,7 +322,7 @@ fn prepare_texture(
     let content = source.content_key();
     let index = match cache.by_content.get(&content) {
         Some(&index) => {
-            textures[index].scene_textures.push(scene_texture_index);
+            textures[index].scene_textures.push(scene_texture);
             index
         }
         None => {
@@ -334,7 +332,7 @@ fn prepare_texture(
             }
             textures.push(PreparedTexture {
                 content,
-                scene_textures: vec![scene_texture_index],
+                scene_textures: vec![scene_texture],
                 width,
                 height,
                 rgba: rgba.to_vec(),
@@ -343,7 +341,7 @@ fn prepare_texture(
             textures.len() - 1
         }
     };
-    cache.by_scene_texture.insert(scene_texture_index, index);
+    cache.by_scene_texture.insert(scene_texture, index);
     Ok(Some(index))
 }
 

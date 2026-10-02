@@ -10,7 +10,9 @@ use crate::material::{
 use dat_parser::gx::vertex::DecodedVertex;
 use dat_parser::hsd::draw::{HsdEvaluatedDrawPacket, HsdEvaluatedDrawRoot, HsdEvaluatedDrawWork};
 use dat_parser::hsd::pe::HsdDrawPass;
-use dat_parser::hsd::scene::{HsdCullMode, HsdDisplayObject, HsdPolygon, HsdScene};
+use dat_parser::hsd::scene::{
+    HsdCullMode, HsdDisplayObject, HsdPolygon, HsdScene, HsdTextureIndex, PObjId,
+};
 use dat_parser::hsd::source::{HsdFocus, HsdSource};
 
 /// Position, normal, TEX0, TEX1, COLOR0: every scene's vertex starts with
@@ -40,9 +42,14 @@ pub enum CullMode {
     Back,
 }
 
+/// A packet's position in [`PreparedGeometry::packets`]: what a pick answers
+/// with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct PacketIndex(pub usize);
+
 #[derive(Clone, Debug)]
 pub struct PreparedPacket {
-    pub polygon_source_id: u32,
+    pub polygon_source_id: PObjId,
     pub first_index: u32,
     pub index_count: u32,
     pub first_vertex: u32,
@@ -66,24 +73,27 @@ pub struct Bounds {
     pub radius: f64,
 }
 
+/// A scene flattened for drawing. Only [`Self::new`] builds one, so every
+/// packet's index range lies inside the buffers and every stage's texture
+/// exists: the renderer draws it without checking again.
 #[derive(Clone, Debug)]
 pub struct PreparedGeometry {
-    pub vertices: Vec<f32>,
-    pub indices: Vec<u32>,
+    pub(crate) vertices: Vec<f32>,
+    pub(crate) indices: Vec<u32>,
     /// Source occurrence order; vertex updates rely on it.
-    pub packets: Vec<PreparedPacket>,
+    pub(crate) packets: Vec<PreparedPacket>,
     /// Packet indices in draw order: source order within each HSD pass.
-    pub draw_order: Vec<usize>,
-    pub textures: Vec<PreparedTexture>,
-    pub bounds: Bounds,
+    pub(crate) draw_order: Vec<usize>,
+    pub(crate) textures: Vec<PreparedTexture>,
+    pub(crate) bounds: Bounds,
     /// What the camera frames; the whole of `bounds` when `None`.
-    pub focus: Option<Focus>,
+    pub(crate) focus: Option<Focus>,
     /// How many texture-coordinate sets each vertex carries: the highest one
     /// a material reads, and at least TEX0 and TEX1.
-    pub tex_coord_sets: usize,
-    pub vertex_count: usize,
-    pub triangle_count: usize,
-    pub texture_bytes: usize,
+    pub(crate) tex_coord_sets: usize,
+    pub(crate) vertex_count: usize,
+    pub(crate) triangle_count: usize,
+    pub(crate) texture_bytes: usize,
 }
 
 struct PacketSource<'a> {
@@ -104,6 +114,38 @@ impl PreparedGeometry {
 
     pub const fn floats_per_vertex(&self) -> usize {
         floats_per_vertex(self.tex_coord_sets)
+    }
+
+    /// The draw packets, in source occurrence order.
+    pub fn packets(&self) -> &[PreparedPacket] {
+        &self.packets
+    }
+
+    /// One decoded image per distinct texture content the packets sample.
+    pub fn textures(&self) -> &[PreparedTexture] {
+        &self.textures
+    }
+
+    pub fn bounds(&self) -> &Bounds {
+        &self.bounds
+    }
+
+    /// What the camera frames; the whole of the bounds when `None`.
+    pub fn focus(&self) -> Option<&Focus> {
+        self.focus.as_ref()
+    }
+
+    pub fn vertex_count(&self) -> usize {
+        self.vertex_count
+    }
+
+    pub fn triangle_count(&self) -> usize {
+        self.triangle_count
+    }
+
+    /// Bytes of decoded texture the packets sample.
+    pub fn texture_bytes(&self) -> usize {
+        self.texture_bytes
     }
 
     /// Frame `focus` in place of the whole scene.
@@ -236,7 +278,7 @@ impl PreparedGeometry {
                 return invalid_scene("a display object's render mode names no display pass");
             };
             packets.push(PreparedPacket {
-                polygon_source_id: polygon.source_id.0,
+                polygon_source_id: polygon.source_id,
                 first_index: first_index as u32,
                 index_count: (indices.len() - first_index) as u32,
                 first_vertex: first_vertex as u32,
@@ -290,9 +332,9 @@ impl PreparedGeometry {
         })
     }
 
-    /// The prepared texture that `HsdScene::textures[scene_texture]` shares,
-    /// or `None` when no drawn stage samples it or it did not decode.
-    pub fn texture_for_scene_texture(&self, scene_texture: u32) -> Option<usize> {
+    /// The prepared texture that scene texture `scene_texture` shares, or
+    /// `None` when no drawn stage samples it or it did not decode.
+    pub fn texture_for_scene_texture(&self, scene_texture: HsdTextureIndex) -> Option<usize> {
         self.textures
             .iter()
             .position(|texture| texture.scene_textures.contains(&scene_texture))
@@ -307,7 +349,7 @@ impl PreparedGeometry {
         }
         let floats_per_vertex = self.floats_per_vertex();
         for (prepared, source) in self.packets.iter_mut().zip(&sources) {
-            if prepared.polygon_source_id != source.polygon.source_id.0
+            if prepared.polygon_source_id != source.polygon.source_id
                 || prepared.vertex_count as usize != source.polygon.decoded.vertices.len()
             {
                 return invalid_draw_work("animated draw work changed static scene topology");

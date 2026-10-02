@@ -11,19 +11,21 @@
 //! [`PickReadback::map`], then poll the device until [`PendingPick::take`]
 //! answers. Pick pipelines are built on the first pick, not at load.
 
-use crate::error::{HsdRenderError, Result};
+use crate::error::{GpuError, Result};
+use crate::geometry::PacketIndex;
 use crate::material::{PreparedMaterial, StageSource, TevStep, TevTarget};
+use dat_parser::hsd::scene::HsdTextureIndex;
 use std::sync::{Arc, Mutex, PoisonError};
 
-pub const PICK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
+pub(crate) const PICK_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
 
 /// One texture a picked packet samples.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PickedTexture {
     /// The material stage that samples it.
     pub stage: usize,
-    /// Every `HsdScene::textures` index with these pixels.
-    pub scene_textures: Vec<u32>,
+    /// Every scene texture with these pixels.
+    pub scene_textures: Vec<HsdTextureIndex>,
     /// Projected by camera-space normals (an environment map) rather than
     /// laid out by texture coordinates.
     pub reflection: bool,
@@ -63,16 +65,16 @@ pub struct PendingPick {
 }
 
 impl PendingPick {
-    /// The picked packet index (`None` for background), once the readback has
+    /// The picked packet (`None` for background), once the readback has
     /// arrived; `None` while it's still in flight.
-    pub fn take(&self) -> Option<Result<Option<usize>>> {
+    pub fn take(&self) -> Option<Result<Option<PacketIndex>>> {
         Some(take_mapped(&self.state)?.map(|()| {
             let id = {
                 let mapped = self.buffer.slice(..).get_mapped_range();
                 u32::from_le_bytes([mapped[0], mapped[1], mapped[2], mapped[3]])
             };
             self.buffer.unmap();
-            id.checked_sub(1).map(|packet| packet as usize)
+            id.checked_sub(1).map(|packet| PacketIndex(packet as usize))
         }))
     }
 }
@@ -82,13 +84,9 @@ impl PendingPick {
 fn take_mapped(state: &Mutex<Option<MapResult>>) -> Option<Result<()>> {
     let result = match state.lock() {
         Ok(mut state) => state.take()?,
-        Err(_) => {
-            return Some(Err(HsdRenderError::Gpu(
-                "pick readback state was poisoned by a panic".into(),
-            )));
-        }
+        Err(_) => return Some(Err(GpuError::ReadbackLost.into())),
     };
-    Some(result.map_err(|error| HsdRenderError::Gpu(error.to_string())))
+    Some(result.map_err(|error| GpuError::from(error).into()))
 }
 
 /// The textures `material` samples, most defining first: stages that color
@@ -125,7 +123,7 @@ pub(crate) fn stages_by_prominence(material: &PreparedMaterial) -> Vec<usize> {
 #[cfg(test)]
 mod tests {
     use super::{MapResult, stages_by_prominence, take_mapped};
-    use crate::error::HsdRenderError;
+    use crate::error::{GpuError, HsdRenderError};
     use crate::material::test_support::{DIFFUSE, EXT, SPECULAR, material, stage};
     use crate::material::{HsdAlphaMap, HsdColorMap, StageSource};
     use std::sync::Mutex;
@@ -161,7 +159,7 @@ mod tests {
         *state.lock().unwrap() = Some(Err(wgpu::BufferAsyncError));
         assert!(matches!(
             take_mapped(&state),
-            Some(Err(HsdRenderError::Gpu(_)))
+            Some(Err(HsdRenderError::Gpu(GpuError::Readback(_))))
         ));
     }
 
@@ -179,7 +177,7 @@ mod tests {
         assert!(state.is_poisoned());
         assert!(matches!(
             take_mapped(&state),
-            Some(Err(HsdRenderError::Gpu(_)))
+            Some(Err(HsdRenderError::Gpu(GpuError::ReadbackLost)))
         ));
     }
 }
