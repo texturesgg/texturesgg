@@ -363,7 +363,7 @@ fn texture_attribute_availability_tracks_decoding_not_default_zero_values() {
     use dat_parser::descriptor::pobj::GxAttribute;
     use dat_parser::gx::display_list::{PrimitiveGroup, RawVertex};
     use dat_parser::gx::vertex::decode_primitives;
-    use dat_parser::gx::{GxAttrName, GxAttrType, GxCompType, GxPrimitiveType};
+    use dat_parser::gx::{GxAttrName, GxAttrType, GxCompType, GxComponent, GxPrimitiveType};
 
     let dat = DatFile::from_parts(vec![0; 8], Vec::new(), Vec::new());
     let mut attributes = [
@@ -371,21 +371,19 @@ fn texture_attribute_availability_tracks_decoding_not_default_zero_values() {
             attr_name: GxAttrName::Tex0,
             attr_type: GxAttrType::Index8,
             comp_count: 1,
-            comp_type: GxCompType::Float,
+            comp_type: GxComponent::Number(GxCompType::Float),
             scale: 0,
             stride: 8,
             buffer_ptr: Some(0),
-            comp_type_raw: 4,
         },
         GxAttribute {
             attr_name: GxAttrName::Tex1,
             attr_type: GxAttrType::Index8,
             comp_count: 1,
-            comp_type: GxCompType::Float,
+            comp_type: GxComponent::Number(GxCompType::Float),
             scale: 0,
             stride: 8,
             buffer_ptr: Some(4), // Truncated: only one float remains.
-            comp_type_raw: 4,
         },
     ];
     let groups = [PrimitiveGroup {
@@ -393,7 +391,6 @@ fn texture_attribute_availability_tracks_decoding_not_default_zero_values() {
         vertices: vec![RawVertex {
             indices: vec![0, 0],
             color0: None,
-            color0_offset: None,
             color1: None,
         }],
     }];

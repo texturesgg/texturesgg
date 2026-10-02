@@ -517,6 +517,9 @@ impl From<crate::descriptor::map_head::MapHeadError> for HsdSceneError {
             MapHeadError::NullGeneralPointTable => Self::InvalidData {
                 context: "stage general-point table has a count without a pointer",
             },
+            MapHeadError::GeneralPointCountExceedsData => Self::InvalidData {
+                context: "stage general-point count exceeds its data table",
+            },
         }
     }
 }
@@ -524,7 +527,7 @@ impl From<crate::descriptor::map_head::MapHeadError> for HsdSceneError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gx::GxCompType;
+    use crate::gx::{GxCompType, GxComponent};
 
     fn display_object(render_flags: Option<u32>) -> HsdDisplayObject {
         HsdDisplayObject {
@@ -562,11 +565,10 @@ mod tests {
                     attr_name,
                     attr_type,
                     comp_count: 1,
-                    comp_type: GxCompType::Float,
+                    comp_type: GxComponent::Number(GxCompType::Float),
                     scale: 0,
                     stride: 8,
                     buffer_ptr: None,
-                    comp_type_raw: 4,
                 })
                 .collect(),
             primitive_groups: Vec::new(),

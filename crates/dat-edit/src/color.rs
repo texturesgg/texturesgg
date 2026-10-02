@@ -13,7 +13,7 @@
 
 use crate::document::DocumentTexture;
 use dat_parser::DatFile;
-use dat_parser::gx::display_list::decode_direct_color;
+use dat_parser::gx::display_list::{DirectColor, decode_direct_color};
 use dat_parser::gx::{GxAttrName, GxAttrType, GxCompTypeClr};
 use dat_parser::hsd::channel::{HsdChannelBase, HsdColorChannelState};
 use dat_parser::hsd::scene::{DObjId, HsdDisplayObject, HsdScene};
@@ -157,7 +157,7 @@ fn surface(
                 attribute.attr_name == GxAttrName::Color0
                     && attribute.attr_type == GxAttrType::Direct
             })
-            .and_then(|attribute| GxCompTypeClr::from_u32(attribute.comp_type_raw))
+            .and_then(|attribute| attribute.comp_type.color())
         else {
             continue;
         };
@@ -166,7 +166,7 @@ fn surface(
             .iter()
             .flat_map(|group| &group.vertices)
         {
-            let (Some(rgba), Some(site)) = (vertex.color0, vertex.color0_offset) else {
+            let Some(DirectColor { rgba, offset: site }) = vertex.color0 else {
                 continue;
             };
             let index = *seen.entry((format as u32, rgba)).or_insert_with(|| {

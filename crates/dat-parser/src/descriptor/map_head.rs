@@ -25,6 +25,8 @@ pub enum MapHeadError {
     ModelGroupCountExceedsData,
     #[error("stage general-point table has a count without a pointer")]
     NullGeneralPointTable,
+    #[error("stage general-point count exceeds its data table")]
+    GeneralPointCountExceedsData,
 }
 
 #[derive(Clone, Copy)]
@@ -88,14 +90,16 @@ impl<'a> MapHead<'a> {
         Ok(Some((table, count)))
     }
 
-    /// How many general-point records the table declares.
+    /// How many general-point records the table declares. A caller with a
+    /// budget checks this before reading them.
     pub fn general_point_count(&self) -> Result<usize, MapHeadError> {
         Ok(self.source.u32(0x04)? as usize)
     }
 
-    /// The first `count` general-point records: a model group's root joint
-    /// and its `(joint index, kind)` pairs.
-    pub fn general_points(&self, count: usize) -> Result<Vec<MapGeneralPoints>, MapHeadError> {
+    /// Every general-point record: a model group's root joint and its
+    /// `(joint index, kind)` pairs.
+    pub fn general_points(&self) -> Result<Vec<MapGeneralPoints>, MapHeadError> {
+        let count = self.general_point_count()?;
         if count == 0 {
             return Ok(Vec::new());
         }
@@ -103,12 +107,18 @@ impl<'a> MapHead<'a> {
             .source
             .pointer("general_points", 0x00)?
             .ok_or(MapHeadError::NullGeneralPointTable)?;
+        // The extent check also keeps every record offset within `u32`.
+        let available =
+            self.dat.data.len().saturating_sub(table as usize) / GENERAL_POINTS_SIZE as usize;
+        if count > available {
+            return Err(MapHeadError::GeneralPointCountExceedsData);
+        }
         (0..count as u32)
             .map(|index| {
                 let record = DescriptorReader::new(
                     self.dat,
                     "MapGeneralPoints",
-                    table.saturating_add(index * GENERAL_POINTS_SIZE),
+                    table + index * GENERAL_POINTS_SIZE,
                 );
                 Ok(MapGeneralPoints {
                     joint: record.pointer("joint", 0x00)?,
@@ -161,5 +171,44 @@ impl MapModelGroup<'_> {
             return Ok(false);
         };
         Ok(DescriptorReader::new(self.dat, "MapLoopFlags", flags).u8(animation)? != 0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MapGeneralPoints, MapHead, MapHeadError};
+    use crate::DatFile;
+    use crate::raw::root::RootNode;
+
+    /// A `map_head` at 0 whose general-point table at 0x10 declares `count`
+    /// records and holds one.
+    fn stage(count: u32) -> DatFile {
+        let mut data = vec![0u8; 0x1C];
+        data[0x00..0x04].copy_from_slice(&0x10u32.to_be_bytes());
+        data[0x04..0x08].copy_from_slice(&count.to_be_bytes());
+        data[0x18..0x1C].copy_from_slice(&7u32.to_be_bytes());
+        let root = RootNode {
+            data_offset: 0,
+            name: "map_head".into(),
+        };
+        DatFile::from_parts(data, vec![root], vec![0])
+    }
+
+    #[test]
+    fn general_points_are_read_by_the_count_the_table_can_hold() {
+        let dat = stage(1);
+        assert_eq!(
+            MapHead::find(&dat).unwrap().general_points(),
+            Ok(vec![MapGeneralPoints {
+                joint: None,
+                pairs: None,
+                pair_count: 7,
+            }])
+        );
+        let dat = stage(2);
+        assert_eq!(
+            MapHead::find(&dat).unwrap().general_points(),
+            Err(MapHeadError::GeneralPointCountExceedsData)
+        );
     }
 }
