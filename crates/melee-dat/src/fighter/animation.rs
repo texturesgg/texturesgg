@@ -35,6 +35,7 @@ pub struct FighterAnimationBinding {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum FighterAnimationBindingError {
     #[error("fighter kind {0} is outside the source FighterKind table")]
     FighterKind(u8),
@@ -561,6 +562,7 @@ pub struct AttachedFighterAnimation {
 }
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum FighterAnimationAttachError {
     #[error("selected AJ archive range is invalid")]
     ArchiveRange,

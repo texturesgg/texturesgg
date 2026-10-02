@@ -17,12 +17,18 @@ use std::collections::HashMap;
 /// k-means rounds after median cut; later rounds rarely move an entry.
 const REFINE_ROUNDS: usize = 4;
 
+/// The most entries a GX palette holds (`GX_TF_C14X2`'s 14-bit index).
+pub const MAX_PALETTE_ENTRIES: usize = 1 << 14;
+
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PaletteError {
     #[error("palette format {0} is not IA8 (0), RGB565 (1), or RGB5A3 (2)")]
     UnsupportedFormat(u32),
     #[error("a palette needs at least one entry")]
     Empty,
+    #[error("a palette of {count} entries is over the {MAX_PALETTE_ENTRIES} GX can index")]
+    TooManyEntries { count: usize },
     #[error("an image with no pixels has no colors to build a palette from")]
     NoPixels,
 }
@@ -73,6 +79,9 @@ pub fn build_palette(
     }
     if count == 0 {
         return Err(PaletteError::Empty);
+    }
+    if count > MAX_PALETTE_ENTRIES {
+        return Err(PaletteError::TooManyEntries { count });
     }
     let texels = rgba.as_chunks::<4>().0;
     if texels.is_empty() {
@@ -296,5 +305,9 @@ mod tests {
             Err(PaletteError::UnsupportedFormat(3))
         );
         assert_eq!(build_palette(&[0; 4], 1, 0), Err(PaletteError::Empty));
+        assert_eq!(
+            build_palette(&[0; 4], 1, usize::MAX),
+            Err(PaletteError::TooManyEntries { count: usize::MAX })
+        );
     }
 }

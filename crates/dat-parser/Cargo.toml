@@ -1,6 +1,6 @@
 [package]
 name = "dat-parser"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license.workspace = true
 authors.workspace = true
@@ -19,8 +19,8 @@ name = "extract-textures"
 path = "src/bin/extract_textures.rs"
 
 [dependencies]
-gx-texture = { version = "0.1.0", path = "../gx-texture" }
-hal-dat-raw = { version = "0.1.0", path = "../hal-dat-raw" }
+gx-texture = { version = "0.2.0", path = "../gx-texture" }
+hal-dat-raw = { version = "0.2.0", path = "../hal-dat-raw" }
 thiserror = "2"
 
 [lints]

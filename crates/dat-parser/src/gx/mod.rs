@@ -60,8 +60,9 @@ pub enum GxAttrName {
 }
 
 impl GxAttrName {
-    pub fn from_u32(v: u32) -> Self {
-        match v {
+    /// The attribute `v` names; `None` for a value GX gives no attribute.
+    pub fn from_u32(v: u32) -> Option<Self> {
+        Some(match v {
             0 => Self::PnMtxIdx,
             1 => Self::Tex0MtxIdx,
             2 => Self::Tex1MtxIdx,
@@ -85,8 +86,13 @@ impl GxAttrName {
             20 => Self::Tex7,
             25 => Self::Nbt,
             0xFF => Self::Null,
-            _ => Self::Null,
-        }
+            _ => return None,
+        })
+    }
+
+    /// Whether this is the position/normal or a texture matrix index.
+    pub fn is_matrix_index(&self) -> bool {
+        (*self as u32) <= Self::Tex7MtxIdx as u32
     }
 
     pub fn is_tex_coord(&self) -> bool {
@@ -115,14 +121,14 @@ pub enum GxAttrType {
 }
 
 impl GxAttrType {
-    pub fn from_u32(v: u32) -> Self {
-        match v {
+    pub fn from_u32(v: u32) -> Option<Self> {
+        Some(match v {
             0 => Self::None,
             1 => Self::Direct,
             2 => Self::Index8,
             3 => Self::Index16,
-            _ => Self::None,
-        }
+            _ => return None,
+        })
     }
 }
 
@@ -138,14 +144,23 @@ pub enum GxCompType {
 }
 
 impl GxCompType {
-    pub fn from_u32(v: u32) -> Self {
-        match v {
+    pub fn from_u32(v: u32) -> Option<Self> {
+        Some(match v {
             0 => Self::UInt8,
             1 => Self::Int8,
             2 => Self::UInt16,
             3 => Self::Int16,
             4 => Self::Float,
-            _ => Self::UInt8,
+            _ => return None,
+        })
+    }
+
+    /// Bytes one component takes.
+    pub fn byte_len(self) -> usize {
+        match self {
+            Self::UInt8 | Self::Int8 => 1,
+            Self::UInt16 | Self::Int16 => 2,
+            Self::Float => 4,
         }
     }
 }

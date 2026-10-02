@@ -14,4 +14,4 @@ pub use decode::{decode_image, decode_palette, format_name, image_data_size};
 pub use encode::{
     TexelRect, TextureEncodeError, TextureOverwrite, encode_texture, encode_texture_over,
 };
-pub use palette::{PaletteError, build_palette};
+pub use palette::{MAX_PALETTE_ENTRIES, PaletteError, build_palette};

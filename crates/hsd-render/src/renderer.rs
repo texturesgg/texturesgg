@@ -7,7 +7,7 @@
 //! formats (no decode on sampling, no encode on output).
 
 use crate::camera::{Camera, Orbit};
-use crate::error::{HsdRenderError, Result};
+use crate::error::{HsdRenderError, Result, invalid_scene};
 use crate::geometry::{
     BASE_TEX_COORD_SETS, CullMode, PreparedGeometry, floats_per_vertex, tex_coord_location,
     tex_coord_offset,
@@ -100,6 +100,19 @@ impl HsdRenderer {
             orbit,
         )?;
         geometry.validate_reflections(&camera.view)?;
+        // Checked here because a browser reports a failed texture to the
+        // device's uncaptured-error handler, not to this call.
+        let limit = device.limits().max_texture_dimension_2d;
+        if let Some(texture) = geometry
+            .textures
+            .iter()
+            .find(|texture| texture.width > limit || texture.height > limit)
+        {
+            return invalid_scene(format!(
+                "a {}x{} texture is over this device's limit of {limit} pixels a side",
+                texture.width, texture.height
+            ));
+        }
 
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let globals_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {

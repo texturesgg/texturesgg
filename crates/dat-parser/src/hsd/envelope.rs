@@ -305,6 +305,7 @@ pub struct HsdDeformedVertex {
 }
 
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum HsdEnvelopeEvaluationError {
     #[error("envelope palette is empty")]
     EmptyPalette,

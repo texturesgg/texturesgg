@@ -190,8 +190,8 @@ pub(crate) fn prepare_material(
         }
         stages.push(PreparedStage {
             texture_index: prepare_texture(scene, usage, textures, texture_cache)?,
-            address_u: address_mode(usage.wrap_s),
-            address_v: address_mode(usage.wrap_t),
+            address_u: address_mode(usage.wrap_s)?,
+            address_v: address_mode(usage.wrap_t)?,
             mag_filter: if usage.mag_filter == 0 {
                 FilterMode::Nearest
             } else {
@@ -445,12 +445,14 @@ impl PreparedTev {
     }
 }
 
-fn address_mode(mode: u32) -> AddressMode {
-    match mode {
+/// `GXTexWrapMode`: clamp, repeat, mirror.
+fn address_mode(mode: u32) -> Result<AddressMode> {
+    Ok(match mode {
         0 => AddressMode::ClampToEdge,
+        1 => AddressMode::Repeat,
         2 => AddressMode::MirrorRepeat,
-        _ => AddressMode::Repeat,
-    }
+        _ => return invalid_scene(format!("texture wrap mode {mode} is invalid")),
+    })
 }
 
 /// Hand-built stages and materials for shader and pick tests.

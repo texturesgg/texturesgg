@@ -4,7 +4,7 @@
 
 use dat_parser::DatFile;
 use dat_parser::descriptor::{mobj, tobj::TlutDesc, traversal};
-use dat_parser::gx::{display_list, texture, vertex};
+use dat_parser::gx::{texture, vertex};
 
 use std::env;
 use std::fs;
@@ -89,13 +89,8 @@ fn main() {
                         traversal::read_pobj_list(&dat, pobj_ptr, dat.data.len()),
                     );
                     for p in &pobjs {
-                        if let Some(dl_offset) = p.display_list_offset {
-                            let groups = display_list::parse_display_list(
-                                &dat,
-                                dl_offset,
-                                p.display_list_size,
-                                &p.attributes,
-                            );
+                        if p.display_list_offset.is_some() {
+                            let groups = support::read_display_list(&dat, p);
                             let mesh = vertex::decode_primitives(&dat, &p.attributes, &groups);
                             for v in &mesh.vertices {
                                 uv_min[0] = uv_min[0].min(v.tex_coords[0][0]);

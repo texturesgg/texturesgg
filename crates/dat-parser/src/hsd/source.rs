@@ -9,6 +9,7 @@ use crate::hsd::draw::{
 use crate::hsd::scene::{HSD_SCENE_MAX_DAT_BYTES, hsd_scene_limits};
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum HsdSourceError {
     #[error("HSD scene is invalid: {0}")]
     InvalidScene(String),

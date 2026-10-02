@@ -19,7 +19,8 @@ The crate owns:
   into swatches, and rewritten at every site in the format each is stored in;
 - undo and redo as byte snapshots of what an edit changed;
 - the refusals that keep an edit safe (mipmapped images, data that overlaps
-  a relocated pointer, ranges past the data section).
+  a relocated pointer, ranges past the data section, pixel data two textures
+  read differently).
 
 Edits never move data, so the header, tables, and every other byte stay
 identical. Operations that resize or relocate data (new images, a larger

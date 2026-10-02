@@ -1115,7 +1115,7 @@ dependencies = [
 
 [[package]]
 name = "dat-edit"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dat-parser",
  "gx-texture",
@@ -1124,7 +1124,7 @@ dependencies = [
 
 [[package]]
 name = "dat-parser"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "gx-texture",
  "hal-dat-raw",
@@ -1769,7 +1769,7 @@ dependencies = [
 
 [[package]]
 name = "gc-iso"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "tempfile",
  "thiserror 2.0.20",
@@ -2342,7 +2342,7 @@ dependencies = [
 
 [[package]]
 name = "gx-texture"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rayon",
  "thiserror 2.0.20",
@@ -2350,7 +2350,7 @@ dependencies = [
 
 [[package]]
 name = "hal-dat-raw"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "half"
@@ -2493,7 +2493,7 @@ dependencies = [
 
 [[package]]
 name = "hsd-render"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bytemuck",
  "dat-parser",
@@ -3117,7 +3117,7 @@ dependencies = [
 
 [[package]]
 name = "melee-dat"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dat-parser",
  "gc-iso",

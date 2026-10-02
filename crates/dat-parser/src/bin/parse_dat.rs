@@ -2,7 +2,6 @@
 
 use dat_parser::DatFile;
 use dat_parser::descriptor::{mobj, traversal};
-use dat_parser::gx::display_list;
 use dat_parser::gx::vertex;
 use std::env;
 use std::fs;
@@ -23,7 +22,7 @@ fn main() {
     let raw = fs::read(path).expect("Failed to read file");
     let dat = DatFile::parse(&raw).expect("Failed to parse .dat file");
 
-    dat.print_summary();
+    print!("{dat}");
 
     // Print relocation-site statistics
     println!(
@@ -96,13 +95,8 @@ fn main() {
                             total_pobjs += pobjs.len();
 
                             for p in &pobjs {
-                                if let Some(dl_offset) = p.display_list_offset {
-                                    let groups = display_list::parse_display_list(
-                                        &dat,
-                                        dl_offset,
-                                        p.display_list_size,
-                                        &p.attributes,
-                                    );
+                                if p.display_list_offset.is_some() {
+                                    let groups = support::read_display_list(&dat, p);
                                     let mesh =
                                         vertex::decode_primitives(&dat, &p.attributes, &groups);
                                     total_vertices += mesh.vertices.len();

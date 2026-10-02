@@ -148,6 +148,9 @@ impl MeleeStagePlayback {
     /// the game's speed: groups loop at their own lengths, so no single
     /// request reaches a later frame.
     pub fn seek(&mut self, frame: f32) -> Result<()> {
+        if frame.is_nan() {
+            return Err(playback_error("frame to seek to is not a number"));
+        }
         let rate = self.rate;
         self.rate = 1.0;
         self.reset()?;

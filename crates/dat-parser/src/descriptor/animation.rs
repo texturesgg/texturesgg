@@ -57,6 +57,7 @@ pub struct RawFObjTrack<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RawFigaTreeError {
     #[error("FigaTree descriptor range overflows")]
     DescriptorRangeOverflow,

@@ -13,6 +13,7 @@ const MODEL_GROUP_SIZE: u32 = 0x34;
 const GENERAL_POINTS_SIZE: u32 = 0x0C;
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MapHeadError {
     #[error(transparent)]
     Descriptor(#[from] DescriptorParseError),
@@ -147,8 +148,10 @@ impl MapModelGroup<'_> {
         let Some(bank) = self.source.pointer("anim_joints", 0x04)? else {
             return Ok(None);
         };
+        // An index too large to address reads past the archive, as any
+        // other index past the bank does.
         DescriptorReader::new(self.dat, "MapAnimJointBank", bank)
-            .pointer("anim_joint", animation * 4)
+            .pointer("anim_joint", animation.saturating_mul(4))
     }
 
     /// Whether the game loops animation `animation`: the group's flag byte

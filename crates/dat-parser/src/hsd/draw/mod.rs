@@ -1258,6 +1258,7 @@ fn inverse_affine_with_determinant(matrix: Mat4, determinant: f32) -> Mat4 {
 }
 
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum HsdDrawWorkError {
     #[error(transparent)]
     InvalidScene(#[from] HsdSceneError),

@@ -53,6 +53,7 @@ pub struct RawAnimJoint<'a> {
 }
 
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RawGenericAnimationError {
     #[error("{resource} descriptor at data offset {source_offset:#x} is out of bounds")]
     DescriptorOutOfBounds {
@@ -86,6 +87,8 @@ pub enum RawGenericAnimationError {
     PackedDataRangeOverflow { source_offset: u32 },
     #[error("FObj packed data is out of bounds at descriptor {source_offset:#x}")]
     PackedDataOutOfBounds { source_offset: u32 },
+    #[error(transparent)]
+    Descriptor(DescriptorParseError),
 }
 
 #[derive(Default)]
@@ -220,6 +223,7 @@ fn material_descriptor_error(error: DescriptorParseError) -> RawGenericAnimation
                 error: source,
             }
         }
+        error => RawGenericAnimationError::Descriptor(error),
     }
 }
 

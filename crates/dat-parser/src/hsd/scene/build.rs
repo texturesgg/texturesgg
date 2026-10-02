@@ -303,34 +303,42 @@ impl<'a> SceneBuilder<'a> {
             .max_vertex_attribute_decodes
             .saturating_sub(self.vertex_attribute_decodes);
         let primitive_groups = match source.display_list_offset {
-            Some(offset) => display_list::parse_display_list_limited(
+            Some(offset) => display_list::parse_display_list(
                 self.dat,
                 offset,
                 source.display_list_size,
                 &source.attributes,
-                remaining_vertices,
-                remaining_primitive_groups,
-                remaining_vertex_attribute_decodes,
+                display_list::DisplayListLimits {
+                    vertices: remaining_vertices,
+                    primitive_groups: remaining_primitive_groups,
+                    vertex_attribute_decodes: remaining_vertex_attribute_decodes,
+                },
             )
-            .map_err(|error| match error {
-                display_list::DisplayListLimitExceeded::Vertices { .. } => {
-                    HsdSceneError::LimitExceeded {
-                        resource: "vertex",
-                        limit: self.limits.max_vertices,
+            .map_err(|error| {
+                use display_list::{DisplayListError, DisplayListLimitExceeded};
+                // The list ran into what is left of a scene budget, so the
+                // error names the scene's limit, not the remainder.
+                let (resource, limit) = match error {
+                    DisplayListError::Limit(DisplayListLimitExceeded::Vertices { .. }) => {
+                        ("vertex", self.limits.max_vertices)
                     }
-                }
-                display_list::DisplayListLimitExceeded::PrimitiveGroups { .. } => {
-                    HsdSceneError::LimitExceeded {
-                        resource: "primitive group",
-                        limit: self.limits.max_primitive_groups,
+                    DisplayListError::Limit(DisplayListLimitExceeded::PrimitiveGroups {
+                        ..
+                    }) => ("primitive group", self.limits.max_primitive_groups),
+                    DisplayListError::Limit(DisplayListLimitExceeded::VertexAttributeDecodes {
+                        ..
+                    }) => (
+                        "vertex attribute decode",
+                        self.limits.max_vertex_attribute_decodes,
+                    ),
+                    error => {
+                        return HsdSceneError::DisplayList {
+                            polygon: source.offset,
+                            error,
+                        };
                     }
-                }
-                display_list::DisplayListLimitExceeded::VertexAttributeDecodes { .. } => {
-                    HsdSceneError::LimitExceeded {
-                        resource: "vertex attribute decode",
-                        limit: self.limits.max_vertex_attribute_decodes,
-                    }
-                }
+                };
+                HsdSceneError::LimitExceeded { resource, limit }
             })?,
             None => Vec::new(),
         };

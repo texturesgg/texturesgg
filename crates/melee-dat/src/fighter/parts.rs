@@ -33,6 +33,7 @@ const FIGHTER_KIND_COUNT: u8 = 0x21;
 pub type VisibilityTable = Vec<Vec<Vec<u8>>>;
 
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum ModelPartsError {
     #[error("fighter kind {0} is outside the source FighterKind table")]
     FighterKind(u8),

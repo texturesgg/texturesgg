@@ -1,6 +1,7 @@
 use super::{DatFile, DatPointerError};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum DescriptorParseError {
     #[error("{descriptor} at {offset:#010x} is truncated")]
     Truncated {
@@ -15,6 +16,14 @@ pub enum DescriptorParseError {
         field_offset: u32,
         #[source]
         source: DatPointerError,
+    },
+
+    #[error("{descriptor}.{field} at {field_offset:#010x} holds {value}, which it cannot be")]
+    InvalidValue {
+        descriptor: &'static str,
+        field: &'static str,
+        field_offset: u32,
+        value: u32,
     },
 }
 
@@ -99,6 +108,21 @@ impl<'a> DescriptorReader<'a> {
                 source,
             }
         })
+    }
+
+    /// The error for a field whose `value` is not one its type defines.
+    pub fn invalid_value(
+        self,
+        field: &'static str,
+        relative: u32,
+        value: u32,
+    ) -> DescriptorParseError {
+        DescriptorParseError::InvalidValue {
+            descriptor: self.descriptor,
+            field,
+            field_offset: self.offset.saturating_add(relative),
+            value,
+        }
     }
 
     fn truncated(self) -> DescriptorParseError {

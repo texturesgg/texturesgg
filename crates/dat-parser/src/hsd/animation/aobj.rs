@@ -30,6 +30,7 @@ pub struct HsdAObjTick {
 }
 
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum HsdAObjError {
     #[error("AObj exceeds the FObj budget of {limit}")]
     FObjBudget { limit: usize },

@@ -37,6 +37,7 @@ impl fmt::Display for DescriptorKind {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[non_exhaustive]
 pub enum TraversalIssue {
     #[error("failed to parse {kind:?} at offset {offset:#010x}: {source}")]
     Descriptor {
