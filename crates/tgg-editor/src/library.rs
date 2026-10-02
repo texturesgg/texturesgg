@@ -92,8 +92,9 @@ impl Library {
         Self::open_at(root)
     }
 
-    /// The library kept in `root`. An unreadable index is set aside, not
-    /// overwritten, so its skins can be recovered.
+    /// The library kept in `root`. An unreadable index is set aside under
+    /// another name, not overwritten, and the library opens with no skins
+    /// listed; their files stay in its folder.
     pub fn open_at(root: PathBuf) -> Self {
         let index_path = root.join("library.json");
         let skins = match std::fs::read_to_string(&index_path) {

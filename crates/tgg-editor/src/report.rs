@@ -3,7 +3,8 @@
 //! copies it, takes it to Discord, or sends it. Nothing leaves without that
 //! choice. After a panic the next launch offers the same.
 
-use crate::{log, net};
+use crate::log;
+use crate::net::{self, NetError};
 use gpui::{
     ClipboardItem, Context, EventEmitter, InteractiveElement, IntoElement, ParentElement, Render,
     ScrollHandle, SharedString, StatefulInteractiveElement, Styled, Window, div,
@@ -37,7 +38,7 @@ fn compose(log: &str, home: Option<&Path>) -> String {
 }
 
 /// Send `report` to textures.gg; the id it is kept under.
-fn send(api: &str, report: &str) -> Result<String, String> {
+fn send(api: &str, report: &str) -> Result<String, NetError> {
     #[derive(serde::Deserialize)]
     struct Sent {
         id: String,
@@ -46,11 +47,8 @@ fn send(api: &str, report: &str) -> Result<String, String> {
         &format!("{api}/api/editor/reports"),
         &serde_json::json!({ "report": report }),
         4096,
-    )
-    .map_err(|error| error.to_string())?;
-    serde_json::from_str::<Sent>(&response)
-        .map(|sent| sent.id)
-        .map_err(|error| error.to_string())
+    )?;
+    Ok(serde_json::from_str::<Sent>(&response)?.id)
 }
 
 #[derive(Debug, PartialEq)]
@@ -128,7 +126,7 @@ impl Report {
                         Ok(id) => Progress::Sent(id),
                         Err(error) => {
                             log(&format!("report not sent: {error}"));
-                            Progress::Failed(error)
+                            Progress::Failed(error.to_string())
                         }
                     };
                     cx.notify();
@@ -249,7 +247,7 @@ mod tests {
     #[test]
     fn sending_posts_the_report_and_returns_its_id() {
         let (api, served) = serve_once("201 Created", r#"{"id":"abc123"}"#);
-        assert_eq!(send(&api, "the \"report\"\n"), Ok("abc123".into()));
+        assert_eq!(send(&api, "the \"report\"\n").expect("sent"), "abc123");
         assert_eq!(
             served.join().expect("served"),
             r#"{"report":"the \"report\"\n"}"#

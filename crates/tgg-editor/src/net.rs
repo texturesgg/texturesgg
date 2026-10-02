@@ -9,6 +9,15 @@ pub(crate) fn api_url() -> String {
     std::env::var("TGG_API_URL").unwrap_or_else(|_| "https://api.textures.gg".into())
 }
 
+/// Why a call got no answer the app could use.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum NetError {
+    #[error(transparent)]
+    Request(#[from] ureq::Error),
+    #[error("the response wasn't what the app expects ({0})")]
+    Response(#[from] serde_json::Error),
+}
+
 /// No response is waited on longer than this.
 const TIMEOUT: Duration = Duration::from_secs(15);
 

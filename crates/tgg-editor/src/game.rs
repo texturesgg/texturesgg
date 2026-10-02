@@ -22,21 +22,36 @@ const GAME_ID: &str = "GALE01";
 const REVISION: u8 = 2;
 
 /// Why a disc image can't be the player's game, in words for the player.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug)]
 pub enum GameError {
-    Unreadable { path: PathBuf, error: String },
-    NotMelee { game_id: String, title: String },
-    WrongRevision { revision: u8 },
+    Unreadable {
+        path: PathBuf,
+        source: gc_iso::Error,
+    },
+    NotMelee {
+        game_id: String,
+        title: String,
+    },
+    WrongRevision {
+        revision: u8,
+    },
 }
 
-impl std::error::Error for GameError {}
+impl std::error::Error for GameError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Unreadable { source, .. } => Some(source),
+            Self::NotMelee { .. } | Self::WrongRevision { .. } => None,
+        }
+    }
+}
 
 impl fmt::Display for GameError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Unreadable { path, error } => write!(
+            Self::Unreadable { path, source } => write!(
                 f,
-                "{} isn't a GameCube disc image the editor can read ({error}).",
+                "{} isn't a GameCube disc image the editor can read ({source}).",
                 path.display()
             ),
             Self::NotMelee { game_id, title } => write!(
@@ -83,9 +98,9 @@ pub struct Game {
 impl Game {
     /// Open the image at `path` if it is Melee NTSC 1.02.
     pub fn open(path: &Path) -> Result<Self, GameError> {
-        let disc = Disc::open(path).map_err(|error| GameError::Unreadable {
+        let disc = Disc::open(path).map_err(|source| GameError::Unreadable {
             path: path.to_owned(),
-            error: error.to_string(),
+            source,
         })?;
         let header = disc.header();
         if header.game_id != GAME_ID {

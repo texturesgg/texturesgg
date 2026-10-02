@@ -3,7 +3,7 @@
 //! from a small file beside the site's assets and, when that is newer, the
 //! top bar links to the download page. Nothing is downloaded or installed.
 
-use crate::net;
+use crate::net::{self, NetError};
 
 /// Where a release publishes its version: `{"version": "0.2.0"}`.
 const LATEST_URL: &str = "https://assets.textures.gg/editor/latest.json";
@@ -16,13 +16,13 @@ fn latest_url() -> String {
 }
 
 /// The version published at `url` when it is newer than this app.
-fn check_at(url: &str) -> Result<Option<String>, String> {
+fn check_at(url: &str) -> Result<Option<String>, NetError> {
     #[derive(serde::Deserialize)]
     struct Latest {
         version: String,
     }
-    let body = net::get(url, 4096).map_err(|error| error.to_string())?;
-    let latest: Latest = serde_json::from_str(&body).map_err(|error| error.to_string())?;
+    let body = net::get(url, 4096)?;
+    let latest: Latest = serde_json::from_str(&body)?;
     Ok(newer(&latest.version, env!("CARGO_PKG_VERSION")).then_some(latest.version))
 }
 
@@ -51,7 +51,7 @@ fn newer(latest: &str, current: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{check_at, newer};
+    use super::{NetError, check_at, newer};
     use crate::net::tests::serve_once;
 
     #[test]
@@ -69,15 +69,20 @@ mod tests {
     #[test]
     fn the_check_reads_the_published_version() {
         let (url, served) = serve_once("200 OK", r#"{"version":"999.0.0"}"#);
-        assert_eq!(check_at(&url), Ok(Some("999.0.0".into())));
+        assert_eq!(check_at(&url).expect("checked"), Some("999.0.0".into()));
         served.join().expect("served");
 
         let (url, served) = serve_once("200 OK", r#"{"version":"0.0.1"}"#);
-        assert_eq!(check_at(&url), Ok(None));
+        assert_eq!(check_at(&url).expect("checked"), None);
         served.join().expect("served");
 
+        // A refused request and an answer of the wrong shape are told apart.
         let (url, served) = serve_once("404 Not Found", "{}");
-        assert!(check_at(&url).is_err());
+        assert!(matches!(check_at(&url), Err(NetError::Request(_))));
+        served.join().expect("served");
+
+        let (url, served) = serve_once("200 OK", "{}");
+        assert!(matches!(check_at(&url), Err(NetError::Response(_))));
         served.join().expect("served");
     }
 }
