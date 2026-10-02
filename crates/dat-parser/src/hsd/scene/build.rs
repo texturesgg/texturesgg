@@ -543,14 +543,19 @@ impl<'a> SceneBuilder<'a> {
                 self.limits.max_decoded_texture_bytes,
                 "decoded texture byte",
             )?;
-            texture::decode_texture(
-                self.dat,
-                data_offset,
-                image.width,
-                image.height,
-                image.format,
-                tobj.tlut.as_ref(),
-            )
+            texture::TextureFormat::try_from(image.format)
+                .ok()
+                .and_then(|format| {
+                    texture::decode_texture(
+                        self.dat,
+                        data_offset,
+                        image.width,
+                        image.height,
+                        format,
+                        tobj.tlut.as_ref(),
+                    )
+                    .ok()
+                })
         } else {
             None
         };

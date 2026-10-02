@@ -209,18 +209,23 @@ fn main() {
                     }
 
                     // Decode and save
-                    let rgba = match texture::decode_texture(
-                        &dat,
-                        data_ptr,
-                        img.width,
-                        img.height,
-                        img.format,
-                        tobj.tlut.as_ref(),
-                    ) {
-                        Some(rgba) => rgba,
-                        None => {
+                    let decoded = texture::TextureFormat::try_from(img.format)
+                        .map_err(texture::TextureReadError::from)
+                        .and_then(|format| {
+                            texture::decode_texture(
+                                &dat,
+                                data_ptr,
+                                img.width,
+                                img.height,
+                                format,
+                                tobj.tlut.as_ref(),
+                            )
+                        });
+                    let rgba = match decoded {
+                        Ok(rgba) => rgba,
+                        Err(error) => {
                             eprintln!(
-                                "  WARN: Failed to decode texture {} (format={}, {}x{})",
+                                "  WARN: Failed to decode texture {} (format={}, {}x{}): {error}",
                                 texture_count,
                                 img.format_name(),
                                 img.width,

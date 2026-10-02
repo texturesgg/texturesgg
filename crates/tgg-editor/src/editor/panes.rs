@@ -145,7 +145,7 @@ impl Editor {
                 .child("Select a texture, in the list or on the model.")
                 .into_any_element(),
             Some((index, texture)) => {
-                let format = gx_texture::format_name(texture.format).unwrap_or("unknown");
+                let format = texture.format.name();
                 let fact = |label: &'static str, value: String| {
                     div()
                         .flex()

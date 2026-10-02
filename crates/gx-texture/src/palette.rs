@@ -10,8 +10,9 @@
 //! nearest it. Distances are squared RGBA, as the CI encoder's nearest-entry
 //! search uses.
 
-use crate::decode::{decode_palette, decode_rgb5a3_pixel};
+use crate::decode::decode_palette_entry;
 use crate::encode::{luma, rgb5a3, rgb565};
+use crate::format::PaletteFormat;
 use std::collections::HashMap;
 
 /// k-means rounds after median cut; later rounds rarely move an entry.
@@ -23,8 +24,6 @@ pub const MAX_PALETTE_ENTRIES: usize = 1 << 14;
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum PaletteError {
-    #[error("palette format {0} is not IA8 (0), RGB565 (1), or RGB5A3 (2)")]
-    UnsupportedFormat(u32),
     #[error("a palette needs at least one entry")]
     Empty,
     #[error("a palette of {count} entries is over the {MAX_PALETTE_ENTRIES} GX can index")]
@@ -34,29 +33,18 @@ pub enum PaletteError {
 }
 
 /// One palette entry in `format`, as its stored 16-bit value.
-fn encode_entry(color: [u8; 4], format: u32) -> u16 {
+fn encode_entry(color: [u8; 4], format: PaletteFormat) -> u16 {
     match format {
         // IA8: alpha in the high byte, intensity in the low.
-        0 => u16::from(color[3]) << 8 | u16::from(luma(color)),
-        1 => rgb565(color),
-        _ => rgb5a3(color),
+        PaletteFormat::Ia8 => u16::from(color[3]) << 8 | u16::from(luma(color)),
+        PaletteFormat::Rgb565 => rgb565(color),
+        PaletteFormat::Rgb5a3 => rgb5a3(color),
     }
 }
 
 /// `color` as `format` stores and decodes it.
-fn stored(color: [u8; 4], format: u32) -> [u8; 4] {
-    let entry = encode_entry(color, format);
-    match format {
-        0 => {
-            let intensity = (entry & 0xFF) as u8;
-            [intensity, intensity, intensity, (entry >> 8) as u8]
-        }
-        1 => decode_palette(&entry.to_be_bytes(), 1, 1).expect("one entry")[0],
-        _ => {
-            let (r, g, b, a) = decode_rgb5a3_pixel(entry);
-            [r, g, b, a]
-        }
-    }
+fn stored(color: [u8; 4], format: PaletteFormat) -> [u8; 4] {
+    decode_palette_entry(encode_entry(color, format), format)
 }
 
 fn distance(a: [u8; 4], b: [u8; 4]) -> u32 {
@@ -71,12 +59,9 @@ fn distance(a: [u8; 4], b: [u8; 4]) -> u32 {
 /// entries; unused ones repeat the last color).
 pub fn build_palette(
     rgba: &[u8],
-    format: u32,
+    format: PaletteFormat,
     count: usize,
 ) -> Result<(Vec<[u8; 4]>, Vec<u8>), PaletteError> {
-    if format > 2 {
-        return Err(PaletteError::UnsupportedFormat(format));
-    }
     if count == 0 {
         return Err(PaletteError::Empty);
     }
@@ -109,7 +94,7 @@ pub fn build_palette(
 }
 
 /// Split the weighted colors into `count` boxes and take each box's mean.
-fn median_cut(colors: &[([u8; 4], u64)], count: usize, format: u32) -> Vec<[u8; 4]> {
+fn median_cut(colors: &[([u8; 4], u64)], count: usize, format: PaletteFormat) -> Vec<[u8; 4]> {
     let mut boxes: Vec<Vec<([u8; 4], u64)>> = vec![colors.to_vec()];
     while boxes.len() < count {
         // The box whose widest channel spreads furthest, weighted by how many
@@ -160,7 +145,7 @@ fn median_cut(colors: &[([u8; 4], u64)], count: usize, format: u32) -> Vec<[u8; 
 }
 
 /// The weighted mean of `colors`, as `format` stores it.
-fn mean(colors: &[([u8; 4], u64)], format: u32) -> [u8; 4] {
+fn mean(colors: &[([u8; 4], u64)], format: PaletteFormat) -> [u8; 4] {
     let total: u64 = colors.iter().map(|&(_, weight)| weight).sum::<u64>().max(1);
     let mut sums = [0u64; 4];
     for &(color, weight) in colors {
@@ -172,7 +157,11 @@ fn mean(colors: &[([u8; 4], u64)], format: u32) -> [u8; 4] {
 }
 
 /// Move each entry to the mean of the colors nearest it, a few times.
-fn refine(colors: &[([u8; 4], u64)], mut palette: Vec<[u8; 4]>, format: u32) -> Vec<[u8; 4]> {
+fn refine(
+    colors: &[([u8; 4], u64)],
+    mut palette: Vec<[u8; 4]>,
+    format: PaletteFormat,
+) -> Vec<[u8; 4]> {
     for _ in 0..REFINE_ROUNDS {
         let nearest = assign(colors, &palette);
         let mut members: Vec<Vec<([u8; 4], u64)>> = vec![Vec::new(); palette.len()];
@@ -224,29 +213,35 @@ fn assign(colors: &[([u8; 4], u64)], palette: &[[u8; 4]]) -> Vec<usize> {
 #[cfg(test)]
 mod tests {
     use super::{PaletteError, build_palette, stored};
-    use crate::{decode_image, decode_palette, encode_texture};
+    use crate::{PaletteFormat, TextureFormat, decode_image, decode_palette, encode_texture};
 
     #[test]
     fn an_image_with_no_pixels_is_an_error_not_an_empty_palette() {
         // A 0×N texture can still name a palette with entries to fill.
         for rgba in [&[][..], &[1, 2, 3][..]] {
             assert!(matches!(
-                build_palette(rgba, 1, 16),
+                build_palette(rgba, PaletteFormat::Rgb565, 16),
                 Err(PaletteError::NoPixels)
             ));
         }
     }
 
     /// Encode `rgba` as CI8 through a palette built for it and decode it back.
-    fn round_trip(rgba: &[u8], width: u16, height: u16, format: u32, count: usize) -> Vec<u8> {
+    fn round_trip(
+        rgba: &[u8],
+        width: u16,
+        height: u16,
+        format: PaletteFormat,
+        count: usize,
+    ) -> Vec<u8> {
         let (colors, tlut) = build_palette(rgba, format, count).unwrap();
         assert_eq!(tlut.len(), count * 2);
         assert_eq!(
             decode_palette(&tlut, format, count as u16).unwrap()[..colors.len()],
             colors[..]
         );
-        let data = encode_texture(rgba, width, height, 9, Some(&colors)).unwrap();
-        decode_image(&data, width, height, 9, Some(&colors)).unwrap()
+        let data = encode_texture(rgba, width, height, TextureFormat::Ci8, Some(&colors)).unwrap();
+        decode_image(&data, width, height, TextureFormat::Ci8, Some(&colors)).unwrap()
     }
 
     #[test]
@@ -259,11 +254,11 @@ mod tests {
             [0, 0, 0, 255],
         ];
         let rgba: Vec<u8> = (0..64).flat_map(|texel| colors[texel % 4]).collect();
-        assert_eq!(round_trip(&rgba, 8, 8, 1, 256), rgba);
+        assert_eq!(round_trip(&rgba, 8, 8, PaletteFormat::Rgb565, 256), rgba);
         let mut translucent = rgba.clone();
         translucent[3] = 0x20;
-        let stored_texel = stored([255, 0, 0, 0x20], 2);
-        let decoded = round_trip(&translucent, 8, 8, 2, 16);
+        let stored_texel = stored([255, 0, 0, 0x20], PaletteFormat::Rgb5a3);
+        let decoded = round_trip(&translucent, 8, 8, PaletteFormat::Rgb5a3, 16);
         assert_eq!(decoded[..4], stored_texel);
         assert_eq!(decoded[4..], translucent[4..]);
     }
@@ -279,7 +274,7 @@ mod tests {
                 [x * 4, y * 4, 255 - x * 2, 255]
             })
             .collect();
-        let decoded = round_trip(&rgba, width, height, 1, 256);
+        let decoded = round_trip(&rgba, width, height, PaletteFormat::Rgb565, 256);
         let error: f64 = decoded
             .iter()
             .zip(&rgba)
@@ -288,7 +283,7 @@ mod tests {
             / rgba.len() as f64;
         assert!(error < 3.0, "mean channel error {error}");
         // Sixteen entries (CI4's limit) still get the gist.
-        let decoded = round_trip(&rgba, width, height, 1, 16);
+        let decoded = round_trip(&rgba, width, height, PaletteFormat::Rgb565, 16);
         let error: f64 = decoded
             .iter()
             .zip(&rgba)
@@ -299,14 +294,11 @@ mod tests {
     }
 
     #[test]
-    fn bad_formats_and_sizes_are_errors() {
+    fn bad_sizes_are_errors() {
+        let format = PaletteFormat::Rgb565;
+        assert_eq!(build_palette(&[0; 4], format, 0), Err(PaletteError::Empty));
         assert_eq!(
-            build_palette(&[0; 4], 3, 16),
-            Err(PaletteError::UnsupportedFormat(3))
-        );
-        assert_eq!(build_palette(&[0; 4], 1, 0), Err(PaletteError::Empty));
-        assert_eq!(
-            build_palette(&[0; 4], 1, usize::MAX),
+            build_palette(&[0; 4], format, usize::MAX),
             Err(PaletteError::TooManyEntries { count: usize::MAX })
         );
     }

@@ -18,6 +18,12 @@ The crate owns:
 - tile and block layout, including re-encoding only the blocks an edit changes
   (`encode_texture_over`).
 
+`TextureFormat` and `PaletteFormat` name the formats; each converts from its
+raw `GXTexFmt` or `GXTlutFmt` value with `TryFrom<u32>`, which refuses a value
+the codec has no code for. Decoding reports a short buffer or a missing
+palette as a `TextureDecodeError`. A CI4 or CI8 texel whose index is past the
+end of its palette decodes as transparent black.
+
 It deliberately contains no DAT or HSD knowledge and no file I/O.
 
 ## Credits

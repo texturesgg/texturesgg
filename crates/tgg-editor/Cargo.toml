@@ -21,7 +21,6 @@ melee-dat = { path = "../melee-dat" }
 dirs = "5"
 # Reading costumes and references from the player's ISO.
 gc-iso = { path = "../gc-iso" }
-gx-texture = { path = "../gx-texture" }
 hsd-render = { path = "../hsd-render", default-features = false }
 # PNG import and export.
 image = { version = "0.25", default-features = false, features = ["png"] }
