@@ -5,13 +5,14 @@
 //! Each costume gets its own viewport, exactly as Your game draws one: no
 //! batching or sharing yet, so the numbers are the naive baseline.
 
-use crate::costumes::{roster, slot_label};
+use crate::costumes::slot_label;
 use crate::viewport::Viewport;
 use crate::{References, load_model, log};
 use gpui::{
     AppContext, Bounds, Context, Entity, InteractiveElement, IntoElement, ParentElement, Pixels,
     Render, StatefulInteractiveElement, Styled, Task, Window, canvas, div, px,
 };
+use melee_dat::MeleeSlot;
 use std::collections::VecDeque;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -29,7 +30,7 @@ struct Cell {
 pub(crate) struct StressTest {
     references: Rc<References>,
     /// Costume files still to load, one between frames.
-    queue: VecDeque<String>,
+    queue: VecDeque<MeleeSlot>,
     total: usize,
     cells: Vec<Cell>,
     failed: usize,
@@ -45,11 +46,12 @@ pub(crate) struct StressTest {
 
 impl StressTest {
     pub fn new(references: Rc<References>, cx: &mut Context<Self>) -> Self {
-        let files: VecDeque<String> =
-            roster(references.game().file_names().iter().map(String::as_str))
-                .into_iter()
-                .flat_map(|fighter| fighter.costumes.into_iter().map(|costume| costume.file))
-                .collect();
+        let files: VecDeque<MeleeSlot> = references
+            .game()
+            .slots()
+            .into_iter()
+            .filter(|slot| slot.character().is_some())
+            .collect();
         // Load between frames, so the grid fills in while the window stays
         // responsive.
         let loading = cx.spawn(async move |this, cx| {
@@ -77,19 +79,20 @@ impl StressTest {
 
     /// Load the next costume into a viewport of its own; whether more wait.
     fn load_next(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(file) = self.queue.pop_front() else {
+        let Some(slot) = self.queue.pop_front() else {
             return false;
         };
+        let file = slot.file_name();
         let loaded = self
             .references
             .game()
-            .read(&file)
+            .read_slot(slot)
             .and_then(|bytes| load_model(&file, &bytes, Some(&self.references)));
         match loaded {
             Ok(loaded) => {
                 let viewport = cx.new(|cx| Viewport::new(loaded.model, cx.focus_handle()).quiet());
                 self.cells.push(Cell {
-                    label: slot_label(Some(&file)),
+                    label: slot_label(Some(slot)),
                     viewport,
                 });
             }

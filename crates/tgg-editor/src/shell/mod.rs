@@ -16,7 +16,7 @@ use crate::game_page::GamePage;
 use crate::library::Library;
 use crate::library_page::{LibraryEvent, LibraryPage};
 use crate::open_file::OpenFile;
-use crate::renders::Renders;
+use crate::renders::{RenderKey, Renders};
 use crate::report::{Report, ReportEvent};
 use crate::review::Review;
 use crate::settings_page::{SettingsEvent, SettingsPage};
@@ -26,7 +26,8 @@ use crate::{Loaded, References, discover_games, game_references, remember_game, 
 use gpui::RenderImage;
 use gpui::Task;
 use gpui::{AppContext, Context, Entity, FocusHandle, Subscription, Window};
-use skins::{Change, slot_files, slot_states};
+use melee_dat::MeleeSlot;
+use skins::{Change, slot_states};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -95,9 +96,9 @@ pub(crate) struct Shell {
     /// menu commands always reach the app's handlers.
     focus: FocusHandle,
     /// The costume render thread, and the renders of the current game's
-    /// slots by file.
+    /// slots and the library's skins.
     renders: Renders,
-    images: HashMap<String, Arc<RenderImage>>,
+    images: HashMap<RenderKey, Arc<RenderImage>>,
     /// The editor's pane column width, kept between costumes.
     split: Entity<SplitState>,
     save_split: Option<Task<()>>,
@@ -109,8 +110,8 @@ pub(crate) struct Shell {
     sidebar: bool,
     /// The sidebar shows over the editor, which hides it until asked.
     sidebar_editing: bool,
-    /// The game's costume files edited lately, the latest first.
-    recent: Vec<String>,
+    /// The game's slots edited lately, the latest first.
+    recent: Vec<MeleeSlot>,
 }
 
 impl Shell {
@@ -229,11 +230,9 @@ impl Shell {
             .map_or_else(HashMap::new, |game| slot_states(game, &library));
         let (screen, events) = match place {
             Place::Game => {
-                let game = self.game();
-                let fighters = game.map_or_else(Vec::new, |game| {
-                    roster(game.file_names().iter().map(String::as_str))
-                });
-                self.request_renders(&game.map(slot_files).unwrap_or_default());
+                let slots = self.game().map_or_else(Vec::new, Game::slots);
+                let fighters = roster(&slots);
+                self.request_renders(&slots);
                 let Some(references) = self.references.clone() else {
                     return self.show_welcome(games_found(), window, cx);
                 };
@@ -256,16 +255,12 @@ impl Shell {
             }
             Place::Library => {
                 self.request_skin_renders(&library);
-                let renders = library
-                    .skins()
-                    .iter()
-                    .filter_map(|skin| Some((skin.id.clone(), self.images.get(&skin.id)?.clone())))
-                    .collect();
+                let renders = self.images.clone();
                 let page = cx.new(|_| LibraryPage::new(library.skins().to_vec(), states, renders));
                 let events =
                     cx.subscribe_in(&page, window, |shell, _, event, window, cx| match event {
                         LibraryEvent::Costumes(event) => shell.costumes_event(event, window, cx),
-                        LibraryEvent::Remove(id) => shell.remove_skin(id, window, cx),
+                        LibraryEvent::Remove(id) => shell.remove_skin(*id, window, cx),
                     });
                 (Screen::Library(page), events)
             }
@@ -281,7 +276,7 @@ impl Shell {
         &mut self,
         place: Place,
         notice: Option<Notice>,
-        changed: &[String],
+        changed: &[MeleeSlot],
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -290,8 +285,8 @@ impl Shell {
             self.refresh_game_page(cx);
             page.update(cx, |page, cx| {
                 page.notice = notice;
-                for file in changed {
-                    page.reload(file, cx);
+                for &slot in changed {
+                    page.reload(slot, cx);
                 }
                 cx.notify();
             });
@@ -314,10 +309,10 @@ impl Shell {
         match event {
             CostumesEvent::Add(paths) => self.add_skins(paths, window, cx),
             CostumesEvent::Install { skin, slot } => {
-                self.change_slot(slot, Change::Install(skin.clone()), window, cx)
+                self.change_slot(*slot, Change::Install(*skin), window, cx)
             }
-            CostumesEvent::Undo(slot) => self.change_slot(slot, Change::Undo, window, cx),
-            CostumesEvent::Restore(slot) => self.change_slot(slot, Change::Restore, window, cx),
+            CostumesEvent::Undo(slot) => self.change_slot(*slot, Change::Undo, window, cx),
+            CostumesEvent::Restore(slot) => self.change_slot(*slot, Change::Restore, window, cx),
             CostumesEvent::Choose => self.choose_skins(window, cx),
             CostumesEvent::Settings => self.open_settings(window, cx),
         }
@@ -507,7 +502,7 @@ impl Shell {
         // Left through the sidebar for another place or costume.
         match self.after_leave.take() {
             Some(Leave::Place(place)) if place != Place::Game => self.show(place, window, cx),
-            Some(Leave::Open(file)) => self.open_from_game(file, window, cx),
+            Some(Leave::Open(slot)) => self.open_from_game(slot, window, cx),
             _ => {}
         }
     }
@@ -540,22 +535,22 @@ impl Shell {
         cx.notify();
     }
 
-    /// Open the game's costume `file` in the editor, or say why it can't
+    /// Open what the game's `slot` holds in the editor, or say why it can't
     /// open.
-    fn open_costume(&mut self, file: String, window: &mut Window, cx: &mut Context<Self>) {
+    fn open_costume(&mut self, slot: MeleeSlot, window: &mut Window, cx: &mut Context<Self>) {
         let Screen::Game(page) = &self.screen else {
             return;
         };
         let page = page.clone();
-        let Some(handoff) = page.read(cx).handoff(&file) else {
+        let Some(handoff) = page.read(cx).handoff(slot) else {
             let notice = Notice {
-                text: format!("Couldn't open {file}").into(),
+                text: format!("Couldn't open {slot}").into(),
                 error: true,
             };
             return self.show_with(self.place, Some(notice), &[], window, cx);
         };
         let (editor, events) = self.editor(handoff, window, cx);
-        self.recent = settings::update(|settings| settings.remember_edit(&file)).recent;
+        self.recent = settings::update(|settings| settings.remember_edit(slot)).recent;
         self.sidebar_editing = false;
         self.editing_from = Some(page);
         self.screen = Screen::Editor(editor);
@@ -627,22 +622,22 @@ impl Shell {
     /// Open a recent edit: its slot in Your game, then the editor. From the
     /// editor, unsaved edits are asked about first.
     fn open_recent(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(file) = self.recent.get(index).cloned() else {
+        let Some(&slot) = self.recent.get(index) else {
             return;
         };
         if let Screen::Editor(editor) = &self.screen {
             let editor = editor.clone();
-            self.after_leave = Some(Leave::Open(file));
+            self.after_leave = Some(Leave::Open(slot));
             if editor.update(cx, |editor, cx| editor.proceed_or_ask(Pending::Leave, cx)) {
                 self.leave_editor(window, cx);
             }
             return;
         }
-        self.open_from_game(file, window, cx);
+        self.open_from_game(slot, window, cx);
     }
 
-    /// Show the game's `file` in Your game, then open it in the editor.
-    fn open_from_game(&mut self, file: String, window: &mut Window, cx: &mut Context<Self>) {
+    /// Show the game's `slot` in Your game, then open it in the editor.
+    fn open_from_game(&mut self, slot: MeleeSlot, window: &mut Window, cx: &mut Context<Self>) {
         if self.place != Place::Game || !matches!(self.screen, Screen::Game(_)) {
             self.show(Place::Game, window, cx);
         }
@@ -650,11 +645,11 @@ impl Shell {
             return;
         };
         let page = page.clone();
-        if page.update(cx, |page, cx| page.show_file(&file, cx)) {
-            self.open_costume(file, window, cx);
+        if page.update(cx, |page, cx| page.show_slot(slot, cx)) {
+            self.open_costume(slot, window, cx);
         } else {
             let notice = Notice {
-                text: format!("Your game has no {file}").into(),
+                text: format!("Your game has no {slot}").into(),
                 error: true,
             };
             self.show_with(Place::Game, Some(notice), &[], window, cx);
@@ -665,8 +660,8 @@ impl Shell {
 /// Where to go once the editor lets go.
 enum Leave {
     Place(Place),
-    /// Open this game file in the editor again.
-    Open(String),
+    /// Open what this slot of the game holds in the editor.
+    Open(MeleeSlot),
 }
 
 /// The pane column's width as the player left it.

@@ -13,6 +13,7 @@ use gpui::{
     App, Context, Entity, ExternalPaths, InteractiveElement, IntoElement, ParentElement, Render,
     Styled, Window, div,
 };
+use melee_dat::MeleeSlot;
 use tgg_ui::pane::PANE_MARGIN;
 use tgg_ui::tokens::{density, font, radius, space, text};
 use tgg_ui::{
@@ -79,7 +80,7 @@ impl Editor {
         };
         // "Bowser / Red" for a slot of the game, which Done goes back to;
         // the file's name otherwise.
-        let crumbs = match self.slot.as_deref().and_then(slot_parts) {
+        let crumbs = match self.slot.and_then(slot_parts) {
             Some((fighter, color)) if self.home() => Breadcrumbs::new()
                 .level(fighter, {
                     let leave = leave.clone();
@@ -275,11 +276,9 @@ impl Editor {
     }
 }
 
-/// "Bowser" and "Red" for `PlKpRe.dat`.
-fn slot_parts(slot: &str) -> Option<(String, String)> {
-    let label = crate::costumes::slot_label(Some(slot));
-    let (fighter, color) = label.split_once(" · ")?;
-    Some((fighter.to_owned(), color.to_owned()))
+/// "Bowser" and "Red" for Bowser's Red costume; a stage has no parts.
+fn slot_parts(slot: MeleeSlot) -> Option<(&'static str, &'static str)> {
+    Some((slot.character()?.name(), slot.color()?.name()))
 }
 
 impl Render for Editor {

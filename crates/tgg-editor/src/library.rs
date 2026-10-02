@@ -10,12 +10,11 @@
 
 use crate::Error;
 use crate::disk::{ReadError, read_capped, write_atomically};
+use crate::ids::{SkinId, optional_slot};
 use dat_parser::DatFile;
 use dat_parser::hsd::scene::HSD_SCENE_MAX_DAT_BYTES;
-use melee_dat::MeleeReferenceCatalog;
-use melee_dat::parse_filename;
+use melee_dat::{MeleeReferenceCatalog, MeleeSlot, parse_filename};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -27,22 +26,22 @@ pub enum SkinSource {
     /// A file the player added (dropped or chosen).
     Imported,
     /// Saved from the editor, from the skin `from` when it had one.
-    Edited { from: Option<String> },
+    Edited { from: Option<SkinId> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Skin {
-    /// The file's SHA-256, which also names its copy in the library.
-    pub id: String,
+    pub id: SkinId,
     /// The name shown for it, from its file name.
     pub name: String,
     /// The file name it was added with.
     pub file_name: String,
     pub byte_length: usize,
-    /// The game file it was made for (`PlFcRe.dat`, `GrNLa.dat`), when it
-    /// says: from its root names, else its file name.
-    pub slot: Option<String>,
+    /// The slot of the game it was made for, when it says: from its root
+    /// names, else its file name.
+    #[serde(with = "optional_slot")]
+    pub slot: Option<MeleeSlot>,
     pub source: SkinSource,
     /// When it was added, in seconds since the Unix epoch.
     pub added: u64,
@@ -54,10 +53,10 @@ pub struct Skin {
 pub struct Candidate {
     pub file_name: String,
     pub name: String,
-    /// Its SHA-256, the id it gets in the library.
-    pub id: String,
+    /// The id it gets in the library.
+    pub id: SkinId,
     /// The slot it says it was made for, if any.
-    pub slot: Option<String>,
+    pub slot: Option<MeleeSlot>,
     /// The library's record of this exact file, when it already has it.
     pub known: Option<Skin>,
     pub bytes: Rc<Vec<u8>>,
@@ -143,9 +142,8 @@ impl Library {
             .map_err(|error| reject(format!("it isn't a DAT file the app can read ({error})")))?;
         let slot = catalog
             .costume_slot(dat.roots.iter().map(|root| root.name.as_str()))
-            .map(|slot| slot.file_name())
-            .or_else(|| slot_from_file_name(file_name));
-        let id = format!("{:x}", Sha256::digest(&bytes));
+            .or_else(|| parse_filename(file_name));
+        let id = SkinId::of(&bytes);
         Ok(Candidate {
             known: self.skins.iter().find(|skin| skin.id == id).cloned(),
             name: display_name(file_name),
@@ -210,7 +208,7 @@ impl Library {
     pub fn store(
         &mut self,
         candidate: &Candidate,
-        slot: Option<String>,
+        slot: Option<MeleeSlot>,
         source: SkinSource,
     ) -> Result<Skin, Error> {
         if let Some(known) = self.skins.iter_mut().find(|skin| skin.id == candidate.id) {
@@ -222,12 +220,12 @@ impl Library {
             }
             return Ok(known.clone());
         }
-        let blob = self.blob_path(&candidate.id);
+        let blob = self.blob_path(candidate.id);
         std::fs::create_dir_all(blob.parent().expect("blobs live in a folder"))
             .and_then(|()| write_atomically(&blob, &candidate.bytes))
             .map_err(Error::LibrarySave)?;
         let skin = Skin {
-            id: candidate.id.clone(),
+            id: candidate.id,
             name: candidate.name.clone(),
             file_name: candidate.file_name.clone(),
             byte_length: candidate.bytes.len(),
@@ -242,7 +240,7 @@ impl Library {
 
     /// Take skin `id` out of the library's list. Its file stays kept, since
     /// an install's history may still need it to undo.
-    pub fn remove(&mut self, id: &str) -> Result<Skin, Error> {
+    pub fn remove(&mut self, id: SkinId) -> Result<Skin, Error> {
         let index = self
             .skins
             .iter()
@@ -255,9 +253,9 @@ impl Library {
 
     /// Keep `bytes` (a slot's file before an install replaced it) without
     /// listing it as a skin, and return its id.
-    pub fn keep(&self, bytes: &[u8]) -> Result<String, Error> {
-        let id = format!("{:x}", Sha256::digest(bytes));
-        let blob = self.blob_path(&id);
+    pub fn keep(&self, bytes: &[u8]) -> Result<SkinId, Error> {
+        let id = SkinId::of(bytes);
+        let blob = self.blob_path(id);
         if !blob.exists() {
             std::fs::create_dir_all(blob.parent().expect("blobs live in a folder"))
                 .and_then(|()| write_atomically(&blob, bytes))
@@ -267,9 +265,9 @@ impl Library {
     }
 
     /// The bytes kept as `id`, checked against their hash.
-    pub fn read(&self, id: &str) -> Result<Vec<u8>, Error> {
+    pub fn read(&self, id: SkinId) -> Result<Vec<u8>, Error> {
         let bytes = std::fs::read(self.blob_path(id)).map_err(Error::LibraryMissing)?;
-        if format!("{:x}", Sha256::digest(&bytes)) != id {
+        if SkinId::of(&bytes) != id {
             return Err(Error::LibraryChanged);
         }
         Ok(bytes)
@@ -277,12 +275,12 @@ impl Library {
 
     /// The skin whose file is `bytes`, if the library has it.
     pub fn skin_for(&self, bytes: &[u8]) -> Option<&Skin> {
-        let id = format!("{:x}", Sha256::digest(bytes));
+        let id = SkinId::of(bytes);
         self.skins.iter().find(|skin| skin.id == id)
     }
 
     /// Where the library keeps skin `id`'s file.
-    pub fn blob_path(&self, id: &str) -> PathBuf {
+    pub fn blob_path(&self, id: SkinId) -> PathBuf {
         self.root.join("skins").join(format!("{id}.dat"))
     }
 
@@ -298,12 +296,6 @@ impl Library {
     }
 }
 
-/// The slot a costume or stage file names (`PlFcRe-waffle.dat` is Falco's
-/// Red slot).
-fn slot_from_file_name(file_name: &str) -> Option<String> {
-    parse_filename(file_name).map(|slot| slot.file_name())
-}
-
 /// A readable name from a file name, without the slot code it starts with:
 /// `PlFxOr-Asymm_Jacket.dat` reads "Asymm Jacket", `GrNLaWaffle.dat` reads
 /// "Waffle", and a bare `PlFcRe.dat` keeps its stem.
@@ -311,8 +303,8 @@ fn display_name(file_name: &str) -> String {
     let stem = file_name
         .rsplit_once('.')
         .map_or(file_name, |(stem, _)| stem);
-    let without_slot = slot_from_file_name(file_name)
-        .and_then(|slot| stem.strip_prefix(slot.trim_end_matches(".dat")))
+    let without_slot = parse_filename(file_name)
+        .and_then(|slot| stem.strip_prefix(slot.file_name().trim_end_matches(".dat")))
         .unwrap_or(stem);
     let words: Vec<&str> = without_slot
         .split(['-', '_', ' '])
@@ -393,7 +385,7 @@ fn now() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{dats_in_zip, display_name, slot_from_file_name};
+    use super::{dats_in_zip, display_name};
     use std::io::Write;
 
     #[test]
@@ -402,19 +394,6 @@ mod tests {
         assert_eq!(display_name("PlFcRe.dat"), "PlFcRe");
         assert_eq!(display_name("waffle falco.dat"), "waffle falco");
         assert_eq!(display_name("GrNLaWaffle.dat"), "Waffle");
-    }
-
-    #[test]
-    fn file_names_give_a_slot_when_the_contents_dont() {
-        assert_eq!(
-            slot_from_file_name("PlFcRe-waffle.dat").as_deref(),
-            Some("PlFcRe.dat")
-        );
-        assert_eq!(
-            slot_from_file_name("GrNLaWaffle.dat").as_deref(),
-            Some("GrNLa.dat")
-        );
-        assert_eq!(slot_from_file_name("notes.dat"), None);
     }
 
     #[test]
@@ -447,25 +426,29 @@ mod tests {
         let candidate = library
             .inspect("falco final v3.dat", bytes.clone(), catalog)
             .expect("readable");
-        assert_eq!(candidate.slot.as_deref(), Some("PlFcRe.dat"));
+        assert_eq!(candidate.slot, "PlFcRe.dat".parse().ok());
         assert_eq!(candidate.name, "falco final v3");
         assert!(library.skins().is_empty(), "inspecting keeps nothing");
         let skin = library
-            .store(&candidate, candidate.slot.clone(), SkinSource::Imported)
+            .store(&candidate, candidate.slot, SkinSource::Imported)
             .expect("stored");
 
         let again = library
             .inspect("copy.dat", bytes.clone(), catalog)
             .expect("readable");
         assert_eq!(again.known.as_ref(), Some(&skin));
+        let blue = "PlFcBu.dat".parse().ok();
         let moved = library
-            .store(&again, Some("PlFcBu.dat".into()), SkinSource::Imported)
+            .store(&again, blue, SkinSource::Imported)
             .expect("stored again");
-        assert_eq!(moved.slot.as_deref(), Some("PlFcBu.dat"));
+        assert_eq!(moved.slot, blue);
         let reopened = Library::open_at(folder.path().to_owned());
         assert_eq!(reopened.skins().len(), 1);
-        assert_eq!(reopened.skins()[0].slot.as_deref(), Some("PlFcBu.dat"));
-        assert_eq!(library.read(&skin.id).expect("read"), bytes);
+        // The record on disk names the slot by its file and the skin by
+        // its hash.
+        assert_eq!(reopened.skins()[0].slot, blue);
+        assert_eq!(reopened.skins()[0].id, skin.id);
+        assert_eq!(library.read(skin.id).expect("read"), bytes);
         assert!(
             library
                 .inspect("notes.dat", b"hello".to_vec(), catalog)

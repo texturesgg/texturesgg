@@ -10,7 +10,7 @@ use crate::Error;
 use dat_parser::hsd::scene::HsdScene;
 use gc_iso::Disc;
 use melee_dat::vanilla::{is_vanilla, vanilla_files};
-use melee_dat::{MeleeReferenceCatalog, MeleeReferenceStore};
+use melee_dat::{MeleeReferenceCatalog, MeleeReferenceStore, MeleeSlot};
 use std::cell::RefCell;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -168,7 +168,7 @@ impl Game {
                     slippi_plays: slippi.as_ref().is_some_and(|slippi| {
                         std::fs::canonicalize(slippi).unwrap_or_else(|_| slippi.clone()) == identity
                     }),
-                    changed: game.changed_files().len(),
+                    changed: game.changed_slots().len(),
                     path,
                 }),
                 Err(error) => crate::log(&format!("not listing {}: {error}", path.display())),
@@ -182,47 +182,57 @@ impl Game {
         &self.path
     }
 
-    /// The costume and stage files on the disc that differ from vanilla.
-    pub fn changed_files(&self) -> Vec<String> {
-        let mut changed: Vec<String> = vanilla_files()
+    /// The slots on the disc whose files differ from vanilla.
+    pub fn changed_slots(&self) -> Vec<MeleeSlot> {
+        let mut changed: Vec<MeleeSlot> = vanilla_files()
             .filter(|file| {
                 self.read(&file.name)
                     .is_ok_and(|bytes| !is_vanilla(&file.name, &bytes))
             })
-            .map(|file| file.name.clone())
+            .filter_map(|file| MeleeSlot::from_file_name(&file.name))
             .collect();
         changed.sort();
         changed
     }
 
-    /// The names of every file on the disc.
-    pub fn file_names(&self) -> Vec<String> {
+    /// Every slot the disc has a file for: each fighter's costumes in roster
+    /// and color order, then the versus stages.
+    pub fn slots(&self) -> Vec<MeleeSlot> {
         let disc = self.disc.borrow();
-        disc.files()
+        let mut slots: Vec<MeleeSlot> = disc
+            .files()
             .iter()
             .filter(|entry| !entry.is_dir)
-            .map(|entry| entry.name.clone())
-            .collect()
+            .filter_map(|entry| MeleeSlot::from_file_name(&entry.name))
+            .collect();
+        slots.sort();
+        slots.dedup();
+        slots
     }
 
-    /// Replace the game file `name` with `bytes`, in place (a larger file
+    /// Replace the file of `slot` with `bytes`, in place (a larger file
     /// moves to the end of the disc), and read it back. Refused while another
     /// program, such as Dolphin, has the ISO open.
-    pub fn replace(&self, name: &str, bytes: &[u8]) -> Result<(), Error> {
+    pub fn replace(&self, slot: MeleeSlot, bytes: &[u8]) -> Result<(), Error> {
         if let Some(program) = holder_of(&self.path) {
             return Err(Error::DiscHeld { program });
         }
-        let name = || name.to_owned();
-        gc_iso::replace_file(&self.path, &name(), bytes).map_err(|source| Error::DiscWrite {
-            name: name(),
+        let name = slot.file_name();
+        gc_iso::replace_file(&self.path, &name, bytes).map_err(|source| Error::DiscWrite {
+            name: name.clone(),
             source,
         })?;
         // The file table may now point elsewhere; read it afresh.
         *self.disc.borrow_mut() = Disc::open(&self.path)?;
-        if self.read(&name())? != bytes {
-            return Err(Error::DiscReadBack { name: name() });
+        if self.read(&name)? != bytes {
+            return Err(Error::DiscReadBack { name });
         }
         Ok(())
+    }
+
+    /// Read the file `slot` holds.
+    pub fn read_slot(&self, slot: MeleeSlot) -> Result<Vec<u8>, Error> {
+        self.read(&slot.file_name())
     }
 
     /// Read the file called `name` from the disc.

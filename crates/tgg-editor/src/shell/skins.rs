@@ -8,13 +8,13 @@ use crate::References;
 use crate::costumes::{Notice, roster, slot_label};
 use crate::editor::{Editor, Pending};
 use crate::game::Game;
+use crate::ids::SkinId;
 use crate::install::{History, SlotState, install, restore_vanilla, undo};
 use crate::library::{Library, SkinSource};
-use crate::renders::SIZE;
+use crate::renders::{RenderKey, SIZE};
 use crate::review::{Review, ReviewEvent, ReviewItem};
 use gpui::{AppContext, Context, Entity, PathPromptOptions, Window};
-use melee_dat::MeleeReferenceCatalog;
-use melee_dat::Stage;
+use melee_dat::{MeleeReferenceCatalog, MeleeSlot};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use tgg_ui::{drop_images, render_image};
@@ -30,15 +30,16 @@ impl Shell {
                     continue;
                 };
                 let alive = shell.update(cx, |shell, cx| {
-                    let old = shell.images.insert(rendered.file.clone(), image.clone());
+                    let key = rendered.key;
+                    let old = shell.images.insert(key, image.clone());
                     drop_images(old, cx);
                     // Recent edits show renders too.
-                    if shell.recent.contains(&rendered.file) {
+                    if matches!(key, RenderKey::Slot(slot) if shell.recent.contains(&slot)) {
                         cx.notify();
                     }
                     if let Screen::Library(page) = &shell.screen {
                         page.update(cx, |page, cx| {
-                            page.renders.insert(rendered.file.clone(), image.clone());
+                            page.renders.insert(key, image.clone());
                             cx.notify();
                         });
                     }
@@ -48,7 +49,7 @@ impl Shell {
                     };
                     if let Some(page) = page {
                         page.update(cx, |page, cx| {
-                            page.renders.insert(rendered.file, image);
+                            page.renders.insert(key, image);
                             cx.notify();
                         });
                     }
@@ -62,13 +63,13 @@ impl Shell {
     }
 
     /// Ask for renders of the game's slots that don't have one yet.
-    pub(super) fn request_renders(&self, files: &[String]) {
+    pub(super) fn request_renders(&self, slots: &[MeleeSlot]) {
         let Some(game) = self.game() else {
             return;
         };
-        for file in files {
-            if !self.images.contains_key(file) {
-                self.renders.request(game.path(), file);
+        for &slot in slots {
+            if !self.images.contains_key(&RenderKey::Slot(slot)) {
+                self.renders.request(game.path(), slot);
             }
         }
     }
@@ -80,33 +81,29 @@ impl Shell {
             return;
         };
         for skin in library.skins() {
-            let Some(slot) = skin
-                .slot
-                .as_deref()
-                .filter(|slot| slot.starts_with("Pl") || slot.starts_with("Gr"))
-            else {
+            let Some(slot) = skin.slot else {
                 continue;
             };
-            if !self.images.contains_key(&skin.id) {
+            if !self.images.contains_key(&RenderKey::Skin(skin.id)) {
                 self.renders
-                    .request_skin(game.path(), &skin.id, library.blob_path(&skin.id), slot);
+                    .request_skin(game.path(), skin.id, library.blob_path(skin.id), slot);
             }
         }
     }
 
-    /// Forget the render of slot `file` (its file changed), and ask again.
-    fn rerender(&mut self, file: &str, cx: &mut Context<Self>) {
-        drop_images(self.images.remove(file), cx);
-        self.request_renders(&[file.to_owned()]);
+    /// Forget the render of `slot` (its file changed), and ask again.
+    fn rerender(&mut self, slot: MeleeSlot, cx: &mut Context<Self>) {
+        drop_images(self.images.remove(&RenderKey::Slot(slot)), cx);
+        self.request_renders(&[slot]);
     }
 
     /// The slots of the game with an install to undo.
-    pub(super) fn undoable(&self) -> HashSet<String> {
+    pub(super) fn undoable(&self) -> HashSet<MeleeSlot> {
         self.game().map_or_else(HashSet::new, |game| {
             let history = History::open();
-            game.file_names()
+            game.slots()
                 .into_iter()
-                .filter(|file| history.can_undo(game, file))
+                .filter(|&slot| history.can_undo(game, slot))
                 .collect()
         })
     }
@@ -123,7 +120,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(slot) = editor.read(cx).slot.clone() else {
+        let Some(slot) = editor.read(cx).slot else {
             return;
         };
         let Some(references) = self.references.clone() else {
@@ -132,31 +129,29 @@ impl Shell {
         let game = references.game();
         let history = History::open();
         let saved = (|| {
-            let before = game.read(&slot)?;
-            let (name, from) = match SlotState::of(&slot, &before, &self.library.borrow()) {
+            let before = game.read_slot(slot)?;
+            let (name, from) = match SlotState::of(slot, &before, &self.library.borrow()) {
                 SlotState::Skin(skin) => (edited_name(&skin.name), Some(skin.id)),
-                _ => (edited_name(&slot_label(Some(&slot))), None),
+                _ => (edited_name(&slot_label(Some(slot))), None),
             };
             let mut candidate = self
                 .library
                 .borrow()
-                .inspect(&slot, bytes.to_vec(), references.catalog)
+                .inspect(&slot.file_name(), bytes.to_vec(), references.catalog)
                 .map_err(|rejected| Error::Rejected(rejected.reason))?;
             candidate.name = name.clone();
-            self.library.borrow_mut().store(
-                &candidate,
-                Some(slot.clone()),
-                SkinSource::Edited { from },
-            )?;
+            self.library
+                .borrow_mut()
+                .store(&candidate, Some(slot), SkinSource::Edited { from })?;
             if install_it {
-                install(game, &slot, bytes, &self.library.borrow(), &history)?;
+                install(game, slot, bytes, &self.library.borrow(), &history)?;
             }
             Ok::<_, Error>(name)
         })();
         match saved {
             Ok(name) => {
                 if install_it {
-                    self.rerender(&slot, cx);
+                    self.rerender(slot, cx);
                 }
                 self.refresh_game_page(cx);
                 editor.update(cx, |editor, cx| {
@@ -212,13 +207,13 @@ impl Shell {
             .into_iter()
             .flatten()
             .map(|candidate| ReviewItem {
-                slot: candidate.slot.clone(),
+                slot: candidate.slot,
                 candidate,
             })
             .collect();
-        let fighters = self.game().map_or_else(Vec::new, |game| {
-            roster(game.file_names().iter().map(String::as_str))
-        });
+        let fighters = self
+            .game()
+            .map_or_else(Vec::new, |game| roster(&game.slots()));
         let review = cx.new(|_| Review {
             items,
             rejected: rejected.into_iter().filter_map(Result::err).collect(),
@@ -256,11 +251,10 @@ impl Shell {
         let mut failed = Vec::new();
         let mut installed = Vec::new();
         for item in items {
-            let stored = self.library.borrow_mut().store(
-                &item.candidate,
-                item.slot.clone(),
-                SkinSource::Imported,
-            );
+            let stored =
+                self.library
+                    .borrow_mut()
+                    .store(&item.candidate, item.slot, SkinSource::Imported);
             let skin = match stored {
                 Ok(skin) => skin,
                 Err(error) => {
@@ -268,13 +262,13 @@ impl Shell {
                     continue;
                 }
             };
-            let place = slot_label(skin.slot.as_deref());
-            match (install_them, game, skin.slot.as_deref()) {
+            let place = slot_label(skin.slot);
+            match (install_them, game, skin.slot) {
                 (true, Some(game), Some(slot)) => {
                     let library = self.library.borrow();
                     match install(game, slot, &item.candidate.bytes, &library, &history) {
                         Ok(()) => {
-                            installed.push(slot.to_owned());
+                            installed.push(slot);
                             done.push(format!("installed {} into {place}", skin.name))
                         }
                         Err(error) => failed.push(format!("{}: {error}", skin.name)),
@@ -287,7 +281,7 @@ impl Shell {
                 _ => done.push(format!("added {} ({place})", skin.name)),
             }
         }
-        for slot in &installed {
+        for &slot in &installed {
             self.rerender(slot, cx);
         }
         let installed_slots = installed;
@@ -304,7 +298,7 @@ impl Shell {
         self.show_with(self.place, notice, &installed_slots, window, cx);
     }
 
-    pub(super) fn remove_skin(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn remove_skin(&mut self, id: SkinId, window: &mut Window, cx: &mut Context<Self>) {
         let notice = match self.library.borrow_mut().remove(id) {
             Ok(skin) => Notice {
                 text: format!("Removed {} from your library.", skin.name).into(),
@@ -318,11 +312,11 @@ impl Shell {
         self.show_with(Place::Library, Some(notice), &[], window, cx);
     }
 
-    /// Change what slot `slot` of the player's game holds, then show the
-    /// place afresh with what happened.
+    /// Change what `slot` of the player's game holds, then show the place
+    /// afresh with what happened.
     pub(super) fn change_slot(
         &mut self,
-        slot: &str,
+        slot: MeleeSlot,
         change: Change,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -334,7 +328,7 @@ impl Shell {
         let library = self.library.borrow();
         let history = History::open();
         let place = slot_label(Some(slot));
-        let result = match &change {
+        let result = match change {
             Change::Install(id) => library
                 .read(id)
                 .and_then(|bytes| install(game, slot, &bytes, &library, &history))
@@ -342,7 +336,7 @@ impl Shell {
                     let name = library
                         .skins()
                         .iter()
-                        .find(|skin| &skin.id == id)
+                        .find(|skin| skin.id == id)
                         .map_or("the skin", |skin| skin.name.as_str());
                     format!("Installed {name} into {place}.")
                 }),
@@ -361,7 +355,7 @@ impl Shell {
         drop(library);
         let changed = if result.is_ok() {
             self.rerender(slot, cx);
-            vec![slot.to_owned()]
+            vec![slot]
         } else {
             Vec::new()
         };
@@ -412,35 +406,19 @@ fn capitalize(text: &str) -> String {
 
 /// A change to one slot of the player's game.
 pub(super) enum Change {
-    /// Install the library's skin with this id.
-    Install(String),
+    /// Install this skin of the library.
+    Install(SkinId),
     Undo,
     Restore,
 }
 
-/// What each costume slot of `game` holds.
-pub(super) fn slot_states(game: &Game, library: &Library) -> HashMap<String, SlotState> {
-    slot_files(game)
+/// What each slot of `game` holds.
+pub(super) fn slot_states(game: &Game, library: &Library) -> HashMap<MeleeSlot, SlotState> {
+    game.slots()
         .into_iter()
-        .filter_map(|file| {
-            let bytes = game.read(&file).ok()?;
-            let state = SlotState::of(&file, &bytes, library);
-            Some((file, state))
+        .filter_map(|slot| {
+            let bytes = game.read_slot(slot).ok()?;
+            Some((slot, SlotState::of(slot, &bytes, library)))
         })
         .collect()
-}
-
-/// Every slot the game page shows: each fighter's costumes, then the versus
-/// stages the disc has.
-pub(super) fn slot_files(game: &Game) -> Vec<String> {
-    let names = game.file_names();
-    let costumes = roster(names.iter().map(String::as_str))
-        .into_iter()
-        .flat_map(|fighter| fighter.costumes)
-        .map(|costume| costume.file);
-    let stages = Stage::all()
-        .map(Stage::file_name)
-        .filter(|file| names.iter().any(|name| name == file))
-        .map(str::to_owned);
-    costumes.chain(stages).collect()
 }

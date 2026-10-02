@@ -11,6 +11,7 @@ mod editor;
 mod error;
 mod game;
 mod game_page;
+mod ids;
 mod install;
 #[cfg(all(test, feature = "melee-iso"))]
 mod iso_tests;

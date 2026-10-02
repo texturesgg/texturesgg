@@ -2,17 +2,18 @@
 //! what each slot can do.
 
 use super::{GamePage, Tab};
-use crate::costumes::stage_name;
-use crate::costumes::{CostumesEvent, same_owner, slot_color};
+use crate::costumes::{CostumesEvent, slot_label};
 use crate::editor::TogglePlayback;
 use crate::install::SlotState;
 use crate::library::Skin;
+use crate::renders::RenderKey;
 use crate::stage;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, Context, Div, ExternalPaths, InteractiveElement, IntoElement, ParentElement,
     Render, SharedString, StatefulInteractiveElement, Styled, Window, div,
 };
+use melee_dat::MeleeSlot;
 use std::rc::Rc;
 use tgg_ui::page_header::INSET;
 use tgg_ui::pane::PANE_MARGIN;
@@ -56,37 +57,38 @@ impl GamePage {
                 .iter()
                 .enumerate()
                 .map(|(index, fighter)| {
-                    let custom = fighter
-                        .costumes
-                        .iter()
-                        .filter(|costume| self.changed(&costume.file))
-                        .count();
+                    let custom = fighter.slots().filter(|&slot| self.changed(slot)).count();
                     let image = self
                         .shown_slot(fighter)
-                        .and_then(|file| self.renders.get(file).cloned());
+                        .and_then(|slot| self.renders.get(&RenderKey::Slot(slot)).cloned());
                     let this = cx.entity();
-                    Card::new(("fighter", index), CardLayout::Tile, fighter.name)
-                        .image(image)
-                        .status(status(custom))
-                        .on_press(move |_, cx| {
-                            this.update(cx, |page, cx| {
-                                page.fighter = index;
-                                page.open = true;
-                                page.show_selected(cx);
-                            })
+                    Card::new(
+                        ("fighter", index),
+                        CardLayout::Tile,
+                        fighter.character.name(),
+                    )
+                    .image(image)
+                    .status(status(custom))
+                    .on_press(move |_, cx| {
+                        this.update(cx, |page, cx| {
+                            page.fighter = index;
+                            page.open = true;
+                            page.show_selected(cx);
                         })
-                        .into_any_element()
+                    })
+                    .into_any_element()
                 })
                 .collect(),
             Tab::Stages => self
                 .stages
                 .iter()
                 .enumerate()
-                .map(|(index, file)| {
+                .map(|(index, &stage)| {
                     let this = cx.entity();
-                    Card::new(("stage", index), CardLayout::Tile, stage_name(file))
-                        .image(self.renders.get(*file).cloned())
-                        .status(status(usize::from(self.changed(file))))
+                    let slot = MeleeSlot::Stage(stage);
+                    Card::new(("stage", index), CardLayout::Tile, stage.name())
+                        .image(self.renders.get(&RenderKey::Slot(slot)).cloned())
+                        .status(status(usize::from(self.changed(slot))))
                         .on_press(move |_, cx| {
                             this.update(cx, |page, cx| {
                                 page.stage = index;
@@ -98,7 +100,11 @@ impl GamePage {
                 })
                 .collect(),
         };
-        let changed = self.states.keys().filter(|file| self.changed(file)).count();
+        let changed = self
+            .states
+            .keys()
+            .filter(|&&slot| self.changed(slot))
+            .count();
         let choose = cx.entity();
         let header = PageHeader::new("Melee")
             .when_some(self.chip.clone(), |header, chip| {
@@ -184,9 +190,9 @@ impl GamePage {
         )
     }
 
-    /// What slot `file` holds, and whether that's changed from vanilla.
-    fn holds(&self, file: &str) -> (String, bool) {
-        match self.states.get(file) {
+    /// What `slot` holds, and whether that's changed from vanilla.
+    fn holds(&self, slot: MeleeSlot) -> (String, bool) {
+        match self.states.get(&slot) {
             None | Some(SlotState::Vanilla) => ("Vanilla".to_owned(), false),
             Some(SlotState::Skin(skin)) => (skin.name.clone(), true),
             Some(SlotState::Custom) => ("Custom".to_owned(), true),
@@ -197,7 +203,7 @@ impl GamePage {
     /// what the selected one can do under them.
     fn costumes_pane(&self, cx: &mut Context<Self>) -> Pane {
         let palette = Theme::global(cx).palette;
-        let selected = self.selected_file();
+        let selected = self.selected_slot();
         let rows: Vec<AnyElement> = match self.tab {
             Tab::Fighters => self
                 .fighters
@@ -207,16 +213,16 @@ impl GamePage {
                         .costumes
                         .iter()
                         .map(|costume| {
-                            let (holds, custom) = self.holds(&costume.file);
+                            let slot = costume.slot(fighter);
+                            let (holds, custom) = self.holds(slot);
                             let this = cx.entity();
-                            let file = costume.file.clone();
-                            let code = fighter.code;
+                            let character = fighter.character;
                             Card::new(
-                                SharedString::from(format!("slot-{}", costume.file)),
+                                SharedString::from(format!("slot-{slot}")),
                                 CardLayout::Row,
-                                costume.name,
+                                costume.color.name(),
                             )
-                            .image(self.renders.get(&costume.file).cloned())
+                            .image(self.renders.get(&RenderKey::Slot(slot)).cloned())
                             .detail(holds)
                             .when(custom, |card| {
                                 card.status(CardStatus {
@@ -225,11 +231,10 @@ impl GamePage {
                                     accent: true,
                                 })
                             })
-                            .selected(selected.as_deref() == Some(costume.file.as_str()))
+                            .selected(selected == Some(slot))
                             .on_press(move |_, cx| {
-                                let file = file.clone();
                                 this.update(cx, |page, cx| {
-                                    page.slots.insert(code, file);
+                                    page.slots.insert(character, slot);
                                     page.show_selected(cx);
                                 })
                             })
@@ -240,10 +245,10 @@ impl GamePage {
                 .unwrap_or_default(),
             Tab::Stages => selected
                 .iter()
-                .map(|file| {
-                    let (holds, custom) = self.holds(file);
-                    Card::new("stage-slot", CardLayout::Row, stage_name(file))
-                        .image(self.renders.get(file.as_str()).cloned())
+                .map(|&slot| {
+                    let (holds, custom) = self.holds(slot);
+                    Card::new("stage-slot", CardLayout::Row, slot_label(Some(slot)))
+                        .image(self.renders.get(&RenderKey::Slot(slot)).cloned())
                         .detail(holds)
                         .when(custom, |card| {
                             card.status(CardStatus {
@@ -292,7 +297,7 @@ impl GamePage {
     /// What the selected slot can do: change skin, undo, restore vanilla.
     fn slot_actions(&self, cx: &mut Context<Self>) -> Div {
         let palette = Theme::global(cx).palette;
-        let Some(file) = self.selected_file() else {
+        let Some(slot) = self.selected_slot() else {
             return div();
         };
         let emit = |event: CostumesEvent, cx: &mut Context<Self>| {
@@ -303,16 +308,12 @@ impl GamePage {
                 this.update(cx, |_, cx| cx.emit((*event).clone()))
             }
         };
-        let (_, changed) = self.holds(&file);
+        let (_, changed) = self.holds(slot);
         // Skins made for any of this fighter's slots, or this stage.
         let installable: Vec<&Skin> = self
             .skins
             .iter()
-            .filter(|skin| {
-                skin.slot
-                    .as_deref()
-                    .is_some_and(|slot| same_owner(slot, &file))
-            })
+            .filter(|skin| skin.slot.is_some_and(|made_for| made_for.same_owner(slot)))
             .collect();
         let change = (!installable.is_empty()).then(|| {
             installable.iter().fold(
@@ -321,23 +322,22 @@ impl GamePage {
                     .size(ButtonSize::Sm),
                 |menu, skin| {
                     let installed = matches!(
-                        self.states.get(&file),
+                        self.states.get(&slot),
                         Some(SlotState::Skin(there)) if there.id == skin.id
                     );
                     let from = skin
                         .slot
-                        .as_deref()
-                        .filter(|slot| *slot != file)
-                        .and_then(slot_color)
-                        .map(|color| format!(" (made for {color})"))
+                        .filter(|made_for| *made_for != slot)
+                        .and_then(MeleeSlot::color)
+                        .map(|color| format!(" (made for {})", color.name()))
                         .unwrap_or_default();
                     menu.item(
                         MenuItem::new(
                             format!("{}{from}", skin.name),
                             emit(
                                 CostumesEvent::Install {
-                                    skin: skin.id.clone(),
-                                    slot: file.clone(),
+                                    skin: skin.id,
+                                    slot,
                                 },
                                 cx,
                             ),
@@ -347,7 +347,7 @@ impl GamePage {
                 },
             )
         });
-        let undo = self.undoable.contains(&file);
+        let undo = self.undoable.contains(&slot);
         div()
             .flex_none()
             .flex()
@@ -369,7 +369,7 @@ impl GamePage {
                             Button::new("undo-slot", "Undo")
                                 .variant(ButtonVariant::Ghost)
                                 .size(ButtonSize::Sm)
-                                .on_press(emit(CostumesEvent::Undo(file.clone()), cx)),
+                                .on_press(emit(CostumesEvent::Undo(slot), cx)),
                         )
                     })
                     .when(changed, |actions| {
@@ -377,7 +377,7 @@ impl GamePage {
                             Button::new("restore-slot", "Restore vanilla")
                                 .variant(ButtonVariant::Ghost)
                                 .size(ButtonSize::Sm)
-                                .on_press(emit(CostumesEvent::Restore(file.clone()), cx)),
+                                .on_press(emit(CostumesEvent::Restore(slot), cx)),
                         )
                     })
                     .when(installable.is_empty() && !undo && !changed, |actions| {

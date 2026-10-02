@@ -3,15 +3,18 @@
 //! and a way to install or remove it. Tabs narrow it to what's in the game
 //! or what isn't.
 
-use crate::costumes::{CostumesEvent, Notice, slot_label};
+use crate::costumes::{CostumesEvent, Notice};
+use crate::ids::SkinId;
 use crate::install::SlotState;
 use crate::library::Skin;
+use crate::renders::RenderKey;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AnyElement, Context, Div, EventEmitter, ExternalPaths, InteractiveElement, IntoElement,
     ParentElement, Render, RenderImage, SharedString, StatefulInteractiveElement, Styled, Window,
     div,
 };
+use melee_dat::MeleeSlot;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tgg_ui::page_header::INSET;
@@ -24,8 +27,8 @@ use tgg_ui::{
 pub(crate) enum LibraryEvent {
     /// The same requests the costume list makes: add, install.
     Costumes(CostumesEvent),
-    /// Take the skin with this id out of the library.
-    Remove(String),
+    /// Take this skin out of the library.
+    Remove(SkinId),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -37,11 +40,11 @@ enum Filter {
 
 pub(crate) struct LibraryPage {
     pub skins: Vec<Skin>,
-    /// What each slot of the player's game holds, by file.
-    pub states: HashMap<String, SlotState>,
+    /// What each slot of the player's game holds.
+    pub states: HashMap<MeleeSlot, SlotState>,
     pub notice: Option<Notice>,
-    /// Each skin's render, by id, as they arrive.
-    pub renders: HashMap<String, Arc<RenderImage>>,
+    /// Renders as they arrive; a skin's is under its id.
+    pub renders: HashMap<RenderKey, Arc<RenderImage>>,
     filter: Filter,
 }
 
@@ -50,8 +53,8 @@ impl EventEmitter<LibraryEvent> for LibraryPage {}
 impl LibraryPage {
     pub fn new(
         skins: Vec<Skin>,
-        states: HashMap<String, SlotState>,
-        renders: HashMap<String, Arc<RenderImage>>,
+        states: HashMap<MeleeSlot, SlotState>,
+        renders: HashMap<RenderKey, Arc<RenderImage>>,
     ) -> Self {
         Self {
             skins,
@@ -82,13 +85,9 @@ impl LibraryPage {
             if !shown {
                 continue;
             }
-            let group = match skin.slot.as_deref() {
-                Some(slot) if slot.starts_with("Pl") => slot_label(Some(slot))
-                    .split(" · ")
-                    .next()
-                    .unwrap_or_default()
-                    .to_owned(),
-                Some(_) => "Stages".to_owned(),
+            let group = match skin.slot {
+                Some(MeleeSlot::Costume { character, .. }) => character.name().to_owned(),
+                Some(MeleeSlot::Stage(_)) => "Stages".to_owned(),
                 None => "Without a slot".to_owned(),
             };
             match groups.iter_mut().find(|(name, _)| *name == group) {
@@ -105,44 +104,41 @@ impl LibraryPage {
         let palette = Theme::global(cx).palette;
         let installed = self.installed(skin);
         // "Red", or the stage's name: the fighter is the group's heading.
-        let place = slot_label(skin.slot.as_deref());
-        let place = place.rsplit(" · ").next().unwrap_or_default().to_owned();
-        let install = skin.slot.clone().filter(|_| !installed).map(|slot| {
+        let place = match skin.slot {
+            Some(MeleeSlot::Costume { color, .. }) => color.name(),
+            Some(MeleeSlot::Stage(stage)) => stage.name(),
+            None => "no slot",
+        };
+        let install = skin.slot.filter(|_| !installed).map(|slot| {
             let this = cx.entity();
-            let id = skin.id.clone();
+            let id = skin.id;
             Button::new(
                 SharedString::from(format!("install-{}", skin.id)),
                 "Install",
             )
             .size(ButtonSize::Sm)
             .on_press(move |_, cx| {
-                let event = LibraryEvent::Costumes(CostumesEvent::Install {
-                    skin: id.clone(),
-                    slot: slot.clone(),
-                });
+                let event = LibraryEvent::Costumes(CostumesEvent::Install { skin: id, slot });
                 this.update(cx, |_, cx| cx.emit(event))
             })
         });
         let remove = {
             let this = cx.entity();
-            let id = skin.id.clone();
+            let id = skin.id;
             IconButton::new(
                 SharedString::from(format!("remove-{}", skin.id)),
                 IconName::Close,
                 "Remove from your library",
             )
             .small()
-            .on_press(move |_, cx| {
-                let id = id.clone();
-                this.update(cx, |_, cx| cx.emit(LibraryEvent::Remove(id)))
-            })
+            .on_press(move |_, cx| this.update(cx, |_, cx| cx.emit(LibraryEvent::Remove(id))))
         };
         Card::new(
             SharedString::from(format!("skin-{}", skin.id)),
             CardLayout::Tile,
             skin.name.clone(),
         )
-        .image(self.renders.get(&skin.id).cloned())
+        .image(self.renders.get(&RenderKey::Skin(skin.id)).cloned())
         .detail(place)
         .corner(remove)
         .map(|card| match install {

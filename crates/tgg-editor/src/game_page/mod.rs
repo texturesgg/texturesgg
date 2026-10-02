@@ -7,15 +7,15 @@
 mod view;
 
 use crate::References;
-use crate::costumes::stage_name;
 use crate::costumes::{CostumesEvent, Fighter, Notice};
 use crate::install::SlotState;
 use crate::library::Skin;
 use crate::open_file::OpenFile;
 use crate::page::GameChip;
+use crate::renders::RenderKey;
 use crate::timeline::Timeline;
 use gpui::{AppContext, Context, Entity, EventEmitter, RenderImage, SharedString};
-use melee_dat::Stage;
+use melee_dat::{Character, MeleeSlot, Stage};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -39,22 +39,22 @@ pub(crate) struct GamePage {
     /// the editor moves nothing.
     split: Entity<SplitState>,
     pub fighters: Vec<Fighter>,
-    /// The versus stages' files the game has.
-    stages: Vec<&'static str>,
+    /// The versus stages the game has.
+    stages: Vec<Stage>,
     tab: Tab,
     fighter: usize,
     stage: usize,
     /// Showing one fighter or stage, rather than the roster.
     open: bool,
-    /// The selected slot of each fighter, by fighter code.
-    slots: HashMap<&'static str, String>,
+    /// The selected slot of each fighter.
+    slots: HashMap<Character, MeleeSlot>,
     pub skins: Vec<Skin>,
-    pub states: HashMap<String, SlotState>,
-    pub undoable: HashSet<String>,
-    /// Each slot's render, by file, as they arrive.
-    pub renders: HashMap<String, Arc<RenderImage>>,
+    pub states: HashMap<MeleeSlot, SlotState>,
+    pub undoable: HashSet<MeleeSlot>,
+    /// Renders as they arrive; a slot's is under the slot.
+    pub renders: HashMap<RenderKey, Arc<RenderImage>>,
     preview: Option<Preview>,
-    /// Why the selected file couldn't be previewed.
+    /// Why the selected slot couldn't be previewed.
     problem: Option<SharedString>,
     pub notice: Option<Notice>,
     /// The game skins install into, beside the title.
@@ -68,15 +68,19 @@ impl GamePage {
         references: Rc<References>,
         fighters: Vec<Fighter>,
         skins: Vec<Skin>,
-        states: HashMap<String, SlotState>,
-        undoable: HashSet<String>,
-        renders: HashMap<String, Arc<RenderImage>>,
+        states: HashMap<MeleeSlot, SlotState>,
+        undoable: HashSet<MeleeSlot>,
+        renders: HashMap<RenderKey, Arc<RenderImage>>,
         split: Entity<SplitState>,
     ) -> Self {
-        let files = references.game().file_names();
-        let stages = Stage::all()
-            .map(Stage::file_name)
-            .filter(|file| files.iter().any(|name| name == file))
+        let stages = references
+            .game()
+            .slots()
+            .into_iter()
+            .filter_map(|slot| match slot {
+                MeleeSlot::Stage(stage) => Some(stage),
+                MeleeSlot::Costume { .. } => None,
+            })
             .collect();
         Self {
             references,
@@ -105,11 +109,14 @@ impl GamePage {
             return None;
         }
         match self.tab {
-            Tab::Fighters => self.fighters.get(self.fighter).map(|f| f.name.to_owned()),
+            Tab::Fighters => self
+                .fighters
+                .get(self.fighter)
+                .map(|fighter| fighter.character.name().to_owned()),
             Tab::Stages => self
                 .stages
                 .get(self.stage)
-                .map(|file| stage_name(file).to_owned()),
+                .map(|stage| stage.name().to_owned()),
         }
     }
 
@@ -122,78 +129,80 @@ impl GamePage {
         cx.notify();
     }
 
-    /// Show the fighter or stage with `file` among its slots, with that slot
-    /// selected. Returns whether the game has it.
-    pub fn show_file(&mut self, file: &str, cx: &mut Context<Self>) -> bool {
-        if let Some(index) = self
-            .fighters
-            .iter()
-            .position(|fighter| fighter.costumes.iter().any(|costume| costume.file == file))
-        {
-            self.tab = Tab::Fighters;
-            self.fighter = index;
-            self.slots
-                .insert(self.fighters[index].code, file.to_owned());
-        } else if let Some(index) = self.stages.iter().position(|stage| *stage == file) {
-            self.tab = Tab::Stages;
-            self.stage = index;
-        } else {
-            return false;
+    /// Show the fighter or stage that has `slot`, with that slot selected.
+    /// Returns whether the game has it.
+    pub fn show_slot(&mut self, slot: MeleeSlot, cx: &mut Context<Self>) -> bool {
+        match slot {
+            MeleeSlot::Costume { character, .. } => {
+                let Some(index) = self
+                    .fighters
+                    .iter()
+                    .position(|fighter| fighter.slots().any(|has| has == slot))
+                else {
+                    return false;
+                };
+                self.tab = Tab::Fighters;
+                self.fighter = index;
+                self.slots.insert(character, slot);
+            }
+            MeleeSlot::Stage(stage) => {
+                let Some(index) = self.stages.iter().position(|has| *has == stage) else {
+                    return false;
+                };
+                self.tab = Tab::Stages;
+                self.stage = index;
+            }
         }
         self.open = true;
         self.show_selected(cx);
         true
     }
 
-    /// The file on show: the selected fighter's selected slot, or the stage.
-    fn selected_file(&self) -> Option<String> {
+    /// The slot on show: the selected fighter's selected slot, or the stage.
+    fn selected_slot(&self) -> Option<MeleeSlot> {
         match self.tab {
-            Tab::Fighters => {
-                let fighter = self.fighters.get(self.fighter)?;
-                Some(self.shown_slot(fighter)?.to_owned())
-            }
-            Tab::Stages => self.stages.get(self.stage).map(|file| (*file).to_owned()),
+            Tab::Fighters => self.shown_slot(self.fighters.get(self.fighter)?),
+            Tab::Stages => self.stages.get(self.stage).copied().map(MeleeSlot::Stage),
         }
     }
 
     /// The slot a fighter shows: the one last selected, or its first.
-    fn shown_slot<'a>(&'a self, fighter: &'a Fighter) -> Option<&'a str> {
+    fn shown_slot(&self, fighter: &Fighter) -> Option<MeleeSlot> {
         self.slots
-            .get(fighter.code)
-            .map(String::as_str)
-            .or_else(|| {
-                fighter
-                    .costumes
-                    .first()
-                    .map(|costume| costume.file.as_str())
-            })
+            .get(&fighter.character)
+            .copied()
+            .or_else(|| fighter.slots().next())
     }
 
-    /// Put the selected file in the preview, unless it already is.
+    /// Put the selected slot in the preview, unless it already is.
     fn show_selected(&mut self, cx: &mut Context<Self>) {
-        let Some(file) = self.selected_file() else {
+        let Some(slot) = self.selected_slot() else {
             return;
         };
-        if self
-            .preview
-            .as_ref()
-            .is_some_and(|preview| preview.file.name == file)
-        {
+        if self.previews(slot) {
             return;
         }
-        self.load(file, cx);
+        self.load(slot, cx);
     }
 
-    /// Load `file` from the game into the preview (again, after it changed).
-    fn load(&mut self, file: String, cx: &mut Context<Self>) {
+    /// Whether the preview shows `slot`.
+    fn previews(&self, slot: MeleeSlot) -> bool {
+        self.preview
+            .as_ref()
+            .is_some_and(|preview| preview.file.slot == Some(slot))
+    }
+
+    /// Load `slot` from the game into the preview (again, after it changed).
+    fn load(&mut self, slot: MeleeSlot, cx: &mut Context<Self>) {
         let references = self.references.clone();
+        let name = slot.file_name();
         let shown = references
             .game()
-            .read(&file)
-            .and_then(|bytes| OpenFile::show(&file, bytes, Some(&references), cx));
+            .read_slot(slot)
+            .and_then(|bytes| OpenFile::show(&name, bytes, Some(&references), cx));
         match shown {
             Ok(mut shown) => {
-                shown.slot = Some(file);
+                shown.slot = Some(slot);
                 let timeline = cx.new(|cx| Timeline::new(shown.viewport.clone(), cx));
                 self.preview = Some(Preview {
                     file: shown,
@@ -203,16 +212,16 @@ impl GamePage {
             }
             Err(error) => {
                 self.preview = None;
-                self.problem = Some(format!("Couldn't show {file}: {error}").into());
+                self.problem = Some(format!("Couldn't show {name}: {error}").into());
             }
         }
         cx.notify();
     }
 
-    /// The preview of `file`, for the editor to take over as it is.
-    pub fn handoff(&self, file: &str) -> Option<OpenFile> {
+    /// The preview of `slot`, for the editor to take over as it is.
+    pub fn handoff(&self, slot: MeleeSlot) -> Option<OpenFile> {
         let preview = self.preview.as_ref()?;
-        (preview.file.name == file).then(|| preview.file.clone())
+        (preview.file.slot == Some(slot)).then(|| preview.file.clone())
     }
 
     /// Take the preview back from the editor: load the file afresh (leaving
@@ -223,8 +232,10 @@ impl GamePage {
             return;
         };
         let state = preview.file.viewport.read(cx).view_state();
-        let file = preview.file.name.clone();
-        self.load(file, cx);
+        let Some(slot) = preview.file.slot else {
+            return;
+        };
+        self.load(slot, cx);
         if let Some(preview) = &self.preview {
             preview
                 .file
@@ -233,24 +244,20 @@ impl GamePage {
         }
     }
 
-    /// Show `file` afresh after its slot changed.
-    pub fn reload(&mut self, file: &str, cx: &mut Context<Self>) {
-        if self
-            .preview
-            .as_ref()
-            .is_some_and(|preview| preview.file.name == file)
-        {
-            self.load(file.to_owned(), cx);
+    /// Show `slot` afresh after what it holds changed.
+    pub fn reload(&mut self, slot: MeleeSlot, cx: &mut Context<Self>) {
+        if self.previews(slot) {
+            self.load(slot, cx);
         }
     }
 
-    fn changed(&self, file: &str) -> bool {
-        !matches!(self.states.get(file), None | Some(SlotState::Vanilla))
+    fn changed(&self, slot: MeleeSlot) -> bool {
+        !matches!(self.states.get(&slot), None | Some(SlotState::Vanilla))
     }
 
-    /// The file on show, when a fighter or stage is open: what Edit
+    /// The slot on show, when a fighter or stage is open: what Edit
     /// textures opens.
-    pub fn editable(&self) -> Option<String> {
-        self.open.then(|| self.selected_file()).flatten()
+    pub fn editable(&self) -> Option<MeleeSlot> {
+        self.open.then(|| self.selected_slot()).flatten()
     }
 }

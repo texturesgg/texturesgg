@@ -4,7 +4,7 @@
 use crate::viewport::Viewport;
 use crate::{Costume, Error, References, load_model};
 use gpui::{AppContext, Context, Entity};
-use melee_dat::MeleeReferenceStore;
+use melee_dat::{MeleeReferenceStore, MeleeSlot};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -19,8 +19,8 @@ pub(crate) struct OpenFile {
     /// Where it was read from on disk, and where Save writes; `None` for a
     /// file in the game.
     pub path: Option<PathBuf>,
-    /// The game slot it fills (`PlFcRe.dat`); saving installs into it.
-    pub slot: Option<String>,
+    /// The game slot it fills; saving installs into it.
+    pub slot: Option<MeleeSlot>,
     /// Its reference files, when it is a stock costume.
     pub store: Option<Rc<MeleeReferenceStore>>,
     pub viewport: Entity<Viewport>,
