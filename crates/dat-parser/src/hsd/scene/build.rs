@@ -988,7 +988,7 @@ mod tests {
     fn custom_pe_admission_decodes_every_representable_descriptor() {
         use super::super::super::pe::{
             HsdAlphaCompare, HsdAlphaOp, HsdBlendFactor, HsdBlendMode, HsdCompare,
-            HsdDepthCompareLocation,
+            HsdDepthCompareLocation, HsdLogicOp,
         };
         assert!(admit_custom_pe(None, None).unwrap().is_none());
         assert_eq!(
@@ -1099,25 +1099,27 @@ mod tests {
         assert!(!state.depth_test);
         assert_eq!(state.blend, HsdBlendMode::None);
 
-        // A COPY logic op is a plain write; other logic ops and values outside
-        // their GX enums are not representable.
-        let copy = mobj::PEDesc {
-            blend_mode: 2,
-            logic_op: 3,
-            ..ADMITTED_CUSTOM_PE
-        };
-        assert_eq!(
-            admit_custom_pe(Some(0x40), Some(&copy))
-                .unwrap()
-                .unwrap()
-                .state
-                .blend,
-            HsdBlendMode::None
-        );
+        // A logic blend carries its op for the backend to lower or refuse;
+        // values outside their GX enums are not representable.
+        for (logic_op, expected) in [(3, HsdLogicOp::Copy), (6, HsdLogicOp::Xor)] {
+            let logic = mobj::PEDesc {
+                blend_mode: 2,
+                logic_op,
+                ..ADMITTED_CUSTOM_PE
+            };
+            assert_eq!(
+                admit_custom_pe(Some(0x40), Some(&logic))
+                    .unwrap()
+                    .unwrap()
+                    .state
+                    .blend,
+                HsdBlendMode::Logic(expected)
+            );
+        }
         for descriptor in [
             mobj::PEDesc {
                 blend_mode: 2,
-                logic_op: 5,
+                logic_op: 16,
                 ..ADMITTED_CUSTOM_PE
             },
             mobj::PEDesc {

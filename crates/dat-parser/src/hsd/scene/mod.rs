@@ -180,7 +180,8 @@ impl HsdDisplayObject {
 #[derive(Debug)]
 pub struct HsdPolygon {
     pub source_id: PObjId,
-    /// Raw PObj flags, including front/back culling and envelope mode.
+    /// Raw PObj flags. Consumers read culling through [`Self::cull`] and the
+    /// envelope mode through `binding`.
     pub flags: u16,
     /// GX attribute layout, analogous to a vertex input declaration.
     pub attributes: Vec<GxAttribute>,
@@ -206,7 +207,29 @@ pub enum HsdPolygonBinding {
     },
 }
 
+/// The faces GX culls (`GXCullMode`). GX takes clockwise triangles as
+/// front-facing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum HsdCullMode {
+    None,
+    Front,
+    Back,
+    /// Both faces: the polygon draws nothing.
+    All,
+}
+
 impl HsdPolygon {
+    /// The cull mode `HSD_PObjDisp` hands to `GXSetCullMode`.
+    pub fn cull(&self) -> HsdCullMode {
+        use crate::descriptor::pobj::flags::{CULLBACK, CULLFRONT};
+        match (self.flags & CULLFRONT != 0, self.flags & CULLBACK != 0) {
+            (false, false) => HsdCullMode::None,
+            (true, false) => HsdCullMode::Front,
+            (false, true) => HsdCullMode::Back,
+            (true, true) => HsdCullMode::All,
+        }
+    }
+
     pub fn has_envelope(&self) -> bool {
         matches!(self.binding, HsdPolygonBinding::Envelope { .. })
     }
@@ -285,11 +308,38 @@ pub struct HsdTextureObject {
     pub tev_descriptor: Option<TevDescId>,
     /// Validated only when either serialized custom color/alpha gate is active.
     pub custom_tev: Option<HsdCustomTev>,
-    /// Raw TObj state, including coordinate and color/alpha combiner behavior.
+    /// Raw TObj state. Consumers read it through [`Self::coordinates`],
+    /// [`Self::light_map`], [`Self::color_map`], [`Self::alpha_map`] and
+    /// [`Self::is_bump`].
     pub flags: u32,
 }
 
 impl HsdTextureObject {
+    /// The lighting phases the TObj takes part in.
+    pub fn light_map(&self) -> super::texture::HsdLightMap {
+        super::texture::HsdLightMap::from_flags(self.flags)
+    }
+
+    /// How the stage combines with the running color.
+    pub fn color_map(
+        &self,
+    ) -> Result<super::texture::HsdColorMap, super::texture::HsdUndefinedTextureMap> {
+        super::texture::HsdColorMap::from_flags(self.flags)
+    }
+
+    /// How the stage combines with the running alpha.
+    pub fn alpha_map(
+        &self,
+    ) -> Result<super::texture::HsdAlphaMap, super::texture::HsdUndefinedTextureMap> {
+        super::texture::HsdAlphaMap::from_flags(self.flags)
+    }
+
+    /// Whether the TObj feeds GX emboss texgen (`TEX_BUMP`) instead of a
+    /// TEV stage.
+    pub fn is_bump(&self) -> bool {
+        self.flags & crate::descriptor::tobj::texture_flags::BUMP != 0
+    }
+
     /// Resolve source texture semantics without allocating or copying image data.
     pub fn coordinates(&self) -> super::texture::HsdTextureCoordinates {
         super::texture::resolve_texture_coordinates(
@@ -574,6 +624,31 @@ mod tests {
         assert_eq!(polygon(GxAttrType::Direct).tex_coord_attribute_mask(), 0x83);
         assert_eq!(polygon(GxAttrType::Index8).tex_coord_attribute_mask(), 0x83);
         assert_eq!(polygon(GxAttrType::None).tex_coord_attribute_mask(), 0);
+    }
+
+    #[test]
+    fn cull_flags_resolve_to_the_gx_cull_mode() {
+        // Source words: POBJ_CULLFRONT is bit 14, POBJ_CULLBACK bit 15; the
+        // type bits beside them do not select a mode.
+        for (flags, cull) in [
+            (0x2000, HsdCullMode::None),
+            (0x4000, HsdCullMode::Front),
+            (0x8000, HsdCullMode::Back),
+            (0xC000, HsdCullMode::All),
+        ] {
+            let polygon = HsdPolygon {
+                source_id: PObjId(8),
+                flags,
+                attributes: Vec::new(),
+                primitive_groups: Vec::new(),
+                decoded: DecodedPrimitive {
+                    vertices: Vec::new(),
+                    triangles: Vec::new(),
+                },
+                binding: HsdPolygonBinding::Rigid { joint: None },
+            };
+            assert_eq!(polygon.cull(), cull, "{flags:#06x}");
+        }
     }
 
     #[test]

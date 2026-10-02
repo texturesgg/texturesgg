@@ -127,7 +127,7 @@ mod tests {
     use super::{MapResult, stages_by_prominence, take_mapped};
     use crate::error::HsdRenderError;
     use crate::material::test_support::{DIFFUSE, EXT, SPECULAR, material, stage};
-    use crate::material::{StageSource, TevAlphaOp, TevColorOp};
+    use crate::material::{HsdAlphaMap, HsdColorMap, StageSource};
     use std::sync::Mutex;
 
     #[test]
@@ -135,11 +135,11 @@ mod tests {
         let texcoord = || {
             stage(
                 StageSource::TexCoord(0),
-                TevColorOp::Modulate,
-                TevAlphaOp::None,
+                HsdColorMap::Modulate,
+                HsdAlphaMap::None,
             )
         };
-        let reflection = stage(StageSource::Reflection, TevColorOp::Add, TevAlphaOp::None);
+        let reflection = stage(StageSource::Reflection, HsdColorMap::Add, HsdAlphaMap::None);
         let mut undecoded = texcoord();
         undecoded.texture_index = None;
         let material = material(

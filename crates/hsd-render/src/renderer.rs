@@ -815,7 +815,9 @@ fn create_pipeline(
 /// GX blends color and alpha with the same equation.
 fn blend_state(mode: HsdBlendMode) -> Option<wgpu::BlendState> {
     let component = match mode {
-        HsdBlendMode::None => return None,
+        // Material preparation lowers COPY to `None` and refuses the other
+        // logic ops, so a logic blend here writes the source.
+        HsdBlendMode::None | HsdBlendMode::Logic(_) => return None,
         HsdBlendMode::Blend {
             source,
             destination,
@@ -1015,7 +1017,7 @@ mod tests {
     use crate::error::HsdRenderError;
     use crate::geometry::CullMode;
     use crate::material::test_support::{DIFFUSE, material, stage};
-    use crate::material::{StageSource, TevAlphaOp, TevColorOp};
+    use crate::material::{HsdAlphaMap, HsdColorMap, StageSource};
     use dat_parser::hsd::pe::HsdBlendMode;
 
     #[test]
@@ -1046,8 +1048,8 @@ mod tests {
     fn a_packet_that_writes_no_color_picks_as_a_depth_only_occluder() {
         let texcoord = stage(
             StageSource::TexCoord(0),
-            TevColorOp::Modulate,
-            TevAlphaOp::None,
+            HsdColorMap::Modulate,
+            HsdAlphaMap::None,
         );
         let mut hidden = material(vec![texcoord], &[DIFFUSE]);
         hidden.color_update = false;

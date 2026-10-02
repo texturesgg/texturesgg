@@ -10,11 +10,9 @@ use crate::material::{
 use dat_parser::gx::vertex::DecodedVertex;
 use dat_parser::hsd::draw::{HsdEvaluatedDrawPacket, HsdEvaluatedDrawRoot, HsdEvaluatedDrawWork};
 use dat_parser::hsd::pe::HsdDrawPass;
-use dat_parser::hsd::scene::{HsdDisplayObject, HsdPolygon, HsdScene};
+use dat_parser::hsd::scene::{HsdCullMode, HsdDisplayObject, HsdPolygon, HsdScene};
 use dat_parser::hsd::source::{HsdFocus, HsdSource};
 
-const CULL_FRONT_FLAG: u16 = 1 << 14;
-const CULL_BACK_FLAG: u16 = 1 << 15;
 /// Position, normal, TEX0, TEX1, COLOR0: every scene's vertex starts with
 /// these. A scene whose materials read TEX2 and up appends those sets.
 pub const BASE_FLOATS_PER_VERTEX: usize = 14;
@@ -487,18 +485,22 @@ fn collect_packet_sources<'a>(
                 return invalid_draw_work("evaluated packet does not match scene polygon");
             }
             expected_first_vertex = packet.first_vertex + packet.vertex_count;
-            if polygon.decoded.vertices.is_empty()
-                || polygon.decoded.triangles.is_empty()
-                || culls_every_face(polygon)
-            {
+            if polygon.decoded.vertices.is_empty() || polygon.decoded.triangles.is_empty() {
                 continue;
             }
+            let cull_mode = match polygon.cull() {
+                HsdCullMode::None => CullMode::None,
+                HsdCullMode::Front => CullMode::Front,
+                HsdCullMode::Back => CullMode::Back,
+                // Both faces culled: nothing to draw.
+                HsdCullMode::All => continue,
+            };
             sources.push(PacketSource {
                 display_object,
                 polygon,
                 root: evaluated,
                 packet,
-                cull_mode: cull_mode(polygon),
+                cull_mode,
             });
         }
         if expected_first_vertex != stream_length {
@@ -608,20 +610,6 @@ fn read_vec3(value: [f32; 3], label: &str) -> Result<[f32; 3]> {
         return invalid_draw_work(format!("evaluated {label} contains a non-finite component"));
     }
     Ok(value)
-}
-
-fn culls_every_face(polygon: &HsdPolygon) -> bool {
-    polygon.flags & CULL_BACK_FLAG != 0 && polygon.flags & CULL_FRONT_FLAG != 0
-}
-
-fn cull_mode(polygon: &HsdPolygon) -> CullMode {
-    if polygon.flags & CULL_BACK_FLAG != 0 {
-        CullMode::Back
-    } else if polygon.flags & CULL_FRONT_FLAG != 0 {
-        CullMode::Front
-    } else {
-        CullMode::None
-    }
 }
 
 #[cfg(test)]

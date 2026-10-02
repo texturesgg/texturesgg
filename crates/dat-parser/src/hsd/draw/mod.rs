@@ -15,7 +15,13 @@ use super::{
         HsdSceneRoot, HsdTransform, JObjId, PObjId,
     },
 };
-use crate::{descriptor::jobj, math::Mat4};
+use crate::{
+    descriptor::jobj::{
+        self,
+        flags::{HIDDEN, INSTANCE},
+    },
+    math::Mat4,
+};
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -102,9 +108,6 @@ pub struct HsdEvaluatedDrawRoot {
 pub struct HsdEvaluatedDrawWork {
     pub roots: Vec<HsdEvaluatedDrawRoot>,
 }
-
-const INSTANCE: u32 = 0x1000;
-const HIDDEN: u32 = 0x10;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum PreparedBinding {

@@ -12,7 +12,7 @@
 use crate::geometry::{BASE_TEX_COORD_SETS, MAX_TEX_COORD_SETS, tex_coord_location};
 use crate::lighting::HSD_MAX_LIGHTS;
 use crate::material::{
-    MAX_TEXTURE_STAGES, PreparedMaterial, PreparedStage, StageSource, TevAlphaOp, TevColorOp,
+    HsdAlphaMap, HsdColorMap, MAX_TEXTURE_STAGES, PreparedMaterial, PreparedStage, StageSource,
     TevStep, TevTarget,
 };
 use dat_parser::hsd::pe::{HsdAlphaCompare, HsdAlphaOp, HsdBlendMode, HsdCompare};
@@ -339,33 +339,33 @@ fn stage_inputs(lines: &mut Vec<String>, index: usize, stage: &PreparedStage) {
 }
 
 /// TObjMakeTExp color maps, as out = d + ((1 - c) * a + c * b) with clamping.
-fn color_op(op: TevColorOp, current: &str, stage: usize) -> String {
+fn color_op(op: HsdColorMap, current: &str, stage: usize) -> String {
     let source = format!("stageRgb{stage}");
     match op {
-        TevColorOp::AlphaMask => format!("mix({current}, {source}, stageAlpha{stage})"),
-        TevColorOp::RgbMask => format!("mix({current}, {source}, {source})"),
-        TevColorOp::Blend => {
+        HsdColorMap::AlphaMask => format!("mix({current}, {source}, stageAlpha{stage})"),
+        HsdColorMap::RgbMask => format!("mix({current}, {source}, {source})"),
+        HsdColorMap::Blend => {
             format!("mix({current}, {source}, material.stages[{stage}].params.x)")
         }
-        TevColorOp::Modulate => format!("{current} * {source}"),
-        TevColorOp::Replace => source,
-        TevColorOp::None | TevColorOp::Pass => current.to_owned(),
-        TevColorOp::Add => format!("clamp({current} + {source}, vec3f(0.0), vec3f(1.0))"),
-        TevColorOp::Sub => format!("clamp({current} - {source}, vec3f(0.0), vec3f(1.0))"),
+        HsdColorMap::Modulate => format!("{current} * {source}"),
+        HsdColorMap::Replace => source,
+        HsdColorMap::None | HsdColorMap::Pass => current.to_owned(),
+        HsdColorMap::Add => format!("clamp({current} + {source}, vec3f(0.0), vec3f(1.0))"),
+        HsdColorMap::Sub => format!("clamp({current} - {source}, vec3f(0.0), vec3f(1.0))"),
     }
 }
 
 /// TObjMakeTExp alpha maps.
-fn alpha_op(op: TevAlphaOp, stage: usize) -> String {
+fn alpha_op(op: HsdAlphaMap, stage: usize) -> String {
     let source = format!("stageAlpha{stage}");
     match op {
-        TevAlphaOp::AlphaMask => format!("mix(alpha, {source}, {source})"),
-        TevAlphaOp::Blend => format!("mix(alpha, {source}, material.stages[{stage}].params.x)"),
-        TevAlphaOp::Modulate => format!("alpha * {source}"),
-        TevAlphaOp::Replace => source,
-        TevAlphaOp::None | TevAlphaOp::Pass => "alpha".to_owned(),
-        TevAlphaOp::Add => format!("clamp(alpha + {source}, 0.0, 1.0)"),
-        TevAlphaOp::Sub => format!("clamp(alpha - {source}, 0.0, 1.0)"),
+        HsdAlphaMap::AlphaMask => format!("mix(alpha, {source}, {source})"),
+        HsdAlphaMap::Blend => format!("mix(alpha, {source}, material.stages[{stage}].params.x)"),
+        HsdAlphaMap::Modulate => format!("alpha * {source}"),
+        HsdAlphaMap::Replace => source,
+        HsdAlphaMap::None | HsdAlphaMap::Pass => "alpha".to_owned(),
+        HsdAlphaMap::Add => format!("clamp(alpha + {source}, 0.0, 1.0)"),
+        HsdAlphaMap::Sub => format!("clamp(alpha - {source}, 0.0, 1.0)"),
     }
 }
 
@@ -507,8 +507,8 @@ mod tests {
             .map(|set| {
                 stage(
                     StageSource::TexCoord(set),
-                    TevColorOp::Modulate,
-                    TevAlphaOp::None,
+                    HsdColorMap::Modulate,
+                    HsdAlphaMap::None,
                 )
             })
             .collect();
@@ -525,8 +525,8 @@ mod tests {
 
     #[test]
     fn every_stage_operation_is_valid_wgsl() {
-        use TevAlphaOp as A;
-        use TevColorOp as C;
+        use HsdAlphaMap as A;
+        use HsdColorMap as C;
         let color_ops = [
             C::None,
             C::AlphaMask,
@@ -566,8 +566,8 @@ mod tests {
         use HsdTObjTevColorInput as C;
         let mut custom = stage(
             StageSource::TexCoord(0),
-            TevColorOp::Modulate,
-            TevAlphaOp::Modulate,
+            HsdColorMap::Modulate,
+            HsdAlphaMap::Modulate,
         );
         custom.custom_tev = Some(PreparedTev {
             color: Some([C::TextureRgb, C::KonstRgb, C::TextureAlpha, C::Tev0Rgb]),
@@ -586,8 +586,8 @@ mod tests {
     fn material_uniforms_follow_the_shader_layout() {
         let mut blended = stage(
             StageSource::TexCoord(0),
-            TevColorOp::Blend,
-            TevAlphaOp::Blend,
+            HsdColorMap::Blend,
+            HsdAlphaMap::Blend,
         );
         blended.matrix[1][3] = 7.0;
         let values = material_uniforms(&material(vec![blended], &[DIFFUSE]), [1.0, 2.0, 3.0], 9);

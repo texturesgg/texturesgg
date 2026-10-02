@@ -910,8 +910,7 @@ fn attaching_over_a_joint_frees_its_tracks_and_a_refusal_changes_nothing() {
     assert_eq!(pose.transforms[2].translation[0], 0.0);
 }
 
-const JOBJ_HIDDEN: u32 = 0x10;
-const JOBJ_INSTANCE: u32 = 0x1000;
+use dat_parser::descriptor::jobj::flags::{HIDDEN as JOBJ_HIDDEN, INSTANCE as JOBJ_INSTANCE};
 
 fn hidden_after(evaluator: &mut HsdJointPoseEvaluator<'_>) -> Vec<bool> {
     evaluator
