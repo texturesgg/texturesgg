@@ -198,15 +198,17 @@ pub struct HsdDrawWorkEvaluator {
 }
 
 impl HsdDrawWorkEvaluator {
-    /// Validate immutable scene topology and resolve source joint identities once.
-    pub fn prepare(
+    /// [`Self::prepare_with_limits`] under the default limits.
+    #[cfg(test)]
+    pub(crate) fn prepare(
         scene: &HsdScene,
         policy: HsdDrawEvaluationPolicy,
     ) -> Result<Self, HsdDrawWorkError> {
         Self::prepare_with_limits(scene, policy, HsdDrawWorkLimits::default())
     }
 
-    /// Resolve source topology and bound expansion before allocating draw occurrences.
+    /// Validate immutable scene topology, resolve source joint identities once,
+    /// and bound expansion before allocating draw occurrences.
     pub fn prepare_with_limits(
         scene: &HsdScene,
         policy: HsdDrawEvaluationPolicy,
@@ -472,7 +474,9 @@ impl HsdDrawWorkEvaluator {
     /// it does not validate a current scene, prove frame evaluation will succeed,
     /// or infer game-pass admission. INSTANCE expansion reflects the snapshot
     /// used for preparation; explicit runtime DObj visibility is respected.
-    pub fn prepared_packets(&self) -> impl Iterator<Item = (usize, HsdEvaluatedDrawPacket)> + '_ {
+    pub(crate) fn prepared_packets(
+        &self,
+    ) -> impl Iterator<Item = (usize, HsdEvaluatedDrawPacket)> + '_ {
         self.roots
             .iter()
             .enumerate()

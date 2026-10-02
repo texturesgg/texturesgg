@@ -399,7 +399,7 @@ impl<'a> HsdJointPoseEvaluator<'a> {
     /// Both aggregate budgets exclude the controller being replaced. Duplicate
     /// byte ranges count per track; arithmetic overflow is a budget failure.
     /// This does not mutate either controller and also rejects poisoned poses.
-    pub fn validate_joint_animation_replacement<M>(
+    fn validate_joint_animation_replacement<M>(
         &self,
         joint_index: HsdJointIndex,
         lifecycle: &HsdAObjEvaluator<'_, M>,

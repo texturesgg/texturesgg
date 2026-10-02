@@ -1,16 +1,7 @@
 use std::ops::Deref;
 use std::sync::Arc;
 
-use crate::descriptor::animation::RawFObjTrack;
 use thiserror::Error;
-
-#[derive(Clone, Copy, Debug)]
-pub struct FObjStream<'a> {
-    pub start_frame: i16,
-    pub frac_value: u8,
-    pub frac_slope: u8,
-    pub packed_data: &'a [u8],
-}
 
 /// Generic HSD FObj descriptors serialize `startframe` as `f32`; runtime HSD narrows it to `s16`.
 #[derive(Clone, Copy, Debug)]
@@ -54,17 +45,6 @@ impl Deref for PackedData<'_> {
     }
 }
 
-impl<'a> From<&RawFObjTrack<'a>> for FObjStream<'a> {
-    fn from(track: &RawFObjTrack<'a>) -> Self {
-        Self {
-            start_frame: track.start_frame as i16,
-            frac_value: track.frac_value,
-            frac_slope: track.frac_slope,
-            packed_data: track.packed_data,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum FObjEvaluationError {
@@ -100,7 +80,7 @@ pub enum FObjEvaluationError {
 
 /// Stateful scalar interpreter matching HSD's FObj operation ordering.
 #[derive(Debug)]
-pub struct FObjEvaluator<'a> {
+pub(super) struct FObjEvaluator<'a> {
     start_frame: f32,
     stream: PackedFObjStream<'a>,
     pos: usize,
@@ -118,18 +98,7 @@ pub struct FObjEvaluator<'a> {
 }
 
 impl<'a> FObjEvaluator<'a> {
-    pub fn new(stream: FObjStream<'a>) -> Self {
-        Self::with_start_frame(
-            stream.start_frame as f32,
-            PackedFObjStream {
-                frac_value: stream.frac_value,
-                frac_slope: stream.frac_slope,
-                packed_data: PackedData::Borrowed(stream.packed_data),
-            },
-        )
-    }
-
-    pub fn new_f32(stream: FObjStreamF32<'a>) -> Result<Self, FObjEvaluationError> {
+    pub(super) fn new_f32(stream: FObjStreamF32<'a>) -> Result<Self, FObjEvaluationError> {
         if !stream.start_frame.is_finite() {
             return Err(FObjEvaluationError::NonFiniteStartFrame);
         }
@@ -223,10 +192,6 @@ impl<'a> FObjEvaluator<'a> {
     }
 
     /// Give a pending KEY operation one final interpretation, then stop.
-    pub fn stop(&mut self, rate: f32) -> Result<Option<f32>, FObjEvaluationError> {
-        self.stop_with(rate, &mut |_| {})
-    }
-
     pub(super) fn stop_with(
         &mut self,
         rate: f32,
@@ -244,11 +209,8 @@ impl<'a> FObjEvaluator<'a> {
         result
     }
 
-    /// Advance by an explicit tick delta and return the last emitted value.
-    pub fn advance(&mut self, rate: f32) -> Result<Option<f32>, FObjEvaluationError> {
-        self.advance_with(rate, true, &mut |_| {})
-    }
-
+    /// Advance by an explicit tick delta, handing each emitted value to
+    /// `update`, and return the last.
     pub(super) fn advance_with(
         &mut self,
         rate: f32,
@@ -557,24 +519,6 @@ impl<'a> FObjEvaluator<'a> {
     }
 }
 
-/// Evaluate exact integer ticks `0..frame_count`, retaining the most recently
-/// emitted value as a placeholder before delayed activation or after termination.
-pub fn sample_fobj_integer_frames(
-    stream: FObjStream<'_>,
-    frame_count: usize,
-) -> Result<Vec<f32>, FObjEvaluationError> {
-    let mut evaluator = FObjEvaluator::new(stream);
-    let mut values = Vec::with_capacity(frame_count);
-    let mut current = 0.0;
-    for frame in 0..frame_count {
-        if let Some(value) = evaluator.advance(if frame == 0 { 0.0 } else { 1.0 })? {
-            current = value;
-        }
-        values.push(current);
-    }
-    Ok(values)
-}
-
 fn hermite(time: f32, duration: f32, p0: f32, p1: f32, d0: f32, d1: f32) -> f32 {
     // GALE01 FObjUpdateAnim (0x8036afdc): double reciprocal, then frsp.
     // splGetHelmite (0x80378a34) builds powers before normalization and
@@ -593,4 +537,331 @@ fn hermite(time: f32, duration: f32, p0: f32, p1: f32, d0: f32, d1: f32) -> f32 
     let positions = p0.mul_add(start_position, p1 * end_position);
     let with_start_tangent = d0.mul_add(start_tangent, positions);
     d1.mul_add(end_tangent, with_start_tangent)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FObjEvaluationError, FObjEvaluator, FObjStreamF32};
+
+    fn stream(
+        packed_data: &[u8],
+        start_frame: i16,
+        frac_value: u8,
+        frac_slope: u8,
+    ) -> FObjStreamF32<'_> {
+        FObjStreamF32 {
+            start_frame: f32::from(start_frame),
+            frac_value,
+            frac_slope,
+            packed_data,
+        }
+    }
+
+    fn packed_u8(packed_data: &[u8]) -> FObjStreamF32<'_> {
+        stream(packed_data, 0, 0x80, 0x80)
+    }
+
+    fn evaluator(stream: FObjStreamF32<'_>) -> FObjEvaluator<'_> {
+        FObjEvaluator::new_f32(stream).expect("a start frame the runtime field holds")
+    }
+
+    /// Advance by a tick delta and return the last emitted value.
+    fn advance(
+        evaluator: &mut FObjEvaluator<'_>,
+        rate: f32,
+    ) -> Result<Option<f32>, FObjEvaluationError> {
+        evaluator.advance_with(rate, true, &mut |_| {})
+    }
+
+    /// Integer ticks `0..frame_count`, holding the last emitted value before
+    /// a delayed start and after the stream ends.
+    fn sample_integer_frames(
+        stream: FObjStreamF32<'_>,
+        frame_count: usize,
+    ) -> Result<Vec<f32>, FObjEvaluationError> {
+        let mut evaluator = evaluator(stream);
+        let mut current = 0.0;
+        (0..frame_count)
+            .map(|frame| {
+                if let Some(value) = advance(&mut evaluator, if frame == 0 { 0.0 } else { 1.0 })? {
+                    current = value;
+                }
+                Ok(current)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn decodes_every_defined_scalar_storage_format_as_little_endian() {
+        let cases: &[(u8, &[u8], f32)] = &[
+            (0x00, &1.5f32.to_le_bytes(), 1.5),
+            (0x21, &(-6i16).to_le_bytes(), -3.0),
+            (0x42, &(20u16).to_le_bytes(), 5.0),
+            (0x61, &[0xf8], -4.0),
+            (0x83, &[40], 5.0),
+            (0x9f, &[1], -1.0 / 2_147_483_648.0),
+        ];
+        for &(fraction, encoded, expected) in cases {
+            let mut packed = vec![0x06];
+            packed.extend_from_slice(encoded);
+            assert_eq!(
+                sample_integer_frames(stream(&packed, 0, fraction, fraction), 1),
+                Ok(vec![expected])
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_fraction_categories_and_nonfinite_output() {
+        for fraction in [0x01, 0xa0] {
+            assert_eq!(
+                sample_integer_frames(stream(&[0x06, 0], 0, fraction, fraction), 1),
+                Err(FObjEvaluationError::UnknownFractionEncoding)
+            );
+        }
+
+        let mut packed = vec![0x12];
+        packed.extend_from_slice(&0.0f32.to_le_bytes());
+        packed.push(1);
+        packed.extend_from_slice(&f32::NAN.to_bits().to_le_bytes());
+        let mut evaluator = evaluator(stream(&packed, 0, 0, 0));
+        assert_eq!(
+            advance(&mut evaluator, 0.0),
+            Err(FObjEvaluationError::NonFiniteSample)
+        );
+        assert_eq!(
+            sample_integer_frames(stream(&packed, 0, 0, 0), 2),
+            Err(FObjEvaluationError::NonFiniteSample)
+        );
+    }
+
+    #[test]
+    fn constant_linear_spline_and_slope_packets_keep_distinct_semantics() {
+        assert_eq!(
+            sample_integer_frames(packed_u8(&[0x11, 2, 4, 8]), 5),
+            Ok(vec![2.0, 2.0, 2.0, 2.0, 8.0])
+        );
+        assert_eq!(
+            sample_integer_frames(packed_u8(&[0x12, 0, 4, 4]), 5),
+            Ok(vec![0.0, 1.0, 2.0, 3.0, 4.0])
+        );
+        assert_eq!(
+            sample_integer_frames(packed_u8(&[0x13, 0, 4, 4]), 5),
+            Ok(vec![0.0, 0.625, 2.0, 3.375, 4.0])
+        );
+
+        let spline = [0x14, 0, 2, 0, 4, 4, 0, 0];
+        assert_eq!(
+            sample_integer_frames(stream(&spline, 0, 0x80, 0x20), 5),
+            Ok(vec![0.0, 1.75, 3.0, 3.75, 4.0])
+        );
+
+        // SPL0 point 0, wait 2; SLP tangent 4 without a wait; SPL0 endpoint 4.
+        assert_eq!(
+            sample_integer_frames(packed_u8(&[0x03, 0, 2, 0x05, 4, 0x03, 4]), 3),
+            Ok(vec![0.0, 3.0, 4.0])
+        );
+    }
+
+    #[test]
+    fn linear_interpolation_preserves_fused_cancellation_and_finite_extrapolation() {
+        // Source slope is rounded before fmadds (GALE01 FObjUpdateAnim, 0x8036af98).
+        // Halfway from 0.5 to -0.5 over three ticks leaves -2^-26, not zero.
+        // Extrapolation can overflow an unfused product while the fused result fits.
+        for (p0, p1, duration, time, expected) in [
+            (0.5f32, -0.5f32, 3u8, 1.5f32, Ok(0xb280_0000u32)),
+            (
+                -f32::from_bits(0x7f00_0000),
+                -f32::from_bits(0x7e80_0000),
+                1,
+                4.0,
+                Ok(0x7f00_0000),
+            ),
+            (
+                -f32::from_bits(0x7f00_0000),
+                -f32::from_bits(0x7e80_0000),
+                1,
+                8.0,
+                Err(FObjEvaluationError::NonFiniteSample),
+            ),
+        ] {
+            let mut packed = vec![0x12];
+            packed.extend_from_slice(&p0.to_le_bytes());
+            packed.push(duration);
+            packed.extend_from_slice(&p1.to_le_bytes());
+            let mut evaluator = evaluator(stream(&packed, 0, 0, 0));
+            let actual = advance(&mut evaluator, time)
+                .map(|sample| sample.expect("LIN emits a sample").to_bits());
+            assert_eq!(actual, expected, "duration={duration}, time={time}");
+        }
+    }
+
+    #[test]
+    fn fractional_hermite_preserves_compiled_power_order_and_fused_accumulation() {
+        // GALE01 splGetHelmite (0x80378a34), reached through packed SPL tracks.
+        // The old normalized cubic basis produces 0x3f65a51a / 0x406020cc.
+        // Source power order without fmadds still produces 0x3f65a51b / 0x406020cc.
+        let cases: [(u8, f32, f32, f32, f32, f32, u32); 2] = [
+            (7, 2.3, 0.1, 0.7, 0.5, -0.25, 0x3f65_a51c),
+            (13, 9.1, -2.7, 7.3, 0.1, 0.9, 0x4060_20ca),
+        ];
+        for (duration, time, p0, p1, d0, d1, expected_bits) in cases {
+            let mut packed = vec![0x14];
+            packed.extend_from_slice(&p0.to_le_bytes());
+            packed.extend_from_slice(&d0.to_le_bytes());
+            packed.push(duration);
+            packed.extend_from_slice(&p1.to_le_bytes());
+            packed.extend_from_slice(&d1.to_le_bytes());
+            let mut evaluator = evaluator(stream(&packed, 0, 0, 0));
+            let value = advance(&mut evaluator, time).unwrap().unwrap();
+            assert_eq!(
+                value.to_bits(),
+                expected_bits,
+                "duration={duration}, time={time}"
+            );
+        }
+    }
+
+    #[test]
+    fn key_packets_emit_once_and_prior_opcode_owns_the_segment() {
+        let packed = [0x16, 2, 2, 8];
+        let mut evaluator = evaluator(packed_u8(&packed));
+        assert_eq!(advance(&mut evaluator, 0.0), Ok(Some(2.0)));
+        assert_eq!(advance(&mut evaluator, 1.0), Ok(None));
+        assert_eq!(advance(&mut evaluator, 1.0), Ok(Some(8.0)));
+        assert_eq!(advance(&mut evaluator, 1.0), Ok(None));
+
+        // CON owns the segment even though the endpoint starts a new LIN pack.
+        assert_eq!(
+            sample_integer_frames(packed_u8(&[0x01, 0, 4, 0x02, 4]), 5),
+            Ok(vec![0.0, 0.0, 0.0, 0.0, 4.0])
+        );
+    }
+
+    #[test]
+    fn zero_waits_and_extended_count_and_wait_encodings_make_progress() {
+        assert_eq!(
+            sample_integer_frames(packed_u8(&[0x12, 1, 0, 5]), 1),
+            Ok(vec![5.0])
+        );
+        assert_eq!(
+            sample_integer_frames(packed_u8(&[0x13, 1, 0, 5]), 1),
+            Ok(vec![5.0])
+        );
+        assert_eq!(
+            sample_integer_frames(packed_u8(&[0x22, 1, 0, 5, 0, 9]), 1),
+            Ok(vec![9.0])
+        );
+
+        // LIN count 9: initial count 1 plus continuation value 1 << 3.
+        let mut count_nine = vec![0x82, 0x01];
+        for value in 0u8..9 {
+            count_nine.push(value);
+            if value != 8 {
+                count_nine.push(1);
+            }
+        }
+        assert_eq!(
+            sample_integer_frames(packed_u8(&count_nine), 9),
+            Ok((0u8..9).map(f32::from).collect())
+        );
+
+        let wait_300 = [0x12, 0, 0xac, 0x02, 10];
+        let values = sample_integer_frames(packed_u8(&wait_300), 301).expect("wait 300");
+        assert_eq!(values[0], 0.0);
+        assert!((values[150] - 5.0).abs() < 1.0e-5);
+        assert!((values[300] - 10.0).abs() < 1.0e-5);
+    }
+
+    #[test]
+    fn fobj_terminal_returns_do_not_stop_reserved_opcode_packs() {
+        for opcode in [0u8, 7, 8, 9, 10, 11, 12, 13, 14, 15] {
+            // Two NONE/reserved entries have no payload. Each ends one interpreter
+            // call, not the stored load state; the following LIN still runs.
+            let packed = [0x10 | opcode, 0x12, 0, 4, 4];
+            let mut evaluator = evaluator(packed_u8(&packed));
+            assert_eq!(advance(&mut evaluator, 0.0), Ok(None));
+            assert_eq!(advance(&mut evaluator, 1.0), Ok(None));
+            assert_eq!(
+                advance(&mut evaluator, 1.0),
+                Ok(Some(2.0)),
+                "opcode {opcode}"
+            );
+            assert_eq!(
+                advance(&mut evaluator, 1.0),
+                Ok(Some(3.0)),
+                "opcode {opcode}"
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_streams_fail_structurally() {
+        let cases: &[(&[u8], FObjEvaluationError)] = &[
+            (&[0x01], FObjEvaluationError::UnexpectedEnd),
+            (&[0x04, 1], FObjEvaluationError::UnexpectedEnd),
+            (&[0x81], FObjEvaluationError::UnexpectedEnd),
+            (&[0x01, 1, 0x80], FObjEvaluationError::UnexpectedEnd),
+            (&[0x00, 0x04, 1], FObjEvaluationError::UnexpectedEnd),
+            (
+                &[0x91, 0xff, 0xff, 0x04],
+                FObjEvaluationError::PackCountOverflow,
+            ),
+            (
+                &[0x11, 0, 0xff, 0xff, 0x04],
+                FObjEvaluationError::WaitOverflow,
+            ),
+        ];
+        for &(packed, expected) in cases {
+            assert_eq!(sample_integer_frames(packed_u8(packed), 2), Err(expected));
+        }
+    }
+
+    #[test]
+    fn signed_initial_time_seeks_or_delays_without_changing_tick_sampling() {
+        let packed = [0x22, 0, 5, 5, 5, 10];
+        assert_eq!(
+            sample_integer_frames(stream(&packed, 7, 0x80, 0), 1),
+            Ok(vec![7.0])
+        );
+        assert_eq!(
+            sample_integer_frames(stream(&packed, 12, 0x80, 0), 1),
+            Ok(vec![12.0])
+        );
+
+        let delayed = [0x12, 0, 10, 10];
+        let delayed_stream = stream(&delayed, -2, 0x80, 0);
+        let mut evaluator = evaluator(delayed_stream);
+        assert_eq!(advance(&mut evaluator, 0.0), Ok(None));
+        assert_eq!(advance(&mut evaluator, 1.0), Ok(None));
+        assert_eq!(advance(&mut evaluator, 1.0), Ok(Some(0.0)));
+
+        let values =
+            sample_integer_frames(stream(&delayed, 0, 0x80, 0), 11).expect("integer ticks");
+        assert_eq!(values[0], 0.0);
+        assert_eq!(values[5], 5.0);
+        assert_eq!(values[10], 10.0);
+    }
+
+    #[test]
+    fn generic_f32_start_frames_match_runtime_s16_narrowing() {
+        let packed = [0x12, 0, 10, 10];
+        let mut evaluator = FObjEvaluator::new_f32(FObjStreamF32 {
+            start_frame: -0.5,
+            frac_value: 0x80,
+            frac_slope: 0,
+            packed_data: &packed,
+        })
+        .expect("representable generic start frame");
+        assert_eq!(advance(&mut evaluator, 0.0), Ok(Some(0.0)));
+
+        let error = FObjEvaluator::new_f32(FObjStreamF32 {
+            start_frame: 32_768.0,
+            frac_value: 0x80,
+            frac_slope: 0,
+            packed_data: &packed,
+        })
+        .expect_err("runtime s16 range");
+        assert_eq!(error, FObjEvaluationError::StartFrameOutOfRange);
+    }
 }

@@ -6,7 +6,7 @@ use dat_parser::hsd::animation::{
     HsdJointPoseLimits, aobj_flags,
 };
 use dat_parser::hsd::draw::{
-    HsdDrawEvaluationPolicy, HsdDrawWorkError, HsdDrawWorkEvaluator, HsdRootPose,
+    HsdDrawEvaluationPolicy, HsdDrawWorkError, HsdDrawWorkEvaluator, HsdDrawWorkLimits, HsdRootPose,
 };
 use dat_parser::hsd::scene::{
     DObjId, HsdDisplayObject, HsdJoint, HsdJointIndex, HsdPolygon, HsdPolygonBinding, HsdScene,
@@ -236,9 +236,6 @@ fn attaching_over_a_joint_frees_its_packed_bytes_and_a_refusal_changes_nothing()
     let replacement_bytes = vec![0x06, 9];
     let replacement = scalar_aobj(&replacement_bytes, 1);
     owned
-        .validate_joint_animation_replacement(HsdJointIndex(1), &replacement)
-        .unwrap();
-    owned
         .attach_joint_animation(HsdJointIndex(1), replacement.into_owned())
         .unwrap();
     drop(replacement_bytes);
@@ -246,14 +243,6 @@ fn attaching_over_a_joint_frees_its_packed_bytes_and_a_refusal_changes_nothing()
         resource: "packed bytes",
         limit: 4,
     };
-    let oversized_bytes = vec![0x12, 0, 8, 8];
-    assert_eq!(
-        owned.validate_joint_animation_replacement(
-            HsdJointIndex(1),
-            &scalar_aobj(&oversized_bytes, 1)
-        ),
-        Err(error),
-    );
     assert_eq!(
         owned.attach_joint_animation(HsdJointIndex(1), scalar_aobj(&[0x12, 0, 8, 8], 1)),
         Err(error),
@@ -1079,8 +1068,12 @@ fn hidden_joints_keep_packet_ranges_and_report_per_frame_visibility() {
         .display_objects
         .push(triangle(0x510, 0x610));
     scene.roots[0].joints[2].flags = JOBJ_HIDDEN;
-    let mut draw =
-        HsdDrawWorkEvaluator::prepare(&scene, HsdDrawEvaluationPolicy::GENERIC_HSD).unwrap();
+    let mut draw = HsdDrawWorkEvaluator::prepare_with_limits(
+        &scene,
+        HsdDrawEvaluationPolicy::GENERIC_HSD,
+        HsdDrawWorkLimits::default(),
+    )
+    .unwrap();
 
     // Bind pose honors the serialized flag, as HSD_JObjDispDObj does.
     let work = draw.evaluate_bind_pose(&scene).unwrap();
@@ -1127,8 +1120,12 @@ fn runtime_visibility_must_cover_the_root_and_leave_instances_unchanged() {
     let mut scene = scene();
     scene.roots[0].joints[1].flags = JOBJ_INSTANCE;
     scene.roots[0].joints[1].children = vec![HsdJointIndex(2)];
-    let mut draw =
-        HsdDrawWorkEvaluator::prepare(&scene, HsdDrawEvaluationPolicy::GENERIC_HSD).unwrap();
+    let mut draw = HsdDrawWorkEvaluator::prepare_with_limits(
+        &scene,
+        HsdDrawEvaluationPolicy::GENERIC_HSD,
+        HsdDrawWorkLimits::default(),
+    )
+    .unwrap();
     let transforms = scene.roots[0]
         .joints
         .iter()

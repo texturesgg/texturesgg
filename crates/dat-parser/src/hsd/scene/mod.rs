@@ -221,13 +221,6 @@ impl HsdPolygon {
             }
         })
     }
-
-    pub fn envelopes(&self) -> &[HsdEnvelope] {
-        match &self.binding {
-            HsdPolygonBinding::Envelope { entries, .. } => entries,
-            HsdPolygonBinding::Rigid { .. } => &[],
-        }
-    }
 }
 
 #[derive(Debug)]

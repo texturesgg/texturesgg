@@ -12,7 +12,5 @@ mod joint_pose;
 pub use anim_joint::attach_anim_joints;
 pub use aobj::{HsdAObjError, HsdAObjEvaluator, HsdAObjFObj, HsdAObjTick, aobj_flags};
 pub use channel::{HsdAnimationChannel, HsdJointChannel};
-pub use fobj::{
-    FObjEvaluationError, FObjEvaluator, FObjStream, FObjStreamF32, sample_fobj_integer_frames,
-};
+pub use fobj::{FObjEvaluationError, FObjStreamF32};
 pub use joint_pose::{HsdJointPoseError, HsdJointPoseEvaluator, HsdJointPoseLimits};

@@ -14,12 +14,6 @@ use crate::math::Mat4;
 
 // tobj.c spells this f32 value 1.00000001335e-10F, NOT machine epsilon.
 const TOBJ_SCALE_EPSILON: f32 = 1.0e-10;
-const IDENTITY: [[f32; 4]; 3] = [
-    [1.0, 0.0, 0.0, 0.0],
-    [0.0, 1.0, 0.0, 0.0],
-    [0.0, 0.0, 1.0, 0.0],
-];
-
 /// Actual input-row selection for GX's matrix texgen dispatch, not enum names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HsdTextureSource {
@@ -60,29 +54,6 @@ pub enum HsdTextureCoordinates {
     Unsupported {
         reason: HsdTextureUnsupportedReason,
     },
-}
-
-impl HsdTextureCoordinates {
-    pub fn tex_coord_index(&self) -> Option<u8> {
-        match self {
-            Self::Matrix {
-                source: HsdTextureSource::TexCoord { index },
-                ..
-            } => Some(*index),
-            _ => None,
-        }
-    }
-
-    /// An exact semantic identity check for preview selection policy. This does
-    /// not round source SRT or confuse a mirrored offset with an identity matrix.
-    /// Reflection always generates coordinates, even with identity source SRT.
-    pub fn has_transform(&self) -> bool {
-        match self {
-            Self::Matrix { matrix, .. } => *matrix != IDENTITY,
-            Self::Reflection { .. } => true,
-            Self::Unsupported { .. } => false,
-        }
-    }
 }
 
 /// Resolve static ordinary and reflection TObj paths without heap allocation.

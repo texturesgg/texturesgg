@@ -99,14 +99,14 @@ struct Work {
     path_components: usize,
 }
 
-pub(super) fn aobj_limits(limits: RawGenericAnimationLimits) -> RawAObjLimits {
+fn aobj_limits(limits: RawGenericAnimationLimits) -> RawAObjLimits {
     RawAObjLimits {
         max_aobjs: limits.max_aobjs,
         max_fobjs: limits.max_fobjs,
         max_packed_bytes: limits.max_packed_bytes,
     }
 }
-pub(super) fn aobj_error(error: RawAObjError) -> RawGenericAnimationError {
+fn aobj_error(error: RawAObjError) -> RawGenericAnimationError {
     match error {
         RawAObjError::Descriptor(error) => material_descriptor_error(error),
         RawAObjError::Cycle {
@@ -228,7 +228,7 @@ fn material_descriptor_error(error: DescriptorParseError) -> RawGenericAnimation
     }
 }
 
-pub(super) fn descriptor<'a>(
+fn descriptor<'a>(
     dat: &'a DatFile,
     source_offset: u32,
     size: usize,
@@ -241,7 +241,7 @@ pub(super) fn descriptor<'a>(
         })
 }
 
-pub(super) fn read_u32(
+fn read_u32(
     dat: &DatFile,
     source_offset: u32,
     relative_offset: u32,
@@ -260,7 +260,7 @@ pub(super) fn read_u32(
         })
 }
 
-pub(super) fn pointer(
+fn pointer(
     dat: &DatFile,
     source_offset: u32,
     relative_offset: u32,
