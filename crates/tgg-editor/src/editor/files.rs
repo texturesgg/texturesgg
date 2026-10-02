@@ -6,11 +6,15 @@
 //! the GX format couldn't reproduce exactly.
 
 use crate::Error;
+use crate::disk::{read_capped, write_atomically};
 use crate::editor::{Editor, Pending, Unsaved};
 use dat_edit::PaletteOutcome;
+use dat_parser::hsd::scene::HSD_SCENE_MAX_DAT_BYTES;
 use gpui::{Context, PathPromptOptions, Window};
-use std::io::Write;
 use std::path::{Path, PathBuf};
+
+/// The largest PNG an import reads: far past any GX texture's.
+const MAX_PNG_BYTES: u64 = 64 * 1024 * 1024;
 
 impl Editor {
     /// Open DAT bytes, replacing the current file.
@@ -47,14 +51,19 @@ impl Editor {
             return;
         };
         let entry = document.textures()[texture].clone();
-        let image = match image::load_from_memory(png) {
-            Ok(image) => image.to_rgba8(),
+        // The size comes from the header, so a wrong-sized image is turned
+        // away before its pixels are decoded.
+        let reader = || image::ImageReader::new(std::io::Cursor::new(png)).with_guessed_format();
+        let dimensions = reader()
+            .map_err(image::ImageError::IoError)
+            .and_then(image::ImageReader::into_dimensions);
+        let (width, height) = match dimensions {
+            Ok(dimensions) => dimensions,
             Err(error) => {
                 self.set_notice(format!("Couldn't read {name}: {error}"), true, cx);
                 return;
             }
         };
-        let (width, height) = image.dimensions();
         if (width, height) != (entry.width.into(), entry.height.into()) {
             self.set_notice(
                 format!(
@@ -66,6 +75,16 @@ impl Editor {
             );
             return;
         }
+        let decoded = reader()
+            .map_err(image::ImageError::IoError)
+            .and_then(image::ImageReader::decode);
+        let image = match decoded {
+            Ok(image) => image.to_rgba8(),
+            Err(error) => {
+                self.set_notice(format!("Couldn't read {name}: {error}"), true, cx);
+                return;
+            }
+        };
         // A CI texture that owns its palette gets one rebuilt for the new
         // pixels; otherwise they map to the colors it has.
         let result = document.import(texture, image.as_raw());
@@ -286,7 +305,7 @@ impl Editor {
     /// Open a DAT from disk, replacing the current file.
     pub(crate) fn open_file(&mut self, path: &Path, cx: &mut Context<Self>) {
         let name = file_name(path);
-        match std::fs::read(path) {
+        match read_capped(path, HSD_SCENE_MAX_DAT_BYTES as u64) {
             Ok(bytes) => self.open_bytes(&name, bytes, Some(path.to_path_buf()), cx),
             Err(error) => self.set_notice(format!("Couldn't open {name}: {error}"), true, cx),
         }
@@ -395,7 +414,7 @@ impl Editor {
     /// Replace `texture` with a PNG from disk.
     pub(crate) fn import_file(&mut self, texture: usize, path: &Path, cx: &mut Context<Self>) {
         let name = file_name(path);
-        match std::fs::read(path) {
+        match read_capped(path, MAX_PNG_BYTES) {
             Ok(png) => self.import_bytes(texture, &name, &png, cx),
             Err(error) => self.set_notice(format!("Couldn't read {name}: {error}"), true, cx),
         }
@@ -422,7 +441,7 @@ impl Editor {
         let name = file_name(path);
         let result = self
             .texture_png(texture)
-            .and_then(|png| Ok(std::fs::write(path, png)?));
+            .and_then(|png| Ok(write_atomically(path, &png)?));
         match result {
             Ok(()) => self.set_notice(format!("Exported {name}"), false, cx),
             Err(error) => self.set_notice(format!("Couldn't export {name}: {error}"), true, cx),
@@ -449,36 +468,6 @@ fn retitled(title: &str, old_name: &str, new_name: &str) -> String {
     format!("{new_name}{rest}")
 }
 
-/// Write `bytes` to `path` without ever leaving it half-written: write a
-/// temporary file beside it, flush it to disk, then rename it over the
-/// target. A symlinked target is written through to the file it names.
-fn write_atomically(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let directory = target
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    let temporary = directory.join(format!(
-        ".{}.{}.tgg-save",
-        file_name(&target),
-        std::process::id()
-    ));
-    let written = (|| {
-        let mut file = std::fs::File::create(&temporary)?;
-        file.write_all(bytes)?;
-        // Keep the original's permissions.
-        if let Ok(metadata) = std::fs::metadata(&target) {
-            file.set_permissions(metadata.permissions())?;
-        }
-        file.sync_all()?;
-        std::fs::rename(&temporary, &target)
-    })();
-    if written.is_err() {
-        std::fs::remove_file(&temporary).ok();
-    }
-    written
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -494,26 +483,5 @@ mod tests {
             "mine.dat · bind pose"
         );
         assert_eq!(retitled("PlFcRe.dat", "PlFcRe.dat", "mine.dat"), "mine.dat");
-    }
-
-    /// An empty directory of its own for a test.
-    fn scratch(test: &str) -> PathBuf {
-        let directory = std::env::temp_dir()
-            .join("tgg-editor-tests")
-            .join(format!("{test}-{}", std::process::id()));
-        std::fs::remove_dir_all(&directory).ok();
-        std::fs::create_dir_all(&directory).unwrap();
-        directory
-    }
-
-    #[test]
-    fn atomic_write_replaces_the_file_and_leaves_nothing_behind() {
-        let directory = scratch("atomic-write");
-        let path = directory.join("PlFcRe.dat");
-        std::fs::write(&path, b"old").unwrap();
-        write_atomically(&path, b"new bytes").unwrap();
-        assert_eq!(std::fs::read(&path).unwrap(), b"new bytes");
-        assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
-        std::fs::remove_dir_all(&directory).ok();
     }
 }
