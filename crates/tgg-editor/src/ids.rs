@@ -32,23 +32,29 @@ impl fmt::Debug for SkinId {
     }
 }
 
-/// Text that is not 64 hex digits.
+/// Text that is not 64 lowercase hex digits.
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
-#[error("a skin id is 64 hex digits")]
+#[error("a skin id is 64 lowercase hex digits")]
 pub struct NotASkinId;
 
 impl FromStr for SkinId {
     type Err = NotASkinId;
 
     fn from_str(text: &str) -> Result<Self, NotASkinId> {
+        // Lowercase only, so an id has one spelling: the one its file in the
+        // library is named with.
+        let digit = |digit: u8| match digit {
+            b'0'..=b'9' => Some(digit - b'0'),
+            b'a'..=b'f' => Some(digit - b'a' + 10),
+            _ => None,
+        };
         let digits = text.as_bytes();
         if digits.len() != 64 {
             return Err(NotASkinId);
         }
         let mut hash = [0; 32];
         for (byte, pair) in hash.iter_mut().zip(digits.chunks(2)) {
-            let pair = std::str::from_utf8(pair).map_err(|_| NotASkinId)?;
-            *byte = u8::from_str_radix(pair, 16).map_err(|_| NotASkinId)?;
+            *byte = digit(pair[0]).ok_or(NotASkinId)? << 4 | digit(pair[1]).ok_or(NotASkinId)?;
         }
         Ok(Self(hash))
     }
@@ -111,26 +117,48 @@ pub(crate) mod slot_list {
     }
 }
 
-/// A map keyed by slot, written with each slot's file name as its key.
-/// Entries under a name that is no slot's are left out.
-pub(crate) mod slot_map {
+/// Each slot's list of skin ids, written with the slot's file name as its
+/// key and each id in hex. An entry under a name that is no slot's, and an
+/// id that is not a hash, are left out and logged: one bad record does not
+/// cost the rest of the file.
+pub(crate) mod slot_history {
     use super::*;
     use std::collections::BTreeMap;
 
-    pub(crate) fn serialize<S: Serializer, V: Serialize>(
-        map: &BTreeMap<MeleeSlot, V>,
+    pub(crate) fn serialize<S: Serializer>(
+        map: &BTreeMap<MeleeSlot, Vec<SkinId>>,
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
-        serializer.collect_map(map.iter().map(|(slot, value)| (slot.file_name(), value)))
+        serializer.collect_map(map.iter().map(|(slot, ids)| (slot.file_name(), ids)))
     }
 
-    pub(crate) fn deserialize<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
-    ) -> Result<BTreeMap<MeleeSlot, V>, D::Error> {
-        let named = BTreeMap::<String, V>::deserialize(deserializer)?;
+    ) -> Result<BTreeMap<MeleeSlot, Vec<SkinId>>, D::Error> {
+        let named = BTreeMap::<String, Vec<String>>::deserialize(deserializer)?;
         Ok(named
             .into_iter()
-            .filter_map(|(name, value)| Some((MeleeSlot::from_file_name(&name)?, value)))
+            .filter_map(|(name, ids)| {
+                let Some(slot) = MeleeSlot::from_file_name(&name) else {
+                    crate::log(&format!(
+                        "history: {name} is no slot; its entry is left out"
+                    ));
+                    return None;
+                };
+                let ids = ids
+                    .iter()
+                    .filter_map(|id| {
+                        id.parse()
+                            .inspect_err(|_| {
+                                crate::log(&format!(
+                                    "history: {name} lists {id}, which is no skin id; left out"
+                                ))
+                            })
+                            .ok()
+                    })
+                    .collect();
+                Some((slot, ids))
+            })
             .collect())
     }
 }
@@ -148,8 +176,34 @@ mod tests {
         assert_eq!(id.to_string(), hex);
         assert_eq!(hex.parse(), Ok(id));
         assert_eq!(serde_json::to_string(&id).unwrap(), format!("\"{hex}\""));
-        for text in ["", "e3b0", &hex.replace('e', "g"), &format!("{hex}00")] {
+        for text in [
+            "",
+            "e3b0",
+            &hex.replace('e', "g"),
+            &format!("{hex}00"),
+            // One spelling only: the lowercase one its file is named with.
+            &hex.to_uppercase(),
+        ] {
             assert!(text.parse::<SkinId>().is_err(), "{text}");
         }
+    }
+
+    /// A history file with one bad record keeps the rest: losing it all
+    /// would lose every slot's way back.
+    #[test]
+    fn a_history_keeps_what_reads_and_leaves_out_what_does_not() {
+        #[derive(serde::Deserialize)]
+        struct Record {
+            #[serde(with = "super::slot_history")]
+            slots: std::collections::BTreeMap<melee_dat::MeleeSlot, Vec<SkinId>>,
+        }
+        let good = SkinId::of(b"kept");
+        let text = format!(
+            r#"{{"slots":{{"PlFcRe.dat":["{good}","not-a-hash"],"notes.txt":["{good}"]}}}}"#
+        );
+        let record: Record = serde_json::from_str(&text).expect("the file still reads");
+        let slot: melee_dat::MeleeSlot = "PlFcRe.dat".parse().expect("a slot");
+        assert_eq!(record.slots.len(), 1);
+        assert_eq!(record.slots[&slot], [good]);
     }
 }

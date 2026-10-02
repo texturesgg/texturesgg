@@ -11,7 +11,7 @@
 
 use crate::Error;
 use crate::game::Game;
-use crate::ids::{SkinId, slot_map};
+use crate::ids::{SkinId, slot_history};
 use crate::library::{Library, Skin};
 use melee_dat::MeleeSlot;
 use melee_dat::vanilla::is_vanilla;
@@ -48,7 +48,7 @@ impl SlotState {
 struct GameHistory {
     path: PathBuf,
     /// Each slot's earlier files, as library ids, newest last.
-    #[serde(with = "slot_map")]
+    #[serde(with = "slot_history")]
     slots: BTreeMap<MeleeSlot, Vec<SkinId>>,
 }
 

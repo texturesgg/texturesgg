@@ -255,7 +255,12 @@ impl Shell {
             }
             Place::Library => {
                 self.request_skin_renders(&library);
-                let renders = self.images.clone();
+                let renders = self
+                    .images
+                    .iter()
+                    .filter(|(key, _)| matches!(key, RenderKey::Skin(_)))
+                    .map(|(key, image)| (*key, image.clone()))
+                    .collect();
                 let page = cx.new(|_| LibraryPage::new(library.skins().to_vec(), states, renders));
                 let events =
                     cx.subscribe_in(&page, window, |shell, _, event, window, cx| match event {
