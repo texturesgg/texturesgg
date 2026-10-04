@@ -25,6 +25,11 @@ enum Command {
     Build {
         #[arg(default_value = ".")]
         dir: PathBuf,
+        /// First unpack the source from this zip ("-" for stdin) into DIR,
+        /// which must be empty or missing. Only manifest.json and src/ are
+        /// taken from it.
+        #[arg(long)]
+        source_zip: Option<PathBuf>,
         /// The game SDK's folder or tgg-game-sdk.json.
         #[arg(long, env = "TGG_GAME_SDK")]
         sdk: PathBuf,
@@ -113,11 +118,17 @@ fn main() -> Result<()> {
     match Cli::parse().command {
         Command::Build {
             dir,
+            source_zip,
             sdk,
             cc,
             output,
             json,
-        } => build(&dir, &sdk, &cc, output, json),
+        } => {
+            if let Some(zip) = source_zip {
+                unpack_source(&zip, &dir)?;
+            }
+            build(&dir, &sdk, &cc, output, json)
+        }
         Command::Pack { dir, output, json } => pack(&dir, output, json),
         Command::Inspect { file } => inspect(&file),
         Command::Catalog { output, packages } => write_catalog(&output, &packages),
@@ -155,6 +166,53 @@ fn pack(dir: &Path, output: Option<PathBuf>, json: bool) -> Result<()> {
         .with_context(|| manifest_path.display().to_string())?;
     let library = read(&dir.join(&manifest.entry))?;
     write_package(Package::pack(library, manifest)?, output, json)
+}
+
+/// The largest source zip `build --source-zip` takes.
+const SOURCE_ZIP_LIMIT: u64 = 8 * 1024 * 1024;
+
+/// Unpack a mod's source (`manifest.json` and `src/`) from a zip into `dir`.
+fn unpack_source(zip: &Path, dir: &Path) -> Result<()> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    let reader: Box<dyn Read> = if zip == Path::new("-") {
+        Box::new(std::io::stdin())
+    } else {
+        Box::new(std::fs::File::open(zip).with_context(|| zip.display().to_string())?)
+    };
+    reader.take(SOURCE_ZIP_LIMIT + 1).read_to_end(&mut bytes)?;
+    ensure!(
+        bytes.len() as u64 <= SOURCE_ZIP_LIMIT,
+        "the source zip is over {SOURCE_ZIP_LIMIT} bytes"
+    );
+    if dir.exists() {
+        ensure!(
+            std::fs::read_dir(dir)?.next().is_none(),
+            "{} is not empty",
+            dir.display()
+        );
+    }
+    let mut archive =
+        zip::ZipArchive::new(std::io::Cursor::new(bytes)).context("the source zip")?;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index)?;
+        // enclosed_name refuses absolute paths and any `..`.
+        let Some(relative) = entry.enclosed_name() else {
+            bail!(
+                "the source zip names {:?}, outside the source",
+                entry.name()
+            );
+        };
+        let wanted = relative == Path::new("manifest.json") || relative.starts_with("src");
+        if !wanted || entry.is_dir() {
+            continue;
+        }
+        let path = dir.join(&relative);
+        std::fs::create_dir_all(path.parent().expect("a file has a parent"))?;
+        let mut file = std::fs::File::create(&path).with_context(|| path.display().to_string())?;
+        std::io::copy(&mut entry, &mut file)?;
+    }
+    Ok(())
 }
 
 /// Compile the mod in `dir` with `cc` against `sdk` and pack the library.

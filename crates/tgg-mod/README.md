@@ -32,7 +32,7 @@ It leaves downloading, signing, and any user interface to its callers.
 ## The `tgg-mod` tool
 
 ```text
-tgg-mod build [DIR] --sdk SDK [-o OUT.zip] [--json]
+tgg-mod build [DIR] --sdk SDK [--source-zip ZIP|-] [-o OUT.zip] [--json]
                                          compile DIR's src/**/*.c against a game SDK and pack it
 tgg-mod pack DIR [-o OUT.zip] [--json]   DIR holds manifest.json and the built library
 tgg-mod inspect FILE                     a package zip, a mod library, or a port executable
@@ -47,6 +47,8 @@ compiles every `src/**/*.c` with GCC (`--cc` or `CC`) in one call, with the SDK'
 path, definitions and options plus `-shared -fPIC -fvisibility=hidden -O2`, on paths
 relative to `DIR`, so the same source and SDK give the same package anywhere. `SDK` is
 the SDK's folder or its `tgg-game-sdk.json`, or the `TGG_GAME_SDK` environment variable.
+`--source-zip` first unpacks `manifest.json` and `src/` from a zip, or from stdin with
+`-`, into an empty `DIR`; the registry's builder sends each mod's source that way.
 
 For `pack`, `DIR` is what tgg-mod-runtime's `tgg_add_mod` writes for each mod. `PORT` is the
 port's folder or executable, or the `TGG_PORT` environment variable. Hosts that only
