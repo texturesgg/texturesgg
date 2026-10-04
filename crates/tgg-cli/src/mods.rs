@@ -2,8 +2,10 @@
 //! write catalogs, publish to textures.gg, and manage the mods installed in a
 //! port.
 
+use crate::account::Site;
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Args, Subcommand};
+use serde::Deserialize;
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use tgg_mod::port::PortError;
@@ -41,17 +43,17 @@ pub enum ModCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Create the mod on textures.gg from DIR's manifest.json, under your
+    /// account, and make DIR a git repository if it isn't one.
+    New {
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+    },
     /// Tag the mod's version and push it to its repository on textures.gg,
     /// which builds the tag: DIR is the mod's git checkout.
     Publish {
         #[arg(default_value = ".")]
         dir: PathBuf,
-        /// The mod's repository, from its page on textures.gg.
-        #[arg(long, env = "TGG_REMOTE")]
-        remote: String,
-        /// A push token from the mod's page.
-        #[arg(long, env = "TGG_PUSH_TOKEN", hide_env_values = true)]
-        token: String,
     },
     /// Read the functions a port build lets mods name, for a registry to check
     /// hooks against.
@@ -132,7 +134,7 @@ impl PortArg {
     }
 }
 
-pub fn run(command: ModCommand) -> Result<()> {
+pub fn run(command: ModCommand, api: &str) -> Result<()> {
     match command {
         ModCommand::Build {
             dir,
@@ -150,7 +152,8 @@ pub fn run(command: ModCommand) -> Result<()> {
             build(&dir, &sdk, layout.as_ref(), &cc, output, json)
         }
         ModCommand::Layout { executable, output } => write_layout(&executable, &output),
-        ModCommand::Publish { dir, remote, token } => publish(&dir, &remote, &token),
+        ModCommand::New { dir } => new(Site::new(api)?.signed_in()?, &dir),
+        ModCommand::Publish { dir } => publish(Site::new(api)?.signed_in()?, &dir),
         ModCommand::Pack { dir, output, json } => pack(&dir, output, json),
         ModCommand::Inspect { file } => inspect(&file),
         ModCommand::Catalog { output, packages } => write_catalog(&output, &packages),
@@ -183,9 +186,7 @@ fn print_json(value: &serde_json::Value) {
 }
 
 fn pack(dir: &Path, output: Option<PathBuf>, json: bool) -> Result<()> {
-    let manifest_path = dir.join("manifest.json");
-    let manifest = Manifest::parse(&read(&manifest_path)?)
-        .with_context(|| manifest_path.display().to_string())?;
+    let manifest = read_manifest(dir)?;
     let library = read(&dir.join(&manifest.entry))?;
     write_package(Package::pack(library, manifest)?, None, output, json)
 }
@@ -255,9 +256,7 @@ fn build(
         sdk.name,
         sdk.compiler
     );
-    let manifest_path = dir.join("manifest.json");
-    let manifest = Manifest::parse(&read(&manifest_path)?)
-        .with_context(|| manifest_path.display().to_string())?;
+    let manifest = read_manifest(dir)?;
     let sources = sdk::mod_sources(dir)?;
     let scratch = Path::new(".tgg-build");
     let library = scratch.join(&manifest.entry);
@@ -322,12 +321,44 @@ fn git(dir: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
+fn read_manifest(dir: &Path) -> Result<Manifest> {
+    let path = dir.join("manifest.json");
+    Manifest::parse(&read(&path)?).with_context(|| path.display().to_string())
+}
+
+/// Create the mod on textures.gg and make `dir` a git repository to publish
+/// from.
+fn new(site: &Site, dir: &Path) -> Result<()> {
+    #[derive(Deserialize)]
+    struct Created {
+        slug: String,
+    }
+    let manifest = read_manifest(dir)?;
+    sdk::mod_sources(dir)?;
+    let mut body = json!({ "slug": manifest.id, "name": manifest.name });
+    if let Some(description) = &manifest.description {
+        body["description"] = json!(description);
+    }
+    let created: Created = site.post("/api/code-mods", &body)?;
+    if git(dir, &["rev-parse", "--git-dir"]).is_err() {
+        git(dir, &["init", "--initial-branch=main"])?;
+    }
+    println!(
+        "Created {} on textures.gg. Commit your source, then run tgg mod publish.",
+        created.slug
+    );
+    Ok(())
+}
+
 /// Tag `v<version>` at HEAD (or reuse that tag if it is already there) and
 /// push HEAD and the tag. The registry builds every tag pushed to it.
-fn publish(dir: &Path, remote: &str, token: &str) -> Result<()> {
-    let manifest_path = dir.join("manifest.json");
-    let manifest = Manifest::parse(&read(&manifest_path)?)
-        .with_context(|| manifest_path.display().to_string())?;
+fn publish(site: &Site, dir: &Path) -> Result<()> {
+    #[derive(Deserialize)]
+    struct PushAccess {
+        remote: String,
+        token: String,
+    }
+    let manifest = read_manifest(dir)?;
     sdk::mod_sources(dir)?;
     ensure!(
         git(dir, &["status", "--porcelain"])?.is_empty(),
@@ -353,13 +384,18 @@ fn publish(dir: &Path, remote: &str, token: &str) -> Result<()> {
             println!("Tagged {tag}");
         }
     }
+    let access: PushAccess = site.post(
+        &format!("/api/code-mods/{}/push-token", manifest.id),
+        &json!({}),
+    )?;
+    let (remote, token) = (access.remote, access.token);
     // The token goes through git's environment, not its command line.
     let status = std::process::Command::new("git")
         .arg("-C")
         .arg(dir)
         .args([
             "push",
-            remote,
+            &remote,
             "HEAD:refs/heads/main",
             &format!("refs/tags/{tag}"),
         ])

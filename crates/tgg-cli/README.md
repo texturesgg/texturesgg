@@ -4,12 +4,29 @@
 code mods for [tgg-mod-runtime](https://github.com/texturesgg/tgg-mod-runtime), on the
 [`tgg-mod`](../tgg-mod) library.
 
+## Signing in
+
+```text
+tgg login [--no-browser]    confirm a code on textures.gg in your browser
+tgg logout
+```
+
+`login` shows a code and opens textures.gg's `/device` page, where you confirm it while
+signed in. The token it gets is saved in `textures.gg/credentials.json` in your config
+folder (`~/.config` on Linux), readable only by you, and sent with every request that
+acts as you. It lasts a week from its last use. `logout` ends that session on the site
+and forgets the token.
+
+`--api URL` (or `TGG_API`) points every command at another textures.gg API, such as a
+local one; the default is `https://api.textures.gg`.
+
 ## `tgg mod`
 
 ```text
 tgg mod build [DIR] --sdk SDK [--source-zip ZIP|-] [-o OUT.zip] [--json]
                                          compile DIR's src/**/*.c against a game SDK and pack it
-tgg mod publish [DIR] --remote URL     tag v<version> and push it to textures.gg, which builds it
+tgg mod new [DIR]                        create the mod on textures.gg from its manifest
+tgg mod publish [DIR]                    tag v<version> and push it to textures.gg, which builds it
 tgg mod layout EXE -o LAYOUT.json       the functions a port build lets mods name
 tgg mod pack DIR [-o OUT.zip] [--json]   DIR holds manifest.json and the built library
 tgg mod inspect FILE                     a package zip, a mod library, or a port executable
@@ -34,10 +51,12 @@ static the compiler also copied; `--json` then reports each hook's canonical nam
 (`name` for an exported function, `file.c:name` for a static), which is what conflict
 checks compare.
 
-`publish` takes the remote and a push token (`--token` or `TGG_PUSH_TOKEN`) from the mod's
-page on textures.gg. It refuses uncommitted changes, tags `v<version>` from manifest.json
-at HEAD (or reuses that tag if it already points there), and pushes HEAD to `main` with
-the tag.
+`new` and `publish` act as the signed-in user. `new` registers the manifest's id, name
+and description as a mod on textures.gg (an id is unique there) and runs `git init` in
+`DIR` if it isn't a repository yet. `publish` refuses uncommitted changes, tags
+`v<version>` from manifest.json at HEAD (or reuses that tag if it already points there),
+gets a short-lived push token for the mod's repository, and pushes HEAD to `main` with
+the tag; textures.gg builds every tag pushed to it.
 
 For `pack`, `DIR` is what tgg-mod-runtime's `tgg_add_mod` writes for each mod. `PORT` is
 the port's executable, or the `TGG_PORT` environment variable; mods install beside it in
