@@ -19,13 +19,14 @@ crates/
   melee-dat/     Melee on top of dat-parser: fighters, stages, their animation
   dat-edit/      In-place texture and color edits to a DAT
   hsd-render/    wgpu renderer for HSD models
+  tgg-mod/       Code-mod packages for tgg-mod-runtime: manifests, catalogs, installs
 
   tgg-ui/        The desktop app's theme and components, on gpui-ce
   tgg-editor/    The desktop app
 ```
 
-The first seven are libraries, published on crates.io. Each has a README that
-says what it owns and what it leaves to the others.
+The first eight are libraries; all but tgg-mod are published on crates.io.
+Each has a README that says what it owns and what it leaves to the others.
 
 - [`docs/DAT_LAYERING_ARCHITECTURE.md`](docs/DAT_LAYERING_ARCHITECTURE.md): how
   a DAT becomes pixels, layer by layer.

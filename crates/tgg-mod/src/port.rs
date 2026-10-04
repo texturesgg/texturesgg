@@ -1,0 +1,84 @@
+//! A port's executable, and whether it carries the runtime.
+//!
+//! tgg-mod-runtime records its API, the game layout it was built for, and
+//! the port's name in the executable's `tgg_port` section, each
+//! NUL-terminated. A build without the section has no mod loader.
+
+use crate::install::ModsDir;
+use object::{Object, ObjectSection};
+use std::path::{Path, PathBuf};
+
+/// The port's executable name inside its folder.
+#[cfg(not(windows))]
+const EXECUTABLE: &str = "melee";
+#[cfg(windows)]
+const EXECUTABLE: &str = "melee.exe";
+
+/// A port build that carries the runtime.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Port {
+    pub executable: PathBuf,
+    /// The game layout mods must be built for.
+    pub game_abi: String,
+    /// The port's name, such as `melee-pc`.
+    pub name: String,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum PortError {
+    #[error("there is no {EXECUTABLE} in {0}")]
+    NoExecutable(PathBuf),
+    #[error("this build of melee-pc has no textures.gg mod loader")]
+    NoRuntime,
+    #[error("this build's mod loader is {0}; the app installs {api} mods", api = crate::API)]
+    Api(String),
+    #[error("{0} is not a program this app reads: {1}")]
+    Object(PathBuf, object::Error),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+}
+
+impl Port {
+    /// The port in `path`: its folder, or its executable.
+    pub fn open(path: &Path) -> Result<Self, PortError> {
+        let executable = if path.is_dir() {
+            path.join(EXECUTABLE)
+        } else {
+            path.to_owned()
+        };
+        if !executable.is_file() {
+            return Err(PortError::NoExecutable(path.to_owned()));
+        }
+        let cache = object::ReadCache::new(std::fs::File::open(&executable)?);
+        let file =
+            object::File::parse(&cache).map_err(|e| PortError::Object(executable.clone(), e))?;
+        let section = file
+            .section_by_name("tgg_port")
+            .ok_or(PortError::NoRuntime)?;
+        let data = section
+            .data()
+            .map_err(|e| PortError::Object(executable.clone(), e))?;
+        let mut fields = data.split(|&b| b == 0).map(String::from_utf8_lossy);
+        let api = fields.next().unwrap_or_default().into_owned();
+        if api != crate::API {
+            return Err(PortError::Api(api));
+        }
+        let game_abi = fields.next().unwrap_or_default().into_owned();
+        let name = fields.next().unwrap_or_default().into_owned();
+        Ok(Self {
+            executable,
+            game_abi,
+            name,
+        })
+    }
+
+    /// The folder the executable is in.
+    pub fn folder(&self) -> &Path {
+        self.executable.parent().unwrap_or(Path::new("."))
+    }
+
+    /// The `mods/` folder beside the executable, which the runtime loads.
+    pub fn mods(&self) -> ModsDir {
+        ModsDir::new(self.folder().join("mods"))
+    }
+}
