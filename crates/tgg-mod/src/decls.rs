@@ -1,9 +1,10 @@
 //! The hooks, exports, imports and game layout a mod's library declares.
 //!
-//! Every `TGG_BEFORE`, `TGG_AFTER`, `TGG_REPLACE`, `TGG_EXPORT` and
-//! `TGG_IMPORT` in a mod's source becomes a fixed-size record in its
-//! library's `tgg_decls` section, as does the game layout id it was compiled
-//! against. The runtime reads the same
+//! Every `TGG_BEFORE`, `TGG_AFTER`, `TGG_REPLACE`, `TGG_EXPORT`,
+//! `TGG_IMPORT` and game symbol reference in a mod's source becomes a
+//! fixed-size record in its library's `tgg_decls` section, as does the game
+//! layout id it was compiled against. A hooked function is a game symbol: a
+//! plain name, or `file.c:name` for a static. The runtime reads the same
 //! records to install the hooks, so what this module reports is what the mod
 //! does. The record layout is tgg-mod-runtime's `tgg_decl` (`tgg/tgg.h`).
 
@@ -25,6 +26,9 @@ const KIND_REPLACE: u32 = 3;
 const KIND_GAME_ABI: u32 = 4;
 const KIND_EXPORT: u32 = 5;
 const KIND_IMPORT: u32 = 6;
+/// A game symbol whose address the runtime fills into the mod. It changes
+/// nothing about the game, so it never reaches the manifest or a conflict.
+const KIND_SYMBOL: u32 = 7;
 
 /// The game functions a mod hooks, each list sorted and without repeats.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -113,6 +117,7 @@ pub fn read(library: &[u8]) -> Result<Declarations, DeclError> {
                 declarations.exports.push(symbol)
             }
             KIND_IMPORT if import_is_valid(&symbol) => declarations.imports.push(symbol),
+            KIND_SYMBOL if !symbol.is_empty() => {}
             KIND_GAME_ABI => match &declarations.game_abi {
                 Some(known) if *known != symbol => {
                     return Err(DeclError::TwoLayouts(known.clone(), symbol));
@@ -172,4 +177,5 @@ pub(crate) mod tests {
     pub(crate) const GAME_ABI: u32 = KIND_GAME_ABI;
     pub(crate) const EXPORT: u32 = KIND_EXPORT;
     pub(crate) const IMPORT: u32 = KIND_IMPORT;
+    pub(crate) const SYMBOL: u32 = KIND_SYMBOL;
 }

@@ -13,6 +13,8 @@
 //! - [`package`]: packing and opening package zips.
 //! - [`catalog`]: the list of packages a registry offers.
 //! - [`port`]: a port's executable, and whether it carries the runtime.
+//! - [`sdk`]: a port's game SDK, and the compiler command that builds a mod
+//!   against it.
 //! - [`install`]: a port's `mods/` folder, conflicts between mods, and
 //!   imports a mod needs.
 
@@ -22,6 +24,7 @@ pub mod install;
 pub mod manifest;
 pub mod package;
 pub mod port;
+pub mod sdk;
 
 pub use catalog::{Catalog, CatalogEntry, PackageRef};
 pub use decls::{Declarations, Hooks};
@@ -29,6 +32,7 @@ pub use install::{Conflict, Installed, ModsDir, conflicts, unmet_imports};
 pub use manifest::{Manifest, ModId, Netplay};
 pub use package::Package;
 pub use port::Port;
+pub use sdk::Sdk;
 
 /// The runtime API this crate's packages target.
 pub const API: &str = "tgg/1";
