@@ -109,6 +109,18 @@ impl Renders {
             shared: None,
         });
     }
+
+    /// Render the skin `id`, its file at `path`, as `model`, one of the
+    /// shared models it holds: a laser skin as its laser.
+    pub fn request_skin_shared(&self, iso: &Path, id: SkinId, path: PathBuf, model: SharedModel) {
+        let _ = self.jobs.try_send(Job {
+            iso: iso.to_owned(),
+            key: RenderKey::Skin(id),
+            slot: model.slot(),
+            path: Some(path),
+            shared: Some(model),
+        });
+    }
 }
 
 fn cache_folder() -> PathBuf {

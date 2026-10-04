@@ -27,7 +27,7 @@ use gpui::RenderImage;
 use gpui::Task;
 use gpui::{AppContext, Context, Entity, FocusHandle, Subscription, Window};
 use melee_dat::MeleeSlot;
-use skins::{Change, changed_models, slot_states};
+use skins::{Change, changed_models, skin_changes, slot_states};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -258,14 +258,16 @@ impl Shell {
                 (Screen::Game(page), events)
             }
             Place::Library => {
-                self.request_skin_renders(&library);
+                let changes = skin_changes(&library);
+                self.request_skin_renders(&library, &changes);
                 let renders = self
                     .images
                     .iter()
                     .filter(|(key, _)| matches!(key, RenderKey::Skin(_)))
                     .map(|(key, image)| (*key, image.clone()))
                     .collect();
-                let page = cx.new(|_| LibraryPage::new(library.skins().to_vec(), states, renders));
+                let page = cx
+                    .new(|_| LibraryPage::new(library.skins().to_vec(), states, renders, changes));
                 let events =
                     cx.subscribe_in(&page, window, |shell, _, event, window, cx| match event {
                         LibraryEvent::Costumes(event) => shell.costumes_event(event, window, cx),

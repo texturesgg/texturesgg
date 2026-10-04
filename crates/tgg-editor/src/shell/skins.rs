@@ -83,17 +83,29 @@ impl Shell {
 
     /// Ask for renders of the library's costumes and stages that don't have
     /// one yet, drawn with the game's references.
-    pub(super) fn request_skin_renders(&self, library: &Library) {
+    /// A skin for a shared file renders as the first model it `changes`: a
+    /// laser skin as its laser.
+    pub(super) fn request_skin_renders(
+        &self,
+        library: &Library,
+        changes: &HashMap<SkinId, Vec<SharedModel>>,
+    ) {
         let Some(game) = self.game() else {
             return;
         };
         for skin in library.skins() {
-            let Some(slot) = skin.slot.filter(|&slot| has_model(slot)) else {
+            let Some(slot) = skin.slot else {
                 continue;
             };
-            if !self.images.contains_key(&RenderKey::Skin(skin.id)) {
+            if self.images.contains_key(&RenderKey::Skin(skin.id)) {
+                continue;
+            }
+            let path = library.blob_path(skin.id);
+            if has_model(slot) {
+                self.renders.request_skin(game.path(), skin.id, path, slot);
+            } else if let Some(&model) = changes.get(&skin.id).and_then(|models| models.first()) {
                 self.renders
-                    .request_skin(game.path(), skin.id, library.blob_path(skin.id), slot);
+                    .request_skin_shared(game.path(), skin.id, path, model);
             }
         }
     }
@@ -453,6 +465,28 @@ pub(super) fn changed_models(
             SharedModel::in_file(slot)
                 .filter(move |model| !model.is_vanilla(&bytes).unwrap_or(false))
                 .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// The shared models each skin for a shared file changes from vanilla, one
+/// of each name: Blue Lasers changes Fox's Laser. A model that can't be read
+/// counts as changed; a file the app can't name changes none it knows of.
+pub(super) fn skin_changes(library: &Library) -> HashMap<SkinId, Vec<SharedModel>> {
+    library
+        .skins()
+        .iter()
+        .filter_map(|skin| {
+            let slot = skin.slot.filter(|&slot| !has_model(slot))?;
+            let bytes = library.read(skin.id).ok()?;
+            let mut changed: Vec<SharedModel> = Vec::new();
+            for model in SharedModel::in_file(slot) {
+                let named = changed.iter().any(|seen| seen.name() == model.name());
+                if !named && !model.is_vanilla(&bytes).unwrap_or(false) {
+                    changed.push(model);
+                }
+            }
+            Some((skin.id, changed))
         })
         .collect()
 }
