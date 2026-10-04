@@ -10,8 +10,10 @@
 //! to the same code, so conflict checks have to compare canonical names.
 //!
 //! A static the compiler also copied (`name.constprop.N`, `name.isra.N`,
-//! `name.part.N`, `name.cold`) is refused as a hook: calls that reach the copy
-//! skip the hook, and tgg-mod-runtime refuses it at load for the same reason.
+//! `name.part.N`, in the same file) is refused as a hook: calls that reach the
+//! copy skip the hook, and tgg-mod-runtime refuses it at load for the same
+//! reason. `name.cold` is not a copy: it is the function's cold tail, and
+//! every call still enters through `name`.
 
 use crate::decls::Hooks;
 use object::{Object, ObjectSymbol, SymbolKind};
@@ -19,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Suffixes GCC gives the copies it makes of a function.
-const CLONE_SUFFIXES: &[&str] = &["constprop", "isra", "part", "cold"];
+const CLONE_SUFFIXES: &[&str] = &["constprop", "isra", "part"];
 
 /// A registered layout: which port build it came from, and its symbols.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,7 +78,8 @@ impl Symbols {
                 continue;
             }
             let Ok(name) = symbol.name() else { continue };
-            if name.is_empty() {
+            // A cold tail is part of its function, not one a mod can name.
+            if name.is_empty() || name.contains(".cold") {
                 continue;
             }
             if symbol.is_local() {
