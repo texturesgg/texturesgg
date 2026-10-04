@@ -1,5 +1,6 @@
-//! Write `data/vanilla-files.json`: the size and SHA-256 of every costume
-//! and versus stage file on a clean Melee NTSC 1.02 disc.
+//! Write `data/vanilla-files.json`: the size and SHA-256 of every costume,
+//! fighter data, effects and versus stage file on a clean Melee NTSC 1.02
+//! disc, and the fingerprint of every model fighters' costumes share.
 //!
 //! ```text
 //! cargo run --release -p melee-dat --example vanilla_files -- MELEE.iso [OUTPUT]
@@ -8,7 +9,7 @@
 //! Any ISO but the one the reference catalog records as its source is
 //! refused, so the table can only describe the game as shipped.
 
-use melee_dat::{MeleeSlot, catalog::CATALOG_JSON};
+use melee_dat::{Character, MeleeSlot, SharedModel, catalog::CATALOG_JSON};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::error::Error;
@@ -21,6 +22,7 @@ struct Table {
     schema_version: u32,
     source: serde_json::Value,
     files: Vec<Record>,
+    shared: Vec<SharedRecord>,
 }
 
 #[derive(Serialize)]
@@ -31,7 +33,15 @@ struct Record {
     sha256: String,
 }
 
-/// A costume slot's file (`PlFcRe.dat`) or a versus stage's (`GrNLa.dat`).
+#[derive(Serialize)]
+struct SharedRecord {
+    fighter: &'static str,
+    name: &'static str,
+    fingerprint: String,
+}
+
+/// A slot's file: a costume (`PlFcRe.dat`), a fighter's data (`PlFc.dat`),
+/// an effects file (`EfFxData.dat`) or a versus stage (`GrNLa.dat`).
 fn belongs(name: &str) -> bool {
     MeleeSlot::from_file_name(name).is_some()
 }
@@ -82,18 +92,35 @@ fn main() -> Result<(), Box<dyn Error>> {
             })
         })
         .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
+    let shared = Character::all()
+        .flat_map(SharedModel::of)
+        .map(|model| {
+            let bytes = disc.read(&model.slot().file_name())?;
+            Ok(SharedRecord {
+                fighter: model.character().code(),
+                name: model.name(),
+                fingerprint: model.fingerprint(&bytes)?,
+            })
+        })
+        .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
     let table = Table {
-        schema_version: 1,
+        schema_version: 2,
         source: serde_json::json!({
             "gameId": source["gameId"],
             "discRevision": source["discRevision"],
             "isoSha256": source["isoSha256"],
         }),
         files,
+        shared,
     };
     let mut json = serde_json::to_string_pretty(&table)?;
     json.push('\n');
     std::fs::write(&output, json)?;
-    println!("{} files -> {}", table.files.len(), output.display());
+    println!(
+        "{} files and {} shared models -> {}",
+        table.files.len(),
+        table.shared.len(),
+        output.display()
+    );
     Ok(())
 }

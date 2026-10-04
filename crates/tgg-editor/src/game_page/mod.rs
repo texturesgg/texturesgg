@@ -1,13 +1,14 @@
 //! Melee: what's in the player's game. It opens on the roster, a grid
 //! of fighters (or stages) showing what each has installed; opening one
-//! shows it moving on the stage, with the Costumes pane floating at the
-//! right, as the editor's panes do: its slots, and what the selected one can
+//! shows it moving on the stage, with panes floating at the right as the
+//! editor's do: Costumes, and Shared for what every costume plays with (the
+//! fighter's data file). The pane holding the selected slot says what it can
 //! do. Edit textures sits in the top row.
 
 mod view;
 
 use crate::References;
-use crate::costumes::{CostumesEvent, Fighter, Notice};
+use crate::costumes::{CostumesEvent, Fighter, Notice, has_model};
 use crate::install::SlotState;
 use crate::library::Skin;
 use crate::open_file::OpenFile;
@@ -15,7 +16,7 @@ use crate::page::GameChip;
 use crate::renders::RenderKey;
 use crate::timeline::Timeline;
 use gpui::{AppContext, Context, Entity, EventEmitter, RenderImage, SharedString};
-use melee_dat::{Character, MeleeSlot, Stage};
+use melee_dat::{Character, MeleeSlot, SharedModel, Stage};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -48,9 +49,14 @@ pub(crate) struct GamePage {
     open: bool,
     /// The selected slot of each fighter.
     slots: HashMap<Character, MeleeSlot>,
+    /// The shared model selected in each fighter's shared file, when that
+    /// file is its selected slot.
+    models: HashMap<Character, SharedModel>,
     pub skins: Vec<Skin>,
     pub states: HashMap<MeleeSlot, SlotState>,
     pub undoable: HashSet<MeleeSlot>,
+    /// The shared models the game's files draw differently from vanilla.
+    pub changed_models: HashSet<SharedModel>,
     /// Renders as they arrive; a slot's is under the slot.
     pub renders: HashMap<RenderKey, Arc<RenderImage>>,
     preview: Option<Preview>,
@@ -79,7 +85,9 @@ impl GamePage {
             .into_iter()
             .filter_map(|slot| match slot {
                 MeleeSlot::Stage(stage) => Some(stage),
-                MeleeSlot::Costume { .. } => None,
+                MeleeSlot::Costume { .. } | MeleeSlot::FighterData(_) | MeleeSlot::Effects(_) => {
+                    None
+                }
             })
             .collect();
         Self {
@@ -92,9 +100,11 @@ impl GamePage {
             stage: 0,
             open: false,
             slots: HashMap::new(),
+            models: HashMap::new(),
             skins,
             states,
             undoable,
+            changed_models: HashSet::new(),
             renders,
             preview: None,
             problem: None,
@@ -133,17 +143,22 @@ impl GamePage {
     /// Returns whether the game has it.
     pub fn show_slot(&mut self, slot: MeleeSlot, cx: &mut Context<Self>) -> bool {
         match slot {
-            MeleeSlot::Costume { character, .. } => {
+            MeleeSlot::Costume { .. } | MeleeSlot::FighterData(_) | MeleeSlot::Effects(_) => {
+                // A shared effects file shows under the fighter on show when
+                // it's one of the file's, else the first.
+                let has = |fighter: &Fighter| fighter.slots().any(|has| has == slot);
                 let Some(index) = self
                     .fighters
-                    .iter()
-                    .position(|fighter| fighter.slots().any(|has| has == slot))
+                    .get(self.fighter)
+                    .filter(|fighter| self.tab == Tab::Fighters && has(fighter))
+                    .map(|_| self.fighter)
+                    .or_else(|| self.fighters.iter().position(has))
                 else {
                     return false;
                 };
                 self.tab = Tab::Fighters;
                 self.fighter = index;
-                self.slots.insert(character, slot);
+                self.slots.insert(self.fighters[index].character, slot);
             }
             MeleeSlot::Stage(stage) => {
                 let Some(index) = self.stages.iter().position(|has| *has == stage) else {
@@ -174,9 +189,51 @@ impl GamePage {
             .or_else(|| fighter.slots().next())
     }
 
-    /// Put the selected slot in the preview, unless it already is.
+    /// The shared model selected for the fighter on show, when its selected
+    /// slot is a shared file: the one last chosen in it, else its first.
+    fn selected_model(&self) -> Option<SharedModel> {
+        if self.tab != Tab::Fighters {
+            return None;
+        }
+        let fighter = self.fighters.get(self.fighter)?;
+        let file = self.selected_slot()?;
+        self.models
+            .get(&fighter.character)
+            .copied()
+            .filter(|model| model.slot() == file)
+            .or_else(|| fighter.models(file).next())
+    }
+
+    /// The slot whose model shows for `fighter`'s `slot`: itself, or for a
+    /// shared file, which is no costume, the fighter's costume on show, else
+    /// its first.
+    fn model_for(&self, fighter: &Fighter, slot: MeleeSlot) -> Option<MeleeSlot> {
+        if has_model(slot) {
+            return Some(slot);
+        }
+        let showing = self
+            .preview
+            .as_ref()
+            .and_then(|preview| preview.file.slot)
+            .filter(|shown| has_model(*shown) && shown.character() == Some(fighter.character));
+        showing.or_else(|| {
+            fighter
+                .costumes
+                .first()
+                .map(|costume| costume.slot(fighter))
+        })
+    }
+
+    /// Put the selected slot's model in the preview, unless it already is.
     fn show_selected(&mut self, cx: &mut Context<Self>) {
-        let Some(slot) = self.selected_slot() else {
+        let slot = match self.tab {
+            Tab::Fighters => self.fighters.get(self.fighter).and_then(|fighter| {
+                self.shown_slot(fighter)
+                    .and_then(|slot| self.model_for(fighter, slot))
+            }),
+            Tab::Stages => self.selected_slot(),
+        };
+        let Some(slot) = slot else {
             return;
         };
         if self.previews(slot) {
@@ -255,9 +312,12 @@ impl GamePage {
         !matches!(self.states.get(&slot), None | Some(SlotState::Vanilla))
     }
 
-    /// The slot on show, when a fighter or stage is open: what Edit
-    /// textures opens.
+    /// The slot on show, when a fighter or stage is open and it has a model:
+    /// what Edit textures opens.
     pub fn editable(&self) -> Option<MeleeSlot> {
-        self.open.then(|| self.selected_slot()).flatten()
+        self.open
+            .then(|| self.selected_slot())
+            .flatten()
+            .filter(|slot| has_model(*slot))
     }
 }

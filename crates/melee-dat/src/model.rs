@@ -9,6 +9,7 @@
 use crate::catalog::MeleeReferenceCatalog;
 use crate::error::{MeleeError, Result};
 use crate::fighter::playback::{FighterAttach, MeleeFighterPlayback};
+use crate::fighter::shared::SharedModel;
 use crate::references::MeleeReferenceStore;
 use crate::stage::playback::MeleeStagePlayback;
 use dat_parser::descriptor::map_head::MapHead;
@@ -63,6 +64,20 @@ impl MeleeModel {
         } else {
             Static(Box::new(HsdSource::from_parsed(&dat, policy)?))
         }))
+    }
+
+    /// Load `model`, one costumes share, from `bytes`, its file: drawn under
+    /// `policy` in its serialized pose.
+    pub fn open_shared(
+        bytes: &[u8],
+        model: SharedModel,
+        policy: HsdDrawEvaluationPolicy,
+    ) -> Result<Self> {
+        let dat = source::parse(bytes)?;
+        let roots = model.model_roots(&dat)?;
+        Ok(Self(Static(Box::new(HsdSource::from_model_roots(
+            &dat, &roots, policy,
+        )?))))
     }
 
     /// Play the fighter's animations on a model still in its serialized

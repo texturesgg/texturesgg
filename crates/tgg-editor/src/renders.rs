@@ -1,5 +1,5 @@
-//! Pictures of the player's costumes, in their game or their library: each
-//! rendered in 3D in its idle pose,
+//! Pictures of the player's costumes, in their game or their library, and of
+//! the models costumes share: each rendered in 3D in its idle pose,
 //! off-screen, on a thread of its own with its own GPU device, so the window
 //! never waits. Renders are kept on disk by the costume file's SHA-256, so a
 //! costume draws once until its file changes.
@@ -11,9 +11,10 @@
 use crate::Error;
 use crate::ids::SkinId;
 use crate::{Game, game_references, load_model};
+use dat_parser::hsd::draw::HsdDrawEvaluationPolicy;
 use hsd_render::offscreen::{CAPTURE_FORMAT, Gpu, capture};
 use hsd_render::{CameraView, HsdRenderer, Orbit, neutral_preview_lighting};
-use melee_dat::MeleeSlot;
+use melee_dat::{MeleeModel, MeleeSlot, SharedModel};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
@@ -25,6 +26,8 @@ pub const SIZE: u32 = 192;
 /// room for fighters far apart, which makes the stage itself small in a
 /// square render.
 const STAGE_ZOOM: f64 = 0.55;
+/// How far above a shared model it is drawn from, in radians.
+const SHARED_PITCH: f64 = 0.35;
 
 /// What a render is a picture of.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -33,6 +36,8 @@ pub enum RenderKey {
     Slot(MeleeSlot),
     /// A skin in the library.
     Skin(SkinId),
+    /// A model costumes share, as the game holds it.
+    Shared(SharedModel),
 }
 
 /// A costume to render, with the game at `iso` for its references.
@@ -43,6 +48,8 @@ struct Job {
     slot: MeleeSlot,
     /// A skin's file on disk; `None` reads the slot from the game.
     path: Option<PathBuf>,
+    /// The shared model in the slot's file to draw, rather than the file.
+    shared: Option<SharedModel>,
 }
 
 /// A finished render: what it is of, and its RGBA pixels, `SIZE` square.
@@ -77,6 +84,18 @@ impl Renders {
             key: RenderKey::Slot(slot),
             slot,
             path: None,
+            shared: None,
+        });
+    }
+
+    /// Render the shared model `model` as the game at `iso` holds it.
+    pub fn request_shared(&self, iso: &Path, model: SharedModel) {
+        let _ = self.jobs.try_send(Job {
+            iso: iso.to_owned(),
+            key: RenderKey::Shared(model),
+            slot: model.slot(),
+            path: None,
+            shared: Some(model),
         });
     }
 
@@ -87,6 +106,7 @@ impl Renders {
             key: RenderKey::Skin(id),
             slot,
             path: Some(path),
+            shared: None,
         });
     }
 }
@@ -144,10 +164,14 @@ fn render(job: &Job, gpu: &mut Option<Gpu>, game: &mut Option<OpenGame>) -> Resu
         None => references.game().read_slot(job.slot)?,
         Some(path) => std::fs::read(path)?,
     };
-    let cached = cache_folder().join(format!(
-        "{:x}-{RENDER_VERSION}-{SIZE}.png",
-        Sha256::digest(&bytes)
-    ));
+    // A shared model is one of its file's: its picture is the file's and
+    // its name's.
+    let mut key = Sha256::new();
+    key.update(&bytes);
+    if let Some(shared) = job.shared {
+        key.update(shared.name());
+    }
+    let cached = cache_folder().join(format!("{:x}-{RENDER_VERSION}-{SIZE}.png", key.finalize()));
     if let Ok(image) = image::open(&cached) {
         return Ok(image.to_rgba8().into_raw());
     }
@@ -155,10 +179,23 @@ fn render(job: &Job, gpu: &mut Option<Gpu>, game: &mut Option<OpenGame>) -> Resu
         *gpu = Some(Gpu::request(false)?);
     }
     let gpu = gpu.as_ref().expect("requested above");
-    let mut model = load_model(&name, &bytes, Some(references))?.model;
+    let mut model = match job.shared {
+        Some(shared) => {
+            MeleeModel::open_shared(&bytes, shared, HsdDrawEvaluationPolicy::GENERIC_HSD)?
+        }
+        None => load_model(&name, &bytes, Some(references))?.model,
+    };
     let geometry = crate::geometry_of(&mut model)?;
     let front = CameraView::Front.orbit();
-    let orbit = if geometry.focus().is_some() {
+    let orbit = if job.shared.is_some() {
+        // A three-quarter view, so a model as thin as a laser shows its
+        // length and one as flat as a shine its face.
+        Orbit {
+            yaw: std::f64::consts::FRAC_PI_4,
+            pitch: SHARED_PITCH,
+            ..front
+        }
+    } else if geometry.focus().is_some() {
         Orbit {
             zoom: STAGE_ZOOM,
             ..front

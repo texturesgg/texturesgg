@@ -1,11 +1,16 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "source": {
     "discRevision": 2,
     "gameId": "GALE01",
     "isoSha256": "0de05981a34156b9cedcef73c73d4244ac05cf6149ab3c9cfed917698819e464"
   },
   "files": [
+    {
+      "name": "EfFxData.dat",
+      "byteLength": 123588,
+      "sha256": "6029fc0740155310322c4313c29cfed0d2acc3a6cb90c8a4945b9cb605f7570e"
+    },
     {
       "name": "GrBb.dat",
       "byteLength": 2284151,
@@ -152,6 +157,11 @@
       "sha256": "460e6ee9c8c8f2a734c818ebb20ee0074d823e5dda835f9d07337dcbbc50b5a6"
     },
     {
+      "name": "PlCa.dat",
+      "byteLength": 161726,
+      "sha256": "4cf61a52737d464df9298fd15573345fb3b9a15c79ab47dce4fd2e3e707917af"
+    },
+    {
       "name": "PlCaBu.dat",
       "byteLength": 525771,
       "sha256": "4aaa5e2d321ca338de03861388ff4b40a3a1cff41f1b6007a6cc92f2c6c59167"
@@ -182,6 +192,11 @@
       "sha256": "c4e0b8e5423d47a1c87b68212b6ae5d36d051f21bb71f15e9cb1eca3b727adde"
     },
     {
+      "name": "PlCl.dat",
+      "byteLength": 289480,
+      "sha256": "8714518ba47b4fb3eb622ad2bf51e054ffc53d567dcb810971eb3546c5c29f32"
+    },
+    {
       "name": "PlClBk.dat",
       "byteLength": 452050,
       "sha256": "de87b3ae7b67e60e11a6018ede312ee267fcd3720911d1717c3331c908e44910"
@@ -205,6 +220,11 @@
       "name": "PlClWh.dat",
       "byteLength": 452050,
       "sha256": "0d037950ec8cd509c78b7611fa02dc17ee3e0b3825c7fffb88eb01b4909b3fe6"
+    },
+    {
+      "name": "PlDk.dat",
+      "byteLength": 172229,
+      "sha256": "c6cd090eda7e96da6fbd6d5dd4296a91eab7cab99c5b007244b090f5de799d6f"
     },
     {
       "name": "PlDkBk.dat",
@@ -232,6 +252,11 @@
       "sha256": "acd91fb0043cca1746fb312f0d3099192f36630e384a42681300d99044fec3e6"
     },
     {
+      "name": "PlDr.dat",
+      "byteLength": 251170,
+      "sha256": "dbd729b1e038a6da6a90a732416aca164f5e55dc2ec7024555a6eaa0a926bb8c"
+    },
+    {
       "name": "PlDrBk.dat",
       "byteLength": 483018,
       "sha256": "8d8132347a5651158aaa425c1f01f13e41b23fc845002cce3040e7e99d837139"
@@ -257,6 +282,11 @@
       "sha256": "a791283f1e5746f24376aefaaaa0292070eda7e255ae0863c87175cc1f6a6acb"
     },
     {
+      "name": "PlFc.dat",
+      "byteLength": 237784,
+      "sha256": "c3c21545bff00fc1d0926f0fb3913cefedbbb7f4af1b928d2e73eed6cff5188c"
+    },
+    {
       "name": "PlFcBu.dat",
       "byteLength": 243998,
       "sha256": "0a9fb3f5bcd6117722fcb7cbd91865ae5b471adf66ba6b35ef3b770f88b44081"
@@ -275,6 +305,11 @@
       "name": "PlFcRe.dat",
       "byteLength": 243998,
       "sha256": "415970782e49539eafcb45ee7bd397458dc6ae2e24177c7bce1d89f53bcef0d3"
+    },
+    {
+      "name": "PlFe.dat",
+      "byteLength": 268085,
+      "sha256": "5d8ec1eb2821e8700ee3ed8020d1b57ca5f857468dad3eddfc28bbc398169648"
     },
     {
       "name": "PlFeBu.dat",
@@ -302,6 +337,11 @@
       "sha256": "520f1bf9c759eb459fe840287d9fd7b4451cec0e88c2f4861ddcb6059d831b9a"
     },
     {
+      "name": "PlFx.dat",
+      "byteLength": 259850,
+      "sha256": "846b075d3379de041ecfb5504f5442484c23783422a0851851c96489d697b690"
+    },
+    {
       "name": "PlFxGr.dat",
       "byteLength": 362982,
       "sha256": "b8a41b28a72c5ce2adc0705075662f73763553838356557ecd302e40c066e6d4"
@@ -320,6 +360,11 @@
       "name": "PlFxOr.dat",
       "byteLength": 362982,
       "sha256": "3d233ecd659a8fa4462baf6795a37f8ec29a0db87da653b2cf2d68c086f269e2"
+    },
+    {
+      "name": "PlGn.dat",
+      "byteLength": 201400,
+      "sha256": "5e38291dae0e0cb70e1d337ea824081f5f9a19a592a2427c7525b3ef3f8f2388"
     },
     {
       "name": "PlGnBu.dat",
@@ -347,9 +392,19 @@
       "sha256": "39126b8cf1d2d726baf5920cb90cbee9f1565119022cf9067e9b7a73bad8581f"
     },
     {
+      "name": "PlGw.dat",
+      "byteLength": 260320,
+      "sha256": "1c057a2882b7b42f3184b96ddf5221cae50e69652b00f6c78819c819804e0a1f"
+    },
+    {
       "name": "PlGwNr.dat",
       "byteLength": 113895,
       "sha256": "7b264bd18e48285890719ab335a731a62fa0857720368c891e8cc31a2ad65a34"
+    },
+    {
+      "name": "PlKb.dat",
+      "byteLength": 198866,
+      "sha256": "bae86007bbdcdd6bea67ddc0309280c47f7e94557de0f7d5469b5c19d0755cd7"
     },
     {
       "name": "PlKbBu.dat",
@@ -382,6 +437,11 @@
       "sha256": "501c4578ee1806116daa499ed31e6eb1e35cd45540bc609bd90356a076136e7e"
     },
     {
+      "name": "PlKp.dat",
+      "byteLength": 195840,
+      "sha256": "a21afa0e015957170f48305fd9414c041955ccf6991ea1b18a6f9142e063d24d"
+    },
+    {
       "name": "PlKpBk.dat",
       "byteLength": 493586,
       "sha256": "17239f2a6ddbac0f782fa3e511d9da6c2895d3ef618bedc80ec01dd07985ccee"
@@ -402,6 +462,11 @@
       "sha256": "0c2b02b12c9ab70f3ceecf91119c32df4ba6a35b57df990a0373a0bca456b4c1"
     },
     {
+      "name": "PlLg.dat",
+      "byteLength": 172308,
+      "sha256": "bbd86022d8a43109c69194a2361fb83d9705fa7c9e1723615e06c1e20bf7f1aa"
+    },
+    {
       "name": "PlLgAq.dat",
       "byteLength": 373098,
       "sha256": "a5000eefd16e5349c7a84f1e6085241a39695a8da61a0bf794c3716725d6258f"
@@ -420,6 +485,11 @@
       "name": "PlLgWh.dat",
       "byteLength": 487174,
       "sha256": "32428c0ca7b88e9f6efdf3ac38b52d57dd9d7ad0611eb152f1665108ddff1d4f"
+    },
+    {
+      "name": "PlLk.dat",
+      "byteLength": 239099,
+      "sha256": "9f7c804278054b2cc7dfe0c4b87d69bcf1511df9fd673190c2ce84cc68e76bc8"
     },
     {
       "name": "PlLkBk.dat",
@@ -447,6 +517,11 @@
       "sha256": "44cb64ec09e56fb4025e8d91a942a3f7f853b1fe51b37c0aa709c71726e080f7"
     },
     {
+      "name": "PlMr.dat",
+      "byteLength": 194992,
+      "sha256": "929cdf08c31bc75156ccef05238f2b16dc4d0b187ed1bb4f0a628a2466fb7f7a"
+    },
+    {
       "name": "PlMrBk.dat",
       "byteLength": 473526,
       "sha256": "deeb3bc478d720ba432f15c731638629e132269922dd03f05b7f2a9fd07d8c4c"
@@ -470,6 +545,11 @@
       "name": "PlMrYe.dat",
       "byteLength": 473526,
       "sha256": "c6047de9aaa5f136f72e47cc4e12d2dd606fd1dba36ef773dd3f89007dc669f2"
+    },
+    {
+      "name": "PlMs.dat",
+      "byteLength": 175023,
+      "sha256": "0c4b7e49c8d18bfb3f5fd8c463d7c00b70292fa971b1ee94caf99548ba5b45b2"
     },
     {
       "name": "PlMsBk.dat",
@@ -497,6 +577,11 @@
       "sha256": "51bf4a608510b43a74c71cb5f22637aab33ab4dd66658c88506af22c44a5bfad"
     },
     {
+      "name": "PlMt.dat",
+      "byteLength": 197653,
+      "sha256": "c59ce7ec4f303f9b647a8f1205a1be8a4d6466a984649df2dd7f038e1db631ed"
+    },
+    {
       "name": "PlMtBu.dat",
       "byteLength": 255156,
       "sha256": "e5faa704d61e8f30342e72616e69da58bfbb923b668634c7d2d54d5b5beefddd"
@@ -515,6 +600,11 @@
       "name": "PlMtRe.dat",
       "byteLength": 255156,
       "sha256": "af93e42b01800f38ea311bb1bf754eaa28a5c372c07841644242fdd5bfa29227"
+    },
+    {
+      "name": "PlNn.dat",
+      "byteLength": 94630,
+      "sha256": "83bc4d19539a9f9bc3f4e85d38e190899e9330eb424565dcb1605401582b0cc2"
     },
     {
       "name": "PlNnAq.dat",
@@ -537,6 +627,11 @@
       "sha256": "55f9a305b84f6209bdc279ca945e5f51154e9863d6303a6d3639326642b2bddf"
     },
     {
+      "name": "PlNs.dat",
+      "byteLength": 356055,
+      "sha256": "a190a1df18783d3ec2adbc44e6b63b395e75152e264f2f1d80843375a64a1070"
+    },
+    {
       "name": "PlNsBu.dat",
       "byteLength": 375368,
       "sha256": "d274ecb0aa9d0642ad9dfa270886f7a7af77f3106083f0e8243d7ab0383b80fc"
@@ -557,6 +652,11 @@
       "sha256": "686c695dfe156ba3b9f82b46f889ea1721106a3648774fb839cb832398ecfb08"
     },
     {
+      "name": "PlPc.dat",
+      "byteLength": 240228,
+      "sha256": "b4683893f3face7492dfbb1141c0f17e8cb8a4cb9599657a4a997c462119f169"
+    },
+    {
       "name": "PlPcBu.dat",
       "byteLength": 230146,
       "sha256": "fd0778804f498db4bea5a90a35c215aea8165fb2dde23c4ec0158e4cc047a207"
@@ -575,6 +675,11 @@
       "name": "PlPcRe.dat",
       "byteLength": 206334,
       "sha256": "64c0ce9c31f53df9c16f0f4010490484d9adccb7e4895910bb66815af6113044"
+    },
+    {
+      "name": "PlPe.dat",
+      "byteLength": 269820,
+      "sha256": "f1e42fd826e7af28683cbf587f32d9c3c249b492487d124f888f8a0073b07de8"
     },
     {
       "name": "PlPeBu.dat",
@@ -602,6 +707,11 @@
       "sha256": "c68fbfb3ba9383f9fbe4b7f037176d3a247fd95e5916bb2bc4a075aa256c0e93"
     },
     {
+      "name": "PlPk.dat",
+      "byteLength": 216410,
+      "sha256": "4befcf5d68af080ad6a18364d126b62f852e3c7f0f3ee3070168aa156bda184b"
+    },
+    {
       "name": "PlPkBu.dat",
       "byteLength": 158102,
       "sha256": "d4e244f00d598250ea1642f58f20f66b0ede5f611b4271d04442abe4f7981bf2"
@@ -622,6 +732,11 @@
       "sha256": "cd9b9f24b06625e1a9abc877912bd0537c44c376b590d795af9956080f316515"
     },
     {
+      "name": "PlPp.dat",
+      "byteLength": 109674,
+      "sha256": "5dd044b2ac5003f18dfca6e3a5197724f383419b4fc31bd4cb0a6205052507c0"
+    },
+    {
       "name": "PlPpGr.dat",
       "byteLength": 350624,
       "sha256": "2ae621a65da95281721db39b30a0a7803e40fa53589547db568c1d491157b438"
@@ -640,6 +755,11 @@
       "name": "PlPpRe.dat",
       "byteLength": 350744,
       "sha256": "0014407dad2cec89457f7d921815895e89c580ab3d6733b41b072fbec240934c"
+    },
+    {
+      "name": "PlPr.dat",
+      "byteLength": 114528,
+      "sha256": "17ff81bf214584db3619fffffb97727925ad5f03ce37c80141dd1bff783fb42e"
     },
     {
       "name": "PlPrBu.dat",
@@ -667,6 +787,11 @@
       "sha256": "775345f806e6c9151e7219af74d01c303b37fcd3098bd00ad6e08234fb5ee28a"
     },
     {
+      "name": "PlSk.dat",
+      "byteLength": 166907,
+      "sha256": "b75ee373521c4deb97ea8863e4d07e37b589dc7756c9e375e750e2043075ce89"
+    },
+    {
       "name": "PlSkBu.dat",
       "byteLength": 380180,
       "sha256": "4c2b1541df5d62e9cfeb72b1fde4fb68dc9d14a239346b575533614632b4ba2c"
@@ -692,6 +817,11 @@
       "sha256": "702dab8a9b932829fc3c65cdda2b8422b7a6169a76e186174cab117f0a20d1ba"
     },
     {
+      "name": "PlSs.dat",
+      "byteLength": 319219,
+      "sha256": "8fc0047354d551c8854e9834a3aad08e377f9855ab2572f47d0b41adbf347c22"
+    },
+    {
       "name": "PlSsBk.dat",
       "byteLength": 401741,
       "sha256": "581aef31fd1ead4067902c13a3592edb3492e281e4680e9375a7647651f07f94"
@@ -715,6 +845,11 @@
       "name": "PlSsPi.dat",
       "byteLength": 407885,
       "sha256": "71269d0fd4a92bbfa9e7b80f525574082687fb09dd1f37c8d5244e0727d5b85c"
+    },
+    {
+      "name": "PlYs.dat",
+      "byteLength": 287136,
+      "sha256": "95649bbf535503832190c9f34f400f27ad9c17523cebed88c1925bad1884f52b"
     },
     {
       "name": "PlYsAq.dat",
@@ -747,6 +882,11 @@
       "sha256": "15c3fae3fc94510ef767d8f5cfa8cd660bc2c9349e0ccf7aa565f5bbaee2e6c1"
     },
     {
+      "name": "PlZd.dat",
+      "byteLength": 187304,
+      "sha256": "e523bb0fe551f64aa6ae5b3ae59cd1e62434baeded076d4a5e1ea993e122a79a"
+    },
+    {
       "name": "PlZdBu.dat",
       "byteLength": 345374,
       "sha256": "d9b13c45adf2317349b26591207975661141e91096f08a024c86a01ac29f6885"
@@ -770,6 +910,58 @@
       "name": "PlZdWh.dat",
       "byteLength": 349214,
       "sha256": "890781004398089d64b9db4ed7bea35217227263fa5bc46d6074515c01a1ff56"
+    }
+  ],
+  "shared": [
+    {
+      "fighter": "Fc",
+      "name": "Laser",
+      "fingerprint": "90e18c8bfb98faaa038bc44c5608c9b5f88b5cefb94cc41919f98cae374c24b7"
+    },
+    {
+      "fighter": "Fc",
+      "name": "Blaster",
+      "fingerprint": "2c8f3b455cc0912afd6c68256510b1bf220e72a85a10476db120cd994eeab5b6"
+    },
+    {
+      "fighter": "Fc",
+      "name": "Phantasm",
+      "fingerprint": "e9844af5b3918f405e1703efc81b159b79275cd01ed2b31aba5fbc13e1eab402"
+    },
+    {
+      "fighter": "Fc",
+      "name": "Shine",
+      "fingerprint": "327a4a20be3a20f6838e5aad37d58b63784b0a4c6cc25c99815392e185879961"
+    },
+    {
+      "fighter": "Fc",
+      "name": "Fire Bird",
+      "fingerprint": "b83087bea3fe22383587a5c63d5b002bac6dc87c9132af24af303b072d93abd7"
+    },
+    {
+      "fighter": "Fx",
+      "name": "Laser",
+      "fingerprint": "90e18c8bfb98faaa038bc44c5608c9b5f88b5cefb94cc41919f98cae374c24b7"
+    },
+    {
+      "fighter": "Fx",
+      "name": "Blaster",
+      "fingerprint": "2c8f3b455cc0912afd6c68256510b1bf220e72a85a10476db120cd994eeab5b6"
+    },
+    {
+      "fighter": "Fx",
+      "name": "Illusion",
+      "fingerprint": "37b060ffca8e530cc7e1970957c66fc65250e8c09c69f5ee43ef15965b08cc7f"
+    },
+    {
+      "fighter": "Fx",
+      "name": "Shine",
+      "fingerprint": "327a4a20be3a20f6838e5aad37d58b63784b0a4c6cc25c99815392e185879961"
+    },
+    {
+      "fighter": "Fx",
+      "name": "Fire Fox",
+      "fingerprint": "b83087bea3fe22383587a5c63d5b002bac6dc87c9132af24af303b072d93abd7"
     }
   ]
 }

@@ -155,3 +155,61 @@ fn scrubbing_pauses_on_the_frame_and_speed_carries_to_the_next_move(cx: &mut Tes
         })
         .unwrap();
 }
+
+/// Lasers ride in Falco's data file, which every costume of his plays with.
+/// Installing over it keeps the original in the library, so his costumes
+/// still move; without that copy they stand in the bind pose. Undo puts the
+/// original back.
+#[test]
+fn costumes_still_move_after_their_fighter_file_is_installed_over() {
+    use crate::References;
+    use crate::install::{History, SlotState, install, undo};
+    use crate::library::Library;
+    use melee_dat::{MeleeReferenceCatalog, MeleeSlot};
+
+    let clean = std::env::var_os("TGG_MELEE_ISO")
+        .expect("set TGG_MELEE_ISO to a clean Melee NTSC 1.02 disc image");
+    let folder = tempfile::tempdir().expect("temp folder");
+    let iso = folder.path().join("melee.iso");
+    std::fs::copy(&clean, &iso).expect("copy the disc image");
+    let game = Game::open(&iso).expect("open the copy");
+    let slot: MeleeSlot = "PlFc.dat".parse().expect("a slot");
+    assert!(game.slots().contains(&slot), "the disc lists Falco's file");
+
+    let library = Library::open_at(folder.path().join("library"));
+    let history = History::open_at(folder.path().join("games"));
+    let original = game.read_slot(slot).expect("read Falco's file");
+    assert_eq!(SlotState::of(slot, &original, &library), SlotState::Vanilla);
+    let mut lasers = original.clone();
+    lasers[0x100] ^= 0xff;
+    install(&game, slot, &lasers, &library, &history).expect("install");
+    assert_eq!(
+        SlotState::of(slot, &game.read_slot(slot).expect("read"), &library),
+        SlotState::Custom
+    );
+
+    let red = game.read("PlFcRe.dat").expect("read Falco Red");
+    let catalog = MeleeReferenceCatalog::checked_in();
+    let moves = |references: &References| {
+        crate::load_model("PlFcRe.dat", &red, Some(references))
+            .expect("load Falco Red")
+            .model
+            .fighter()
+            .is_some()
+    };
+    let without = References::new(
+        catalog,
+        Game::open(&iso).expect("open"),
+        folder.path().join("empty"),
+    );
+    assert!(!moves(&without), "no original to play with");
+    let with = References::new(
+        catalog,
+        Game::open(&iso).expect("open"),
+        folder.path().join("library"),
+    );
+    assert!(moves(&with), "the library's original plays");
+
+    undo(&game, slot, &library, &history).expect("undo");
+    assert_eq!(game.read_slot(slot).expect("read"), original);
+}

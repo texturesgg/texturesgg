@@ -1,27 +1,41 @@
 //! The player's costumes: every fighter's costume slots in their game, read
-//! from its file table; how a slot reads to a player; and what a page of
-//! them can ask the app to do.
+//! from its file table, with the files all its costumes share; how a slot
+//! reads to a player; and what a page of them can ask the app to do.
 
 use crate::ids::SkinId;
 use gpui::SharedString;
-use melee_dat::{Character, CostumeColor, MeleeSlot};
+use melee_dat::{Character, CostumeColor, Effects, MeleeSlot, SharedModel};
 use std::path::PathBuf;
 
-/// A fighter and the costume slots its game has for it.
+/// What players call a fighter's data file (`PlFc.dat`).
+pub(crate) const FIGHTER_FILE: &str = "Fighter file";
+/// What players call fighters' effects file (`EfFxData.dat`).
+pub(crate) const EFFECTS_FILE: &str = "Effects";
+
+/// A fighter and the slots its game has for it.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Fighter {
     pub character: Character,
     /// Its costumes, in color order.
     pub costumes: Vec<Costume>,
+    /// The files all its costumes share that the game has: its data file,
+    /// then its effects file.
+    pub shared: Vec<MeleeSlot>,
 }
 
 impl Fighter {
-    /// The slot of each of its costumes.
+    /// The slot of each of its costumes, then its shared files'.
     pub fn slots(&self) -> impl Iterator<Item = MeleeSlot> + '_ {
-        self.costumes.iter().map(|costume| MeleeSlot::Costume {
-            character: self.character,
-            color: costume.color,
-        })
+        self.costumes
+            .iter()
+            .map(|costume| costume.slot(self))
+            .chain(self.shared.iter().copied())
+    }
+
+    /// The models `file`, one of its shared files, holds for it, in the
+    /// order players meet them. None for a file the app can't name yet.
+    pub fn models(&self, file: MeleeSlot) -> impl Iterator<Item = SharedModel> {
+        SharedModel::of(self.character).filter(move |model| model.slot() == file)
     }
 }
 
@@ -42,7 +56,7 @@ impl Costume {
 }
 
 /// The fighters with costumes among `slots`, in the roster's order, each
-/// with its costumes in color order.
+/// with its costumes in color order and the shared files among `slots`.
 pub(crate) fn roster(slots: &[MeleeSlot]) -> Vec<Fighter> {
     let mut costumes: Vec<(Character, CostumeColor)> = slots
         .iter()
@@ -57,24 +71,51 @@ pub(crate) fn roster(slots: &[MeleeSlot]) -> Vec<Fighter> {
                 .filter(|(owner, _)| *owner == character)
                 .map(|&(_, color)| Costume { color })
                 .collect();
+            let shared = [
+                Some(MeleeSlot::FighterData(character)),
+                Effects::of(character).map(MeleeSlot::Effects),
+            ]
+            .into_iter()
+            .flatten()
+            .filter(|file| slots.contains(file))
+            .collect();
             (!costumes.is_empty()).then_some(Fighter {
                 character,
                 costumes,
+                shared,
             })
         })
         .collect()
 }
 
-/// Where a skin goes, in the player's words: "Falco · Red", "Final
-/// Destination", or "no slot" when its file doesn't say.
+/// Whether `slot` holds a model the app can show and edit: a costume or a
+/// stage. A shared file's models are shown one by one instead.
+pub(crate) fn has_model(slot: MeleeSlot) -> bool {
+    matches!(slot, MeleeSlot::Costume { .. } | MeleeSlot::Stage(_))
+}
+
+/// Where a skin goes, in the player's words: "Falco · Red", "Falco · Fighter
+/// file", "Falco & Fox · Effects", "Final Destination", or "no slot" when
+/// its file doesn't say.
 pub(crate) fn slot_label(slot: Option<MeleeSlot>) -> String {
     match slot {
         Some(MeleeSlot::Costume { character, color }) => {
             format!("{} · {}", character.name(), color.name())
         }
+        Some(MeleeSlot::FighterData(character)) => format!("{} · {FIGHTER_FILE}", character.name()),
+        Some(MeleeSlot::Effects(effects)) => format!("{} · {EFFECTS_FILE}", fighters(effects)),
         Some(MeleeSlot::Stage(stage)) => stage.name().to_owned(),
         None => "no slot".into(),
     }
+}
+
+/// The fighters an effects file is shared by: "Falco & Fox".
+pub(crate) fn fighters(effects: Effects) -> String {
+    effects
+        .fighters()
+        .map(Character::name)
+        .collect::<Vec<_>>()
+        .join(" & ")
 }
 
 #[derive(Clone)]

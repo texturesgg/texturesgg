@@ -32,18 +32,19 @@ impl MeleeReferenceStore {
     }
 
     /// The references the costume `scene` describes plays with, each asked
-    /// of `read` by its file name (`PlFc.dat`): a disc, a folder, a fetch.
-    /// `None` when the catalog doesn't recognize the costume. A file `read`
-    /// can't supply is left out, and playback says which one it misses.
+    /// of `read` by its catalog asset (`PlFc.dat` and its hash): a disc, a
+    /// folder, a fetch. `None` when the catalog doesn't recognize the
+    /// costume. A file `read` can't supply is left out, and playback says
+    /// which one it misses.
     pub fn for_costume(
         catalog: &MeleeReferenceCatalog,
         scene: &HsdScene,
-        read: impl FnMut(&str) -> Option<Vec<u8>>,
+        read: impl FnMut(&ReferenceAsset) -> Option<Vec<u8>>,
     ) -> Option<Self> {
-        let names = catalog.idle_reference_files(scene)?;
+        let assets = catalog.idle_reference_assets(scene)?;
         Some(Self::from_bytes(
             catalog,
-            names.into_iter().filter_map(read),
+            assets.into_iter().filter_map(read),
         ))
     }
 

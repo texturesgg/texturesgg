@@ -27,9 +27,9 @@ use gpui::RenderImage;
 use gpui::Task;
 use gpui::{AppContext, Context, Entity, FocusHandle, Subscription, Window};
 use melee_dat::MeleeSlot;
-use skins::{Change, slot_states};
+use skins::{Change, changed_models, slot_states};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -238,6 +238,9 @@ impl Shell {
                 };
                 let renders = self.images.clone();
                 let skins = library.skins().to_vec();
+                let changed = self
+                    .game()
+                    .map_or_else(HashSet::new, |game| changed_models(game, &states));
                 let undoable = self.undoable();
                 let chip = self.game_chip();
                 let split = self.split.clone();
@@ -246,6 +249,7 @@ impl Shell {
                         references, fighters, skins, states, undoable, renders, split,
                     );
                     page.chip = chip;
+                    page.changed_models = changed;
                     page
                 });
                 let events = cx.subscribe_in(&page, window, |shell, _, event, window, cx| {
