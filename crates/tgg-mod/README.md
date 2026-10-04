@@ -5,10 +5,12 @@ mod loader a Super Smash Bros. Melee port links. This crate is the Rust implemen
 of the runtime's package format (`docs/package-format.md` in that repo), version
 `tgg/1`.
 
-A package is a zip holding `manifest.json` and the mod's shared library. A mod's
-hooks, exports, imports, and game layout come from the records its library carries, not
+A package is a zip holding `manifest.json`, the mod's shared library, and the game
+files it ships under `files/`, if any. A mod's hooks, exports, imports, and game layout
+come from the records its library carries, and its list of files from the files, not
 from what its author writes. That makes a conflict between two mods, or a missing
-dependency, a fact about their code.
+dependency, a fact about their code and data. A mod may ship only files: it has no
+library and no game layout, so one package fits every port of the game.
 
 ## What it owns
 
@@ -16,8 +18,12 @@ dependency, a fact about their code.
   library. Validation covers what the runtime and installers rely on.
 - **Library records.** Reading the `tggdecls` section of an x86-64 ELF mod library:
   hooks, exports, imports, the game layout id, and the target triple.
-- **Packages.** Packing a built mod into a zip that is byte-identical for the same
-  inputs. Opening a zip re-reads its library and refuses a manifest that disagrees.
+- **Game files.** A mod's `files/` folder, which mirrors the game disc: the rules for
+  its paths (no names starting with `.`, under 256 bytes, compared without case) and
+  sizes (under 4 GiB each).
+- **Packages.** Packing a built mod and its files into a zip that is byte-identical for
+  the same inputs. Opening a zip re-reads its library and files and refuses a manifest
+  that disagrees.
 - **Catalogs.** The list of packages a registry offers, with each package's location,
   size, and SHA-256.
 - **Game SDKs.** Reading the `tgg-game-sdk.json` a port build writes, and the
@@ -25,7 +31,8 @@ dependency, a fact about their code.
 - **Ports.** Reading a port executable's `tgg_port` section: whether it carries the
   runtime, the game layout mods must match, and the port's name.
 - **Installing.** A port's `mods/` folder: listing, installing over an older version,
-  turning mods on and off, removing them, conflicts between mods, and unmet imports.
+  turning mods on and off, removing them, conflicts between mods (replacing the same
+  function, or shipping the same file), and unmet imports.
 
 It leaves downloading, signing, and any user interface to its callers.
 

@@ -5,6 +5,7 @@
 //! the author.
 
 use crate::decls::Hooks;
+use crate::files::ModFile;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -82,9 +83,10 @@ pub struct Manifest {
     pub id: ModId,
     pub name: String,
     pub version: Version,
-    /// The library in the package.
-    #[serde(default = "default_entry")]
-    pub entry: String,
+    /// The library in the package; absent for a mod that only ships files.
+    /// A package with a library always names it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<String>,
     /// A missing value counts as gameplay, as the runtime reads it.
     #[serde(default = "default_netplay")]
     pub netplay: Netplay,
@@ -112,15 +114,18 @@ pub struct Manifest {
     /// from the library.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imports: Vec<String>,
+    /// The game files the package ships under `files/`, in byte order of
+    /// path, from packing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<ModFile>,
 }
 
 fn default_netplay() -> Netplay {
     Netplay::Gameplay
 }
 
-fn default_entry() -> String {
-    "mod.so".into()
-}
+/// The library's name when the manifest names none.
+pub const DEFAULT_ENTRY: &str = "mod.so";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ManifestError {
@@ -150,6 +155,11 @@ impl Manifest {
         Ok(manifest)
     }
 
+    /// The library's file name in a package or a mod's folder.
+    pub fn library_name(&self) -> &str {
+        self.entry.as_deref().unwrap_or(DEFAULT_ENTRY)
+    }
+
     pub fn to_json(&self) -> String {
         let mut json = serde_json::to_string_pretty(self).expect("a manifest serializes");
         json.push('\n');
@@ -165,9 +175,10 @@ impl Manifest {
         if self.name.trim().is_empty() {
             return Err(ManifestError::Name);
         }
-        if self.entry.is_empty() || self.entry.contains(['/', '\\']) || self.entry.starts_with('.')
+        if let Some(entry) = &self.entry
+            && (entry.is_empty() || entry.contains(['/', '\\']) || entry.starts_with('.'))
         {
-            return Err(ManifestError::Entry(self.entry.clone()));
+            return Err(ManifestError::Entry(entry.clone()));
         }
         Ok(())
     }

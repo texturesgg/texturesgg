@@ -1,10 +1,11 @@
 //! A port's `mods/` folder: what is installed, installing and removing,
 //! turning mods on and off, conflicts between mods, and imports a mod needs.
 //!
-//! An installed mod is a folder named by its id holding its manifest and
-//! library, the layout the runtime loads. A turned-off mod moves under
+//! An installed mod is a folder named by its id holding its manifest, its
+//! library and its `files/`, the layout the runtime loads. A turned-off mod moves under
 //! `mods/.disabled/`, which the runtime skips.
 
+use crate::files::path_key;
 use crate::manifest::{Manifest, ModId};
 use crate::package::Package;
 use std::path::{Path, PathBuf};
@@ -19,12 +20,30 @@ pub struct Installed {
     pub enabled: bool,
 }
 
-/// Two mods that can't both load: both replace `symbol`.
+/// Two mods that can't both load.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Conflict {
-    pub symbol: String,
+    pub clash: Clash,
     /// The installed mod's id.
     pub with: ModId,
+}
+
+/// What two conflicting mods both claim.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Clash {
+    /// Both replace this function.
+    Replaces(String),
+    /// Both ship this game file (the candidate's spelling of its path).
+    File(String),
+}
+
+impl std::fmt::Display for Clash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Replaces(symbol) => write!(f, "replaces {symbol}"),
+            Self::File(path) => write!(f, "ships files/{path}"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -133,7 +152,15 @@ impl ModsDir {
         let staging = self.root.join(format!("{STAGING}{id}"));
         remove_if_present(&staging)?;
         std::fs::create_dir_all(&staging)?;
-        std::fs::write(staging.join(&package.manifest.entry), &package.library)?;
+        if let Some(library) = &package.library {
+            std::fs::write(staging.join(package.manifest.library_name()), library)?;
+        }
+        for (path, bytes) in &package.files {
+            // Packages check their paths, so each stays inside files/.
+            let file = staging.join("files").join(path);
+            std::fs::create_dir_all(file.parent().expect("a file has a parent"))?;
+            std::fs::write(file, bytes)?;
+        }
         std::fs::write(staging.join("manifest.json"), package.manifest.to_json())?;
 
         let current = [true, false]
@@ -188,21 +215,39 @@ fn remove_if_present(dir: &Path) -> std::io::Result<()> {
 
 /// The turned-on installed mods `candidate` can't load beside, other than
 /// another version of itself. Hooking the same function before or after is
-/// fine; replacing it twice is not.
+/// fine; replacing it twice is not, and neither is shipping the same game
+/// file (paths compare without case).
 pub fn conflicts(candidate: &Manifest, installed: &[Installed]) -> Vec<Conflict> {
     installed
         .iter()
         .filter(|other| other.enabled && other.manifest.id != candidate.id)
         .flat_map(|other| {
-            candidate
+            let with = &other.manifest.id;
+            let replaces = candidate
                 .hooks
                 .replaces
                 .iter()
                 .filter(|symbol| other.manifest.hooks.replaces.contains(symbol))
                 .map(|symbol| Conflict {
-                    symbol: symbol.clone(),
-                    with: other.manifest.id.clone(),
+                    clash: Clash::Replaces(symbol.clone()),
+                    with: with.clone(),
+                });
+            let files = candidate
+                .files
+                .iter()
+                .filter(|file| {
+                    let key = path_key(&file.path);
+                    other
+                        .manifest
+                        .files
+                        .iter()
+                        .any(|o| path_key(&o.path) == key)
                 })
+                .map(|file| Conflict {
+                    clash: Clash::File(file.path.clone()),
+                    with: with.clone(),
+                });
+            replaces.chain(files).collect::<Vec<_>>()
         })
         .collect()
 }
@@ -239,7 +284,7 @@ mod tests {
             id: id.parse().expect("id"),
             name: id.into(),
             version: semver::Version::new(1, 0, 0),
-            entry: "mod.so".into(),
+            entry: Some("mod.so".into()),
             netplay: Netplay::Gameplay,
             description: None,
             license: None,
@@ -249,18 +294,26 @@ mod tests {
             hooks,
             exports: Vec::new(),
             imports: Vec::new(),
+            files: Vec::new(),
         }
     }
 
     #[test]
-    fn replacing_one_function_twice_conflicts_but_hooking_it_does_not() {
+    fn replacing_one_function_twice_or_shipping_one_file_twice_conflicts() {
         let replaces = |symbol: &str| Hooks {
             replaces: vec![symbol.into()],
             ..Default::default()
         };
+        let file = |path: &str| crate::files::ModFile {
+            path: path.into(),
+            size: 1,
+            sha256: String::new(),
+        };
+        let mut replacer = manifest("a.replacer", replaces("ftCo_Landing_IASA"));
+        replacer.files = vec![file("plmrnr.dat")];
         let installed = vec![
             Installed {
-                manifest: manifest("a.replacer", replaces("ftCo_Landing_IASA")),
+                manifest: replacer,
                 enabled: true,
             },
             Installed {
@@ -278,19 +331,27 @@ mod tests {
                 enabled: false,
             },
         ];
-        let candidate = manifest(
+        let mut candidate = manifest(
             "d.new",
             Hooks {
                 replaces: vec!["ftCo_Landing_IASA".into(), "ftCo_Jump_Anim".into()],
                 ..Default::default()
             },
         );
+        candidate.files = vec![file("PlMrNr.dat"), file("PlFxNr.dat")];
+        let with: ModId = "a.replacer".parse().expect("id");
         assert_eq!(
             conflicts(&candidate, &installed),
-            [Conflict {
-                symbol: "ftCo_Landing_IASA".into(),
-                with: "a.replacer".parse().expect("id")
-            }]
+            [
+                Conflict {
+                    clash: Clash::Replaces("ftCo_Landing_IASA".into()),
+                    with: with.clone(),
+                },
+                Conflict {
+                    clash: Clash::File("PlMrNr.dat".into()),
+                    with,
+                },
+            ]
         );
     }
 
@@ -315,7 +376,8 @@ mod tests {
         let mods = ModsDir::new(dir.path().join("mods"));
         let package = Package {
             manifest: manifest("a.mod", Hooks::default()),
-            library: b"v1".to_vec(),
+            library: Some(b"v1".to_vec()),
+            files: Default::default(),
         };
         mods.install(&package).expect("install");
         let id = package.manifest.id.clone();
@@ -334,13 +396,14 @@ mod tests {
         let mods = ModsDir::new(dir.path().join("mods"));
         let mut package = Package {
             manifest: manifest("a.mod", Hooks::default()),
-            library: b"v1".to_vec(),
+            library: Some(b"v1".to_vec()),
+            files: Default::default(),
         };
         mods.install(&package).expect("install");
         let id = package.manifest.id.clone();
         mods.set_enabled(&id, false).expect("turn off");
         package.manifest.version = semver::Version::new(2, 0, 0);
-        package.library = b"v2".to_vec();
+        package.library = Some(b"v2".to_vec());
         mods.install(&package).expect("update");
         let installed = mods.list().expect("list");
         assert_eq!(installed.len(), 1);
