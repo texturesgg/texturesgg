@@ -24,8 +24,6 @@ pub struct Package {
 pub enum PackageError {
     #[error(transparent)]
     Manifest(#[from] ManifestError),
-    #[error("manifest.json is not a valid manifest: {0}")]
-    ManifestJson(#[from] serde_json::Error),
     #[error(transparent)]
     Declarations(#[from] DeclError),
     #[error("the library declares no game layout; build it with tgg_add_mod")]
@@ -58,9 +56,8 @@ impl Package {
     /// Open a package zip, checking its manifest against its library.
     pub fn from_zip(bytes: &[u8]) -> Result<Self, PackageError> {
         let mut archive = zip::ZipArchive::new(Cursor::new(bytes))?;
-        let manifest = read_entry(&mut archive, "manifest.json", MANIFEST_LIMIT)?;
-        let manifest = Manifest::parse(&String::from_utf8_lossy(&manifest))?;
-        manifest.validate()?;
+        let manifest =
+            Manifest::parse(&read_entry(&mut archive, "manifest.json", MANIFEST_LIMIT)?)?;
         let library = read_entry(&mut archive, &manifest.entry, LIBRARY_LIMIT)?;
         let declared = decls::read(&library)?;
         if declared.game_abi.is_none() {
@@ -76,7 +73,9 @@ impl Package {
         Ok(Self { manifest, library })
     }
 
-    /// The package as a zip. The same package always gives the same bytes.
+    /// The package as a zip. The same package always gives the same bytes
+    /// from the same build of this crate; the deflate encoder is part of that
+    /// build, so a registry packs with one pinned build.
     pub fn to_zip(&self) -> Vec<u8> {
         let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let options = zip::write::SimpleFileOptions::default()
@@ -132,9 +131,9 @@ mod tests {
     fn manifest() -> Manifest {
         Manifest {
             api: "tgg/1".into(),
-            id: "test.mod".into(),
+            id: "test.mod".parse().expect("id"),
             name: "Test".into(),
-            version: "1.0.0".into(),
+            version: semver::Version::new(1, 0, 0),
             entry: "mod.so".into(),
             netplay: Netplay::Gameplay,
             description: None,

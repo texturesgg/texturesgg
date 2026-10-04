@@ -5,7 +5,7 @@
 //! library, the layout the runtime loads. A turned-off mod moves under
 //! `mods/.disabled/`, which the runtime skips.
 
-use crate::manifest::Manifest;
+use crate::manifest::{Manifest, ModId};
 use crate::package::Package;
 use std::path::{Path, PathBuf};
 
@@ -22,7 +22,7 @@ pub struct Installed {
 pub struct Conflict {
     pub symbol: String,
     /// The installed mod's id.
-    pub with: String,
+    pub with: ModId,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,11 +39,11 @@ impl ModsDir {
         &self.root
     }
 
-    fn folder(&self, id: &str, enabled: bool) -> PathBuf {
+    fn folder(&self, id: &ModId, enabled: bool) -> PathBuf {
         if enabled {
-            self.root.join(id)
+            self.root.join(id.as_str())
         } else {
-            self.root.join(DISABLED).join(id)
+            self.root.join(DISABLED).join(id.as_str())
         }
     }
 
@@ -62,7 +62,7 @@ impl ModsDir {
                 if entry.file_name().to_string_lossy().starts_with('.') {
                     continue;
                 }
-                let Ok(json) = std::fs::read_to_string(entry.path().join("manifest.json")) else {
+                let Ok(json) = std::fs::read(entry.path().join("manifest.json")) else {
                     continue;
                 };
                 if let Ok(manifest) = Manifest::parse(&json) {
@@ -74,42 +74,49 @@ impl ModsDir {
         Ok(installed)
     }
 
-    fn find(&self, id: &str) -> std::io::Result<Option<Installed>> {
-        Ok(self.list()?.into_iter().find(|mod_| mod_.manifest.id == id))
-    }
-
     /// Install `package`, replacing any installed version and keeping it
     /// off if the player had turned it off. The new files are written beside
-    /// the old and swapped in, so a failed write leaves the old version.
+    /// the old and swapped in, and the old folder is put back if the swap
+    /// fails, so a failed install leaves the old version.
     pub fn install(&self, package: &Package) -> std::io::Result<()> {
         let id = &package.manifest.id;
-        let enabled = self.find(id)?.is_none_or(|mod_| mod_.enabled);
         let staging = self.root.join(format!(".installing-{id}"));
-        let _ = std::fs::remove_dir_all(&staging);
+        remove_if_present(&staging)?;
         std::fs::create_dir_all(&staging)?;
         std::fs::write(staging.join(&package.manifest.entry), &package.library)?;
         std::fs::write(staging.join("manifest.json"), package.manifest.to_json())?;
-        self.remove(id)?;
-        let target = self.folder(id, enabled);
+
+        let current = [true, false]
+            .into_iter()
+            .map(|enabled| (enabled, self.folder(id, enabled)))
+            .find(|(_, folder)| folder.exists());
+        let target = self.folder(id, current.as_ref().is_none_or(|(enabled, _)| *enabled));
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::rename(&staging, &target)
+        let Some((_, current)) = current else {
+            return std::fs::rename(&staging, &target);
+        };
+        let previous = self.root.join(format!(".previous-{id}"));
+        remove_if_present(&previous)?;
+        std::fs::rename(&current, &previous)?;
+        if let Err(error) = std::fs::rename(&staging, &target) {
+            std::fs::rename(&previous, &current)?;
+            return Err(error);
+        }
+        remove_if_present(&previous)
     }
 
     /// Remove the mod `id`, on or off. Nothing to remove is not an error.
-    pub fn remove(&self, id: &str) -> std::io::Result<()> {
+    pub fn remove(&self, id: &ModId) -> std::io::Result<()> {
         for enabled in [true, false] {
-            match std::fs::remove_dir_all(self.folder(id, enabled)) {
-                Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error),
-                _ => {}
-            }
+            remove_if_present(&self.folder(id, enabled))?;
         }
         Ok(())
     }
 
     /// Turn the installed mod `id` on or off.
-    pub fn set_enabled(&self, id: &str, enabled: bool) -> std::io::Result<()> {
+    pub fn set_enabled(&self, id: &ModId, enabled: bool) -> std::io::Result<()> {
         let from = self.folder(id, !enabled);
         if !from.exists() {
             return Ok(());
@@ -119,6 +126,13 @@ impl ModsDir {
             std::fs::create_dir_all(parent)?;
         }
         std::fs::rename(from, to)
+    }
+}
+
+fn remove_if_present(dir: &Path) -> std::io::Result<()> {
+    match std::fs::remove_dir_all(dir) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
+        _ => Ok(()),
     }
 }
 
@@ -155,7 +169,7 @@ pub fn unmet_imports(candidate: &Manifest, installed: &[Installed]) -> Vec<Strin
             };
             !installed.iter().any(|other| {
                 other.enabled
-                    && other.manifest.id == provider
+                    && other.manifest.id == *provider
                     && other.manifest.exports.iter().any(|export| export == name)
             })
         })
@@ -172,9 +186,9 @@ mod tests {
     fn manifest(id: &str, hooks: Hooks) -> Manifest {
         Manifest {
             api: "tgg/1".into(),
-            id: id.into(),
+            id: id.parse().expect("id"),
             name: id.into(),
-            version: "1.0.0".into(),
+            version: semver::Version::new(1, 0, 0),
             entry: "mod.so".into(),
             netplay: Netplay::Gameplay,
             description: None,
@@ -223,7 +237,7 @@ mod tests {
             conflicts(&candidate, &installed),
             [Conflict {
                 symbol: "ftCo_Landing_IASA".into(),
-                with: "a.replacer".into()
+                with: "a.replacer".parse().expect("id")
             }]
         );
     }
@@ -252,14 +266,15 @@ mod tests {
             library: b"v1".to_vec(),
         };
         mods.install(&package).expect("install");
-        mods.set_enabled("a.mod", false).expect("turn off");
-        package.manifest.version = "2.0.0".into();
+        let id = package.manifest.id.clone();
+        mods.set_enabled(&id, false).expect("turn off");
+        package.manifest.version = semver::Version::new(2, 0, 0);
         package.library = b"v2".to_vec();
         mods.install(&package).expect("update");
         let installed = mods.list().expect("list");
         assert_eq!(installed.len(), 1);
         assert!(!installed[0].enabled);
-        assert_eq!(installed[0].manifest.version, "2.0.0");
+        assert_eq!(installed[0].manifest.version, semver::Version::new(2, 0, 0));
         assert_eq!(
             std::fs::read(dir.path().join("mods/.disabled/a.mod/mod.so")).expect("library"),
             b"v2"
