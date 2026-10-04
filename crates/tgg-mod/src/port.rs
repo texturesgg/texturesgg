@@ -22,6 +22,8 @@ pub struct Port {
     pub game_abi: String,
     /// The port's name, such as `melee-pc`.
     pub name: String,
+    /// The target triple it was built for, such as `x86_64-linux-gnu`.
+    pub target: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -73,10 +75,12 @@ impl Port {
         }
         let game_abi = field()?;
         let name = field()?;
+        let target = field()?;
         Ok(Self {
             executable,
             game_abi,
             name,
+            target,
         })
     }
 

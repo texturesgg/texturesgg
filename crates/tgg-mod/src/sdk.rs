@@ -29,6 +29,8 @@ pub struct Sdk {
     /// The compiler family the game was built with, such as `GNU`.
     pub compiler: String,
     pub processor: String,
+    /// The target triple the game was built for, such as `x86_64-linux-gnu`.
+    pub target: String,
     pub include_dirs: Vec<PathBuf>,
     pub force_includes: Vec<PathBuf>,
     pub definitions: Vec<String>,
@@ -42,6 +44,7 @@ struct SdkFile {
     game_abi: String,
     compiler: String,
     processor: String,
+    target: String,
     include_dirs: Vec<String>,
     #[serde(default)]
     force_includes: Vec<String>,
@@ -126,6 +129,7 @@ impl Sdk {
             game_abi: file.game_abi,
             compiler: file.compiler,
             processor: file.processor,
+            target: file.target,
             definitions: file.definitions,
             options: file.options,
         })
@@ -147,6 +151,7 @@ impl Sdk {
         }
         args.extend(self.definitions.iter().map(|d| format!("-D{d}").into()));
         args.push(format!("-DTGG_GAME_ABI=\"{}\"", self.game_abi).into());
+        args.push(format!("-DTGG_GAME_TARGET=\"{}\"", self.target).into());
         args.push("-o".into());
         args.push(output.into());
         args.extend(sources.iter().map(OsString::from));
@@ -193,7 +198,7 @@ mod tests {
 
     const SDK: &str = r#"{
         "api": "tgg/1", "name": "melee-pc", "game_abi": "888b9c012ddb068d",
-        "compiler": "GNU", "processor": "x86_64",
+        "compiler": "GNU", "processor": "x86_64", "target": "x86_64-linux-gnu",
         "include_dirs": ["include/runtime", "include/game/0"],
         "force_includes": ["include/game/0/pc/compat.h"],
         "definitions": ["TARGET_PC=1"],

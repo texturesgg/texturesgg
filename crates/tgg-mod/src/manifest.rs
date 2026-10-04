@@ -1,6 +1,6 @@
 //! What a mod says about itself, in its package's `manifest.json`.
 //!
-//! An author writes the identity fields. Packing adds `game_abi`, `hooks`,
+//! An author writes the identity fields. Packing adds `game_abi`, `target`, `hooks`,
 //! `exports` and `imports`, read from the library, so they never come from
 //! the author.
 
@@ -93,6 +93,9 @@ pub struct Manifest {
     /// The game layout the library was built against, from the library.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub game_abi: Option<String>,
+    /// The target triple the library was built for, from the library.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
     /// The functions the library hooks, from the library.
     #[serde(default, skip_serializing_if = "Hooks::is_empty")]
     pub hooks: Hooks,
