@@ -73,6 +73,35 @@ pub struct Bounds {
     pub radius: f64,
 }
 
+impl Bounds {
+    /// The box spanning every one of `bounds`, with the sphere around it, as
+    /// [`PreparedGeometry::new`] measures one model's.
+    pub(crate) fn union<'a>(bounds: impl IntoIterator<Item = &'a Bounds>) -> Bounds {
+        let mut min = [f64::INFINITY; 3];
+        let mut max = [f64::NEG_INFINITY; 3];
+        for each in bounds {
+            for axis in 0..3 {
+                min[axis] = min[axis].min(each.min[axis]);
+                max[axis] = max[axis].max(each.max[axis]);
+            }
+        }
+        let center = [0, 1, 2].map(|axis| (min[axis] + max[axis]) / 2.0);
+        let radius = [0, 1, 2]
+            .map(|axis| max[axis] - center[axis])
+            .iter()
+            .map(|extent| extent * extent)
+            .sum::<f64>()
+            .sqrt()
+            .max(0.01);
+        Bounds {
+            min,
+            max,
+            center,
+            radius,
+        }
+    }
+}
+
 /// A scene flattened for drawing. Only [`Self::new`] builds one, so every
 /// packet's index range lies inside the buffers and every stage's texture
 /// exists: the renderer draws it without checking again.

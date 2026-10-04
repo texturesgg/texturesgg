@@ -12,7 +12,6 @@
 //! answers. Pick pipelines are built on the first pick, not at load.
 
 use crate::error::{GpuError, Result};
-use crate::geometry::PacketIndex;
 use crate::material::{PreparedMaterial, StageSource, TevStep, TevTarget};
 use dat_parser::hsd::scene::HsdTextureIndex;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -58,6 +57,11 @@ impl PickReadback {
     }
 }
 
+/// What a pick read back: a packet of one of the renderer's models, or of
+/// one since removed. [`crate::HsdRenderer::resolve_pick`] says which.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PickId(pub(crate) u32);
+
 /// A pick being read back.
 pub struct PendingPick {
     buffer: wgpu::Buffer,
@@ -65,16 +69,17 @@ pub struct PendingPick {
 }
 
 impl PendingPick {
-    /// The picked packet (`None` for background), once the readback has
+    /// What was picked (`None` for background), once the readback has
     /// arrived; `None` while it's still in flight.
-    pub fn take(&self) -> Option<Result<Option<PacketIndex>>> {
+    pub fn take(&self) -> Option<Result<Option<PickId>>> {
         Some(take_mapped(&self.state)?.map(|()| {
             let id = {
                 let mapped = self.buffer.slice(..).get_mapped_range();
                 u32::from_le_bytes([mapped[0], mapped[1], mapped[2], mapped[3]])
             };
             self.buffer.unmap();
-            id.checked_sub(1).map(|packet| PacketIndex(packet as usize))
+            // Zero is the cleared background; packets' ids start at one.
+            (id != 0).then_some(PickId(id))
         }))
     }
 }

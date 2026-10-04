@@ -10,11 +10,21 @@ surface can host it alike. The library knows nothing about a particular game;
 a caller poses a model (with `melee-dat`, for Melee) and hands each frame
 here. wgpu is pinned to gpui-ce's version so the editor can share its device.
 
-`PreparedGeometry::new` is the only way to build the geometry a renderer
-draws, so its buffers and index ranges are checked once, there. Scene textures
-are named by `dat-parser`'s `HsdTextureIndex` and packets by `PacketIndex`,
-which is what a pick answers with. A GPU failure is `HsdRenderError::Gpu`
-around the `wgpu` error that caused it.
+A renderer draws a set of models in one pass, sharing depth: a fighter and
+the effect on its hip, a stage and the fighters on it. `add_model` uploads
+one, `update_draw_work` poses it each frame, `remove_model` lets it go, and
+`frame` points the camera at the models it names; `with_model` is the common
+case of one. Within each HSD pass every model's packets draw before the next
+pass, so a translucent effect composes over an opaque fighter. Models are
+posed by their callers in world space; the renderer applies no transforms of
+its own.
+
+`PreparedGeometry::new` is the only way to build a model's geometry, so its
+buffers and index ranges are checked once, there. Models are named by
+`ModelId`, their scene textures by `dat-parser`'s `HsdTextureIndex` and their
+packets by `PacketIndex`; a pick reads back a `PickId`, which
+`resolve_pick` turns into a model and packet. A GPU failure is
+`HsdRenderError::Gpu` around the `wgpu` error that caused it.
 
 It draws the textures.gg site's 3D preview (compiled to WebAssembly) and the
 editor viewport. The pixel baseline (`pixel-baseline.json`, here) is a

@@ -20,7 +20,7 @@ use gpui::{
     ParentElement, Pixels, Point, Render, Styled, Window, canvas, div,
 };
 use gpui_wgpu::{WgpuContextHandle, WgpuRenderTarget};
-use hsd_render::{CameraView, HsdRenderer, Orbit, PendingPick};
+use hsd_render::{CameraView, HsdRenderer, ModelId, Orbit, PendingPick};
 use melee_dat::MeleeFighterPlayback;
 use melee_dat::MeleeModel;
 use std::collections::BTreeMap;
@@ -60,6 +60,9 @@ struct Gpu {
     context: WgpuContextHandle,
     target: WgpuRenderTarget,
     renderer: HsdRenderer,
+    /// The viewport's model among the renderer's: what edits, highlights
+    /// and picks address.
+    model: ModelId,
 }
 
 /// Clicks waiting to pick, and the one readback in flight (`P`, a

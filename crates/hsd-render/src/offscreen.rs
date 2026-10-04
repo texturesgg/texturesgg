@@ -2,7 +2,7 @@
 
 use crate::error::{GpuError, Result};
 use crate::geometry::PacketIndex;
-use crate::renderer::HsdRenderer;
+use crate::renderer::{HsdRenderer, ModelId};
 
 /// Captures use a raw 8-bit target, like the site's non-sRGB canvas.
 pub const CAPTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
@@ -120,9 +120,14 @@ pub fn capture(gpu: &Gpu, renderer: &HsdRenderer) -> Result<RgbaImage> {
     })
 }
 
-/// Pick the packet drawing device pixel `(x, y)`, blocking until the readback
-/// arrives. `None` is background.
-pub fn pick(gpu: &Gpu, renderer: &mut HsdRenderer, x: u32, y: u32) -> Result<Option<PacketIndex>> {
+/// Pick the model and packet drawing device pixel `(x, y)`, blocking until
+/// the readback arrives. `None` is background.
+pub fn pick(
+    gpu: &Gpu,
+    renderer: &mut HsdRenderer,
+    x: u32,
+    y: u32,
+) -> Result<Option<(ModelId, PacketIndex)>> {
     let Gpu { device, queue, .. } = gpu;
     let mut encoder = device.create_command_encoder(&Default::default());
     let readback = renderer.encode_pick(device, &mut encoder, (x, y))?;
@@ -133,7 +138,7 @@ pub fn pick(gpu: &Gpu, renderer: &mut HsdRenderer, x: u32, y: u32) -> Result<Opt
             .poll(wgpu::PollType::wait_indefinitely())
             .map_err(GpuError::from)?;
         if let Some(picked) = pending.take() {
-            return picked;
+            return Ok(picked?.and_then(|pick| renderer.resolve_pick(pick)));
         }
     }
 }

@@ -1,6 +1,7 @@
 //! Errors raised while preparing or rendering HSD draw work.
 
 use crate::geometry::PacketIndex;
+use crate::renderer::ModelId;
 use dat_parser::hsd::scene::HsdTextureIndex;
 use thiserror::Error;
 
@@ -51,6 +52,8 @@ pub enum HsdRenderError {
     },
     #[error("packet {} is not in the prepared geometry", .0.0)]
     UnknownPacket(PacketIndex),
+    #[error("{0:?} is not one of the renderer's models")]
+    UnknownModel(ModelId),
     #[error("GPU operation failed: {0}")]
     Gpu(#[from] GpuError),
     #[error(transparent)]

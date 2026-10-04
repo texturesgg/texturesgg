@@ -203,7 +203,7 @@ fn render(job: &Job, gpu: &mut Option<Gpu>, game: &mut Option<OpenGame>) -> Resu
     } else {
         front
     };
-    let renderer = HsdRenderer::new(
+    let (renderer, _) = HsdRenderer::with_model(
         &gpu.device,
         &gpu.queue,
         CAPTURE_FORMAT,
