@@ -34,6 +34,7 @@ It leaves downloading, signing, and any user interface to its callers.
 ```text
 tgg-mod build [DIR] --sdk SDK [--source-zip ZIP|-] [-o OUT.zip] [--json]
                                          compile DIR's src/**/*.c against a game SDK and pack it
+tgg-mod publish [DIR] --remote URL     tag v<version> and push it to textures.gg, which builds it
 tgg-mod layout EXE -o LAYOUT.json       the functions a port build lets mods name
 tgg-mod pack DIR [-o OUT.zip] [--json]   DIR holds manifest.json and the built library
 tgg-mod inspect FILE                     a package zip, a mod library, or a port executable
@@ -57,6 +58,11 @@ refuses a function the game doesn't have, a static whose name several files shar
 static the compiler also copied; `--json` then reports each hook's canonical name
 (`name` for an exported function, `file.c:name` for a static), which is what conflict
 checks compare.
+
+`publish` takes the remote and a push token (`--token` or `TGG_PUSH_TOKEN`) from the mod's
+page on textures.gg. It refuses uncommitted changes, tags `v<version>` from manifest.json
+at HEAD (or reuses that tag if it already points there), and pushes HEAD to `main` with
+the tag.
 
 For `pack`, `DIR` is what tgg-mod-runtime's `tgg_add_mod` writes for each mod. `PORT` is
 the port's executable, or the `TGG_PORT` environment variable; mods install beside it in
