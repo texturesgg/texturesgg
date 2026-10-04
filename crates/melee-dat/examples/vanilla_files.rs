@@ -1,5 +1,5 @@
-//! Write `data/vanilla-files.json`: the size and SHA-256 of every costume
-//! and versus stage file on a clean Melee NTSC 1.02 disc.
+//! Write `data/vanilla-files.json`: the size and SHA-256 of every costume,
+//! fighter data and versus stage file on a clean Melee NTSC 1.02 disc.
 //!
 //! ```text
 //! cargo run --release -p melee-dat --example vanilla_files -- MELEE.iso [OUTPUT]
@@ -31,7 +31,8 @@ struct Record {
     sha256: String,
 }
 
-/// A costume slot's file (`PlFcRe.dat`) or a versus stage's (`GrNLa.dat`).
+/// A slot's file: a costume (`PlFcRe.dat`), a fighter's data (`PlFc.dat`)
+/// or a versus stage (`GrNLa.dat`).
 fn belongs(name: &str) -> bool {
     MeleeSlot::from_file_name(name).is_some()
 }

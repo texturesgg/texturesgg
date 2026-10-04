@@ -7,8 +7,11 @@
 //! scans.
 
 use crate::Error;
+use crate::ids::SkinId;
+use crate::library::Library;
 use dat_parser::hsd::scene::HsdScene;
 use gc_iso::Disc;
+use melee_dat::catalog::ReferenceAsset;
 use melee_dat::vanilla::{is_vanilla, vanilla_files};
 use melee_dat::{MeleeReferenceCatalog, MeleeReferenceStore, MeleeSlot};
 use std::cell::RefCell;
@@ -248,15 +251,30 @@ impl Game {
 }
 
 /// The reference catalog and the player's game, which holds the files it
-/// names.
+/// names, with the library, which keeps the originals of files the player
+/// installed over.
 pub struct References {
     pub catalog: &'static MeleeReferenceCatalog,
     game: Game,
+    /// The library's folder.
+    library: PathBuf,
 }
 
 impl References {
     pub fn new(catalog: &'static MeleeReferenceCatalog, game: Game) -> Self {
-        Self { catalog, game }
+        Self {
+            catalog,
+            game,
+            library: Library::default_root(),
+        }
+    }
+
+    /// Look for originals in the library kept in `root`.
+    pub fn with_library(self, root: PathBuf) -> Self {
+        Self {
+            library: root,
+            ..self
+        }
     }
 
     /// The player's game.
@@ -264,17 +282,46 @@ impl References {
         &self.game
     }
 
-    /// The reference files the costume `scene` describes needs, read from
-    /// the game, or `None` when it isn't a stock costume the catalog knows.
-    /// The store checks each file against the catalog.
+    /// The reference files the costume `scene` describes needs, or `None`
+    /// when it isn't a stock costume the catalog knows. The store checks
+    /// each file against the catalog.
     pub fn store_for(&self, scene: &HsdScene) -> Option<Rc<MeleeReferenceStore>> {
-        MeleeReferenceStore::for_costume(self.catalog, scene, |name| {
-            self.game
-                .read(name)
-                .inspect_err(|error| crate::log(&format!("reference unavailable: {error}")))
-                .ok()
-        })
-        .map(Rc::new)
+        let assets = self.catalog.idle_reference_assets(scene)?;
+        let files = assets.into_iter().filter_map(|asset| self.original(asset));
+        Some(Rc::new(MeleeReferenceStore::from_bytes(
+            self.catalog,
+            files,
+        )))
+    }
+
+    /// The original of `asset`: the game's file, or the library's copy of it
+    /// when the game's was installed over (a fighter's data file with new
+    /// lasers, say). Failing both, the game's file, for the store to refuse
+    /// by name.
+    fn original(&self, asset: &ReferenceAsset) -> Option<Vec<u8>> {
+        let in_game = self
+            .game
+            .read(&asset.file_name)
+            .inspect_err(|error| crate::log(&format!("reference unavailable: {error}")))
+            .ok();
+        if in_game
+            .as_ref()
+            .is_some_and(|bytes| SkinId::of(bytes).to_string() == asset.sha256)
+        {
+            return in_game;
+        }
+        let kept = asset
+            .sha256
+            .parse()
+            .ok()
+            .and_then(|id| Library::read_kept(&self.library, id).ok());
+        if kept.is_none() {
+            crate::log(&format!(
+                "{} isn't the original, and the library has no copy of it",
+                asset.file_name
+            ));
+        }
+        kept.or(in_game)
     }
 }
 

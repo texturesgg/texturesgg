@@ -5,7 +5,7 @@
 use super::{Place, Screen, Shell};
 use crate::Error;
 use crate::References;
-use crate::costumes::{Notice, roster, slot_label};
+use crate::costumes::{Notice, has_model, roster, slot_label};
 use crate::editor::{Editor, Pending};
 use crate::game::Game;
 use crate::ids::SkinId;
@@ -62,26 +62,27 @@ impl Shell {
         .detach();
     }
 
-    /// Ask for renders of the game's slots that don't have one yet.
+    /// Ask for renders of the game's slots with a model that don't have one
+    /// yet.
     pub(super) fn request_renders(&self, slots: &[MeleeSlot]) {
         let Some(game) = self.game() else {
             return;
         };
-        for &slot in slots {
+        for &slot in slots.iter().filter(|&&slot| has_model(slot)) {
             if !self.images.contains_key(&RenderKey::Slot(slot)) {
                 self.renders.request(game.path(), slot);
             }
         }
     }
 
-    /// Ask for renders of the library's costumes that don't have one yet,
-    /// drawn with the game's references.
+    /// Ask for renders of the library's costumes and stages that don't have
+    /// one yet, drawn with the game's references.
     pub(super) fn request_skin_renders(&self, library: &Library) {
         let Some(game) = self.game() else {
             return;
         };
         for skin in library.skins() {
-            let Some(slot) = skin.slot else {
+            let Some(slot) = skin.slot.filter(|&slot| has_model(slot)) else {
                 continue;
             };
             if !self.images.contains_key(&RenderKey::Skin(skin.id)) {

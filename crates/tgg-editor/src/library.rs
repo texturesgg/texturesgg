@@ -1,7 +1,8 @@
-//! The player's skins: every costume or stage file they've added, kept once
-//! each (by SHA-256) in the app's data folder, with a record of its name,
-//! the slot it was made for, and where it came from. The library is the
-//! source of truth; the player's ISO holds copies of what they install.
+//! The player's skins: every costume, fighter data or stage file they've
+//! added, kept once each (by SHA-256) in the app's data folder, with a
+//! record of its name, the slot it was made for, and where it came from.
+//! The library is the source of truth; the player's ISO holds copies of
+//! what they install.
 //!
 //! ```text
 //! <data dir>/textures.gg/library/library.json
@@ -13,7 +14,7 @@ use crate::disk::{ReadError, read_capped, write_atomically};
 use crate::ids::{SkinId, optional_slot};
 use dat_parser::DatFile;
 use dat_parser::hsd::scene::HSD_SCENE_MAX_DAT_BYTES;
-use melee_dat::{MeleeReferenceCatalog, MeleeSlot, parse_filename};
+use melee_dat::{Character, MeleeReferenceCatalog, MeleeSlot, parse_filename};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -84,11 +85,15 @@ pub struct Library {
 impl Library {
     /// The library in the app's data folder.
     pub fn open() -> Self {
-        let root = dirs::data_dir()
+        Self::open_at(Self::default_root())
+    }
+
+    /// The library's folder in the app's data folder.
+    pub fn default_root() -> PathBuf {
+        dirs::data_dir()
             .unwrap_or_else(std::env::temp_dir)
             .join("textures.gg")
-            .join("library");
-        Self::open_at(root)
+            .join("library")
     }
 
     /// The library kept in `root`. An unreadable index is set aside under
@@ -142,6 +147,12 @@ impl Library {
             .map_err(|error| reject(format!("it isn't a DAT file the app can read ({error})")))?;
         let slot = catalog
             .costume_slot(dat.roots.iter().map(|root| root.name.as_str()))
+            .or_else(|| {
+                dat.roots
+                    .iter()
+                    .find_map(|root| Character::from_data_root(&root.name))
+                    .map(MeleeSlot::Fighter)
+            })
             .or_else(|| parse_filename(file_name));
         let id = SkinId::of(&bytes);
         Ok(Candidate {
@@ -266,7 +277,13 @@ impl Library {
 
     /// The bytes kept as `id`, checked against their hash.
     pub fn read(&self, id: SkinId) -> Result<Vec<u8>, Error> {
-        let bytes = std::fs::read(self.blob_path(id)).map_err(Error::LibraryMissing)?;
+        Self::read_kept(&self.root, id)
+    }
+
+    /// The bytes the library in `root` keeps as `id`, checked against their
+    /// hash, for a reader without the library open.
+    pub fn read_kept(root: &Path, id: SkinId) -> Result<Vec<u8>, Error> {
+        let bytes = std::fs::read(blob_in(root, id)).map_err(Error::LibraryMissing)?;
         if SkinId::of(&bytes) != id {
             return Err(Error::LibraryChanged);
         }
@@ -281,7 +298,7 @@ impl Library {
 
     /// Where the library keeps skin `id`'s file.
     pub fn blob_path(&self, id: SkinId) -> PathBuf {
-        self.root.join("skins").join(format!("{id}.dat"))
+        blob_in(&self.root, id)
     }
 
     fn save(&self) -> std::io::Result<()> {
@@ -294,6 +311,11 @@ impl Library {
         std::fs::create_dir_all(&self.root)?;
         write_atomically(&self.root.join("library.json"), json.as_bytes())
     }
+}
+
+/// Where the library in `root` keeps the file `id`.
+fn blob_in(root: &Path, id: SkinId) -> PathBuf {
+    root.join("skins").join(format!("{id}.dat"))
 }
 
 /// A readable name from a file name, without the slot code it starts with:
@@ -411,6 +433,27 @@ mod tests {
         let bytes = zip.finish().expect("finish").into_inner();
         let dats = dats_in_zip(&bytes).expect("zip opens");
         assert_eq!(dats, [("PlFcRe-waffle.dat".to_owned(), b"dat".to_vec())]);
+    }
+
+    /// A fighter's data file says whose it is by its root, whatever it was
+    /// named, and goes to that fighter's data file slot.
+    #[test]
+    fn a_fighter_data_file_is_identified_by_its_root() {
+        use super::Library;
+        let bytes = crate::test_dat::model_named("ftDataFalco");
+        let catalog = melee_dat::MeleeReferenceCatalog::checked_in();
+        let folder = tempfile::tempdir().expect("temp folder");
+        let library = Library::open_at(folder.path().to_owned());
+        let candidate = library
+            .inspect("blue lasers.dat", bytes, catalog)
+            .expect("readable");
+        assert_eq!(candidate.slot, "PlFc.dat".parse().ok());
+        // Named as the pack ships it, it reads by what follows the code.
+        let named = library
+            .inspect("PlFc-Blue-Lasers.dat", crate::test_dat::model(), catalog)
+            .expect("readable");
+        assert_eq!(named.slot, "PlFc.dat".parse().ok());
+        assert_eq!(named.name, "Blue Lasers");
     }
 
     /// A costume: identified by its root name, kept once, its slot changed

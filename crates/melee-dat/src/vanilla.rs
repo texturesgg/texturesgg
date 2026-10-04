@@ -1,5 +1,5 @@
-//! Every vanilla Melee NTSC 1.02 costume and versus stage file, by size and
-//! SHA-256 (`data/vanilla-files.json`, written by the
+//! Every vanilla Melee NTSC 1.02 costume, fighter data and versus stage file,
+//! by size and SHA-256 (`data/vanilla-files.json`, written by the
 //! `vanilla_files` example from the clean ISO the reference catalog
 //! records). Tells whether a slot in a player's ISO still holds its original
 //! file, without any game content.
@@ -52,13 +52,13 @@ fn table() -> &'static HashMap<String, VanillaFile> {
     })
 }
 
-/// The vanilla file called `name` (`PlFcRe.dat`, `GrNLa.dat`), if the table
+/// The vanilla file called `name` (`PlFcRe.dat`, `PlFc.dat`, `GrNLa.dat`), if the table
 /// has one.
 pub fn vanilla_file(name: &str) -> Option<&'static VanillaFile> {
     table().get(name)
 }
 
-/// Every vanilla costume and versus stage file.
+/// Every vanilla costume, fighter data and versus stage file.
 pub fn vanilla_files() -> impl Iterator<Item = &'static VanillaFile> {
     table().values()
 }
@@ -88,6 +88,11 @@ mod tests {
             assert!(
                 vanilla_file(&format!("Pl{}Nr.dat", character.code())).is_some(),
                 "{}'s neutral costume",
+                character.name()
+            );
+            assert!(
+                vanilla_file(&format!("Pl{}.dat", character.code())).is_some(),
+                "{}'s data file",
                 character.name()
             );
         }

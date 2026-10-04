@@ -99,16 +99,17 @@ impl Review {
                 },
             )
         });
-        let stage = slot
-            .filter(|slot| matches!(slot, MeleeSlot::Stage(_)))
+        // A stage or a fighter's data file goes in one place only: say it.
+        let fixed = slot
+            .filter(|slot| !matches!(slot, MeleeSlot::Costume { .. }))
             .map(|slot| slot_label(Some(slot)));
         div()
             .flex()
             .flex_none()
             .items_center()
             .gap(rem(space::XS))
-            .map(|menus| match stage {
-                Some(stage) => menus.child(stage),
+            .map(|menus| match fixed {
+                Some(place) => menus.child(place),
                 None => menus.child(fighters).children(colors),
             })
     }

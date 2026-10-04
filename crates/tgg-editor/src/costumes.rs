@@ -7,21 +7,26 @@ use gpui::SharedString;
 use melee_dat::{Character, CostumeColor, MeleeSlot};
 use std::path::PathBuf;
 
-/// A fighter and the costume slots its game has for it.
+/// What players call a fighter's data file (`PlFc.dat`).
+pub(crate) const FIGHTER_FILE: &str = "Fighter file";
+
+/// A fighter and the slots its game has for it.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Fighter {
     pub character: Character,
     /// Its costumes, in color order.
     pub costumes: Vec<Costume>,
+    /// Whether the game has its data file, which all its costumes share.
+    pub data_file: bool,
 }
 
 impl Fighter {
-    /// The slot of each of its costumes.
+    /// The slot of each of its costumes, then its data file's.
     pub fn slots(&self) -> impl Iterator<Item = MeleeSlot> + '_ {
-        self.costumes.iter().map(|costume| MeleeSlot::Costume {
-            character: self.character,
-            color: costume.color,
-        })
+        self.costumes
+            .iter()
+            .map(|costume| costume.slot(self))
+            .chain(self.data_file.then_some(MeleeSlot::Fighter(self.character)))
     }
 }
 
@@ -42,7 +47,7 @@ impl Costume {
 }
 
 /// The fighters with costumes among `slots`, in the roster's order, each
-/// with its costumes in color order.
+/// with its costumes in color order and whether its data file is there.
 pub(crate) fn roster(slots: &[MeleeSlot]) -> Vec<Fighter> {
     let mut costumes: Vec<(Character, CostumeColor)> = slots
         .iter()
@@ -57,21 +62,29 @@ pub(crate) fn roster(slots: &[MeleeSlot]) -> Vec<Fighter> {
                 .filter(|(owner, _)| *owner == character)
                 .map(|&(_, color)| Costume { color })
                 .collect();
-            (!costumes.is_empty()).then_some(Fighter {
+            (!costumes.is_empty()).then(|| Fighter {
                 character,
                 costumes,
+                data_file: slots.contains(&MeleeSlot::Fighter(character)),
             })
         })
         .collect()
 }
 
-/// Where a skin goes, in the player's words: "Falco · Red", "Final
-/// Destination", or "no slot" when its file doesn't say.
+/// Whether `slot` holds a model the app can show and edit: a costume or a
+/// stage. A fighter's data file has none of its own yet.
+pub(crate) fn has_model(slot: MeleeSlot) -> bool {
+    !matches!(slot, MeleeSlot::Fighter(_))
+}
+
+/// Where a skin goes, in the player's words: "Falco · Red", "Falco · Fighter
+/// file", "Final Destination", or "no slot" when its file doesn't say.
 pub(crate) fn slot_label(slot: Option<MeleeSlot>) -> String {
     match slot {
         Some(MeleeSlot::Costume { character, color }) => {
             format!("{} · {}", character.name(), color.name())
         }
+        Some(MeleeSlot::Fighter(character)) => format!("{} · {FIGHTER_FILE}", character.name()),
         Some(MeleeSlot::Stage(stage)) => stage.name().to_owned(),
         None => "no slot".into(),
     }

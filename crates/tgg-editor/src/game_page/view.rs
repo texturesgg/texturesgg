@@ -2,7 +2,7 @@
 //! what each slot can do.
 
 use super::{GamePage, Tab};
-use crate::costumes::{CostumesEvent, slot_label};
+use crate::costumes::{CostumesEvent, FIGHTER_FILE, slot_label};
 use crate::editor::TogglePlayback;
 use crate::install::SlotState;
 use crate::library::Skin;
@@ -60,6 +60,7 @@ impl GamePage {
                     let custom = fighter.slots().filter(|&slot| self.changed(slot)).count();
                     let image = self
                         .shown_slot(fighter)
+                        .and_then(|slot| self.model_for(slot))
                         .and_then(|slot| self.renders.get(&RenderKey::Slot(slot)).cloned());
                     let this = cx.entity();
                     Card::new(
@@ -210,17 +211,15 @@ impl GamePage {
                 .get(self.fighter)
                 .map(|fighter| {
                     fighter
-                        .costumes
-                        .iter()
-                        .map(|costume| {
-                            let slot = costume.slot(fighter);
+                        .slots()
+                        .map(|slot| {
                             let (holds, custom) = self.holds(slot);
                             let this = cx.entity();
                             let character = fighter.character;
                             Card::new(
                                 SharedString::from(format!("slot-{slot}")),
                                 CardLayout::Row,
-                                costume.color.name(),
+                                slot.color().map_or(FIGHTER_FILE, |color| color.name()),
                             )
                             .image(self.renders.get(&RenderKey::Slot(slot)).cloned())
                             .detail(holds)
@@ -313,7 +312,7 @@ impl GamePage {
         let installable: Vec<&Skin> = self
             .skins
             .iter()
-            .filter(|skin| skin.slot.is_some_and(|made_for| made_for.same_owner(slot)))
+            .filter(|skin| skin.slot.is_some_and(|made_for| made_for.fits(slot)))
             .collect();
         let change = (!installable.is_empty()).then(|| {
             installable.iter().fold(

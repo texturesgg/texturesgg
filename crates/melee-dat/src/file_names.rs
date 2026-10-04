@@ -1,38 +1,40 @@
 //! How the game names its files: `PlFcRe.dat` is Falco's Red costume,
-//! `GrNBa.dat` is Battlefield. A [`MeleeSlot`] is one such file: what a skin
-//! replaces.
+//! `PlFc.dat` is Falco's data file, `GrNBa.dat` is Battlefield. A
+//! [`MeleeSlot`] is one such file: what a skin replaces.
 
 use std::fmt;
 use std::str::FromStr;
 
-const CHARACTERS: &[(&str, &str)] = &[
-    ("Kp", "Bowser"),
-    ("Ca", "Captain Falcon"),
-    ("Dk", "Donkey Kong"),
-    ("Dr", "Dr. Mario"),
-    ("Fc", "Falco"),
-    ("Fx", "Fox"),
-    ("Gn", "Ganondorf"),
-    ("Pp", "Ice Climbers"),
-    ("Pr", "Jigglypuff"),
-    ("Kb", "Kirby"),
-    ("Lk", "Link"),
-    ("Lg", "Luigi"),
-    ("Mr", "Mario"),
-    ("Ms", "Marth"),
-    ("Mt", "Mewtwo"),
-    ("Gw", "Mr. Game & Watch"),
-    ("Nn", "Nana"),
-    ("Ns", "Ness"),
-    ("Pe", "Peach"),
-    ("Pc", "Pichu"),
-    ("Pk", "Pikachu"),
-    ("Fe", "Roy"),
-    ("Ss", "Samus"),
-    ("Sk", "Sheik"),
-    ("Cl", "Young Link"),
-    ("Ys", "Yoshi"),
-    ("Zd", "Zelda"),
+/// Each fighter's file code, the name players use, and the root of its data
+/// file (`PlFc.dat` holds `ftDataFalco`).
+const CHARACTERS: &[(&str, &str, &str)] = &[
+    ("Kp", "Bowser", "ftDataKoopa"),
+    ("Ca", "Captain Falcon", "ftDataCaptain"),
+    ("Dk", "Donkey Kong", "ftDataDonkey"),
+    ("Dr", "Dr. Mario", "ftDataDrmario"),
+    ("Fc", "Falco", "ftDataFalco"),
+    ("Fx", "Fox", "ftDataFox"),
+    ("Gn", "Ganondorf", "ftDataGanon"),
+    ("Pp", "Ice Climbers", "ftDataPopo"),
+    ("Pr", "Jigglypuff", "ftDataPurin"),
+    ("Kb", "Kirby", "ftDataKirby"),
+    ("Lk", "Link", "ftDataLink"),
+    ("Lg", "Luigi", "ftDataLuigi"),
+    ("Mr", "Mario", "ftDataMario"),
+    ("Ms", "Marth", "ftDataMars"),
+    ("Mt", "Mewtwo", "ftDataMewtwo"),
+    ("Gw", "Mr. Game & Watch", "ftDataGamewatch"),
+    ("Nn", "Nana", "ftDataNana"),
+    ("Ns", "Ness", "ftDataNess"),
+    ("Pe", "Peach", "ftDataPeach"),
+    ("Pc", "Pichu", "ftDataPichu"),
+    ("Pk", "Pikachu", "ftDataPikachu"),
+    ("Fe", "Roy", "ftDataEmblem"),
+    ("Ss", "Samus", "ftDataSamus"),
+    ("Sk", "Sheik", "ftDataSeak"),
+    ("Cl", "Young Link", "ftDataClink"),
+    ("Ys", "Yoshi", "ftDataYoshi"),
+    ("Zd", "Zelda", "ftDataZelda"),
 ];
 
 const COSTUMES: &[(&str, &str)] = &[
@@ -97,7 +99,18 @@ impl Character {
 
     /// The fighter a two-letter file code names, whatever its case.
     pub fn from_code(code: &str) -> Option<Self> {
-        position(CHARACTERS, code).map(Self)
+        CHARACTERS
+            .iter()
+            .position(|(value, _, _)| value.eq_ignore_ascii_case(code))
+            .map(|index| Self(index as u8))
+    }
+
+    /// The fighter whose data file has the root `name` (`ftDataFalco`).
+    pub fn from_data_root(name: &str) -> Option<Self> {
+        CHARACTERS
+            .iter()
+            .position(|(_, _, root)| *root == name)
+            .map(|index| Self(index as u8))
     }
 
     /// The two-letter code in file names (`Fc`).
@@ -177,14 +190,18 @@ fn position(values: &[(&str, &str)], code: &str) -> Option<u8> {
 }
 
 /// A file of the game that a skin replaces: one fighter's costume of one
-/// color, or a versus stage. Whether a given game has the slot (not every
-/// fighter has every color) is for [`crate::vanilla`] or the disc to say.
+/// color, a fighter's data file, or a versus stage. Whether a given game has
+/// the slot (not every fighter has every color) is for [`crate::vanilla`] or
+/// the disc to say.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MeleeSlot {
     Costume {
         character: Character,
         color: CostumeColor,
     },
+    /// The fighter's data file (`PlFc.dat`): what all its costumes share,
+    /// such as Falco's lasers.
+    Fighter(Character),
     Stage(Stage),
 }
 
@@ -201,14 +218,15 @@ impl MeleeSlot {
             Self::Costume { character, color } => {
                 format!("Pl{}{}.dat", character.code(), color.code())
             }
+            Self::Fighter(character) => format!("Pl{}.dat", character.code()),
             Self::Stage(stage) => stage.file_name().to_owned(),
         }
     }
 
-    /// The fighter, for a costume slot.
+    /// The fighter, for a costume or a fighter's data file.
     pub fn character(self) -> Option<Character> {
         match self {
-            Self::Costume { character, .. } => Some(character),
+            Self::Costume { character, .. } | Self::Fighter(character) => Some(character),
             Self::Stage(_) => None,
         }
     }
@@ -217,19 +235,21 @@ impl MeleeSlot {
     pub fn color(self) -> Option<CostumeColor> {
         match self {
             Self::Costume { color, .. } => Some(color),
-            Self::Stage(_) => None,
+            Self::Fighter(_) | Self::Stage(_) => None,
         }
     }
 
-    /// Whether both are costumes of one fighter, or the same stage.
-    pub fn same_owner(self, other: Self) -> bool {
+    /// Whether a file made for this slot fits `other` too: both are costumes
+    /// of one fighter, or one fighter's data file, or one stage.
+    pub fn fits(self, other: Self) -> bool {
         match (self, other) {
             (
                 Self::Costume { character, .. },
                 Self::Costume {
                     character: other, ..
                 },
-            ) => character == other,
+            )
+            | (Self::Fighter(character), Self::Fighter(other)) => character == other,
             (Self::Stage(stage), Self::Stage(other)) => stage == other,
             _ => false,
         }
@@ -245,7 +265,7 @@ impl fmt::Display for MeleeSlot {
 
 /// A name that is not exactly a slot's file name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
-#[error("not the file name of a costume or versus stage")]
+#[error("not the file name of a costume, fighter data file or versus stage")]
 pub struct NotASlot;
 
 impl FromStr for MeleeSlot {
@@ -258,7 +278,9 @@ impl FromStr for MeleeSlot {
 
 /// The slot a file seems made for, from a name that may say more than the
 /// slot's own: `PlFxOr-Asymm-Jacket.dat` is Fox's Orange costume, and
-/// `Tournament-GrNBa-remix.dat` is Battlefield. A leading path is ignored.
+/// `Tournament-GrNBa-remix.dat` is Battlefield. A fighter's data file is its
+/// code with nothing joined on: `PlFc.dat` and `PlFc-Blue-Lasers.dat`, but
+/// not the animation archive `PlFcAJ.dat`. A leading path is ignored.
 pub fn parse_filename(filename: &str) -> Option<MeleeSlot> {
     let base = filename.rsplit(['/', '\\']).next().unwrap_or(filename);
     let bytes = base.as_bytes();
@@ -273,6 +295,19 @@ pub fn parse_filename(filename: &str) -> Option<MeleeSlot> {
             code(start + 4..start + 6).and_then(CostumeColor::from_code),
         ) {
             return Some(MeleeSlot::Costume { character, color });
+        }
+    }
+
+    for start in 0..bytes.len().saturating_sub(4) {
+        if !bytes[start..].starts_with(b"Pl") {
+            continue;
+        }
+        let alone = matches!(bytes[start + 4], b'.' | b'-' | b'_' | b' ' | b'(');
+        let character = std::str::from_utf8(&bytes[start + 2..start + 4])
+            .ok()
+            .and_then(Character::from_code);
+        if let (true, Some(character)) = (alone, character) {
+            return Some(MeleeSlot::Fighter(character));
         }
     }
 
@@ -348,14 +383,33 @@ mod tests {
     /// finds a slot but is not one.
     #[test]
     fn a_slot_round_trips_through_exactly_its_file_name() {
-        for name in ["PlFcRe.dat", "PlPpNr.dat", "GrNLa.dat"] {
+        for name in ["PlFcRe.dat", "PlPpNr.dat", "PlFc.dat", "GrNLa.dat"] {
             let slot: MeleeSlot = name.parse().unwrap();
             assert_eq!(slot.to_string(), name);
         }
         assert_eq!("PlFcRe-custom.dat".parse::<MeleeSlot>(), Err(NotASlot));
         assert_eq!("plfcre.dat".parse::<MeleeSlot>(), Err(NotASlot));
-        assert!(costume("Fx", "Or").same_owner(costume("Fx", "Nr")));
-        assert!(!costume("Fx", "Or").same_owner(costume("Fc", "Or")));
-        assert!(!stage("GrPs.dat").same_owner(costume("Fx", "Nr")));
+        assert_eq!("PlFc-lasers.dat".parse::<MeleeSlot>(), Err(NotASlot));
+        assert!(costume("Fx", "Or").fits(costume("Fx", "Nr")));
+        assert!(!costume("Fx", "Or").fits(costume("Fc", "Or")));
+        assert!(!stage("GrPs.dat").fits(costume("Fx", "Nr")));
+        let falco = MeleeSlot::Fighter(Character::from_code("Fc").unwrap());
+        assert!(falco.fits(falco));
+        assert!(!falco.fits(costume("Fc", "Nr")));
+        assert!(!costume("Fc", "Nr").fits(falco));
+    }
+
+    /// A data file is the fighter's code alone; anything joined on makes it
+    /// some other file of the fighter's.
+    #[test]
+    fn finds_a_fighter_data_file_by_its_code_alone() {
+        let fighter = |code| Some(MeleeSlot::Fighter(Character::from_code(code).unwrap()));
+        assert_eq!(parse_filename("PlFc.dat"), fighter("Fc"));
+        assert_eq!(parse_filename("PlFx-Blue-Lasers.dat"), fighter("Fx"));
+        assert_eq!(parse_filename("packs/blue/PlFx (1).dat"), fighter("Fx"));
+        assert_eq!(parse_filename("PlFcAJ.dat"), None);
+        assert_eq!(parse_filename("PlCo.dat"), None);
+        // A costume's name still finds the costume.
+        assert_eq!(parse_filename("PlFcRe.dat"), Some(costume("Fc", "Re")));
     }
 }

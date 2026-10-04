@@ -3,7 +3,7 @@
 //! and a way to install or remove it. Tabs narrow it to what's in the game
 //! or what isn't.
 
-use crate::costumes::{CostumesEvent, Notice};
+use crate::costumes::{CostumesEvent, FIGHTER_FILE, Notice};
 use crate::ids::SkinId;
 use crate::install::SlotState;
 use crate::library::Skin;
@@ -86,7 +86,9 @@ impl LibraryPage {
                 continue;
             }
             let group = match skin.slot {
-                Some(MeleeSlot::Costume { character, .. }) => character.name().to_owned(),
+                Some(MeleeSlot::Costume { character, .. } | MeleeSlot::Fighter(character)) => {
+                    character.name().to_owned()
+                }
                 Some(MeleeSlot::Stage(_)) => "Stages".to_owned(),
                 None => "Without a slot".to_owned(),
             };
@@ -103,9 +105,11 @@ impl LibraryPage {
     fn card(&self, skin: &Skin, cx: &mut Context<Self>) -> AnyElement {
         let palette = Theme::global(cx).palette;
         let installed = self.installed(skin);
-        // "Red", or the stage's name: the fighter is the group's heading.
+        // "Red", "Fighter file" or the stage's name: the fighter is the
+        // group's heading.
         let place = match skin.slot {
             Some(MeleeSlot::Costume { color, .. }) => color.name(),
+            Some(MeleeSlot::Fighter(_)) => FIGHTER_FILE,
             Some(MeleeSlot::Stage(stage)) => stage.name(),
             None => "no slot",
         };

@@ -27,8 +27,8 @@ fighter the catalog recognizes, or failed with the `MeleeError` that says why.
 
 The game's own numbers and names have types: `FighterKind` and `CostumeIndex`
 for the fighter tables, `StagePointKind` for a stage's general points, and
-`MeleeSlot` (a `Character` and `CostumeColor`, or a `Stage`) for the file a
-skin replaces. `parse_filename` finds the slot a descriptively named file was
+`MeleeSlot` (a `Character` and `CostumeColor`, a `Character`'s data file, or a
+`Stage`) for the file a skin replaces. `parse_filename` finds the slot a descriptively named file was
 made for; `MeleeSlot::from_file_name` takes only the slot's own name.
 
 ## Layout
@@ -46,8 +46,8 @@ made for; `MeleeSlot::from_file_name` takes only the slot's own name.
 | `stage::texture_names` | HAL's own names for a stage's textures.                                                                 |
 | `catalog`              | `MeleeReferenceCatalog`: the checked-in table of every fighter's files, joint hierarchy and idle setup. |
 | `references`           | `MeleeReferenceStore`: the original game files a caller supplies.                                       |
-| `file_names`           | `MeleeSlot` and how the game names its files (`PlFcRe.dat` is Falco's Red costume).                     |
-| `vanilla`              | The size and SHA-256 of every costume and stage file as shipped.                                        |
+| `file_names`           | `MeleeSlot` and how the game names its files (`PlFcRe.dat` is Falco's Red, `PlFc.dat` his data).        |
+| `vanilla`              | The size and SHA-256 of every costume, fighter data and stage file as shipped.                          |
 
 Types a host holds carry the `Melee` prefix; their parts are named by subject
 (`Stage…`, `Fighter…`, `Costume…`).

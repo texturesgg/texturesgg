@@ -7,7 +7,7 @@
 mod view;
 
 use crate::References;
-use crate::costumes::{CostumesEvent, Fighter, Notice};
+use crate::costumes::{CostumesEvent, Fighter, Notice, has_model};
 use crate::install::SlotState;
 use crate::library::Skin;
 use crate::open_file::OpenFile;
@@ -79,7 +79,7 @@ impl GamePage {
             .into_iter()
             .filter_map(|slot| match slot {
                 MeleeSlot::Stage(stage) => Some(stage),
-                MeleeSlot::Costume { .. } => None,
+                MeleeSlot::Costume { .. } | MeleeSlot::Fighter(_) => None,
             })
             .collect();
         Self {
@@ -133,7 +133,7 @@ impl GamePage {
     /// Returns whether the game has it.
     pub fn show_slot(&mut self, slot: MeleeSlot, cx: &mut Context<Self>) -> bool {
         match slot {
-            MeleeSlot::Costume { character, .. } => {
+            MeleeSlot::Costume { character, .. } | MeleeSlot::Fighter(character) => {
                 let Some(index) = self
                     .fighters
                     .iter()
@@ -174,9 +174,36 @@ impl GamePage {
             .or_else(|| fighter.slots().next())
     }
 
-    /// Put the selected slot in the preview, unless it already is.
+    /// The slot whose model shows for `slot`: itself, or for a fighter's
+    /// data file, which has no model of its own, the fighter's costume on
+    /// show, else its first.
+    fn model_for(&self, slot: MeleeSlot) -> Option<MeleeSlot> {
+        let MeleeSlot::Fighter(character) = slot else {
+            return Some(slot);
+        };
+        let showing = self
+            .preview
+            .as_ref()
+            .and_then(|preview| preview.file.slot)
+            .filter(|shown| has_model(*shown) && shown.character() == Some(character));
+        showing.or_else(|| {
+            let fighter = self
+                .fighters
+                .iter()
+                .find(|fighter| fighter.character == character)?;
+            fighter
+                .costumes
+                .first()
+                .map(|costume| costume.slot(fighter))
+        })
+    }
+
+    /// Put the selected slot's model in the preview, unless it already is.
     fn show_selected(&mut self, cx: &mut Context<Self>) {
-        let Some(slot) = self.selected_slot() else {
+        let Some(slot) = self
+            .selected_slot()
+            .and_then(|selected| self.model_for(selected))
+        else {
             return;
         };
         if self.previews(slot) {
@@ -255,9 +282,12 @@ impl GamePage {
         !matches!(self.states.get(&slot), None | Some(SlotState::Vanilla))
     }
 
-    /// The slot on show, when a fighter or stage is open: what Edit
-    /// textures opens.
+    /// The slot on show, when a fighter or stage is open and it has a model:
+    /// what Edit textures opens.
     pub fn editable(&self) -> Option<MeleeSlot> {
-        self.open.then(|| self.selected_slot()).flatten()
+        self.open
+            .then(|| self.selected_slot())
+            .flatten()
+            .filter(|slot| has_model(*slot))
     }
 }

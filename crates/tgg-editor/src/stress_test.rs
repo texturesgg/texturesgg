@@ -50,7 +50,7 @@ impl StressTest {
             .game()
             .slots()
             .into_iter()
-            .filter(|slot| slot.character().is_some())
+            .filter(|slot| slot.color().is_some())
             .collect();
         // Load between frames, so the grid fills in while the window stays
         // responsive.
