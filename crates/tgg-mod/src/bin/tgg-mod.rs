@@ -1,4 +1,4 @@
-//! `tgg-mod`: pack built mods, look inside packages, libraries and ports,
+//! `tgg-mod`: build and pack mods, look inside packages, libraries and ports,
 //! write catalogs, and manage the mods installed in a port.
 
 use anyhow::{Context, Result, bail, ensure};
@@ -7,8 +7,8 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 use tgg_mod::port::PortError;
 use tgg_mod::{
-    Catalog, CatalogEntry, Manifest, ModId, Netplay, Package, PackageRef, Port, catalog, conflicts,
-    decls, package, unmet_imports,
+    Catalog, CatalogEntry, Manifest, ModId, Netplay, Package, PackageRef, Port, Sdk, catalog,
+    conflicts, decls, package, sdk, unmet_imports,
 };
 
 #[derive(Parser)]
@@ -20,6 +20,24 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Build a mod's source against a port's game SDK and pack it: DIR holds
+    /// manifest.json and the C sources under src/.
+    Build {
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+        /// The game SDK's folder or tgg-game-sdk.json.
+        #[arg(long, env = "TGG_GAME_SDK")]
+        sdk: PathBuf,
+        /// The C compiler; it must be GCC.
+        #[arg(long, env = "CC", default_value = "gcc")]
+        cc: PathBuf,
+        /// The package zip to write [default: <id>-<version>.zip]
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Print the package's path, SHA-256, size and manifest as JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// Pack a built mod: DIR holds manifest.json and the library it names,
     /// as tgg_add_mod writes them.
     Pack {
@@ -93,6 +111,13 @@ impl PortArg {
 
 fn main() -> Result<()> {
     match Cli::parse().command {
+        Command::Build {
+            dir,
+            sdk,
+            cc,
+            output,
+            json,
+        } => build(&dir, &sdk, &cc, output, json),
         Command::Pack { dir, output, json } => pack(&dir, output, json),
         Command::Inspect { file } => inspect(&file),
         Command::Catalog { output, packages } => write_catalog(&output, &packages),
@@ -129,7 +154,46 @@ fn pack(dir: &Path, output: Option<PathBuf>, json: bool) -> Result<()> {
     let manifest = Manifest::parse(&read(&manifest_path)?)
         .with_context(|| manifest_path.display().to_string())?;
     let library = read(&dir.join(&manifest.entry))?;
-    let package = Package::pack(library, manifest)?;
+    write_package(Package::pack(library, manifest)?, output, json)
+}
+
+/// Compile the mod in `dir` with `cc` against `sdk` and pack the library.
+/// The compiler runs in `dir` on relative paths, writing to a scratch folder
+/// inside it, so the library carries no path of this machine.
+fn build(dir: &Path, sdk: &Path, cc: &Path, output: Option<PathBuf>, json: bool) -> Result<()> {
+    let sdk = Sdk::open(sdk)?;
+    ensure!(
+        sdk.compiler == "GNU",
+        "{} was built with {}; mods build with GCC",
+        sdk.name,
+        sdk.compiler
+    );
+    let manifest_path = dir.join("manifest.json");
+    let manifest = Manifest::parse(&read(&manifest_path)?)
+        .with_context(|| manifest_path.display().to_string())?;
+    let sources = sdk::mod_sources(dir)?;
+    let scratch = Path::new(".tgg-build");
+    let library = scratch.join(&manifest.entry);
+    std::fs::create_dir_all(dir.join(scratch))?;
+    let status = std::process::Command::new(cc)
+        .args(sdk.compile_args(&sources, &library))
+        .current_dir(dir)
+        .status()
+        .with_context(|| format!("running {}", cc.display()))?;
+    ensure!(status.success(), "{} failed: {status}", cc.display());
+    let bytes = read(&dir.join(&library))?;
+    std::fs::remove_dir_all(dir.join(scratch))?;
+    let package = Package::pack(bytes, manifest)?;
+    ensure!(
+        package.manifest.game_abi.as_deref() == Some(sdk.game_abi.as_str()),
+        "the library declares a game layout other than the SDK's {}",
+        sdk.game_abi
+    );
+    write_package(package, output, json)
+}
+
+/// Write `package` to `output`, or `<id>-<version>.zip`, and report it.
+fn write_package(package: Package, output: Option<PathBuf>, json: bool) -> Result<()> {
     let manifest = &package.manifest;
     let output = output
         .unwrap_or_else(|| PathBuf::from(format!("{}-{}.zip", manifest.id, manifest.version)));

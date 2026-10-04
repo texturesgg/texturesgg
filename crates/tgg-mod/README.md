@@ -20,6 +20,8 @@ dependency, a fact about their code.
   inputs. Opening a zip re-reads its library and refuses a manifest that disagrees.
 - **Catalogs.** The list of packages a registry offers, with each package's location,
   size, and SHA-256.
+- **Game SDKs.** Reading the `tgg-game-sdk.json` a port build writes, and the
+  compiler command that builds a mod against it.
 - **Ports.** Reading a port executable's `tgg_port` section: whether it carries the
   runtime, the game layout mods must match, and the port's name.
 - **Installing.** A port's `mods/` folder: listing, installing over an older version,
@@ -30,6 +32,8 @@ It leaves downloading, signing, and any user interface to its callers.
 ## The `tgg-mod` tool
 
 ```text
+tgg-mod build [DIR] --sdk SDK [-o OUT.zip] [--json]
+                                         compile DIR's src/**/*.c against a game SDK and pack it
 tgg-mod pack DIR [-o OUT.zip] [--json]   DIR holds manifest.json and the built library
 tgg-mod inspect FILE                     a package zip, a mod library, or a port executable
 tgg-mod catalog -o CATALOG.json ZIP...   list packages, with URLs relative to the catalog
@@ -38,7 +42,13 @@ tgg-mod install --port PORT ZIP...       install packages, refusing another game
 tgg-mod enable|disable|remove --port PORT ID...
 ```
 
-`DIR` is what tgg-mod-runtime's `tgg_add_mod` writes for each mod. `PORT` is the
+A mod's source is `manifest.json` at its root and C sources under `src/`. `build`
+compiles every `src/**/*.c` with GCC (`--cc` or `CC`) in one call, with the SDK's include
+path, definitions and options plus `-shared -fPIC -fvisibility=hidden -O2`, on paths
+relative to `DIR`, so the same source and SDK give the same package anywhere. `SDK` is
+the SDK's folder or its `tgg-game-sdk.json`, or the `TGG_GAME_SDK` environment variable.
+
+For `pack`, `DIR` is what tgg-mod-runtime's `tgg_add_mod` writes for each mod. `PORT` is the
 port's folder or executable, or the `TGG_PORT` environment variable. Hosts that only
 need the library turn off the default `cli` feature.
 
