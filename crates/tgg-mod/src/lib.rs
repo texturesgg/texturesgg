@@ -12,6 +12,8 @@
 //!   declares.
 //! - [`package`]: packing and opening package zips.
 //! - [`catalog`]: the list of packages a registry offers.
+//! - [`layout`]: the functions a game layout lets mods name, and each
+//!   hook's canonical name.
 //! - [`port`]: a port's executable, and whether it carries the runtime.
 //! - [`sdk`]: a port's game SDK, and the compiler command that builds a mod
 //!   against it.
@@ -21,6 +23,7 @@
 pub mod catalog;
 pub mod decls;
 pub mod install;
+pub mod layout;
 pub mod manifest;
 pub mod package;
 pub mod port;
@@ -29,6 +32,7 @@ pub mod sdk;
 pub use catalog::{Catalog, CatalogEntry, PackageRef};
 pub use decls::{Declarations, Hooks};
 pub use install::{Conflict, Installed, ModsDir, conflicts, unmet_imports};
+pub use layout::{Layout, Symbols};
 pub use manifest::{Manifest, ModId, Netplay};
 pub use package::Package;
 pub use port::Port;

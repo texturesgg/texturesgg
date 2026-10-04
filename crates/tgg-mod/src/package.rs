@@ -52,6 +52,7 @@ impl Package {
         let declared = decls::read(&library)?;
         manifest.game_abi = Some(declared.game_abi.ok_or(PackageError::NoGameLayout)?);
         manifest.target = Some(declared.target.ok_or(PackageError::NoTarget)?);
+        manifest.state = (declared.state > 0).then_some(declared.state);
         manifest.hooks = declared.hooks;
         manifest.exports = declared.exports;
         manifest.imports = declared.imports;
@@ -73,6 +74,7 @@ impl Package {
         }
         if declared.game_abi != manifest.game_abi
             || declared.target != manifest.target
+            || (declared.state > 0).then_some(declared.state) != manifest.state
             || declared.hooks != manifest.hooks
             || declared.exports != manifest.exports
             || declared.imports != manifest.imports
@@ -151,6 +153,7 @@ mod tests {
             license: None,
             game_abi: None,
             target: None,
+            state: None,
             hooks: Default::default(),
             exports: Vec::new(),
             imports: Vec::new(),
@@ -162,6 +165,8 @@ mod tests {
         let lib = library(&[
             record(GAME_ABI, "e954031487f52421"),
             record(TARGET, "x86_64-linux-gnu"),
+            crate::decls::tests::state_record("counter", 4),
+            crate::decls::tests::state_record("table", 60),
             record(REPLACE, "ftCo_Landing_IASA"),
             record(BEFORE, "ftCo_Jump.c:ftCo_Jump_Anim"),
             record(EXPORT, "register_clone"),
@@ -179,6 +184,7 @@ mod tests {
             Some("e954031487f52421")
         );
         assert_eq!(package.manifest.exports, ["register_clone"]);
+        assert_eq!(package.manifest.state, Some(64));
         assert_eq!(package.manifest.imports, ["ref.core/clone_count"]);
         assert_eq!(Package::from_zip(&package.to_zip()).expect("open"), package);
 

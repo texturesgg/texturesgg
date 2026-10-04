@@ -7,8 +7,8 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 use tgg_mod::port::PortError;
 use tgg_mod::{
-    Catalog, CatalogEntry, Manifest, ModId, Netplay, Package, PackageRef, Port, Sdk, catalog,
-    conflicts, decls, package, sdk, unmet_imports,
+    Catalog, CatalogEntry, Hooks, Layout, Manifest, ModId, Netplay, Package, PackageRef, Port, Sdk,
+    Symbols, catalog, conflicts, decls, package, sdk, unmet_imports,
 };
 
 #[derive(Parser)]
@@ -33,6 +33,10 @@ enum Command {
         /// The game SDK's folder or tgg-game-sdk.json.
         #[arg(long, env = "TGG_GAME_SDK")]
         sdk: PathBuf,
+        /// A layout file from `tgg-mod layout`: refuse hooks the game can't
+        /// take, and report each hook's canonical name.
+        #[arg(long)]
+        layout: Option<PathBuf>,
         /// The C compiler; it must be GCC.
         #[arg(long, env = "CC", default_value = "gcc")]
         cc: PathBuf,
@@ -42,6 +46,14 @@ enum Command {
         /// Print the package's path, SHA-256, size and manifest as JSON.
         #[arg(long)]
         json: bool,
+    },
+    /// Read the functions a port build lets mods name, for a registry to check
+    /// hooks against.
+    Layout {
+        /// The port's executable.
+        executable: PathBuf,
+        #[arg(short, long)]
+        output: PathBuf,
     },
     /// Pack a built mod: DIR holds manifest.json and the library it names,
     /// as tgg_add_mod writes them.
@@ -120,6 +132,7 @@ fn main() -> Result<()> {
             dir,
             source_zip,
             sdk,
+            layout,
             cc,
             output,
             json,
@@ -127,8 +140,10 @@ fn main() -> Result<()> {
             if let Some(zip) = source_zip {
                 unpack_source(&zip, &dir)?;
             }
-            build(&dir, &sdk, &cc, output, json)
+            let layout = layout.map(|path| read_layout(&path)).transpose()?;
+            build(&dir, &sdk, layout.as_ref(), &cc, output, json)
         }
+        Command::Layout { executable, output } => write_layout(&executable, &output),
         Command::Pack { dir, output, json } => pack(&dir, output, json),
         Command::Inspect { file } => inspect(&file),
         Command::Catalog { output, packages } => write_catalog(&output, &packages),
@@ -165,7 +180,7 @@ fn pack(dir: &Path, output: Option<PathBuf>, json: bool) -> Result<()> {
     let manifest = Manifest::parse(&read(&manifest_path)?)
         .with_context(|| manifest_path.display().to_string())?;
     let library = read(&dir.join(&manifest.entry))?;
-    write_package(Package::pack(library, manifest)?, output, json)
+    write_package(Package::pack(library, manifest)?, None, output, json)
 }
 
 /// The largest source zip `build --source-zip` takes.
@@ -218,7 +233,14 @@ fn unpack_source(zip: &Path, dir: &Path) -> Result<()> {
 /// Compile the mod in `dir` with `cc` against `sdk` and pack the library.
 /// The compiler runs in `dir` on relative paths, writing to a scratch folder
 /// inside it, so the library carries no path of this machine.
-fn build(dir: &Path, sdk: &Path, cc: &Path, output: Option<PathBuf>, json: bool) -> Result<()> {
+fn build(
+    dir: &Path,
+    sdk: &Path,
+    layout: Option<&Layout>,
+    cc: &Path,
+    output: Option<PathBuf>,
+    json: bool,
+) -> Result<()> {
     let sdk = Sdk::open(sdk)?;
     ensure!(
         sdk.compiler == "GNU",
@@ -234,7 +256,7 @@ fn build(dir: &Path, sdk: &Path, cc: &Path, output: Option<PathBuf>, json: bool)
     let library = scratch.join(&manifest.entry);
     std::fs::create_dir_all(dir.join(scratch))?;
     let status = std::process::Command::new(cc)
-        .args(sdk.compile_args(&sources, &library))
+        .args(sdk.compile_args(&manifest.id, &sources, &library))
         .current_dir(dir)
         .status()
         .with_context(|| format!("running {}", cc.display()))?;
@@ -249,11 +271,76 @@ fn build(dir: &Path, sdk: &Path, cc: &Path, output: Option<PathBuf>, json: bool)
         sdk.game_abi,
         sdk.target
     );
-    write_package(package, output, json)
+    let canonical = match layout {
+        Some(layout) => {
+            ensure!(
+                layout.game_abi == sdk.game_abi && layout.target == sdk.target,
+                "the layout file is for {} {}, the SDK for {} {}",
+                layout.game_abi,
+                layout.target,
+                sdk.game_abi,
+                sdk.target
+            );
+            let canonical = layout.symbols.canonical_hooks(&package.manifest.hooks);
+            match canonical {
+                Ok(hooks) => Some(hooks),
+                Err(errors) => {
+                    let errors: Vec<String> = errors.iter().map(ToString::to_string).collect();
+                    bail!(
+                        "the mod hooks functions the game can't take:\n  {}",
+                        errors.join("\n  ")
+                    );
+                }
+            }
+        }
+        None => None,
+    };
+    write_package(package, canonical, output, json)
+}
+
+fn read_layout(path: &Path) -> Result<Layout> {
+    serde_json::from_slice(&read(path)?).with_context(|| path.display().to_string())
+}
+
+fn write_layout(executable: &Path, output: &Path) -> Result<()> {
+    let port = Port::open(executable).with_context(|| executable.display().to_string())?;
+    let symbols = Symbols::read(&read(executable)?).context("reading the symbol table")?;
+    ensure!(
+        !symbols.exported.is_empty(),
+        "{} has no symbol table; ports ship with .symtab",
+        executable.display()
+    );
+    let statics: usize = symbols.statics.values().map(|names| names.len()).sum();
+    let layout = Layout {
+        api: tgg_mod::API.to_owned(),
+        game_abi: port.game_abi,
+        target: port.target,
+        port: port.name,
+        symbols,
+    };
+    let json = serde_json::to_vec(&layout).expect("json");
+    std::fs::write(output, json).with_context(|| output.display().to_string())?;
+    println!(
+        "{}: {} {} on {}, {} exported, {} static",
+        output.display(),
+        layout.port,
+        layout.game_abi,
+        layout.target,
+        layout.symbols.exported.len(),
+        statics
+    );
+    Ok(())
 }
 
 /// Write `package` to `output`, or `<id>-<version>.zip`, and report it.
-fn write_package(package: Package, output: Option<PathBuf>, json: bool) -> Result<()> {
+/// `canonical` is the package's hooks under their canonical names, when a
+/// layout was checked.
+fn write_package(
+    package: Package,
+    canonical: Option<Hooks>,
+    output: Option<PathBuf>,
+    json: bool,
+) -> Result<()> {
     let manifest = &package.manifest;
     let output = output
         .unwrap_or_else(|| PathBuf::from(format!("{}-{}.zip", manifest.id, manifest.version)));
@@ -265,6 +352,7 @@ fn write_package(package: Package, output: Option<PathBuf>, json: bool) -> Resul
             "sha256": package::sha256_hex(&zip),
             "size": zip.len(),
             "manifest": manifest,
+            "canonical_hooks": canonical,
         }));
     } else {
         let hooks = &manifest.hooks;

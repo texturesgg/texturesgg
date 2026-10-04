@@ -245,6 +245,7 @@ mod tests {
             license: None,
             game_abi: Some("layout".into()),
             target: Some("x86_64-linux-gnu".into()),
+            state: None,
             hooks,
             exports: Vec::new(),
             imports: Vec::new(),
