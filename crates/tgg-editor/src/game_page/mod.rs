@@ -224,7 +224,8 @@ impl GamePage {
         })
     }
 
-    /// Put the selected slot's model in the preview, unless it already is.
+    /// Put the selected slot's model in the preview, unless it already is,
+    /// and for a shared model play the move that shows it.
     fn show_selected(&mut self, cx: &mut Context<Self>) {
         let slot = match self.tab {
             Tab::Fighters => self.fighters.get(self.fighter).and_then(|fighter| {
@@ -236,10 +237,34 @@ impl GamePage {
         let Some(slot) = slot else {
             return;
         };
-        if self.previews(slot) {
-            return;
+        if !self.previews(slot) {
+            self.load(slot, cx);
         }
-        self.load(slot, cx);
+        if let Some(model) = self.selected_model() {
+            self.play_action(model.action(), cx);
+        }
+    }
+
+    /// Play the preview's animation for `action` (`SpecialLwLoop`), when its
+    /// fighter has one.
+    fn play_action(&self, action: &str, cx: &mut Context<Self>) {
+        let Some(preview) = &self.preview else {
+            return;
+        };
+        preview.file.viewport.update(cx, |viewport, cx| {
+            let index = viewport.playback().and_then(|playback| {
+                playback
+                    .animations()
+                    .iter()
+                    .find(|animation| animation.action.as_deref() == Some(action))
+                    .map(|animation| animation.index)
+            });
+            if let Some(index) = index
+                && let Err(error) = viewport.play(index, cx)
+            {
+                crate::log(&format!("couldn't play {action}: {error}"));
+            }
+        });
     }
 
     /// Whether the preview shows `slot`.
