@@ -138,9 +138,14 @@ jobs:
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+        # A re-run finds the release already made and replaces its files.
         run: |
-          gh release create "$GITHUB_REF_NAME" packages/* --repo "$GITHUB_REPOSITORY" \
-            --title "textures.gg ${GITHUB_REF_NAME#app-v}" --generate-notes
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" packages/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" packages/* --repo "$GITHUB_REPOSITORY" \
+              --title "textures.gg ${GITHUB_REF_NAME#app-v}" --generate-notes
+          fi
 
       # Last, so the app only hears of a version that can be downloaded.
       - name: Point the update check at it
