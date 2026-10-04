@@ -50,10 +50,9 @@ the SDK's folder or its `tgg-game-sdk.json`, or the `TGG_GAME_SDK` environment v
 `--source-zip` first unpacks `manifest.json` and `src/` from a zip, or from stdin with
 `-`, into an empty `DIR`; the registry's builder sends each mod's source that way.
 
-For `pack`, `DIR` is what tgg-mod-runtime's `tgg_add_mod` writes for each mod. `PORT` is the
-port's executable, or the `TGG_PORT` environment variable; mods install beside it in
-`mods/`. Hosts that only
-need the library turn off the default `cli` feature.
+For `pack`, `DIR` is what tgg-mod-runtime's `tgg_add_mod` writes for each mod. `PORT` is
+the port's executable, or the `TGG_PORT` environment variable; mods install beside it in
+`mods/`. Hosts that only need the library turn off the default `cli` feature.
 
 A manifest's `version` is a semantic version.
 

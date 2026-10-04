@@ -2,7 +2,7 @@
 //!
 //! Every `TGG_BEFORE`, `TGG_AFTER`, `TGG_REPLACE`, `TGG_EXPORT`,
 //! `TGG_IMPORT` and game symbol reference in a mod's source becomes a
-//! fixed-size record in its library's `tgg_decls` section, as does the game
+//! fixed-size record in its library's `tggdecls` section, as does the game
 //! layout id it was compiled against. A hooked function is a game symbol: a
 //! plain name, or `file.c:name` for a static. The runtime reads the same
 //! records to install the hooks, so what this module reports is what the mod
@@ -176,7 +176,7 @@ pub(crate) mod tests {
         bytes
     }
 
-    /// An x86-64 ELF object whose tgg_decls section holds `records`, in
+    /// An x86-64 ELF object whose tggdecls section holds `records`, in
     /// place of a compiled mod.
     pub(crate) fn library(records: &[Vec<u8>]) -> Vec<u8> {
         let mut object =
