@@ -30,6 +30,10 @@ const KIND_IMPORT: u32 = 6;
 /// nothing about the game, so it never reaches the manifest or a conflict.
 const KIND_SYMBOL: u32 = 7;
 const KIND_TARGET: u32 = 8;
+/// A mod's own state that rolls back with the game: the name is the first
+/// 112 bytes of the string field, and the size a u64 after it.
+const KIND_STATE: u32 = 9;
+const STATE_NAME_SIZE: usize = 112;
 
 /// The game functions a mod hooks, each list sorted and without repeats.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -59,6 +63,8 @@ pub struct Declarations {
     /// The target triple it was built for, such as `x86_64-linux-gnu`;
     /// `None` when it carries none.
     pub target: Option<String>,
+    /// Bytes of the mod's own state that roll back with the game.
+    pub state: u64,
     pub hooks: Hooks,
     /// Names of the functions it offers other mods, sorted.
     pub exports: Vec<String>,
@@ -105,6 +111,19 @@ pub fn read(library: &[u8]) -> Result<Declarations, DeclError> {
         let word = |at: usize| u32::from_le_bytes(record[at..at + 4].try_into().expect("4 bytes"));
         // A linker may pad between records; padding is all zero.
         if word(0) == 0 {
+            continue;
+        }
+        if word(4) == KIND_STATE {
+            let name = &record[SYMBOL_OFFSET..SYMBOL_OFFSET + STATE_NAME_SIZE];
+            let at = SYMBOL_OFFSET + STATE_NAME_SIZE;
+            let size = u64::from_le_bytes(record[at..at + 8].try_into().expect("8 bytes"));
+            if word(0) != MAGIC || !name.contains(&0) || size == 0 {
+                return Err(DeclError::Malformed(index));
+            }
+            declarations.state = declarations
+                .state
+                .checked_add(size)
+                .ok_or(DeclError::Malformed(index))?;
             continue;
         }
         let symbol = &record[SYMBOL_OFFSET..SYMBOL_OFFSET + SYMBOL_SIZE];
@@ -195,4 +214,12 @@ pub(crate) mod tests {
     pub(crate) const IMPORT: u32 = KIND_IMPORT;
     pub(crate) const SYMBOL: u32 = KIND_SYMBOL;
     pub(crate) const TARGET: u32 = KIND_TARGET;
+
+    /// A state record for `size` bytes named `name`.
+    pub(crate) fn state_record(name: &str, size: u64) -> Vec<u8> {
+        let mut bytes = record(KIND_STATE, name);
+        let at = SYMBOL_OFFSET + STATE_NAME_SIZE;
+        bytes[at..at + 8].copy_from_slice(&size.to_le_bytes());
+        bytes
+    }
 }
