@@ -26,7 +26,7 @@ pub mod port;
 pub use catalog::{Catalog, CatalogEntry, PackageRef};
 pub use decls::{Declarations, Hooks};
 pub use install::{Conflict, Installed, ModsDir, conflicts, unmet_imports};
-pub use manifest::{Manifest, Netplay};
+pub use manifest::{Manifest, ModId, Netplay};
 pub use package::Package;
 pub use port::Port;
 

@@ -32,6 +32,8 @@ pub enum PortError {
     NoRuntime,
     #[error("this build's mod loader is {0}; the app installs {api} mods", api = crate::API)]
     Api(String),
+    #[error("the mod loader section of this build is malformed")]
+    Malformed,
     #[error("{0} is not a program this app reads: {1}")]
     Object(PathBuf, object::Error),
     #[error(transparent)]
@@ -58,13 +60,19 @@ impl Port {
         let data = section
             .data()
             .map_err(|e| PortError::Object(executable.clone(), e))?;
-        let mut fields = data.split(|&b| b == 0).map(String::from_utf8_lossy);
-        let api = fields.next().unwrap_or_default().into_owned();
+        let mut fields = data
+            .split(|&b| b == 0)
+            .map(|field| std::str::from_utf8(field).map_err(|_| PortError::Malformed));
+        let mut field = || match fields.next() {
+            Some(Ok(field)) if !field.is_empty() => Ok(field.to_owned()),
+            _ => Err(PortError::Malformed),
+        };
+        let api = field()?;
         if api != crate::API {
             return Err(PortError::Api(api));
         }
-        let game_abi = fields.next().unwrap_or_default().into_owned();
-        let name = fields.next().unwrap_or_default().into_owned();
+        let game_abi = field()?;
+        let name = field()?;
         Ok(Self {
             executable,
             game_abi,
