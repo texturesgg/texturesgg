@@ -3,32 +3,34 @@
 //! port.
 
 use crate::account::Site;
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, anyhow, bail, ensure};
 use clap::{Args, Subcommand};
 use serde::Deserialize;
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use tgg_mod::port::PortError;
+use tgg_mod::sdk::SdkError;
 use tgg_mod::{
-    Catalog, CatalogEntry, Hooks, Layout, Manifest, ModId, Netplay, Package, PackageRef, Port, Sdk,
-    Symbols, catalog, conflicts, decls, package, sdk, unmet_imports,
+    Catalog, CatalogEntry, Files, Hooks, Layout, Manifest, ModId, Netplay, Package, PackageRef,
+    Port, Sdk, Symbols, catalog, conflicts, decls, files, package, sdk, unmet_imports,
 };
 
 #[derive(Subcommand)]
 pub enum ModCommand {
     /// Build a mod's source against a port's game SDK and pack it: DIR holds
-    /// manifest.json and the C sources under src/.
+    /// manifest.json, the C sources under src/, and any game files under
+    /// files/. A mod with only files packs without compiling.
     Build {
         #[arg(default_value = ".")]
         dir: PathBuf,
         /// First unpack the source from this zip ("-" for stdin) into DIR,
-        /// which must be empty or missing. Only manifest.json and src/ are
-        /// taken from it.
+        /// which must be empty or missing. Only manifest.json, src/ and
+        /// files/ are taken from it.
         #[arg(long)]
         source_zip: Option<PathBuf>,
-        /// The game SDK's folder or tgg-game-sdk.json.
+        /// The game SDK's folder or tgg-game-sdk.json; needed to compile C.
         #[arg(long, env = "TGG_GAME_SDK")]
-        sdk: PathBuf,
+        sdk: Option<PathBuf>,
         /// A layout file from `tgg mod layout`: refuse hooks the game can't
         /// take, and report each hook's canonical name.
         #[arg(long)]
@@ -149,7 +151,7 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
                 unpack_source(&zip, &dir)?;
             }
             let layout = layout.map(|path| read_layout(&path)).transpose()?;
-            build(&dir, &sdk, layout.as_ref(), &cc, output, json)
+            build(&dir, sdk.as_deref(), layout.as_ref(), &cc, output, json)
         }
         ModCommand::Layout { executable, output } => write_layout(&executable, &output),
         ModCommand::New { dir } => new(Site::new(api)?.signed_in()?, &dir),
@@ -187,14 +189,23 @@ fn print_json(value: &serde_json::Value) {
 
 fn pack(dir: &Path, output: Option<PathBuf>, json: bool) -> Result<()> {
     let manifest = read_manifest(dir)?;
-    let library = read(&dir.join(&manifest.entry))?;
-    write_package(Package::pack(library, manifest)?, None, output, json)
+    let library_path = dir.join(manifest.library_name());
+    // Without a named entry, a folder with no library is a mod of files only.
+    let library = if manifest.entry.is_none() && !library_path.exists() {
+        None
+    } else {
+        Some(read(&library_path)?)
+    };
+    let files = files::read_dir(&dir.join("files"))?;
+    write_package(Package::pack(library, manifest, files)?, None, output, json)
 }
 
-/// The largest source zip `build --source-zip` takes.
-const SOURCE_ZIP_LIMIT: u64 = 8 * 1024 * 1024;
+/// The largest source zip `build --source-zip` takes. Game files make mods
+/// megabytes, a whole fighter tens of them.
+const SOURCE_ZIP_LIMIT: u64 = 256 * 1024 * 1024;
 
-/// Unpack a mod's source (`manifest.json` and `src/`) from a zip into `dir`.
+/// Unpack a mod's source (`manifest.json`, `src/` and `files/`) from a zip
+/// into `dir`.
 fn unpack_source(zip: &Path, dir: &Path) -> Result<()> {
     use std::io::Read;
     let mut bytes = Vec::new();
@@ -226,7 +237,9 @@ fn unpack_source(zip: &Path, dir: &Path) -> Result<()> {
                 entry.name()
             );
         };
-        let wanted = relative == Path::new("manifest.json") || relative.starts_with("src");
+        let wanted = relative == Path::new("manifest.json")
+            || relative.starts_with("src")
+            || relative.starts_with("files");
         if !wanted || entry.is_dir() {
             continue;
         }
@@ -238,17 +251,47 @@ fn unpack_source(zip: &Path, dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Compile the mod in `dir` with `cc` against `sdk` and pack the library.
-/// The compiler runs in `dir` on relative paths, writing to a scratch folder
-/// inside it, so the library carries no path of this machine.
+/// The C sources under `dir`'s src/ and the game files under its files/; a
+/// mod needs one or the other.
+fn mod_source(dir: &Path) -> Result<(Vec<PathBuf>, Files)> {
+    let files = files::read_dir(&dir.join("files"))?;
+    match sdk::mod_sources(dir) {
+        Ok(sources) => Ok((sources, files)),
+        Err(SdkError::NoSources) if !files.is_empty() => Ok((Vec::new(), files)),
+        Err(SdkError::NoSources) => bail!(
+            "{} has no C sources under src/ and no game files under files/",
+            dir.display()
+        ),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Compile the mod in `dir` with `cc` against `sdk` and pack the library
+/// with the mod's files. The compiler runs in `dir` on relative paths,
+/// writing to a scratch folder inside it, so the library carries no path of
+/// this machine. A mod with only files packs as it is.
 fn build(
     dir: &Path,
-    sdk: &Path,
+    sdk: Option<&Path>,
     layout: Option<&Layout>,
     cc: &Path,
     output: Option<PathBuf>,
     json: bool,
 ) -> Result<()> {
+    let manifest = read_manifest(dir)?;
+    let (sources, files) = mod_source(dir)?;
+    if sources.is_empty() {
+        // Nothing hooks, so a checked layout has no canonical hooks to report.
+        let canonical = layout.map(|_| Hooks::default());
+        return write_package(
+            Package::pack(None, manifest, files)?,
+            canonical,
+            output,
+            json,
+        );
+    }
+    let sdk =
+        sdk.ok_or_else(|| anyhow!("compiling src/ needs the game SDK: --sdk or TGG_GAME_SDK"))?;
     let sdk = Sdk::open(sdk)?;
     ensure!(
         sdk.compiler == "GNU",
@@ -256,10 +299,8 @@ fn build(
         sdk.name,
         sdk.compiler
     );
-    let manifest = read_manifest(dir)?;
-    let sources = sdk::mod_sources(dir)?;
     let scratch = Path::new(".tgg-build");
-    let library = scratch.join(&manifest.entry);
+    let library = scratch.join(manifest.library_name());
     std::fs::create_dir_all(dir.join(scratch))?;
     let status = std::process::Command::new(cc)
         .args(sdk.compile_args(&manifest.id, &sources, &library))
@@ -269,7 +310,7 @@ fn build(
     ensure!(status.success(), "{} failed: {status}", cc.display());
     let bytes = read(&dir.join(&library))?;
     std::fs::remove_dir_all(dir.join(scratch))?;
-    let package = Package::pack(bytes, manifest)?;
+    let package = Package::pack(Some(bytes), manifest, files)?;
     ensure!(
         package.manifest.game_abi.as_deref() == Some(sdk.game_abi.as_str())
             && package.manifest.target.as_deref() == Some(sdk.target.as_str()),
@@ -334,7 +375,7 @@ fn new(site: &Site, dir: &Path) -> Result<()> {
         slug: String,
     }
     let manifest = read_manifest(dir)?;
-    sdk::mod_sources(dir)?;
+    mod_source(dir)?;
     let mut body = json!({ "slug": manifest.id, "name": manifest.name });
     if let Some(description) = &manifest.description {
         body["description"] = json!(description);
@@ -359,7 +400,7 @@ fn publish(site: &Site, dir: &Path) -> Result<()> {
         token: String,
     }
     let manifest = read_manifest(dir)?;
-    sdk::mod_sources(dir)?;
+    mod_source(dir)?;
     ensure!(
         git(dir, &["status", "--porcelain"])?.is_empty(),
         "commit your changes first; the registry builds what is committed"
@@ -586,8 +627,10 @@ fn install(port: &Port, packages: &[PathBuf]) -> Result<()> {
     for path in packages {
         let (package, _) = open_package(path)?;
         let manifest = &package.manifest;
-        if manifest.game_abi.as_deref() != Some(port.game_abi.as_str())
-            || manifest.target.as_deref() != Some(port.target.as_str())
+        // A mod of files only fits the game, not one port build.
+        if manifest.game_abi.is_some()
+            && (manifest.game_abi.as_deref() != Some(port.game_abi.as_str())
+                || manifest.target.as_deref() != Some(port.target.as_str()))
         {
             bail!(
                 "{} is built for game layout {} on {}; {} is {} on {}",
@@ -604,7 +647,7 @@ fn install(port: &Port, packages: &[PathBuf]) -> Result<()> {
         if !clashes.is_empty() {
             let clashes: Vec<_> = clashes
                 .iter()
-                .map(|c| format!("{} (also replaced by {})", c.symbol, c.with))
+                .map(|c| format!("{} (so does {})", c.clash, c.with))
                 .collect();
             bail!("{} conflicts: {}", manifest.id, clashes.join(", "));
         }

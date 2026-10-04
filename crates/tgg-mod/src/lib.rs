@@ -1,7 +1,8 @@
 //! Mod packages for [tgg-mod-runtime](https://github.com/texturesgg/tgg-mod-runtime),
 //! the mod loader a Melee source port links.
 //!
-//! A package is a zip holding `manifest.json` and the mod's shared library.
+//! A package is a zip holding `manifest.json`, the mod's shared library, and
+//! the game files it ships under `files/`, if any; a mod may ship only files.
 //! The hooks a mod installs are not taken from its manifest: they are read
 //! from the records its library carries ([`decls`]), so a conflict between
 //! two mods is a fact about their code. This crate owns that format, from
@@ -10,6 +11,7 @@
 //! - [`manifest`]: what a mod says about itself.
 //! - [`decls`]: the hooks, exports, imports and game layout a library
 //!   declares.
+//! - [`files`]: the game files a mod ships, and the rules for their paths.
 //! - [`package`]: packing and opening package zips.
 //! - [`catalog`]: the list of packages a registry offers.
 //! - [`layout`]: the functions a game layout lets mods name, and each
@@ -22,6 +24,7 @@
 
 pub mod catalog;
 pub mod decls;
+pub mod files;
 pub mod install;
 pub mod layout;
 pub mod manifest;
@@ -31,7 +34,8 @@ pub mod sdk;
 
 pub use catalog::{Catalog, CatalogEntry, PackageRef};
 pub use decls::{Declarations, Hooks};
-pub use install::{Conflict, Installed, ModsDir, conflicts, unmet_imports};
+pub use files::{Files, ModFile};
+pub use install::{Clash, Conflict, Installed, ModsDir, conflicts, unmet_imports};
 pub use layout::{Layout, Symbols};
 pub use manifest::{Manifest, ModId, Netplay};
 pub use package::Package;

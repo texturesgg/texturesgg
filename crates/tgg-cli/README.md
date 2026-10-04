@@ -23,8 +23,9 @@ local one; the default is `https://api.textures.gg`.
 ## `tgg mod`
 
 ```text
-tgg mod build [DIR] --sdk SDK [--source-zip ZIP|-] [-o OUT.zip] [--json]
+tgg mod build [DIR] [--sdk SDK] [--source-zip ZIP|-] [-o OUT.zip] [--json]
                                          compile DIR's src/**/*.c against a game SDK and pack it
+                                         with DIR's files/
 tgg mod new [DIR]                        create the mod on textures.gg from its manifest
 tgg mod publish [DIR]                    tag v<version> and push it to textures.gg, which builds it
 tgg mod layout EXE -o LAYOUT.json       the functions a port build lets mods name
@@ -36,14 +37,18 @@ tgg mod install --port PORT ZIP...       install packages, refusing another game
 tgg mod enable|disable|remove --port PORT ID...
 ```
 
-A mod's source is `manifest.json` at its root and C sources under `src/`. `build`
+A mod's source is `manifest.json` at its root, C sources under `src/`, and game files
+under `files/`, mirroring the disc (`files/PlMrNr.dat` replaces `/PlMrNr.dat`); names
+starting with `.` are left out. A mod needs sources, files, or both. `build`
 compiles every `src/**/*.c` with GCC (`--cc` or `CC`) in one call, with the SDK's include
 path, definitions and options plus `-shared -fPIC -fvisibility=hidden -O2` and the
 `TGG_GAME_ABI`, `TGG_GAME_TARGET` and `TGG_SELF_<id>` defines, on paths
 relative to `DIR`, so the same source and SDK give the same package anywhere. `SDK` is
 the SDK's folder or its `tgg-game-sdk.json`, or the `TGG_GAME_SDK` environment variable.
-`--source-zip` first unpacks `manifest.json` and `src/` from a zip, or from stdin with
-`-`, into an empty `DIR`; the registry's builder sends each mod's source that way.
+A mod with only `files/` needs no SDK: `build` packs it without compiling, and leaves
+`entry` out of its manifest. `--source-zip` first unpacks `manifest.json`, `src/` and
+`files/` from a zip (up to 256 MiB), or from stdin with `-`, into an empty `DIR`; the
+registry's builder sends each mod's source that way.
 
 `build --layout LAYOUT.json` also checks every hook against a port build's symbols and
 refuses a function the game doesn't have, a static whose name several files share, or a
