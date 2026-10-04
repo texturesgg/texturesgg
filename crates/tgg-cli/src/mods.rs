@@ -1,8 +1,9 @@
-//! `tgg-mod`: build and pack mods, look inside packages, libraries and ports,
-//! write catalogs, and manage the mods installed in a port.
+//! `tgg mod`: build and pack mods, look inside packages, libraries and ports,
+//! write catalogs, publish to textures.gg, and manage the mods installed in a
+//! port.
 
 use anyhow::{Context, Result, bail, ensure};
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Subcommand};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use tgg_mod::port::PortError;
@@ -11,15 +12,8 @@ use tgg_mod::{
     Symbols, catalog, conflicts, decls, package, sdk, unmet_imports,
 };
 
-#[derive(Parser)]
-#[command(version, about = "Mod packages for tgg-mod-runtime")]
-struct Cli {
-    #[command(subcommand)]
-    command: Command,
-}
-
 #[derive(Subcommand)]
-enum Command {
+pub enum ModCommand {
     /// Build a mod's source against a port's game SDK and pack it: DIR holds
     /// manifest.json and the C sources under src/.
     Build {
@@ -33,7 +27,7 @@ enum Command {
         /// The game SDK's folder or tgg-game-sdk.json.
         #[arg(long, env = "TGG_GAME_SDK")]
         sdk: PathBuf,
-        /// A layout file from `tgg-mod layout`: refuse hooks the game can't
+        /// A layout file from `tgg mod layout`: refuse hooks the game can't
         /// take, and report each hook's canonical name.
         #[arg(long)]
         layout: Option<PathBuf>,
@@ -126,7 +120,7 @@ enum Command {
 }
 
 #[derive(Args)]
-struct PortArg {
+pub struct PortArg {
     /// The port's executable; mods install beside it in mods/.
     #[arg(long, env = "TGG_PORT")]
     port: PathBuf,
@@ -138,9 +132,9 @@ impl PortArg {
     }
 }
 
-fn main() -> Result<()> {
-    match Cli::parse().command {
-        Command::Build {
+pub fn run(command: ModCommand) -> Result<()> {
+    match command {
+        ModCommand::Build {
             dir,
             source_zip,
             sdk,
@@ -155,16 +149,16 @@ fn main() -> Result<()> {
             let layout = layout.map(|path| read_layout(&path)).transpose()?;
             build(&dir, &sdk, layout.as_ref(), &cc, output, json)
         }
-        Command::Layout { executable, output } => write_layout(&executable, &output),
-        Command::Publish { dir, remote, token } => publish(&dir, &remote, &token),
-        Command::Pack { dir, output, json } => pack(&dir, output, json),
-        Command::Inspect { file } => inspect(&file),
-        Command::Catalog { output, packages } => write_catalog(&output, &packages),
-        Command::List { port, json } => list(&port.open()?, json),
-        Command::Install { port, packages } => install(&port.open()?, &packages),
-        Command::Enable { port, ids } => set_enabled(&port.open()?, &ids, true),
-        Command::Disable { port, ids } => set_enabled(&port.open()?, &ids, false),
-        Command::Remove { port, ids } => {
+        ModCommand::Layout { executable, output } => write_layout(&executable, &output),
+        ModCommand::Publish { dir, remote, token } => publish(&dir, &remote, &token),
+        ModCommand::Pack { dir, output, json } => pack(&dir, output, json),
+        ModCommand::Inspect { file } => inspect(&file),
+        ModCommand::Catalog { output, packages } => write_catalog(&output, &packages),
+        ModCommand::List { port, json } => list(&port.open()?, json),
+        ModCommand::Install { port, packages } => install(&port.open()?, &packages),
+        ModCommand::Enable { port, ids } => set_enabled(&port.open()?, &ids, true),
+        ModCommand::Disable { port, ids } => set_enabled(&port.open()?, &ids, false),
+        ModCommand::Remove { port, ids } => {
             let mods = port.open()?.mods();
             for id in &ids {
                 mods.remove(id).with_context(|| format!("removing {id}"))?;

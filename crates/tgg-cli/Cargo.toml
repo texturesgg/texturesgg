@@ -1,0 +1,26 @@
+[package]
+name = "tgg-cli"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["melee", "modding", "cli"]
+categories = ["command-line-utilities", "game-development"]
+description = "The textures.gg command line: build, publish and install code mods for tgg-mod-runtime"
+publish = false
+
+[[bin]]
+name = "tgg"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+serde_json = "1"
+tgg-mod = { path = "../tgg-mod" }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[lints]
+workspace = true

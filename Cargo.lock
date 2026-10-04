@@ -5460,6 +5460,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tgg-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde_json",
+ "tgg-mod",
+ "zip",
+]
+
+[[package]]
 name = "tgg-editor"
 version = "0.1.0"
 dependencies = [
@@ -5489,8 +5500,6 @@ dependencies = [
 name = "tgg-mod"
 version = "0.1.0"
 dependencies = [
- "anyhow",
- "clap",
  "object",
  "semver",
  "serde",

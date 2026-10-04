@@ -21,6 +21,7 @@ crates/
   hsd-render/    wgpu renderer for HSD models
   tgg-mod/       Code-mod packages for tgg-mod-runtime: manifests, catalogs, installs
 
+  tgg-cli/       The `tgg` command line: build, publish and install code mods
   tgg-ui/        The desktop app's theme and components, on gpui-ce
   tgg-editor/    The desktop app
 ```
