@@ -1,0 +1,154 @@
+name: Release
+
+# A tag `app-v<version>` (the version in crates/tgg-editor/Cargo.toml)
+# builds the app for macOS and Linux, publishes a GitHub release with both,
+# and points the app's update check at it. A pull request that changes the
+# packaging builds both packages, unsigned, without publishing.
+#
+# Secrets, in the `release` environment:
+#   MACOS_CERTIFICATE_P12, MACOS_CERTIFICATE_PASSWORD
+#     the "Developer ID Application" certificate and key, as base64 .p12
+#   APPLE_API_KEY_P8, APPLE_API_KEY_ID, APPLE_API_ISSUER_ID
+#     an App Store Connect API key for notarization
+#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+#     write access to the R2 bucket behind assets.textures.gg
+
+on:
+  push:
+    tags: ["app-v*"]
+  pull_request:
+    paths:
+      - dist/**
+      - scripts/package-*.sh
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux package
+    # The oldest supported runner, so the binary needs only an older glibc.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install gpui-ce's Linux dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends -y -qq \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libx11-dev libxcb1-dev libx11-xcb-dev \
+            libfontconfig1-dev libfreetype-dev libasound2-dev \
+            libvulkan-dev pkg-config cmake jq
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check the tag names this version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: scripts/check-release-tag.sh "$GITHUB_REF_NAME"
+
+      - run: scripts/package-linux.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: target/package/*.tar.gz
+          if-no-files-found: error
+
+  macos:
+    name: macOS package
+    runs-on: macos-latest
+    # The `release` environment, and its signing secrets, only admit app-v tags.
+    environment: ${{ startsWith(github.ref, 'refs/tags/') && 'release' || '' }}
+    env:
+      MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check the tag names this version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: scripts/check-release-tag.sh "$GITHUB_REF_NAME"
+
+      - name: Import the signing certificate
+        if: env.MACOS_CERTIFICATE_P12 != ''
+        run: |
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          password="$(openssl rand -hex 16)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 --decode >"$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          identity="$(security find-identity -v -p codesigning "$keychain" |
+            sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)"
+          [ -n "$identity" ] || { echo "the certificate holds no Developer ID Application identity"; exit 1; }
+          echo "CODESIGN_IDENTITY=$identity" >>"$GITHUB_ENV"
+
+      - name: Set up notarization
+        if: env.APPLE_API_KEY_P8 != ''
+        run: |
+          printf '%s' "$APPLE_API_KEY_P8" >"$RUNNER_TEMP/notary-key.p8"
+          {
+            echo "NOTARY_KEY_PATH=$RUNNER_TEMP/notary-key.p8"
+            echo "NOTARY_KEY_ID=$APPLE_API_KEY_ID"
+            echo "NOTARY_ISSUER_ID=$APPLE_API_ISSUER_ID"
+          } >>"$GITHUB_ENV"
+
+      - name: A release is signed and notarized
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          [ -n "${CODESIGN_IDENTITY:-}" ] && [ -n "${NOTARY_KEY_PATH:-}" ] ||
+            { echo "a release needs the signing and notarization secrets"; exit 1; }
+
+      - run: scripts/package-macos.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: target/package/*.dmg
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [linux, macos]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+          merge-multiple: true
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" packages/* --repo "$GITHUB_REPOSITORY" \
+            --title "textures.gg ${GITHUB_REF_NAME#app-v}" --generate-notes
+
+      # Last, so the app only hears of a version that can be downloaded.
+      - name: Point the update check at it
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          jq -n --arg version "${GITHUB_REF_NAME#app-v}" '{version: $version}' >latest.json
+          npx --yes wrangler@4.146.0 r2 object put vgskins-assets/editor/latest.json \
+            --file latest.json --content-type application/json \
+            --cache-control "public, max-age=300" --remote
