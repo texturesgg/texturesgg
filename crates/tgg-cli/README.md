@@ -4,6 +4,27 @@
 code mods for [tgg-mod-runtime](https://github.com/texturesgg/tgg-mod-runtime), on the
 [`tgg-mod`](../tgg-mod) library.
 
+## Installing
+
+```bash
+curl -fsSL https://textures.gg/install.sh | sh
+```
+
+On Windows, in PowerShell:
+
+```powershell
+irm https://textures.gg/install.ps1 | iex
+```
+
+Either installs the latest release's `tgg` for your system into `~/.local/bin`
+(`%LOCALAPPDATA%\Programs\tgg` on Windows), after checking it against the release's
+`SHA256SUMS`. Each release on GitHub (`cli-v<version>`) has the archives for
+Linux (static, x86_64 and arm64), macOS (universal, signed and notarized) and Windows,
+and a build provenance attestation for each: `gh attestation verify <archive>
+--repo texturesgg/texturesgg` checks an archive was built from this repository. With a
+Rust toolchain, `cargo install --git https://github.com/texturesgg/texturesgg tgg-cli`
+builds it instead.
+
 ## Signing in
 
 ```text
