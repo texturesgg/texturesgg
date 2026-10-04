@@ -2,6 +2,7 @@
 
 use crate::fighter::animation::{FighterAnimationAttachError, FighterAnimationBindingError};
 use crate::fighter::parts::ModelPartsError;
+use crate::fighter::shared::SharedModelError;
 use dat_parser::DatParseError;
 use dat_parser::hsd::animation::HsdJointPoseError;
 use dat_parser::hsd::draw::HsdDrawWorkError;
@@ -39,6 +40,8 @@ pub enum MeleeError {
     Attach(#[from] FighterAnimationAttachError),
     #[error("model-part visibility: {0}")]
     ModelParts(#[from] ModelPartsError),
+    #[error("shared model: {0}")]
+    SharedModel(#[from] SharedModelError),
     /// The costume or the fighter's files disagree with what the catalog
     /// verified for the fighter.
     #[error("{fighter} differs from its verified reference: {what}")]

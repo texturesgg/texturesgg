@@ -684,9 +684,10 @@ fn attach_playback(dat: &str, iso: &Path) -> CliResult<MeleeFighterPlayback> {
     let source = HsdSource::from_dat(&bytes, HsdDrawEvaluationPolicy::MELEE_FIGHTER)?;
     let mut disc =
         gc_iso::Disc::open(iso).map_err(|error| format!("{}: {error}", iso.display()))?;
-    let store =
-        MeleeReferenceStore::for_costume(catalog, &source.scene, |name| disc.read(name).ok())
-            .ok_or("no catalog idle profile admits this costume")?;
+    let store = MeleeReferenceStore::for_costume(catalog, &source.scene, |asset| {
+        disc.read(&asset.file_name).ok()
+    })
+    .ok_or("no catalog idle profile admits this costume")?;
     match MeleeFighterPlayback::attach(source, catalog, &store) {
         FighterAttach::Attached(playback) => Ok(*playback),
         FighterAttach::Unrecognized(_) => Err("no catalog idle profile admits this costume".into()),

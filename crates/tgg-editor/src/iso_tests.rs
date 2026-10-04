@@ -197,11 +197,17 @@ fn costumes_still_move_after_their_fighter_file_is_installed_over() {
             .fighter()
             .is_some()
     };
-    let without = References::new(catalog, Game::open(&iso).expect("open"))
-        .with_library(folder.path().join("empty"));
+    let without = References::new(
+        catalog,
+        Game::open(&iso).expect("open"),
+        folder.path().join("empty"),
+    );
     assert!(!moves(&without), "no original to play with");
-    let with = References::new(catalog, Game::open(&iso).expect("open"))
-        .with_library(folder.path().join("library"));
+    let with = References::new(
+        catalog,
+        Game::open(&iso).expect("open"),
+        folder.path().join("library"),
+    );
     assert!(moves(&with), "the library's original plays");
 
     undo(&game, slot, &library, &history).expect("undo");

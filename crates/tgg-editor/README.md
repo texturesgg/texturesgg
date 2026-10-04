@@ -15,20 +15,23 @@ It runs on Linux and macOS. Windows is not supported.
 ## Using it
 
 The app opens on the player's game: a roster of fighters and stages, each with
-its slots. A fighter has its costumes and its fighter file (`PlFc.dat`), which
-holds what every costume shares, such as Falco's lasers. While a fighter file
-is installed over, costumes preview with the original the install kept. The
-library holds skins added from files or zip archives,
-kept by content hash. Installing writes a skin into its slot in the ISO and
-records what was there, so an install can be undone back to the original file.
+its slots. A fighter's Costumes pane lists its costumes; its Shared pane lists
+what every costume shares, from its fighter file (`PlFc.dat`) and the effects
+file it may share with others (`EfFxData.dat`, Fox and Falco's). Where the app
+knows those files, each model is a row of its own with its picture, such as
+Falco's Laser and Shine, and says whether the installed file changes it; any
+other is one row for the file. While a fighter file is installed over,
+costumes preview with the original the install kept. The library holds skins
+added from files or zip archives, kept by content hash. Installing writes a
+skin into its slot in the ISO and records what was there, so an install can be
+undone back to the original file.
 
 Edit textures opens a slot as a document. The model takes the window, and the
 Textures, Texture, Moves and Colors panes float over it. Textures import from
 and export to PNG, by menu, by dropping a file on the window, or through an
 external image editor that the app watches for saves. Vertex and material
 colors are edited as swatches. Save keeps the edit in the library; Save and
-install also writes the slot. A fighter file has no model of its own to edit
-yet.
+install also writes the slot. Shared models can't be edited yet.
 
 ## How it is built
 

@@ -2,7 +2,7 @@
 //! what each slot can do.
 
 use super::{GamePage, Tab};
-use crate::costumes::{CostumesEvent, FIGHTER_FILE, slot_label};
+use crate::costumes::{CostumesEvent, EFFECTS_FILE, FIGHTER_FILE, slot_label};
 use crate::editor::TogglePlayback;
 use crate::install::SlotState;
 use crate::library::Skin;
@@ -13,7 +13,7 @@ use gpui::{
     AnyElement, Context, Div, ExternalPaths, InteractiveElement, IntoElement, ParentElement,
     Render, SharedString, StatefulInteractiveElement, Styled, Window, div,
 };
-use melee_dat::MeleeSlot;
+use melee_dat::{MeleeSlot, SharedModel};
 use std::rc::Rc;
 use tgg_ui::page_header::INSET;
 use tgg_ui::pane::PANE_MARGIN;
@@ -60,7 +60,7 @@ impl GamePage {
                     let custom = fighter.slots().filter(|&slot| self.changed(slot)).count();
                     let image = self
                         .shown_slot(fighter)
-                        .and_then(|slot| self.model_for(slot))
+                        .and_then(|slot| self.model_for(fighter, slot))
                         .and_then(|slot| self.renders.get(&RenderKey::Slot(slot)).cloned());
                     let this = cx.entity();
                     Card::new(
@@ -200,105 +200,187 @@ impl GamePage {
         }
     }
 
-    /// The Costumes pane: the fighter's slots (or the stage) as rows, and
+    /// A row for `slot` in a pane, or for `model`, one its file holds,
+    /// selecting it when pressed.
+    fn slot_row(
+        &self,
+        slot: MeleeSlot,
+        model: Option<SharedModel>,
+        label: &str,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let palette = Theme::global(cx).palette;
+        let (holds, custom) = match model {
+            // A model reads as its file's skin only when the skin changes it.
+            Some(model) if !self.changed_models.contains(&model) => ("Vanilla".to_owned(), false),
+            _ => self.holds(slot),
+        };
+        let shared_with = match (model, slot) {
+            (Some(model), MeleeSlot::Effects(effects)) => effects
+                .fighters()
+                .filter(|fighter| *fighter != model.character())
+                .map(|fighter| fighter.name())
+                .collect::<Vec<_>>()
+                .join(" & "),
+            _ => String::new(),
+        };
+        let detail = if shared_with.is_empty() {
+            holds
+        } else {
+            format!("{holds} · shared with {shared_with}")
+        };
+        let image = match model {
+            Some(model) => RenderKey::Shared(model),
+            None => RenderKey::Slot(slot),
+        };
+        let selected = match model {
+            Some(model) => self.selected_model() == Some(model),
+            None => self.selected_slot() == Some(slot),
+        };
+        let id = match model {
+            Some(model) => format!("shared-{slot}-{}", model.name()),
+            None => format!("slot-{slot}"),
+        };
+        let this = cx.entity();
+        let character = self
+            .fighters
+            .get(self.fighter)
+            .map(|fighter| fighter.character);
+        Card::new(SharedString::from(id), CardLayout::Row, label.to_owned())
+            .image(self.renders.get(&image).cloned())
+            .detail(detail)
+            .when(custom, |card| {
+                card.status(CardStatus {
+                    label: "Custom".into(),
+                    dot: Some(palette.accent),
+                    accent: true,
+                })
+            })
+            .selected(selected)
+            .when(self.tab == Tab::Fighters, |card| {
+                card.when_some(character, |card, character| {
+                    card.on_press(move |_, cx| {
+                        this.update(cx, |page, cx| {
+                            page.slots.insert(character, slot);
+                            if let Some(model) = model {
+                                page.models.insert(character, model);
+                            }
+                            page.show_selected(cx);
+                        })
+                    })
+                })
+            })
+            .into_any_element()
+    }
+
+    /// A pane's rows over the selected slot's actions, when it holds the
+    /// selected slot.
+    fn slot_list(
+        &self,
+        id: &'static str,
+        rows: Vec<AnyElement>,
+        holds_selected: bool,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let actions = self
+            .selected_slot()
+            .filter(|_| holds_selected)
+            .map(|slot| self.slot_actions(slot, cx));
+        div()
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .child(
+                div().id(id).flex_1().min_h_0().overflow_y_scroll().child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(rem(space::XS - 2.0))
+                        .px(rem(space::XS + 2.0))
+                        .pb(rem(space::XS))
+                        .children(rows),
+                ),
+            )
+            .children(actions)
+    }
+
+    /// The Costumes pane: the fighter's costumes (or the stage) as rows, and
     /// what the selected one can do under them.
     fn costumes_pane(&self, cx: &mut Context<Self>) -> Pane {
-        let palette = Theme::global(cx).palette;
         let selected = self.selected_slot();
-        let rows: Vec<AnyElement> = match self.tab {
+        let slots: Vec<MeleeSlot> = match self.tab {
             Tab::Fighters => self
                 .fighters
                 .get(self.fighter)
                 .map(|fighter| {
                     fighter
-                        .slots()
-                        .map(|slot| {
-                            let (holds, custom) = self.holds(slot);
-                            let this = cx.entity();
-                            let character = fighter.character;
-                            Card::new(
-                                SharedString::from(format!("slot-{slot}")),
-                                CardLayout::Row,
-                                slot.color().map_or(FIGHTER_FILE, |color| color.name()),
-                            )
-                            .image(self.renders.get(&RenderKey::Slot(slot)).cloned())
-                            .detail(holds)
-                            .when(custom, |card| {
-                                card.status(CardStatus {
-                                    label: "Custom".into(),
-                                    dot: Some(palette.accent),
-                                    accent: true,
-                                })
-                            })
-                            .selected(selected == Some(slot))
-                            .on_press(move |_, cx| {
-                                this.update(cx, |page, cx| {
-                                    page.slots.insert(character, slot);
-                                    page.show_selected(cx);
-                                })
-                            })
-                            .into_any_element()
-                        })
+                        .costumes
+                        .iter()
+                        .map(|costume| costume.slot(fighter))
                         .collect()
                 })
                 .unwrap_or_default(),
-            Tab::Stages => selected
-                .iter()
-                .map(|&slot| {
-                    let (holds, custom) = self.holds(slot);
-                    Card::new("stage-slot", CardLayout::Row, slot_label(Some(slot)))
-                        .image(self.renders.get(&RenderKey::Slot(slot)).cloned())
-                        .detail(holds)
-                        .when(custom, |card| {
-                            card.status(CardStatus {
-                                label: "Custom".into(),
-                                dot: Some(palette.accent),
-                                accent: true,
-                            })
-                        })
-                        .selected(true)
-                        .into_any_element()
-                })
-                .collect(),
+            Tab::Stages => selected.into_iter().collect(),
         };
+        let rows: Vec<AnyElement> = slots
+            .iter()
+            .map(|&slot| {
+                let label = match slot.color() {
+                    Some(color) => color.name().to_owned(),
+                    None => slot_label(Some(slot)),
+                };
+                self.slot_row(slot, None, &label, cx)
+            })
+            .collect();
         let title = match self.tab {
             Tab::Fighters => "Costumes",
             Tab::Stages => "Stage",
         };
+        let holds_selected = selected.is_some_and(|slot| slots.contains(&slot));
         Pane::new("costumes", title, PaneFit::Fill)
             .count(rows.len().to_string())
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .id("slots")
-                            .flex_1()
-                            .min_h_0()
-                            .overflow_y_scroll()
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap(rem(space::XS - 2.0))
-                                    .px(rem(space::XS + 2.0))
-                                    .pb(rem(space::XS))
-                                    .children(rows),
-                            ),
-                    )
-                    .child(self.slot_actions(cx)),
-            )
+            .child(self.slot_list("slots", rows, holds_selected, cx))
     }
 
-    /// What the selected slot can do: change skin, undo, restore vanilla.
-    fn slot_actions(&self, cx: &mut Context<Self>) -> Div {
+    /// The Shared pane: what every costume of the fighter plays with. A
+    /// shared file whose models the app knows lists each by name (Laser,
+    /// Shine); any other is one row for the whole file.
+    fn shared_pane(&self, cx: &mut Context<Self>) -> Option<Pane> {
+        if self.tab != Tab::Fighters {
+            return None;
+        }
+        let fighter = self.fighters.get(self.fighter)?;
+        if fighter.shared.is_empty() {
+            return None;
+        }
+        let mut rows = Vec::new();
+        for &file in &fighter.shared {
+            let models: Vec<SharedModel> = fighter.models(file).collect();
+            if models.is_empty() {
+                let label = match file {
+                    MeleeSlot::Effects(_) => EFFECTS_FILE,
+                    _ => FIGHTER_FILE,
+                };
+                rows.push(self.slot_row(file, None, label, cx));
+            }
+            for model in models {
+                rows.push(self.slot_row(file, Some(model), model.name(), cx));
+            }
+        }
+        let holds_selected = self
+            .selected_slot()
+            .is_some_and(|slot| fighter.shared.contains(&slot));
+        Some(
+            Pane::new("shared", "Shared", PaneFit::Content)
+                .count(rows.len().to_string())
+                .child(self.slot_list("shared-slots", rows, holds_selected, cx)),
+        )
+    }
+
+    /// What `slot` can do: change skin, undo, restore vanilla.
+    fn slot_actions(&self, slot: MeleeSlot, cx: &mut Context<Self>) -> Div {
         let palette = Theme::global(cx).palette;
-        let Some(slot) = self.selected_slot() else {
-            return div();
-        };
         let emit = |event: CostumesEvent, cx: &mut Context<Self>| {
             let this = cx.entity();
             let event = Rc::new(event);
@@ -391,8 +473,8 @@ impl GamePage {
             .children(self.notice_line(cx))
     }
 
-    /// One fighter or stage, moving on the stage, with its Costumes pane
-    /// floating at the right.
+    /// One fighter or stage, moving on the stage, with its panes floating at
+    /// the right: Costumes (or Stage), and Shared for a fighter's data file.
     fn subject_view(&self, cx: &mut Context<Self>) -> Div {
         let palette = Theme::global(cx).palette;
         let width = self.split.read(cx).right.width;
@@ -407,10 +489,15 @@ impl GamePage {
             (Some(preview), None) => stage::stage(&preview.file.viewport, &preview.timeline, clear),
             (None, None) => div().size_full().bg(stage::color()),
         };
-        let pane = self.costumes_pane(cx);
-        div().relative().size_full().child(stage_area).child(
-            PaneColumn::new(self.split.clone(), PANE_MARGIN).children([pane.into_any_element()]),
-        )
+        let panes = [Some(self.costumes_pane(cx)), self.shared_pane(cx)]
+            .into_iter()
+            .flatten()
+            .map(IntoElement::into_any_element);
+        div()
+            .relative()
+            .size_full()
+            .child(stage_area)
+            .child(PaneColumn::new(self.split.clone(), PANE_MARGIN).children(panes))
     }
 }
 

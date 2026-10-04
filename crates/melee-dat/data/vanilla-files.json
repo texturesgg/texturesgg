@@ -1,11 +1,16 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "source": {
     "discRevision": 2,
     "gameId": "GALE01",
     "isoSha256": "0de05981a34156b9cedcef73c73d4244ac05cf6149ab3c9cfed917698819e464"
   },
   "files": [
+    {
+      "name": "EfFxData.dat",
+      "byteLength": 123588,
+      "sha256": "6029fc0740155310322c4313c29cfed0d2acc3a6cb90c8a4945b9cb605f7570e"
+    },
     {
       "name": "GrBb.dat",
       "byteLength": 2284151,
@@ -905,6 +910,58 @@
       "name": "PlZdWh.dat",
       "byteLength": 349214,
       "sha256": "890781004398089d64b9db4ed7bea35217227263fa5bc46d6074515c01a1ff56"
+    }
+  ],
+  "shared": [
+    {
+      "fighter": "Fc",
+      "name": "Laser",
+      "fingerprint": "90e18c8bfb98faaa038bc44c5608c9b5f88b5cefb94cc41919f98cae374c24b7"
+    },
+    {
+      "fighter": "Fc",
+      "name": "Blaster",
+      "fingerprint": "2c8f3b455cc0912afd6c68256510b1bf220e72a85a10476db120cd994eeab5b6"
+    },
+    {
+      "fighter": "Fc",
+      "name": "Phantasm",
+      "fingerprint": "e9844af5b3918f405e1703efc81b159b79275cd01ed2b31aba5fbc13e1eab402"
+    },
+    {
+      "fighter": "Fc",
+      "name": "Shine",
+      "fingerprint": "327a4a20be3a20f6838e5aad37d58b63784b0a4c6cc25c99815392e185879961"
+    },
+    {
+      "fighter": "Fc",
+      "name": "Fire Bird",
+      "fingerprint": "b83087bea3fe22383587a5c63d5b002bac6dc87c9132af24af303b072d93abd7"
+    },
+    {
+      "fighter": "Fx",
+      "name": "Laser",
+      "fingerprint": "90e18c8bfb98faaa038bc44c5608c9b5f88b5cefb94cc41919f98cae374c24b7"
+    },
+    {
+      "fighter": "Fx",
+      "name": "Blaster",
+      "fingerprint": "2c8f3b455cc0912afd6c68256510b1bf220e72a85a10476db120cd994eeab5b6"
+    },
+    {
+      "fighter": "Fx",
+      "name": "Illusion",
+      "fingerprint": "37b060ffca8e530cc7e1970957c66fc65250e8c09c69f5ee43ef15965b08cc7f"
+    },
+    {
+      "fighter": "Fx",
+      "name": "Shine",
+      "fingerprint": "327a4a20be3a20f6838e5aad37d58b63784b0a4c6cc25c99815392e185879961"
+    },
+    {
+      "fighter": "Fx",
+      "name": "Fire Fox",
+      "fingerprint": "b83087bea3fe22383587a5c63d5b002bac6dc87c9132af24af303b072d93abd7"
     }
   ]
 }

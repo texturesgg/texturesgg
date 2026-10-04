@@ -37,6 +37,12 @@ const CHARACTERS: &[(&str, &str, &str)] = &[
     ("Zd", "Zelda", "ftDataZelda"),
 ];
 
+/// Fighters' effects files: each file, its root table, and the fighters whose
+/// moves spawn from it. The game loads them by name (`efasync.c`), and
+/// Falco's moves are Fox's code, so the two share `EfFxData.dat`. Only the
+/// files whose models [`crate::fighter::shared`] names are listed.
+const EFFECTS: &[(&str, &str, &[&str])] = &[("EfFxData.dat", "effFoxDataTable", &["Fx", "Fc"])];
+
 const COSTUMES: &[(&str, &str)] = &[
     ("Nr", "Neutral"),
     ("Re", "Red"),
@@ -182,6 +188,49 @@ impl Stage {
     }
 }
 
+/// A fighters' effects file, by the file the game loads: the models their
+/// moves spawn, such as Fox's shine. Some fighters share one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Effects(u8);
+
+impl Effects {
+    pub fn all() -> impl Iterator<Item = Self> {
+        (0..EFFECTS.len() as u8).map(Self)
+    }
+
+    /// The effects file `character`'s moves spawn from.
+    pub fn of(character: Character) -> Option<Self> {
+        Self::all().find(|effects| effects.fighters().any(|user| user == character))
+    }
+
+    /// The effects file whose name is exactly `file_name` (`EfFxData.dat`).
+    pub fn from_file_name(file_name: &str) -> Option<Self> {
+        EFFECTS
+            .iter()
+            .position(|(file, _, _)| *file == file_name)
+            .map(|index| Self(index as u8))
+    }
+
+    /// The effects file whose root table is `name` (`effFoxDataTable`).
+    pub fn from_root(name: &str) -> Option<Self> {
+        EFFECTS
+            .iter()
+            .position(|(_, root, _)| *root == name)
+            .map(|index| Self(index as u8))
+    }
+
+    /// The file the game loads (`EfFxData.dat`).
+    pub fn file_name(self) -> &'static str {
+        EFFECTS[usize::from(self.0)].0
+    }
+
+    /// The fighters whose moves spawn from it, in roster order.
+    pub fn fighters(self) -> impl Iterator<Item = Character> {
+        let codes = EFFECTS[usize::from(self.0)].2;
+        Character::all().filter(move |character| codes.contains(&character.code()))
+    }
+}
+
 fn position(values: &[(&str, &str)], code: &str) -> Option<u8> {
     values
         .iter()
@@ -190,9 +239,9 @@ fn position(values: &[(&str, &str)], code: &str) -> Option<u8> {
 }
 
 /// A file of the game that a skin replaces: one fighter's costume of one
-/// color, a fighter's data file, or a versus stage. Whether a given game has
-/// the slot (not every fighter has every color) is for [`crate::vanilla`] or
-/// the disc to say.
+/// color, a fighter's data file, fighters' effects file, or a versus stage.
+/// Whether a given game has the slot (not every fighter has every color) is
+/// for [`crate::vanilla`] or the disc to say.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MeleeSlot {
     Costume {
@@ -201,7 +250,10 @@ pub enum MeleeSlot {
     },
     /// The fighter's data file (`PlFc.dat`): what all its costumes share,
     /// such as Falco's lasers.
-    Fighter(Character),
+    FighterData(Character),
+    /// Fighters' effects file (`EfFxData.dat`): the models their moves
+    /// spawn, such as Fox's shine.
+    Effects(Effects),
     Stage(Stage),
 }
 
@@ -218,16 +270,18 @@ impl MeleeSlot {
             Self::Costume { character, color } => {
                 format!("Pl{}{}.dat", character.code(), color.code())
             }
-            Self::Fighter(character) => format!("Pl{}.dat", character.code()),
+            Self::FighterData(character) => format!("Pl{}.dat", character.code()),
+            Self::Effects(effects) => effects.file_name().to_owned(),
             Self::Stage(stage) => stage.file_name().to_owned(),
         }
     }
 
-    /// The fighter, for a costume or a fighter's data file.
+    /// The fighter, for a costume or a fighter's data file. An effects file
+    /// may be several fighters': see [`Effects::fighters`].
     pub fn character(self) -> Option<Character> {
         match self {
-            Self::Costume { character, .. } | Self::Fighter(character) => Some(character),
-            Self::Stage(_) => None,
+            Self::Costume { character, .. } | Self::FighterData(character) => Some(character),
+            Self::Effects(_) | Self::Stage(_) => None,
         }
     }
 
@@ -235,12 +289,13 @@ impl MeleeSlot {
     pub fn color(self) -> Option<CostumeColor> {
         match self {
             Self::Costume { color, .. } => Some(color),
-            Self::Fighter(_) | Self::Stage(_) => None,
+            Self::FighterData(_) | Self::Effects(_) | Self::Stage(_) => None,
         }
     }
 
     /// Whether a file made for this slot fits `other` too: both are costumes
-    /// of one fighter, or one fighter's data file, or one stage.
+    /// of one fighter, or one fighter's data file, or one effects file, or
+    /// one stage.
     pub fn fits(self, other: Self) -> bool {
         match (self, other) {
             (
@@ -249,7 +304,8 @@ impl MeleeSlot {
                     character: other, ..
                 },
             )
-            | (Self::Fighter(character), Self::Fighter(other)) => character == other,
+            | (Self::FighterData(character), Self::FighterData(other)) => character == other,
+            (Self::Effects(effects), Self::Effects(other)) => effects == other,
             (Self::Stage(stage), Self::Stage(other)) => stage == other,
             _ => false,
         }
@@ -265,7 +321,7 @@ impl fmt::Display for MeleeSlot {
 
 /// A name that is not exactly a slot's file name.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
-#[error("not the file name of a costume, fighter data file or versus stage")]
+#[error("not the file name of a costume, fighter data, effects or versus stage file")]
 pub struct NotASlot;
 
 impl FromStr for MeleeSlot {
@@ -307,8 +363,16 @@ pub fn parse_filename(filename: &str) -> Option<MeleeSlot> {
             .ok()
             .and_then(Character::from_code);
         if let (true, Some(character)) = (alone, character) {
-            return Some(MeleeSlot::Fighter(character));
+            return Some(MeleeSlot::FighterData(character));
         }
+    }
+
+    let effects = Effects::all().find(|effects| {
+        let file = effects.file_name();
+        base.contains(file.strip_suffix(".dat").unwrap_or(file))
+    });
+    if let Some(effects) = effects {
+        return Some(MeleeSlot::Effects(effects));
     }
 
     Stage::all()
@@ -383,7 +447,13 @@ mod tests {
     /// finds a slot but is not one.
     #[test]
     fn a_slot_round_trips_through_exactly_its_file_name() {
-        for name in ["PlFcRe.dat", "PlPpNr.dat", "PlFc.dat", "GrNLa.dat"] {
+        for name in [
+            "PlFcRe.dat",
+            "PlPpNr.dat",
+            "PlFc.dat",
+            "EfFxData.dat",
+            "GrNLa.dat",
+        ] {
             let slot: MeleeSlot = name.parse().unwrap();
             assert_eq!(slot.to_string(), name);
         }
@@ -393,7 +463,7 @@ mod tests {
         assert!(costume("Fx", "Or").fits(costume("Fx", "Nr")));
         assert!(!costume("Fx", "Or").fits(costume("Fc", "Or")));
         assert!(!stage("GrPs.dat").fits(costume("Fx", "Nr")));
-        let falco = MeleeSlot::Fighter(Character::from_code("Fc").unwrap());
+        let falco = MeleeSlot::FighterData(Character::from_code("Fc").unwrap());
         assert!(falco.fits(falco));
         assert!(!falco.fits(costume("Fc", "Nr")));
         assert!(!costume("Fc", "Nr").fits(falco));
@@ -403,7 +473,7 @@ mod tests {
     /// some other file of the fighter's.
     #[test]
     fn finds_a_fighter_data_file_by_its_code_alone() {
-        let fighter = |code| Some(MeleeSlot::Fighter(Character::from_code(code).unwrap()));
+        let fighter = |code| Some(MeleeSlot::FighterData(Character::from_code(code).unwrap()));
         assert_eq!(parse_filename("PlFc.dat"), fighter("Fc"));
         assert_eq!(parse_filename("PlFx-Blue-Lasers.dat"), fighter("Fx"));
         assert_eq!(parse_filename("packs/blue/PlFx (1).dat"), fighter("Fx"));
@@ -411,5 +481,20 @@ mod tests {
         assert_eq!(parse_filename("PlCo.dat"), None);
         // A costume's name still finds the costume.
         assert_eq!(parse_filename("PlFcRe.dat"), Some(costume("Fc", "Re")));
+    }
+
+    /// Falco's moves are Fox's code: the two spawn from one effects file, so
+    /// a skin for it is both of theirs.
+    #[test]
+    fn fox_and_falco_share_an_effects_file() {
+        let fox = Character::from_code("Fx").unwrap();
+        let falco = Character::from_code("Fc").unwrap();
+        let effects = Effects::of(fox).expect("Fox's effects");
+        assert_eq!(Effects::of(falco), Some(effects));
+        assert_eq!(effects.fighters().collect::<Vec<_>>(), [falco, fox]);
+        assert_eq!(
+            parse_filename("EfFxData-pink-shine.dat"),
+            Some(MeleeSlot::Effects(effects))
+        );
     }
 }

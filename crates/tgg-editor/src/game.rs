@@ -7,7 +7,6 @@
 //! scans.
 
 use crate::Error;
-use crate::ids::SkinId;
 use crate::library::Library;
 use dat_parser::hsd::scene::HsdScene;
 use gc_iso::Disc;
@@ -261,19 +260,11 @@ pub struct References {
 }
 
 impl References {
-    pub fn new(catalog: &'static MeleeReferenceCatalog, game: Game) -> Self {
+    pub fn new(catalog: &'static MeleeReferenceCatalog, game: Game, library: PathBuf) -> Self {
         Self {
             catalog,
             game,
-            library: Library::default_root(),
-        }
-    }
-
-    /// Look for originals in the library kept in `root`.
-    pub fn with_library(self, root: PathBuf) -> Self {
-        Self {
-            library: root,
-            ..self
+            library,
         }
     }
 
@@ -286,28 +277,20 @@ impl References {
     /// when it isn't a stock costume the catalog knows. The store checks
     /// each file against the catalog.
     pub fn store_for(&self, scene: &HsdScene) -> Option<Rc<MeleeReferenceStore>> {
-        let assets = self.catalog.idle_reference_assets(scene)?;
-        let files = assets.into_iter().filter_map(|asset| self.original(asset));
-        Some(Rc::new(MeleeReferenceStore::from_bytes(
-            self.catalog,
-            files,
-        )))
+        MeleeReferenceStore::for_costume(self.catalog, scene, |asset| self.original(asset))
+            .map(Rc::new)
     }
 
     /// The original of `asset`: the game's file, or the library's copy of it
     /// when the game's was installed over (a fighter's data file with new
-    /// lasers, say). Failing both, the game's file, for the store to refuse
-    /// by name.
+    /// lasers, say). Failing both, the game's file, for the store to refuse.
     fn original(&self, asset: &ReferenceAsset) -> Option<Vec<u8>> {
         let in_game = self
             .game
             .read(&asset.file_name)
             .inspect_err(|error| crate::log(&format!("reference unavailable: {error}")))
             .ok();
-        if in_game
-            .as_ref()
-            .is_some_and(|bytes| SkinId::of(bytes).to_string() == asset.sha256)
-        {
+        if in_game.as_deref().is_some_and(|bytes| asset.is(bytes)) {
             return in_game;
         }
         let kept = asset
@@ -317,7 +300,7 @@ impl References {
             .and_then(|id| Library::read_kept(&self.library, id).ok());
         if kept.is_none() {
             crate::log(&format!(
-                "{} isn't the original, and the library has no copy of it",
+                "reference unavailable: {} isn't the original, and the library has no copy",
                 asset.file_name
             ));
         }

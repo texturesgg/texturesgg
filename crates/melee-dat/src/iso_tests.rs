@@ -9,7 +9,9 @@
 use crate::catalog::CATALOG_JSON;
 use crate::fighter::places::{BodyRegion, CostumePlaces, ModelDetail};
 use crate::fighter::playback::hidden_display_objects;
-use crate::{FighterAttach, MeleeFighterPlayback, MeleeReferenceCatalog, MeleeReferenceStore};
+use crate::{
+    FighterAttach, MeleeFighterPlayback, MeleeReferenceCatalog, MeleeReferenceStore, MeleeSlot,
+};
 use dat_parser::DatFile;
 use dat_parser::hsd::HsdScene;
 use dat_parser::hsd::draw::HsdDrawEvaluationPolicy;
@@ -29,7 +31,7 @@ fn references(
     catalog: &MeleeReferenceCatalog,
     scene: &HsdScene,
 ) -> MeleeReferenceStore {
-    MeleeReferenceStore::for_costume(catalog, scene, |name| disc.read(name).ok())
+    MeleeReferenceStore::for_costume(catalog, scene, |asset| disc.read(&asset.file_name).ok())
         .expect("a stock costume is recognized")
 }
 
@@ -89,7 +91,9 @@ fn runtime_masks_match_the_catalog_for_every_stock_costume() {
         .files()
         .iter()
         .filter(|file| !file.is_dir && crate::vanilla::vanilla_file(&file.name).is_some())
-        .filter(|file| file.name.starts_with("Pl"))
+        .filter(|file| {
+            MeleeSlot::from_file_name(&file.name).is_some_and(|slot| slot.color().is_some())
+        })
         .map(|file| file.name.clone())
         .collect();
     let mut compared = 0;
@@ -187,4 +191,24 @@ fn a_fighter_plays_seeks_and_speeds_up_any_animation() {
     // Back throw requests a partial part the binder doesn't reproduce.
     assert!(playback.play(back_throw.index).is_err());
     assert_eq!(playback.current(), jab.index);
+}
+
+/// Every model costumes share is found where the decomp says it lives, and
+/// draws on the clean disc exactly as the vanilla table recorded it.
+#[test]
+fn every_shared_model_is_found_and_vanilla_on_the_clean_disc() {
+    let mut disc = disc();
+    let mut checked = 0;
+    for model in crate::Character::all().flat_map(crate::SharedModel::of) {
+        let bytes = disc.read(&model.slot().file_name()).expect("its file");
+        let scene = model.scene(&bytes).expect("its models load");
+        assert!(!scene.roots.is_empty(), "{}", model.name());
+        assert!(
+            model.is_vanilla(&bytes).expect("fingerprint"),
+            "{}",
+            model.name()
+        );
+        checked += 1;
+    }
+    assert!(checked >= 10, "{checked}");
 }

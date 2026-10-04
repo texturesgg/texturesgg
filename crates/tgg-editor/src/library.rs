@@ -1,6 +1,6 @@
-//! The player's skins: every costume, fighter data or stage file they've
-//! added, kept once each (by SHA-256) in the app's data folder, with a
-//! record of its name, the slot it was made for, and where it came from.
+//! The player's skins: every costume, fighter data, effects or stage file
+//! they've added, kept once each (by SHA-256) in the app's data folder, with
+//! a record of its name, the slot it was made for, and where it came from.
 //! The library is the source of truth; the player's ISO holds copies of
 //! what they install.
 //!
@@ -14,7 +14,7 @@ use crate::disk::{ReadError, read_capped, write_atomically};
 use crate::ids::{SkinId, optional_slot};
 use dat_parser::DatFile;
 use dat_parser::hsd::scene::HSD_SCENE_MAX_DAT_BYTES;
-use melee_dat::{Character, MeleeReferenceCatalog, MeleeSlot, parse_filename};
+use melee_dat::{Character, Effects, MeleeReferenceCatalog, MeleeSlot, parse_filename};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -148,10 +148,11 @@ impl Library {
         let slot = catalog
             .costume_slot(dat.roots.iter().map(|root| root.name.as_str()))
             .or_else(|| {
-                dat.roots
-                    .iter()
-                    .find_map(|root| Character::from_data_root(&root.name))
-                    .map(MeleeSlot::Fighter)
+                dat.roots.iter().find_map(|root| {
+                    Character::from_data_root(&root.name)
+                        .map(MeleeSlot::FighterData)
+                        .or_else(|| Effects::from_root(&root.name).map(MeleeSlot::Effects))
+                })
             })
             .or_else(|| parse_filename(file_name));
         let id = SkinId::of(&bytes);

@@ -7,6 +7,7 @@ use std::collections::HashSet;
 pub(crate) enum ModelRootOrigin {
     Character { root_index: usize },
     Stage { descriptor_index: usize },
+    Given { index: usize },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -83,6 +84,30 @@ fn discover_stage_roots(
         }
     }
     Ok(roots)
+}
+
+/// The model roots a caller names: models the DAT's root table doesn't list,
+/// which only the game's own structures lead to (a fighter's articles, an
+/// effect table's models), in the caller's order.
+pub(crate) fn given_model_roots(
+    roots: &[u32],
+    max_roots: usize,
+) -> Result<Vec<DiscoveredModelRoot>, HsdSceneError> {
+    if roots.len() > max_roots {
+        return Err(HsdSceneError::LimitExceeded {
+            resource: "model root",
+            limit: max_roots,
+        });
+    }
+    Ok(roots
+        .iter()
+        .enumerate()
+        .map(|(index, &offset)| DiscoveredModelRoot {
+            offset,
+            require_renderable: false,
+            origin: ModelRootOrigin::Given { index },
+        })
+        .collect())
 }
 
 #[cfg(test)]

@@ -56,8 +56,24 @@ impl HsdSource {
 
     /// [`Self::from_dat`] for a DAT [`parse`] already read.
     pub fn from_parsed(dat: &DatFile, policy: HsdDrawEvaluationPolicy) -> Result<Self> {
+        let scene = HsdScene::from_dat_with_limits(dat, hsd_scene_limits())?;
+        Self::from_scene(scene, policy)
+    }
+
+    /// The models at `roots` alone, which the caller found by structures the
+    /// DAT's root table doesn't list: see
+    /// [`HsdScene::from_model_roots_with_limits`].
+    pub fn from_model_roots(
+        dat: &DatFile,
+        roots: &[u32],
+        policy: HsdDrawEvaluationPolicy,
+    ) -> Result<Self> {
+        let scene = HsdScene::from_model_roots_with_limits(dat, roots, hsd_scene_limits())?;
+        Self::from_scene(scene, policy)
+    }
+
+    fn from_scene(scene: HsdScene, policy: HsdDrawEvaluationPolicy) -> Result<Self> {
         let limits = hsd_scene_limits();
-        let scene = HsdScene::from_dat_with_limits(dat, limits)?;
         scene.validate()?;
         require_draw_passes(&scene)?;
         let evaluator = HsdDrawWorkEvaluator::prepare_with_limits(

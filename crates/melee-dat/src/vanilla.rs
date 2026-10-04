@@ -1,9 +1,12 @@
-//! Every vanilla Melee NTSC 1.02 costume, fighter data and versus stage file,
-//! by size and SHA-256 (`data/vanilla-files.json`, written by the
+//! Every vanilla Melee NTSC 1.02 costume, fighter data, effects and versus
+//! stage file, by size and SHA-256, and the fingerprint of each model
+//! fighters' costumes share (`data/vanilla-files.json`, written by the
 //! `vanilla_files` example from the clean ISO the reference catalog
 //! records). Tells whether a slot in a player's ISO still holds its original
-//! file, without any game content.
+//! file, and whether a shared model still draws as shipped, without any game
+//! content.
 
+use crate::file_names::Character;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -22,6 +25,7 @@ pub struct VanillaFile {
 #[derive(Deserialize)]
 struct Table {
     files: Vec<Record>,
+    shared: Vec<SharedRecord>,
 }
 
 #[derive(Deserialize)]
@@ -32,35 +36,65 @@ struct Record {
     sha256: String,
 }
 
-fn table() -> &'static HashMap<String, VanillaFile> {
-    static TABLE: OnceLock<HashMap<String, VanillaFile>> = OnceLock::new();
-    TABLE.get_or_init(|| {
+/// A shared model's fingerprint ([`crate::SharedModel::fingerprint`]), by
+/// its fighter's code and its name.
+#[derive(Deserialize)]
+struct SharedRecord {
+    fighter: String,
+    name: String,
+    fingerprint: String,
+}
+
+struct Tables {
+    files: HashMap<String, VanillaFile>,
+    /// Fingerprints by fighter code and model name.
+    shared: HashMap<(String, String), String>,
+}
+
+fn tables() -> &'static Tables {
+    static TABLES: OnceLock<Tables> = OnceLock::new();
+    TABLES.get_or_init(|| {
         let table: Table =
             serde_json::from_str(VANILLA_FILES_JSON).expect("the checked-in vanilla table parses");
-        table
-            .files
-            .into_iter()
-            .map(|file| {
-                let file = VanillaFile {
-                    name: file.name,
-                    byte_length: file.byte_length,
-                    sha256: file.sha256,
-                };
-                (file.name.clone(), file)
-            })
-            .collect()
+        Tables {
+            files: table
+                .files
+                .into_iter()
+                .map(|file| {
+                    let file = VanillaFile {
+                        name: file.name,
+                        byte_length: file.byte_length,
+                        sha256: file.sha256,
+                    };
+                    (file.name.clone(), file)
+                })
+                .collect(),
+            shared: table
+                .shared
+                .into_iter()
+                .map(|model| ((model.fighter, model.name), model.fingerprint))
+                .collect(),
+        }
     })
 }
 
-/// The vanilla file called `name` (`PlFcRe.dat`, `PlFc.dat`, `GrNLa.dat`), if the table
-/// has one.
+/// The vanilla file called `name` (`PlFcRe.dat`, `PlFc.dat`, `GrNLa.dat`),
+/// if the table has one.
 pub fn vanilla_file(name: &str) -> Option<&'static VanillaFile> {
-    table().get(name)
+    tables().files.get(name)
 }
 
-/// Every vanilla costume, fighter data and versus stage file.
+/// Every vanilla costume, fighter data, effects and versus stage file.
 pub fn vanilla_files() -> impl Iterator<Item = &'static VanillaFile> {
-    table().values()
+    tables().files.values()
+}
+
+/// The fingerprint of `character`'s shared model `name` as shipped.
+pub fn vanilla_shared(character: Character, name: &str) -> Option<&'static str> {
+    tables()
+        .shared
+        .get(&(character.code().to_owned(), name.to_owned()))
+        .map(String::as_str)
 }
 
 /// Whether `bytes` are exactly the vanilla file called `name`.
@@ -72,7 +106,7 @@ pub fn is_vanilla(name: &str, bytes: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_vanilla, vanilla_file};
+    use super::{is_vanilla, vanilla_file, vanilla_shared};
     use crate::{Character, Stage};
 
     #[test]
@@ -95,6 +129,14 @@ mod tests {
                 "{}'s data file",
                 character.name()
             );
+            for model in crate::SharedModel::of(character) {
+                assert!(
+                    vanilla_shared(character, model.name()).is_some(),
+                    "{}'s {}",
+                    character.name(),
+                    model.name()
+                );
+            }
         }
     }
 

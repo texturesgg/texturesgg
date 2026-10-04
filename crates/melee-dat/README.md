@@ -27,9 +27,12 @@ fighter the catalog recognizes, or failed with the `MeleeError` that says why.
 
 The game's own numbers and names have types: `FighterKind` and `CostumeIndex`
 for the fighter tables, `StagePointKind` for a stage's general points, and
-`MeleeSlot` (a `Character` and `CostumeColor`, a `Character`'s data file, or a
-`Stage`) for the file a skin replaces. `parse_filename` finds the slot a descriptively named file was
-made for; `MeleeSlot::from_file_name` takes only the slot's own name.
+`MeleeSlot` (a `Character` and `CostumeColor`, a `Character`'s data file, an
+`Effects` file, or a `Stage`) for the file a skin replaces. `parse_filename`
+finds the slot a descriptively named file was made for;
+`MeleeSlot::from_file_name` takes only the slot's own name. `SharedModel` is a
+model every costume of a fighter shares (Fox's laser, his shine): where it
+lives in its data or effects file, and whether it still draws as shipped.
 
 ## Layout
 
@@ -41,13 +44,14 @@ made for; `MeleeSlot::from_file_name` takes only the slot's own name.
 | `fighter::parts`       | Which model parts the game shows (faces, hands, items, detail levels).                                  |
 | `fighter::moves`       | What each animation is called as a move ("Jab 1", "Up smash").                                          |
 | `fighter::places`      | Where a stock costume draws each texture ("Head", "Eyes").                                              |
+| `fighter::shared`      | `SharedModel`: what every costume shares (a laser, a shine), named, found and fingerprinted.            |
 | `stage::points`        | A stage's general points: camera range, blast zone, spawn points.                                       |
 | `stage::playback`      | `MeleeStagePlayback`: the joint animations a stage starts when it loads.                                |
 | `stage::texture_names` | HAL's own names for a stage's textures.                                                                 |
 | `catalog`              | `MeleeReferenceCatalog`: the checked-in table of every fighter's files, joint hierarchy and idle setup. |
 | `references`           | `MeleeReferenceStore`: the original game files a caller supplies.                                       |
 | `file_names`           | `MeleeSlot` and how the game names its files (`PlFcRe.dat` is Falco's Red, `PlFc.dat` his data).        |
-| `vanilla`              | The size and SHA-256 of every costume, fighter data and stage file as shipped.                          |
+| `vanilla`              | The size and SHA-256 of every slot's file as shipped, and each shared model's fingerprint.              |
 
 Types a host holds carry the `Melee` prefix; their parts are named by subject
 (`Stage…`, `Fighter…`, `Costume…`).

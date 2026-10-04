@@ -42,6 +42,7 @@ use dat_parser::hsd::draw::HsdDrawEvaluationPolicy;
 pub use error::Error;
 pub use game::{Found, Game, GameChoice, GameError, References};
 use gpui::{App, AppContext, Bounds, KeyBinding, WindowBounds, WindowOptions, actions, px, size};
+use library::Library;
 pub(crate) use log::log;
 use melee_dat::{FighterAttachOutcome, MeleeModelKind, MeleeReferenceCatalog, MeleeReferenceStore};
 
@@ -166,9 +167,14 @@ pub fn discover_games() -> Vec<GameChoice> {
     Game::discover(&settings::load().game_folders)
 }
 
-/// References read from the player's game.
+/// References read from the player's game, or the library in the app's
+/// data folder where the game's were installed over.
 pub fn game_references(game: Game) -> Result<References, Error> {
-    Ok(References::new(MeleeReferenceCatalog::checked_in(), game))
+    Ok(References::new(
+        MeleeReferenceCatalog::checked_in(),
+        game,
+        Library::default_root(),
+    ))
 }
 
 /// Open the editor window and run the application.

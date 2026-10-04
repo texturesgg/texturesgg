@@ -14,7 +14,7 @@ use crate::library::{Library, SkinSource};
 use crate::renders::{RenderKey, SIZE};
 use crate::review::{Review, ReviewEvent, ReviewItem};
 use gpui::{AppContext, Context, Entity, PathPromptOptions, Window};
-use melee_dat::{MeleeReferenceCatalog, MeleeSlot};
+use melee_dat::{MeleeReferenceCatalog, MeleeSlot, SharedModel};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use tgg_ui::{drop_images, render_image};
@@ -62,14 +62,20 @@ impl Shell {
         .detach();
     }
 
-    /// Ask for renders of the game's slots with a model that don't have one
-    /// yet.
+    /// Ask for renders of the game's slots that don't have one yet: a slot
+    /// with a model whole, and a shared file each model it holds.
     pub(super) fn request_renders(&self, slots: &[MeleeSlot]) {
         let Some(game) = self.game() else {
             return;
         };
-        for &slot in slots.iter().filter(|&&slot| has_model(slot)) {
-            if !self.images.contains_key(&RenderKey::Slot(slot)) {
+        for &slot in slots {
+            if !has_model(slot) {
+                for model in SharedModel::in_file(slot) {
+                    if !self.images.contains_key(&RenderKey::Shared(model)) {
+                        self.renders.request_shared(game.path(), model);
+                    }
+                }
+            } else if !self.images.contains_key(&RenderKey::Slot(slot)) {
                 self.renders.request(game.path(), slot);
             }
         }
@@ -92,9 +98,13 @@ impl Shell {
         }
     }
 
-    /// Forget the render of `slot` (its file changed), and ask again.
+    /// Forget the renders of `slot` and the models it holds (its file
+    /// changed), and ask again.
     fn rerender(&mut self, slot: MeleeSlot, cx: &mut Context<Self>) {
         drop_images(self.images.remove(&RenderKey::Slot(slot)), cx);
+        for model in SharedModel::in_file(slot) {
+            drop_images(self.images.remove(&RenderKey::Shared(model)), cx);
+        }
         self.request_renders(&[slot]);
     }
 
@@ -180,10 +190,14 @@ impl Shell {
         let states = self
             .game()
             .map_or_else(HashMap::new, |game| slot_states(game, &library));
+        let changed = self
+            .game()
+            .map_or_else(HashSet::new, |game| changed_models(game, &states));
         let undoable = self.undoable();
         page.update(cx, |page, cx| {
             page.skins = library.skins().to_vec();
             page.states = states;
+            page.changed_models = changed;
             page.undoable = undoable;
             cx.notify();
         });
@@ -420,6 +434,25 @@ pub(super) fn slot_states(game: &Game, library: &Library) -> HashMap<MeleeSlot, 
         .filter_map(|slot| {
             let bytes = game.read_slot(slot).ok()?;
             Some((slot, SlotState::of(slot, &bytes, library)))
+        })
+        .collect()
+}
+
+/// The shared models `game`'s files draw differently from vanilla, by
+/// `states`, what each slot holds. A model that can't be read counts as
+/// changed.
+pub(super) fn changed_models(
+    game: &Game,
+    states: &HashMap<MeleeSlot, SlotState>,
+) -> HashSet<SharedModel> {
+    states
+        .iter()
+        .filter(|(slot, state)| !has_model(**slot) && **state != SlotState::Vanilla)
+        .filter_map(|(&slot, _)| Some((slot, game.read_slot(slot).ok()?)))
+        .flat_map(|(slot, bytes)| {
+            SharedModel::in_file(slot)
+                .filter(move |model| !model.is_vanilla(&bytes).unwrap_or(false))
+                .collect::<Vec<_>>()
         })
         .collect()
 }

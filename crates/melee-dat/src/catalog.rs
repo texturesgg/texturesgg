@@ -7,6 +7,7 @@ use crate::fighter::{CostumeIndex, FighterKind};
 use crate::file_names::{Character, CostumeColor, MeleeSlot};
 use dat_parser::hsd::HsdScene;
 use dat_parser::hsd::scene::HsdJoint;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -103,6 +104,13 @@ pub struct ReferenceAsset {
     pub file_name: String,
     pub sha256: String,
     pub byte_length: usize,
+}
+
+impl ReferenceAsset {
+    /// Whether `bytes` are exactly this file, by size and SHA-256.
+    pub fn is(&self, bytes: &[u8]) -> bool {
+        bytes.len() == self.byte_length && format!("{:x}", Sha256::digest(bytes)) == self.sha256
+    }
 }
 
 #[derive(Debug)]

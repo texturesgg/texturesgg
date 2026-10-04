@@ -7,15 +7,15 @@
 //! touches a GPU.
 //!
 //! - [`fighter`]: a fighter's animations and their playback, the model parts
-//!   the game shows, the names of its moves, and where a costume draws each
-//!   texture.
+//!   the game shows, the names of its moves, where a costume draws each
+//!   texture, and the models every costume shares ([`SharedModel`]).
 //! - [`stage`]: a stage's general points (camera range, blast zone), its
 //!   load-time animations, and HAL's names for its textures.
 //! - [`catalog`] and [`references`]: the checked-in table of every fighter's
 //!   files, and the original game files a caller supplies to play them.
 //! - [`file_names`] and [`vanilla`]: how the game names its files
 //!   ([`MeleeSlot`] is one a skin replaces), and the size and hash of each as
-//!   shipped.
+//!   shipped, with the fingerprint of each shared model.
 
 pub mod catalog;
 pub mod error;
@@ -31,8 +31,11 @@ pub mod vanilla;
 pub use catalog::MeleeReferenceCatalog;
 pub use error::{MeleeError, Result};
 pub use fighter::playback::{FighterAttach, MeleeFighterPlayback};
+pub use fighter::shared::SharedModel;
 pub use fighter::{CostumeIndex, FighterKind};
-pub use file_names::{Character, CostumeColor, MeleeSlot, NotASlot, Stage, parse_filename};
+pub use file_names::{
+    Character, CostumeColor, Effects, MeleeSlot, NotASlot, Stage, parse_filename,
+};
 pub use model::{FighterAttachOutcome, MeleeModel, MeleeModelKind};
 pub use references::MeleeReferenceStore;
 pub use stage::playback::MeleeStagePlayback;

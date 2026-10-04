@@ -3,7 +3,7 @@
 //! and a way to install or remove it. Tabs narrow it to what's in the game
 //! or what isn't.
 
-use crate::costumes::{CostumesEvent, FIGHTER_FILE, Notice};
+use crate::costumes::{CostumesEvent, EFFECTS_FILE, FIGHTER_FILE, Notice, fighters};
 use crate::ids::SkinId;
 use crate::install::SlotState;
 use crate::library::Skin;
@@ -86,9 +86,10 @@ impl LibraryPage {
                 continue;
             }
             let group = match skin.slot {
-                Some(MeleeSlot::Costume { character, .. } | MeleeSlot::Fighter(character)) => {
+                Some(MeleeSlot::Costume { character, .. } | MeleeSlot::FighterData(character)) => {
                     character.name().to_owned()
                 }
+                Some(MeleeSlot::Effects(effects)) => fighters(effects),
                 Some(MeleeSlot::Stage(_)) => "Stages".to_owned(),
                 None => "Without a slot".to_owned(),
             };
@@ -105,11 +106,12 @@ impl LibraryPage {
     fn card(&self, skin: &Skin, cx: &mut Context<Self>) -> AnyElement {
         let palette = Theme::global(cx).palette;
         let installed = self.installed(skin);
-        // "Red", "Fighter file" or the stage's name: the fighter is the
-        // group's heading.
+        // "Red", "Fighter file", "Effects" or the stage's name: the fighter
+        // is the group's heading.
         let place = match skin.slot {
             Some(MeleeSlot::Costume { color, .. }) => color.name(),
-            Some(MeleeSlot::Fighter(_)) => FIGHTER_FILE,
+            Some(MeleeSlot::FighterData(_)) => FIGHTER_FILE,
+            Some(MeleeSlot::Effects(_)) => EFFECTS_FILE,
             Some(MeleeSlot::Stage(stage)) => stage.name(),
             None => "no slot",
         };

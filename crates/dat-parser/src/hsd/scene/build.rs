@@ -1,6 +1,6 @@
 use super::super::pe::HsdPixelEngineState;
 use super::super::tev::{HsdTObjTevProgram, HsdTObjTevRegisters};
-use super::discovery::discover_model_roots;
+use super::discovery::{DiscoveredModelRoot, discover_model_roots, given_model_roots};
 use super::limits::checked_budget;
 use super::{
     DObjId, HsdCustomPe, HsdCustomTev, HsdDisplayObject, HsdEnvelope, HsdImageSource, HsdJoint,
@@ -26,7 +26,20 @@ impl HsdScene {
         dat: &DatFile,
         limits: HsdSceneLimits,
     ) -> Result<Self, HsdSceneError> {
-        SceneBuilder::new(dat, limits).build()
+        let roots = discover_model_roots(dat, limits.max_roots)?;
+        SceneBuilder::new(dat, limits).build(roots)
+    }
+
+    /// A scene of the models at `roots` alone, which the caller found by
+    /// structures the DAT's root table doesn't list (a fighter's articles,
+    /// an effect table's models).
+    pub fn from_model_roots_with_limits(
+        dat: &DatFile,
+        roots: &[u32],
+        limits: HsdSceneLimits,
+    ) -> Result<Self, HsdSceneError> {
+        let roots = given_model_roots(roots, limits.max_roots)?;
+        SceneBuilder::new(dat, limits).build(roots)
     }
 }
 struct SceneBuilder<'a> {
@@ -97,8 +110,10 @@ impl<'a> SceneBuilder<'a> {
             .retain(|_, index| index.0 < checkpoint.textures);
     }
 
-    fn build(mut self) -> Result<HsdScene, HsdSceneError> {
-        let discovered_roots = discover_model_roots(self.dat, self.limits.max_roots)?;
+    fn build(
+        mut self,
+        discovered_roots: Vec<DiscoveredModelRoot>,
+    ) -> Result<HsdScene, HsdSceneError> {
         let mut roots = Vec::new();
         for discovered_root in discovered_roots {
             let root_offset = discovered_root.offset;
