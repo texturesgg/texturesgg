@@ -103,7 +103,7 @@ enum Command {
 
 #[derive(Args)]
 struct PortArg {
-    /// The port's folder or executable.
+    /// The port's executable; mods install beside it in mods/.
     #[arg(long, env = "TGG_PORT")]
     port: PathBuf,
 }
@@ -337,6 +337,7 @@ fn write_catalog(output: &Path, packages: &[PathBuf]) -> Result<()> {
                 url,
                 sha256: package::sha256_hex(&bytes),
                 size: bytes.len() as u64,
+                signature: None,
             },
         });
     }

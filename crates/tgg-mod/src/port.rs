@@ -8,12 +8,6 @@ use crate::install::ModsDir;
 use object::{Object, ObjectSection};
 use std::path::{Path, PathBuf};
 
-/// The port's executable name inside its folder.
-#[cfg(not(windows))]
-const EXECUTABLE: &str = "melee";
-#[cfg(windows)]
-const EXECUTABLE: &str = "melee.exe";
-
 /// A port build that carries the runtime.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Port {
@@ -28,9 +22,9 @@ pub struct Port {
 
 #[derive(Debug, thiserror::Error)]
 pub enum PortError {
-    #[error("there is no {EXECUTABLE} in {0}")]
+    #[error("{0} is not a file")]
     NoExecutable(PathBuf),
-    #[error("this build of melee-pc has no textures.gg mod loader")]
+    #[error("this build has no textures.gg mod loader")]
     NoRuntime,
     #[error("this build's mod loader is {0}; the app installs {api} mods", api = crate::API)]
     Api(String),
@@ -43,15 +37,12 @@ pub enum PortError {
 }
 
 impl Port {
-    /// The port in `path`: its folder, or its executable.
-    pub fn open(path: &Path) -> Result<Self, PortError> {
-        let executable = if path.is_dir() {
-            path.join(EXECUTABLE)
-        } else {
-            path.to_owned()
-        };
+    /// The port whose executable is `executable`. Ports name their
+    /// executables differently, so callers keep the path, not a folder.
+    pub fn open(executable: &Path) -> Result<Self, PortError> {
+        let executable = executable.to_owned();
         if !executable.is_file() {
-            return Err(PortError::NoExecutable(path.to_owned()));
+            return Err(PortError::NoExecutable(executable));
         }
         let cache = object::ReadCache::new(std::fs::File::open(&executable)?);
         let file =

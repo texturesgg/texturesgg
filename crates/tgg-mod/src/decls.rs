@@ -18,7 +18,7 @@ pub const RECORD_SIZE: usize = 136;
 const SYMBOL_OFFSET: usize = 8;
 const SYMBOL_SIZE: usize = 120;
 /// The section the records live in.
-pub const SECTION: &str = "tgg_decls";
+pub const SECTION: &str = "tggdecls";
 
 const KIND_BEFORE: u32 = 1;
 const KIND_AFTER: u32 = 2;
@@ -103,6 +103,10 @@ pub fn read(library: &[u8]) -> Result<Declarations, DeclError> {
     }
     for (index, record) in data.as_chunks::<RECORD_SIZE>().0.iter().enumerate() {
         let word = |at: usize| u32::from_le_bytes(record[at..at + 4].try_into().expect("4 bytes"));
+        // A linker may pad between records; padding is all zero.
+        if word(0) == 0 {
+            continue;
+        }
         let symbol = &record[SYMBOL_OFFSET..SYMBOL_OFFSET + SYMBOL_SIZE];
         let end = symbol
             .iter()

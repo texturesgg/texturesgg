@@ -10,6 +10,8 @@ use crate::package::Package;
 use std::path::{Path, PathBuf};
 
 const DISABLED: &str = ".disabled";
+const STAGING: &str = ".installing-";
+const PREVIOUS: &str = ".previous-";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Installed {
@@ -47,9 +49,56 @@ impl ModsDir {
         }
     }
 
+    /// Where an install keeps the version it replaces until the new one is
+    /// in place. The name records whether that version was on.
+    fn previous(&self, id: &ModId, enabled: bool) -> PathBuf {
+        let state = if enabled { "on" } else { "off" };
+        self.root.join(format!("{PREVIOUS}{state}-{id}"))
+    }
+
+    /// Finish what an interrupted install left: put back a replaced version
+    /// whose replacement never landed, and drop leftover staging folders.
+    fn recover(&self) -> std::io::Result<()> {
+        let entries = match std::fs::read_dir(&self.root) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error),
+        };
+        for entry in entries {
+            let name = entry?.file_name().to_string_lossy().into_owned();
+            if name.starts_with(STAGING) {
+                remove_if_present(&self.root.join(&name))?;
+                continue;
+            }
+            let Some(rest) = name.strip_prefix(PREVIOUS) else {
+                continue;
+            };
+            let (enabled, id) = match (rest.strip_prefix("on-"), rest.strip_prefix("off-")) {
+                (Some(id), _) => (true, id),
+                (_, Some(id)) => (false, id),
+                _ => continue,
+            };
+            let Ok(id) = id.parse::<ModId>() else {
+                continue;
+            };
+            let previous = self.root.join(&name);
+            if self.folder(&id, true).exists() || self.folder(&id, false).exists() {
+                remove_if_present(&previous)?;
+            } else {
+                let target = self.folder(&id, enabled);
+                if let Some(parent) = target.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::rename(&previous, target)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Every installed mod whose manifest reads, sorted by id: the order the
     /// runtime loads them in.
     pub fn list(&self) -> std::io::Result<Vec<Installed>> {
+        self.recover()?;
         let mut installed = Vec::new();
         for (dir, enabled) in [(self.root.clone(), true), (self.root.join(DISABLED), false)] {
             let entries = match std::fs::read_dir(&dir) {
@@ -79,8 +128,9 @@ impl ModsDir {
     /// the old and swapped in, and the old folder is put back if the swap
     /// fails, so a failed install leaves the old version.
     pub fn install(&self, package: &Package) -> std::io::Result<()> {
+        self.recover()?;
         let id = &package.manifest.id;
-        let staging = self.root.join(format!(".installing-{id}"));
+        let staging = self.root.join(format!("{STAGING}{id}"));
         remove_if_present(&staging)?;
         std::fs::create_dir_all(&staging)?;
         std::fs::write(staging.join(&package.manifest.entry), &package.library)?;
@@ -94,10 +144,10 @@ impl ModsDir {
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let Some((_, current)) = current else {
+        let Some((enabled, current)) = current else {
             return std::fs::rename(&staging, &target);
         };
-        let previous = self.root.join(format!(".previous-{id}"));
+        let previous = self.previous(id, enabled);
         remove_if_present(&previous)?;
         std::fs::rename(&current, &previous)?;
         if let Err(error) = std::fs::rename(&staging, &target) {
@@ -256,6 +306,25 @@ mod tests {
         assert_eq!(unmet_imports(&user, &installed), ["ref.core/missing"]);
         installed[0].enabled = false;
         assert_eq!(unmet_imports(&user, &installed).len(), 2);
+    }
+
+    #[test]
+    fn a_crash_mid_install_leaves_the_old_version_restorable() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let mods = ModsDir::new(dir.path().join("mods"));
+        let package = Package {
+            manifest: manifest("a.mod", Hooks::default()),
+            library: b"v1".to_vec(),
+        };
+        mods.install(&package).expect("install");
+        let id = package.manifest.id.clone();
+        mods.set_enabled(&id, false).expect("turn off");
+        // The state between moving the old version aside and moving the new
+        // one in.
+        std::fs::rename(mods.folder(&id, false), mods.previous(&id, false)).expect("move aside");
+        let installed = mods.list().expect("list");
+        assert_eq!(installed.len(), 1);
+        assert!(!installed[0].enabled);
     }
 
     #[test]
