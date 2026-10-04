@@ -26,6 +26,9 @@ pub struct PackageRef {
     pub url: String,
     pub sha256: String,
     pub size: u64,
+    /// The registry's signature over the package, when it signs packages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]

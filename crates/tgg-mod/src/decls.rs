@@ -2,7 +2,7 @@
 //!
 //! Every `TGG_BEFORE`, `TGG_AFTER`, `TGG_REPLACE`, `TGG_EXPORT`,
 //! `TGG_IMPORT` and game symbol reference in a mod's source becomes a
-//! fixed-size record in its library's `tgg_decls` section, as does the game
+//! fixed-size record in its library's `tggdecls` section, as does the game
 //! layout id it was compiled against. A hooked function is a game symbol: a
 //! plain name, or `file.c:name` for a static. The runtime reads the same
 //! records to install the hooks, so what this module reports is what the mod
@@ -18,7 +18,7 @@ pub const RECORD_SIZE: usize = 136;
 const SYMBOL_OFFSET: usize = 8;
 const SYMBOL_SIZE: usize = 120;
 /// The section the records live in.
-pub const SECTION: &str = "tgg_decls";
+pub const SECTION: &str = "tggdecls";
 
 const KIND_BEFORE: u32 = 1;
 const KIND_AFTER: u32 = 2;
@@ -103,6 +103,10 @@ pub fn read(library: &[u8]) -> Result<Declarations, DeclError> {
     }
     for (index, record) in data.as_chunks::<RECORD_SIZE>().0.iter().enumerate() {
         let word = |at: usize| u32::from_le_bytes(record[at..at + 4].try_into().expect("4 bytes"));
+        // A linker may pad between records; padding is all zero.
+        if word(0) == 0 {
+            continue;
+        }
         let symbol = &record[SYMBOL_OFFSET..SYMBOL_OFFSET + SYMBOL_SIZE];
         let end = symbol
             .iter()
@@ -172,7 +176,7 @@ pub(crate) mod tests {
         bytes
     }
 
-    /// An x86-64 ELF object whose tgg_decls section holds `records`, in
+    /// An x86-64 ELF object whose tggdecls section holds `records`, in
     /// place of a compiled mod.
     pub(crate) fn library(records: &[Vec<u8>]) -> Vec<u8> {
         let mut object =

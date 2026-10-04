@@ -14,7 +14,7 @@ dependency, a fact about their code.
 
 - **Manifests.** The fields an author writes, plus the ones packing fills from the
   library. Validation covers what the runtime and installers rely on.
-- **Library records.** Reading the `tgg_decls` section of an x86-64 ELF mod library:
+- **Library records.** Reading the `tggdecls` section of an x86-64 ELF mod library:
   hooks, exports, imports, the game layout id, and the target triple.
 - **Packages.** Packing a built mod into a zip that is byte-identical for the same
   inputs. Opening a zip re-reads its library and refuses a manifest that disagrees.
@@ -50,9 +50,9 @@ the SDK's folder or its `tgg-game-sdk.json`, or the `TGG_GAME_SDK` environment v
 `--source-zip` first unpacks `manifest.json` and `src/` from a zip, or from stdin with
 `-`, into an empty `DIR`; the registry's builder sends each mod's source that way.
 
-For `pack`, `DIR` is what tgg-mod-runtime's `tgg_add_mod` writes for each mod. `PORT` is the
-port's folder or executable, or the `TGG_PORT` environment variable. Hosts that only
-need the library turn off the default `cli` feature.
+For `pack`, `DIR` is what tgg-mod-runtime's `tgg_add_mod` writes for each mod. `PORT` is
+the port's executable, or the `TGG_PORT` environment variable; mods install beside it in
+`mods/`. Hosts that only need the library turn off the default `cli` feature.
 
 A manifest's `version` is a semantic version.
 

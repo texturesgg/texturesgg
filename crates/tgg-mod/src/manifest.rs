@@ -85,6 +85,8 @@ pub struct Manifest {
     /// The library in the package.
     #[serde(default = "default_entry")]
     pub entry: String,
+    /// A missing value counts as gameplay, as the runtime reads it.
+    #[serde(default = "default_netplay")]
     pub netplay: Netplay,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -106,6 +108,10 @@ pub struct Manifest {
     /// from the library.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imports: Vec<String>,
+}
+
+fn default_netplay() -> Netplay {
+    Netplay::Gameplay
 }
 
 fn default_entry() -> String {
