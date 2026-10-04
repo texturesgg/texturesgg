@@ -256,7 +256,7 @@ fn build(
     let library = scratch.join(&manifest.entry);
     std::fs::create_dir_all(dir.join(scratch))?;
     let status = std::process::Command::new(cc)
-        .args(sdk.compile_args(&sources, &library))
+        .args(sdk.compile_args(&manifest.id, &sources, &library))
         .current_dir(dir)
         .status()
         .with_context(|| format!("running {}", cc.display()))?;

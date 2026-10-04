@@ -9,6 +9,7 @@
 //! A mod's source follows one layout: `manifest.json` at its root and its C
 //! sources under `src/`.
 
+use crate::manifest::ModId;
 use serde::Deserialize;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -135,10 +136,10 @@ impl Sdk {
         })
     }
 
-    /// The arguments, after the compiler's own name, that build `sources`
-    /// into the library `output`. Run it in the mod's folder, with `sources`
+    /// The arguments, after the compiler's own name, that build the mod `id`'s
+    /// `sources` into the library `output`. Run it in the mod's folder, with `sources`
     /// relative to it, so no path of the build machine reaches the library.
-    pub fn compile_args(&self, sources: &[PathBuf], output: &Path) -> Vec<OsString> {
+    pub fn compile_args(&self, id: &ModId, sources: &[PathBuf], output: &Path) -> Vec<OsString> {
         let mut args: Vec<OsString> = MOD_FLAGS.iter().map(OsString::from).collect();
         args.extend(self.options.iter().map(OsString::from));
         for dir in &self.include_dirs {
@@ -152,11 +153,34 @@ impl Sdk {
         args.extend(self.definitions.iter().map(|d| format!("-D{d}").into()));
         args.push(format!("-DTGG_GAME_ABI=\"{}\"", self.game_abi).into());
         args.push(format!("-DTGG_GAME_TARGET=\"{}\"", self.target).into());
+        // Tells the mod's own provider header that it is the provider, so its
+        // APIs are exports rather than imports.
+        args.push(format!("-DTGG_SELF_{}=1", c_identifier(id.as_str())).into());
         args.push("-o".into());
         args.push(output.into());
         args.extend(sources.iter().map(OsString::from));
         args
     }
+}
+
+/// `text` as a C identifier, as CMake's MAKE_C_IDENTIFIER makes one: every
+/// character outside `[A-Za-z0-9_]` becomes `_`, and a leading digit gets a
+/// `_` before it.
+fn c_identifier(text: &str) -> String {
+    let mut out: String = text
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if out.starts_with(|c: char| c.is_ascii_digit()) {
+        out.insert(0, '_');
+    }
+    out
 }
 
 /// Every `.c` file under `dir/src`, relative to `dir` and sorted, so the
@@ -209,9 +233,11 @@ mod tests {
     fn paths_resolve_inside_the_sdk_and_never_leave_it() {
         let sdk = Sdk::parse(SDK.as_bytes(), Path::new("/opt/sdk")).expect("parse");
         assert_eq!(sdk.include_dirs[1], Path::new("/opt/sdk/include/game/0"));
-        let args = sdk.compile_args(&["src/mod.c".into()], Path::new("out/mod.so"));
+        let id: ModId = "7tgg.core-x".parse().expect("id");
+        let args = sdk.compile_args(&id, &["src/mod.c".into()], Path::new("out/mod.so"));
         let args: Vec<_> = args.iter().map(|a| a.to_str().expect("utf-8")).collect();
         assert!(args.contains(&"-DTGG_GAME_ABI=\"888b9c012ddb068d\""));
+        assert!(args.contains(&"-DTGG_SELF__7tgg_core_x=1"));
         assert_eq!(args.last(), Some(&"src/mod.c"));
 
         let escaping = SDK.replace("include/runtime", "../outside");
