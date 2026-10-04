@@ -6,21 +6,21 @@
 //! interprets as sRGB: every color stays raw, so targets must be non-sRGB
 //! formats (no decode on sampling, no encode on output).
 
-use crate::camera::{Camera, Orbit};
+use crate::camera::{Camera, Focus, Orbit};
 use crate::error::{HsdRenderError, Result, invalid_scene};
 use crate::geometry::{
-    BASE_TEX_COORD_SETS, CullMode, PacketIndex, PreparedGeometry, floats_per_vertex,
+    BASE_TEX_COORD_SETS, Bounds, CullMode, PacketIndex, PreparedGeometry, floats_per_vertex,
     tex_coord_location, tex_coord_offset,
 };
 use crate::lighting::HsdLightingPreset;
 use crate::material::{AddressMode, FilterMode, MAX_TEXTURE_STAGES};
-use crate::pick::{PICK_FORMAT, PickReadback, PickedTexture, stages_by_prominence};
+use crate::pick::{PICK_FORMAT, PickId, PickReadback, PickedTexture, stages_by_prominence};
 use crate::shader::{
     GLOBAL_CAMERA_POSITION_FLOAT, GLOBAL_LIGHTING_FLOAT, GLOBAL_UNIFORM_FLOATS,
     MATERIAL_JOINT_POSITION_OFFSET_BYTES, material_shader, material_uniforms, pick_shader,
 };
 use dat_parser::hsd::draw::HsdEvaluatedDrawWork;
-use dat_parser::hsd::pe::{HsdBlendFactor, HsdBlendMode, HsdCompare};
+use dat_parser::hsd::pe::{HsdBlendFactor, HsdBlendMode, HsdCompare, HsdDrawPass};
 use dat_parser::hsd::scene::{HsdScene, HsdTextureIndex};
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
@@ -42,46 +42,98 @@ struct GpuPacket {
     material_buffer: wgpu::Buffer,
 }
 
-/// Pick pipelines, built on the first pick, and the id target, sized to the
-/// color target.
+/// A model the renderer draws: see [`HsdRenderer::add_model`]. Ids are never
+/// reused, so one that outlives its model names nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ModelId(u32);
+
+/// One model's geometry and GPU resources.
+struct GpuModel {
+    id: ModelId,
+    geometry: PreparedGeometry,
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    packets: Vec<GpuPacket>,
+    /// One per `geometry.textures`, for in-place updates.
+    textures: Vec<wgpu::Texture>,
+    /// Packets tinted for an editor selection.
+    highlighted: Vec<bool>,
+    /// The pick id of its first packet; the rest follow in order.
+    first_pick: u32,
+}
+
+/// Pick pipelines, built as picks need them, and the id target, sized to
+/// the color target.
 struct PickState {
     pipelines: Vec<wgpu::RenderPipeline>,
-    /// Each packet's pick pipeline. A packet that writes no color still
-    /// draws, writing depth only, so it occludes what it hides on screen.
-    packet_pipelines: Vec<usize>,
+    cache: HashMap<PipelineKey, usize>,
     target: Option<(u32, u32, wgpu::TextureView)>,
 }
 
+/// GPU objects every model's packets share.
+struct Shared {
+    target_format: wgpu::TextureFormat,
+    material_layout: wgpu::BindGroupLayout,
+    pipeline_layout: wgpu::PipelineLayout,
+    /// Pipelines for every model, one per distinct material program,
+    /// fixed-function state and vertex layout.
+    pipelines: Vec<wgpu::RenderPipeline>,
+    cache: HashMap<PipelineKey, usize>,
+    /// White, for a stage without a decoded texture.
+    fallback: wgpu::TextureView,
+}
+
+/// Draws a set of models in one pass, sharing depth, each prepared and
+/// uploaded on its own: a fighter and the effect on its hip, a stage and the
+/// fighters on it. Models are posed by their callers in world space; the
+/// camera frames the models [`HsdRenderer::frame`] names.
 pub struct HsdRenderer {
-    geometry: PreparedGeometry,
     lighting: HsdLightingPreset,
     width: u32,
     height: u32,
     orbit: Orbit,
     camera: Camera,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
+    /// What the camera frames, from the framed models.
+    framing: Framing,
+    framed: Vec<ModelId>,
     globals_buffer: wgpu::Buffer,
     globals_bind_group: wgpu::BindGroup,
-    pipeline_layout: wgpu::PipelineLayout,
-    pipelines: Vec<wgpu::RenderPipeline>,
+    shared: Shared,
+    /// In the order added: within each HSD pass, models draw in this order.
+    models: Vec<GpuModel>,
+    next_model: u32,
+    next_pick: u32,
     pick: Option<PickState>,
-    /// Packets tinted for an editor selection.
-    highlighted: Vec<bool>,
-    packets: Vec<GpuPacket>,
-    /// One per `geometry.textures`, for in-place updates.
-    textures: Vec<wgpu::Texture>,
     depth_view: wgpu::TextureView,
 }
 
+/// The bounds the camera frames, and the focus within them.
+#[derive(Clone, Copy, Debug)]
+struct Framing {
+    bounds: Bounds,
+    focus: Option<Focus>,
+}
+
+impl Framing {
+    /// Before anything is framed: a unit sphere at the origin.
+    const EMPTY: Self = Self {
+        bounds: Bounds {
+            min: [-1.0; 3],
+            max: [1.0; 3],
+            center: [0.0; 3],
+            radius: 1.0,
+        },
+        focus: None,
+    };
+}
+
 impl HsdRenderer {
-    /// Upload prepared geometry and build one pipeline per distinct material
-    /// program and fixed-function state.
+    /// A renderer with no models yet, drawing into `target_format` targets
+    /// of `width`×`height`.
     pub fn new(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         target_format: wgpu::TextureFormat,
-        geometry: PreparedGeometry,
         lighting: HsdLightingPreset,
         (width, height): (u32, u32),
         orbit: Orbit,
@@ -91,28 +143,9 @@ impl HsdRenderer {
             return Err(HsdRenderError::SrgbTarget(target_format));
         }
         validate_dimensions(device, width, height)?;
-        let orbit = clamp_orbit(&geometry, orbit, width, height)?;
-        let camera = Camera::frame(
-            &geometry.bounds,
-            geometry.focus.as_ref(),
-            width,
-            height,
-            orbit,
-        )?;
-        geometry.validate_reflections(&camera.view)?;
-        // Checked here because a browser reports a failed texture to the
-        // device's uncaptured-error handler, not to this call.
-        let limit = device.limits().max_texture_dimension_2d;
-        if let Some(texture) = geometry
-            .textures
-            .iter()
-            .find(|texture| texture.width > limit || texture.height > limit)
-        {
-            return invalid_scene(format!(
-                "a {}x{} texture is over this device's limit of {limit} pixels a side",
-                texture.width, texture.height
-            ));
-        }
+        let framing = Framing::EMPTY;
+        let orbit = framing.clamp(orbit, width, height)?;
+        let camera = framing.camera(width, height, orbit)?;
 
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let globals_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -147,17 +180,6 @@ impl HsdRenderer {
             bind_group_layouts: &[Some(&globals_layout), Some(&material_layout)],
             ..Default::default()
         });
-
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("HSD evaluated vertices"),
-            contents: bytemuck::cast_slice(&geometry.vertices),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-        });
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("HSD source-ordered triangle indices"),
-            contents: bytemuck::cast_slice(&geometry.indices),
-            usage: wgpu::BufferUsages::INDEX,
-        });
         let globals_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("HSD camera and lighting"),
             contents: bytemuck::cast_slice(&global_uniforms(&camera, &lighting)),
@@ -171,9 +193,96 @@ impl HsdRenderer {
                 resource: globals_buffer.as_entire_binding(),
             }],
         });
+        let depth_view = create_depth_view(device, width, height);
+        finish_error_scope(scope)?;
+        Ok(Self {
+            lighting,
+            width,
+            height,
+            orbit,
+            camera,
+            framing,
+            framed: Vec::new(),
+            globals_buffer,
+            globals_bind_group,
+            shared: Shared {
+                target_format,
+                material_layout,
+                pipeline_layout,
+                pipelines: Vec::new(),
+                cache: HashMap::new(),
+                fallback: create_texture(device, queue, "HSD white fallback", (1, 1), &[255; 4])
+                    .create_view(&Default::default()),
+            },
+            models: Vec::new(),
+            next_model: 0,
+            next_pick: 1,
+            pick: None,
+            depth_view,
+        })
+    }
 
-        let fallback = create_texture(device, queue, "HSD white fallback", (1, 1), &[255; 4])
-            .create_view(&Default::default());
+    /// A renderer drawing `geometry` alone, framed on it: what most callers
+    /// want.
+    pub fn with_model(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        target_format: wgpu::TextureFormat,
+        geometry: PreparedGeometry,
+        lighting: HsdLightingPreset,
+        size: (u32, u32),
+        orbit: Orbit,
+    ) -> Result<(Self, ModelId)> {
+        let mut renderer = Self::new(device, queue, target_format, lighting, size, orbit)?;
+        let model = renderer.add_model(device, queue, geometry)?;
+        renderer.frame(queue, &[model])?;
+        // The orbit asked for, clamped to the model now that it's framed.
+        renderer.set_orbit(queue, orbit)?;
+        Ok((renderer, model))
+    }
+
+    /// Upload `geometry` as a model to draw, building any pipeline its
+    /// materials need that no other model has built.
+    pub fn add_model(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        geometry: PreparedGeometry,
+    ) -> Result<ModelId> {
+        geometry.validate_reflections(&self.camera.view)?;
+        // Checked here because a browser reports a failed texture to the
+        // device's uncaptured-error handler, not to this call.
+        let limit = device.limits().max_texture_dimension_2d;
+        if let Some(texture) = geometry
+            .textures
+            .iter()
+            .find(|texture| texture.width > limit || texture.height > limit)
+        {
+            return invalid_scene(format!(
+                "a {}x{} texture is over this device's limit of {limit} pixels a side",
+                texture.width, texture.height
+            ));
+        }
+        let packet_count = u32::try_from(geometry.packets.len())
+            .ok()
+            .filter(|count| self.next_pick.checked_add(*count).is_some())
+            .ok_or_else(|| HsdRenderError::ResourceLimit {
+                label: "pick id",
+                maximum: u32::MAX as usize,
+                actual: geometry.packets.len(),
+            })?;
+
+        let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("HSD evaluated vertices"),
+            contents: bytemuck::cast_slice(&geometry.vertices),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        });
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("HSD source-ordered triangle indices"),
+            contents: bytemuck::cast_slice(&geometry.indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
         let textures: Vec<_> = geometry
             .textures
             .iter()
@@ -209,22 +318,21 @@ impl HsdRenderer {
                 .clone()
         };
 
-        let mut pipeline_cache = HashMap::new();
-        let mut pipelines = Vec::new();
+        let first_pick = self.next_pick;
         let mut packets = Vec::with_capacity(geometry.packets.len());
         for (index, packet) in geometry.packets.iter().enumerate() {
             let material = &packet.material;
             let shader = material_shader(material);
-            let key = PipelineKey::new(packet.cull_mode, material, shader);
-            let pipeline = *pipeline_cache.entry(key.clone()).or_insert_with(|| {
-                pipelines.push(create_pipeline(
+            let key = PipelineKey::new(packet.cull_mode, material, geometry.tex_coord_sets, shader);
+            let shared = &mut self.shared;
+            let pipeline = *shared.cache.entry(key.clone()).or_insert_with(|| {
+                shared.pipelines.push(create_pipeline(
                     device,
-                    &pipeline_layout,
-                    target_format,
-                    geometry.tex_coord_sets,
+                    &shared.pipeline_layout,
+                    shared.target_format,
                     &key,
                 ));
-                pipelines.len() - 1
+                shared.pipelines.len() - 1
             });
             let material_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(&format!(
@@ -234,7 +342,7 @@ impl HsdRenderer {
                 contents: bytemuck::cast_slice(&material_uniforms(
                     material,
                     packet.joint_position,
-                    index as u32 + 1,
+                    first_pick + index as u32,
                 )),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
@@ -252,7 +360,7 @@ impl HsdRenderer {
                         (stage.address_u, stage.address_v, stage.mag_filter),
                     ),
                     _ => (
-                        &fallback,
+                        &self.shared.fallback,
                         (
                             AddressMode::ClampToEdge,
                             AddressMode::ClampToEdge,
@@ -275,7 +383,7 @@ impl HsdRenderer {
             }
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("HSD material"),
-                layout: &material_layout,
+                layout: &self.shared.material_layout,
                 entries: &entries,
             });
             packets.push(GpuPacket {
@@ -284,32 +392,55 @@ impl HsdRenderer {
                 material_buffer,
             });
         }
-        let depth_view = create_depth_view(device, width, height);
         finish_error_scope(scope)?;
 
-        Ok(Self {
+        let id = ModelId(self.next_model);
+        self.next_model += 1;
+        self.next_pick = first_pick + packet_count;
+        self.models.push(GpuModel {
+            id,
+            highlighted: vec![false; packets.len()],
             geometry,
-            lighting,
-            width,
-            height,
-            orbit,
-            camera,
             vertex_buffer,
             index_buffer,
-            globals_buffer,
-            globals_bind_group,
-            pipeline_layout,
-            pipelines,
-            pick: None,
-            highlighted: vec![false; packets.len()],
             packets,
             textures,
-            depth_view,
-        })
+            first_pick,
+        });
+        Ok(id)
     }
 
-    pub fn geometry(&self) -> &PreparedGeometry {
-        &self.geometry
+    /// Stop drawing `model` and free its GPU resources. The camera keeps
+    /// its framing until the next [`Self::frame`].
+    pub fn remove_model(&mut self, model: ModelId) {
+        self.models.retain(|each| each.id != model);
+        self.framed.retain(|each| *each != model);
+    }
+
+    /// Frame the camera on `models`: the bounds they span, around the focus
+    /// of the first that has one. The orbit is kept, clamped to the new
+    /// framing.
+    pub fn frame(&mut self, queue: &wgpu::Queue, models: &[ModelId]) -> Result<()> {
+        let framed: Vec<&GpuModel> = self
+            .models
+            .iter()
+            .filter(|model| models.contains(&model.id))
+            .collect();
+        self.framing = match framed.as_slice() {
+            [] => Framing::EMPTY,
+            framed => Framing {
+                bounds: Bounds::union(framed.iter().map(|model| &model.geometry.bounds)),
+                focus: framed.iter().find_map(|model| model.geometry.focus),
+            },
+        };
+        self.framed = models.to_vec();
+        let orbit = self.framing.clamp(self.orbit, self.width, self.height)?;
+        self.update_camera(queue, orbit, self.width, self.height)
+    }
+
+    /// The geometry of `model`, as last prepared and posed.
+    pub fn geometry(&self, model: ModelId) -> Option<&PreparedGeometry> {
+        self.model(model).ok().map(|model| &model.geometry)
     }
 
     pub fn camera(&self) -> &Camera {
@@ -323,6 +454,26 @@ impl HsdRenderer {
     /// The color target's size in device pixels.
     pub fn size(&self) -> (u32, u32) {
         (self.width, self.height)
+    }
+
+    /// Every visible packet of every model in HSD pass order: each pass
+    /// draws every model's packets of that pass, in the order the models
+    /// were added, before the next pass draws.
+    fn draw_list(&self) -> impl Iterator<Item = (&GpuModel, usize)> {
+        DRAW_PASSES.into_iter().flat_map(move |pass| {
+            self.models.iter().flat_map(move |model| {
+                model
+                    .geometry
+                    .draw_order
+                    .iter()
+                    .copied()
+                    .filter(move |&index| {
+                        let packet = &model.geometry.packets[index];
+                        packet.visible && packet.pass == pass
+                    })
+                    .map(move |index| (model, index))
+            })
+        })
     }
 
     /// Clear `target` and draw every visible packet in HSD pass order.
@@ -349,15 +500,16 @@ impl HsdRenderer {
             ..Default::default()
         });
         pass.set_bind_group(0, &self.globals_bind_group, &[]);
-        pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-        for &index in &self.geometry.draw_order {
-            let packet = &self.geometry.packets[index];
-            if !packet.visible {
-                continue;
+        let mut bound: Option<ModelId> = None;
+        for (model, index) in self.draw_list() {
+            if bound != Some(model.id) {
+                pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
+                pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                bound = Some(model.id);
             }
-            let gpu = &self.packets[index];
-            pass.set_pipeline(&self.pipelines[gpu.pipeline]);
+            let packet = &model.geometry.packets[index];
+            let gpu = &model.packets[index];
+            pass.set_pipeline(&self.shared.pipelines[gpu.pipeline]);
             pass.set_bind_group(1, &gpu.bind_group, &[]);
             pass.draw_indexed(
                 packet.first_index..packet.first_index + packet.index_count,
@@ -368,9 +520,9 @@ impl HsdRenderer {
     }
 
     /// Encode a pick of the device pixel `(x, y)` of the color target: which
-    /// packet draws it, with the same pose, depth, culling, and cut-outs as
-    /// the last [`encode`](Self::encode). Submit the encoder, then
-    /// [`PickReadback::map`] the result.
+    /// packet of which model draws it, with the same pose, depth, culling,
+    /// and cut-outs as the last [`encode`](Self::encode). Submit the
+    /// encoder, then [`PickReadback::map`] the result.
     pub fn encode_pick(
         &mut self,
         device: &wgpu::Device,
@@ -386,34 +538,47 @@ impl HsdRenderer {
             });
         }
         let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
-        let pick = self.pick.get_or_insert_with(|| {
-            let mut cache = HashMap::new();
-            let mut pipelines = Vec::new();
-            let packet_pipelines = self
-                .geometry
-                .packets
-                .iter()
-                .map(|packet| {
-                    let material = &packet.material;
-                    let key = PipelineKey::pick(packet.cull_mode, material, pick_shader(material));
-                    *cache.entry(key.clone()).or_insert_with(|| {
-                        pipelines.push(create_pipeline(
-                            device,
-                            &self.pipeline_layout,
-                            PICK_FORMAT,
-                            self.geometry.tex_coord_sets,
-                            &key,
-                        ));
-                        pipelines.len() - 1
-                    })
-                })
-                .collect();
-            PickState {
-                pipelines,
-                packet_pipelines,
-                target: None,
-            }
+        let pick = self.pick.get_or_insert_with(|| PickState {
+            pipelines: Vec::new(),
+            cache: HashMap::new(),
+            target: None,
         });
+        // Each packet's pick pipeline: its depth, culling and cut-outs, with
+        // an id write. One that writes no color still draws, depth only, so
+        // it occludes what it hides on screen.
+        let mut draws = Vec::new();
+        for (model, index) in DRAW_PASSES.into_iter().flat_map(|pass| {
+            self.models.iter().flat_map(move |model| {
+                model
+                    .geometry
+                    .draw_order
+                    .iter()
+                    .copied()
+                    .filter(move |&index| {
+                        let packet = &model.geometry.packets[index];
+                        packet.visible && packet.pass == pass
+                    })
+                    .map(move |index| (model, index))
+            })
+        }) {
+            let packet = &model.geometry.packets[index];
+            let key = PipelineKey::pick(
+                packet.cull_mode,
+                &packet.material,
+                model.geometry.tex_coord_sets,
+                pick_shader(&packet.material),
+            );
+            let pipeline = *pick.cache.entry(key.clone()).or_insert_with(|| {
+                pick.pipelines.push(create_pipeline(
+                    device,
+                    &self.shared.pipeline_layout,
+                    PICK_FORMAT,
+                    &key,
+                ));
+                pick.pipelines.len() - 1
+            });
+            draws.push((model, index, pipeline));
+        }
         if !matches!(&pick.target, Some((width, height, _)) if (*width, *height) == (self.width, self.height))
         {
             let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -462,15 +627,16 @@ impl HsdRenderer {
             // Only the picked pixel is shaded.
             pass.set_scissor_rect(x, y, 1, 1);
             pass.set_bind_group(0, &self.globals_bind_group, &[]);
-            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            for &index in &self.geometry.draw_order {
-                let packet = &self.geometry.packets[index];
-                if !packet.visible {
-                    continue;
+            let mut bound: Option<ModelId> = None;
+            for (model, index, pipeline) in draws {
+                if bound != Some(model.id) {
+                    pass.set_vertex_buffer(0, model.vertex_buffer.slice(..));
+                    pass.set_index_buffer(model.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    bound = Some(model.id);
                 }
-                pass.set_pipeline(&pick.pipelines[pick.packet_pipelines[index]]);
-                pass.set_bind_group(1, &self.packets[index].bind_group, &[]);
+                let packet = &model.geometry.packets[index];
+                pass.set_pipeline(&pick.pipelines[pipeline]);
+                pass.set_bind_group(1, &model.packets[index].bind_group, &[]);
                 pass.draw_indexed(
                     packet.first_index..packet.first_index + packet.index_count,
                     0,
@@ -510,10 +676,24 @@ impl HsdRenderer {
         Ok(PickReadback { buffer })
     }
 
-    /// The textures a picked packet samples, most defining first (see
-    /// [`PickedTexture`]).
-    pub fn packet_textures(&self, packet: PacketIndex) -> Result<Vec<PickedTexture>> {
-        let material = &self
+    /// The model and packet a pick read back, or `None` for one of a model
+    /// since removed.
+    pub fn resolve_pick(&self, pick: PickId) -> Option<(ModelId, PacketIndex)> {
+        self.models.iter().find_map(|model| {
+            let index = pick.0.checked_sub(model.first_pick)? as usize;
+            (index < model.packets.len()).then_some((model.id, PacketIndex(index)))
+        })
+    }
+
+    /// The textures a picked packet of `model` samples, most defining first
+    /// (see [`PickedTexture`]).
+    pub fn packet_textures(
+        &self,
+        model: ModelId,
+        packet: PacketIndex,
+    ) -> Result<Vec<PickedTexture>> {
+        let model = self.model(model)?;
+        let material = &model
             .geometry
             .packets
             .get(packet.0)
@@ -523,7 +703,7 @@ impl HsdRenderer {
             .into_iter()
             .filter_map(|stage| {
                 let prepared = &material.stages[stage];
-                let texture = &self.geometry.textures[prepared.texture_index?];
+                let texture = &model.geometry.textures[prepared.texture_index?];
                 Some(PickedTexture {
                     stage,
                     scene_textures: texture.scene_textures.clone(),
@@ -533,54 +713,58 @@ impl HsdRenderer {
             .collect())
     }
 
-    /// Tint every packet that samples one of `scene_textures`, for an
-    /// editor's selection; an empty slice clears it. Returns how many packets
-    /// are tinted.
+    /// Tint every packet of `model` that samples one of `scene_textures`,
+    /// for an editor's selection; an empty slice clears it. Returns how many
+    /// packets are tinted.
     pub fn set_highlight(
         &mut self,
         queue: &wgpu::Queue,
+        model: ModelId,
         scene_textures: &[HsdTextureIndex],
-    ) -> usize {
-        for (index, packet) in self.geometry.packets.iter().enumerate() {
+    ) -> Result<usize> {
+        let model = self.model_mut(model)?;
+        for (index, packet) in model.geometry.packets.iter().enumerate() {
             let highlighted = packet.material.stages.iter().any(|stage| {
                 stage.texture_index.is_some_and(|texture| {
-                    self.geometry.textures[texture]
+                    model.geometry.textures[texture]
                         .scene_textures
                         .iter()
                         .any(|scene| scene_textures.contains(scene))
                 })
             });
-            if highlighted != self.highlighted[index] {
-                self.highlighted[index] = highlighted;
+            if highlighted != model.highlighted[index] {
+                model.highlighted[index] = highlighted;
                 write_joint_position(
                     queue,
-                    &self.packets[index],
+                    &model.packets[index],
                     packet.joint_position,
                     highlighted,
                 );
             }
         }
-        self.highlighted.iter().filter(|&&on| on).count()
+        Ok(model.highlighted.iter().filter(|&&on| on).count())
     }
 
-    /// Replace the decoded pixels of scene texture `scene_texture`, for
-    /// example after an editor patches its image data. The GPU texture is
-    /// shared by every scene texture with the same content key, so they all
-    /// change. `rgba` is `size` (width, height) RGBA8 pixels, and `size` must
-    /// be the texture's: a transposed image has the right byte length but
-    /// would draw scrambled. Returns `Ok(false)` when no drawn stage samples
-    /// the scene texture.
+    /// Replace the decoded pixels of `model`'s scene texture
+    /// `scene_texture`, for example after an editor patches its image data.
+    /// The GPU texture is shared by every scene texture of the model with
+    /// the same content key, so they all change. `rgba` is `size` (width,
+    /// height) RGBA8 pixels, and `size` must be the texture's: a transposed
+    /// image has the right byte length but would draw scrambled. Returns
+    /// `Ok(false)` when no drawn stage samples the scene texture.
     pub fn update_scene_texture(
         &mut self,
         queue: &wgpu::Queue,
+        model: ModelId,
         scene_texture: HsdTextureIndex,
         size: (u32, u32),
         rgba: &[u8],
     ) -> Result<bool> {
-        let Some(index) = self.geometry.texture_for_scene_texture(scene_texture) else {
+        let model = self.model_mut(model)?;
+        let Some(index) = model.geometry.texture_for_scene_texture(scene_texture) else {
             return Ok(false);
         };
-        let prepared = &mut self.geometry.textures[index];
+        let prepared = &mut model.geometry.textures[index];
         check_texture_update(
             scene_texture,
             (prepared.width, prepared.height),
@@ -588,14 +772,14 @@ impl HsdRenderer {
             rgba.len(),
         )?;
         queue.write_texture(
-            self.textures[index].as_image_copy(),
+            model.textures[index].as_image_copy(),
             rgba,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(prepared.width * 4),
                 rows_per_image: Some(prepared.height),
             },
-            self.textures[index].size(),
+            model.textures[index].size(),
         );
         // Keep the CPU copy current so a renderer rebuilt from this geometry
         // shows the edit too.
@@ -603,10 +787,10 @@ impl HsdRenderer {
         Ok(true)
     }
 
-    /// `orbit` clamped to what this scene allows: a framed focus lets the
+    /// `orbit` clamped to what the framing allows: a framed focus lets the
     /// camera zoom out to, and pan across, the whole scene around it.
     pub fn clamp_orbit(&self, orbit: Orbit) -> Result<Orbit> {
-        clamp_orbit(&self.geometry, orbit, self.width, self.height)
+        self.framing.clamp(orbit, self.width, self.height)
     }
 
     pub fn set_orbit(&mut self, queue: &wgpu::Queue, orbit: Orbit) -> Result<()> {
@@ -630,30 +814,48 @@ impl HsdRenderer {
         Ok(())
     }
 
-    /// Upload one animation frame. Topology must match preparation.
+    /// Upload one animation frame of `model`. Topology must match its
+    /// preparation.
     pub fn update_draw_work(
         &mut self,
         queue: &wgpu::Queue,
+        model: ModelId,
         scene: &HsdScene,
         work: &HsdEvaluatedDrawWork,
     ) -> Result<()> {
-        self.geometry.update_vertices(scene, work)?;
-        self.geometry.validate_reflections(&self.camera.view)?;
+        let view = self.camera.view;
+        let model = self.model_mut(model)?;
+        model.geometry.update_vertices(scene, work)?;
+        model.geometry.validate_reflections(&view)?;
         queue.write_buffer(
-            &self.vertex_buffer,
+            &model.vertex_buffer,
             0,
-            bytemuck::cast_slice(&self.geometry.vertices),
+            bytemuck::cast_slice(&model.geometry.vertices),
         );
-        for ((packet, gpu), &highlighted) in self
+        for ((packet, gpu), &highlighted) in model
             .geometry
             .packets
             .iter()
-            .zip(&self.packets)
-            .zip(&self.highlighted)
+            .zip(&model.packets)
+            .zip(&model.highlighted)
         {
             write_joint_position(queue, gpu, packet.joint_position, highlighted);
         }
         Ok(())
+    }
+
+    fn model(&self, model: ModelId) -> Result<&GpuModel> {
+        self.models
+            .iter()
+            .find(|each| each.id == model)
+            .ok_or(HsdRenderError::UnknownModel(model))
+    }
+
+    fn model_mut(&mut self, model: ModelId) -> Result<&mut GpuModel> {
+        self.models
+            .iter_mut()
+            .find(|each| each.id == model)
+            .ok_or(HsdRenderError::UnknownModel(model))
     }
 
     fn update_camera(
@@ -663,14 +865,10 @@ impl HsdRenderer {
         width: u32,
         height: u32,
     ) -> Result<()> {
-        let camera = Camera::frame(
-            &self.geometry.bounds,
-            self.geometry.focus.as_ref(),
-            width,
-            height,
-            orbit,
-        )?;
-        self.geometry.validate_reflections(&camera.view)?;
+        let camera = self.framing.camera(width, height, orbit)?;
+        for model in &self.models {
+            model.geometry.validate_reflections(&camera.view)?;
+        }
         queue.write_buffer(
             &self.globals_buffer,
             0,
@@ -684,16 +882,24 @@ impl HsdRenderer {
     }
 }
 
-fn clamp_orbit(
-    geometry: &PreparedGeometry,
-    orbit: Orbit,
-    width: u32,
-    height: u32,
-) -> Result<Orbit> {
-    let reach = geometry
-        .focus
-        .map_or(1.0, |focus| focus.reach(&geometry.bounds, width, height));
-    orbit.clamped_within(reach)
+/// HSD's passes in draw order (`pass_order`).
+const DRAW_PASSES: [HsdDrawPass; 3] = [
+    HsdDrawPass::Opaque,
+    HsdDrawPass::TexEdge,
+    HsdDrawPass::Translucent,
+];
+
+impl Framing {
+    fn clamp(&self, orbit: Orbit, width: u32, height: u32) -> Result<Orbit> {
+        let reach = self
+            .focus
+            .map_or(1.0, |focus| focus.reach(&self.bounds, width, height));
+        orbit.clamped_within(reach)
+    }
+
+    fn camera(&self, width: u32, height: u32, orbit: Orbit) -> Result<Camera> {
+        Camera::frame(&self.bounds, self.focus.as_ref(), width, height, orbit)
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -704,6 +910,8 @@ struct PipelineKey {
     alpha_update: bool,
     depth_write: bool,
     depth_compare: HsdCompare,
+    /// The model's texture-coordinate sets, which fix its vertex layout.
+    tex_coord_sets: usize,
     shader: String,
 }
 
@@ -714,23 +922,26 @@ impl PipelineKey {
     fn pick(
         cull_mode: CullMode,
         material: &crate::material::PreparedMaterial,
+        tex_coord_sets: usize,
         shader: String,
     ) -> Self {
         Self {
             blend: HsdBlendMode::None,
             color_update: material.color_update,
             alpha_update: material.color_update,
-            ..Self::new(cull_mode, material, shader)
+            ..Self::new(cull_mode, material, tex_coord_sets, shader)
         }
     }
 
     fn new(
         cull_mode: CullMode,
         material: &crate::material::PreparedMaterial,
+        tex_coord_sets: usize,
         shader: String,
     ) -> Self {
         Self {
             cull_mode,
+            tex_coord_sets,
             blend: material.blend,
             color_update: material.color_update,
             alpha_update: material.alpha_update,
@@ -745,9 +956,9 @@ fn create_pipeline(
     device: &wgpu::Device,
     layout: &wgpu::PipelineLayout,
     format: wgpu::TextureFormat,
-    tex_coord_sets: usize,
     key: &PipelineKey,
 ) -> wgpu::RenderPipeline {
+    let tex_coord_sets = key.tex_coord_sets;
     const FLOAT_BYTES: u64 = size_of::<f32>() as u64;
     // Position, normal, TEX0, TEX1, COLOR0, then the scene's further sets.
     let mut attributes = wgpu::vertex_attr_array![
@@ -1071,14 +1282,24 @@ mod tests {
         hidden.alpha_update = true;
         hidden.blend = HsdBlendMode::SOURCE_ALPHA;
         hidden.depth_write = true;
-        let key = PipelineKey::pick(CullMode::Back, &hidden, String::new());
+        let key = PipelineKey::pick(
+            CullMode::Back,
+            &hidden,
+            crate::geometry::BASE_TEX_COORD_SETS,
+            String::new(),
+        );
         assert_eq!(key.blend, HsdBlendMode::None);
         assert!(!key.color_update && !key.alpha_update, "writes no id");
         assert!(key.depth_write, "still occludes");
 
         hidden.color_update = true;
         hidden.alpha_update = false;
-        let key = PipelineKey::pick(CullMode::Back, &hidden, String::new());
+        let key = PipelineKey::pick(
+            CullMode::Back,
+            &hidden,
+            crate::geometry::BASE_TEX_COORD_SETS,
+            String::new(),
+        );
         assert!(key.color_update && key.alpha_update, "writes its id");
     }
 }

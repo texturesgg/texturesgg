@@ -106,7 +106,7 @@ impl Viewport {
             Some(_) => {}
             None => {
                 let geometry = crate::geometry_of(&mut self.model)?;
-                let renderer = HsdRenderer::new(
+                let (renderer, model) = HsdRenderer::with_model(
                     context.device(),
                     context.queue(),
                     TARGET_FORMAT,
@@ -125,6 +125,7 @@ impl Viewport {
                     context: context.clone(),
                     target,
                     renderer,
+                    model,
                 });
             }
         }
@@ -149,6 +150,7 @@ impl Viewport {
             // forget it, so a rebuilt renderer never replays it, and carry on.
             if let Err(error) = gpu.renderer.update_scene_texture(
                 context.queue(),
+                gpu.model,
                 HsdTextureIndex(index),
                 *size,
                 pixels,
@@ -159,7 +161,8 @@ impl Viewport {
             }
         }
         if std::mem::take(&mut self.highlight_dirty) {
-            gpu.renderer.set_highlight(context.queue(), &self.highlight);
+            gpu.renderer
+                .set_highlight(context.queue(), gpu.model, &self.highlight)?;
         }
         gpu.renderer.set_orbit(context.queue(), self.orbit)?;
         let mut encoder =
@@ -205,8 +208,13 @@ impl Viewport {
             return;
         };
         self.picks.finish();
+        // A pick of anything but the viewport's own model picks none of its
+        // textures.
         let packet = match picked {
-            Ok(packet) => packet,
+            Ok(picked) => picked
+                .and_then(|pick| gpu.renderer.resolve_pick(pick))
+                .filter(|(model, _)| *model == gpu.model)
+                .map(|(_, packet)| packet),
             Err(error) => {
                 crate::log(&format!("pick failed: {error}"));
                 return;
@@ -214,7 +222,7 @@ impl Viewport {
         };
         let scene = self.model.scene();
         let textures = packet
-            .and_then(|packet| gpu.renderer.packet_textures(packet).ok())
+            .and_then(|packet| gpu.renderer.packet_textures(gpu.model, packet).ok())
             .unwrap_or_default()
             .into_iter()
             .map(|texture| {
@@ -264,6 +272,6 @@ impl Viewport {
         self.dirty = true;
         Ok(gpu
             .renderer
-            .update_draw_work(gpu.context.queue(), scene, work)?)
+            .update_draw_work(gpu.context.queue(), gpu.model, scene, work)?)
     }
 }

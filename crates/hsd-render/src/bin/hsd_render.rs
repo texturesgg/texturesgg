@@ -381,7 +381,7 @@ fn run_pick(args: &[String]) -> CliResult<ExitCode> {
     let bytes = std::fs::read(dat).map_err(|error| format!("{dat}: {error}"))?;
     let mut source = HsdSource::from_dat(&bytes, policy)?;
     let geometry = PreparedGeometry::bind_pose(&mut source)?;
-    let mut renderer = HsdRenderer::new(
+    let (mut renderer, model) = HsdRenderer::with_model(
         &gpu.device,
         &gpu.queue,
         CAPTURE_FORMAT,
@@ -390,10 +390,15 @@ fn run_pick(args: &[String]) -> CliResult<ExitCode> {
         size,
         view.orbit(),
     )?;
+    // One model is drawn, so a pick is one of its packets.
+    let pick = |renderer: &mut HsdRenderer, x, y| -> CliResult<Option<PacketIndex>> {
+        Ok(pick(&gpu, renderer, x, y)?.map(|(_, packet)| packet))
+    };
     let describe = |renderer: &HsdRenderer, packet: PacketIndex| -> CliResult<String> {
-        let polygon = renderer.geometry().packets()[packet.0].polygon_source_id.0;
+        let geometry = renderer.geometry(model).ok_or("the model is drawn")?;
+        let polygon = geometry.packets()[packet.0].polygon_source_id.0;
         let textures: Vec<String> = renderer
-            .packet_textures(packet)?
+            .packet_textures(model, packet)?
             .iter()
             .map(|texture| {
                 format!(
@@ -422,7 +427,7 @@ fn run_pick(args: &[String]) -> CliResult<ExitCode> {
         let (x, y) = at.split_once(',').ok_or("--at must look like 320,200")?;
         let parse = |part: &str| part.parse::<u32>();
         let started = std::time::Instant::now();
-        let picked = pick(&gpu, &mut renderer, parse(x)?, parse(y)?)?;
+        let picked = pick(&mut renderer, parse(x)?, parse(y)?)?;
         let elapsed = started.elapsed();
         match picked {
             Some(packet) => println!("{}", describe(&renderer, packet)?),
@@ -433,7 +438,7 @@ fn run_pick(args: &[String]) -> CliResult<ExitCode> {
             elapsed.as_secs_f64() * 1000.0
         );
         let started = std::time::Instant::now();
-        pick(&gpu, &mut renderer, parse(x)?, parse(y)?)?;
+        pick(&mut renderer, parse(x)?, parse(y)?)?;
         println!(
             "repeat pick took {:.2} ms",
             started.elapsed().as_secs_f64() * 1000.0
@@ -455,7 +460,7 @@ fn run_pick(args: &[String]) -> CliResult<ExitCode> {
         for column in 0..columns {
             let x = (column * 2 + 1) * size.0 / (columns * 2);
             let y = (row * 2 + 1) * size.1 / (rows * 2);
-            match pick(&gpu, &mut renderer, x, y)? {
+            match pick(&mut renderer, x, y)? {
                 Some(packet) => {
                     seen.insert(packet);
                     line.push(GLYPHS[packet.0 % GLYPHS.len()] as char);
@@ -496,7 +501,7 @@ fn render_view(
     let focus = model.focus();
     let (scene, work) = model.evaluate()?;
     let geometry = PreparedGeometry::new(scene, work)?.with_focus(focus);
-    let renderer = HsdRenderer::new(
+    let (renderer, _) = HsdRenderer::with_model(
         &gpu.device,
         &gpu.queue,
         CAPTURE_FORMAT,
@@ -767,7 +772,7 @@ fn run_idle(args: &[String]) -> CliResult<ExitCode> {
 
     let (scene, work) = playback.evaluate()?;
     let geometry = PreparedGeometry::new(scene, work)?;
-    let mut renderer = HsdRenderer::new(
+    let (mut renderer, model) = HsdRenderer::with_model(
         &gpu.device,
         &gpu.queue,
         CAPTURE_FORMAT,
@@ -786,7 +791,7 @@ fn run_idle(args: &[String]) -> CliResult<ExitCode> {
         playback.advance()?;
         let frame_started = std::time::Instant::now();
         let (scene, work) = playback.evaluate()?;
-        renderer.update_draw_work(&gpu.queue, scene, work)?;
+        renderer.update_draw_work(&gpu.queue, model, scene, work)?;
         frame_time += frame_started.elapsed();
         frames += 1;
         if playback.loops() > 0 {
