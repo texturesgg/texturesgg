@@ -13,6 +13,7 @@ members = [
   "crates/dat-edit",
   "crates/hsd-render",
   "crates/tgg-mod",
+  "crates/tgg-cli",
   "crates/tgg-ui",
   "crates/tgg-editor",
 ]

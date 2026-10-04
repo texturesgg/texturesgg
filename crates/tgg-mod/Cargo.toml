@@ -10,19 +10,7 @@ keywords = ["melee", "modding", "mod-loader"]
 categories = ["game-development"]
 description = "Mod packages for tgg-mod-runtime: manifests, declared hooks, catalogs, and installing into a port"
 
-[features]
-default = ["cli"]
-# The `tgg-mod` tool. Hosts that embed the library (the editor) turn it off.
-cli = ["dep:anyhow", "dep:clap"]
-
-[[bin]]
-name = "tgg-mod"
-path = "src/bin/tgg-mod.rs"
-required-features = ["cli"]
-
 [dependencies]
-anyhow = { version = "1", optional = true }
-clap = { version = "4", features = ["derive", "env"], optional = true }
 # Reading the hooks a mod's library declares, and a port's runtime section.
 object = { version = "0.37", default-features = false, features = ["read_core", "elf", "std"] }
 serde = { version = "1", features = ["derive"] }
