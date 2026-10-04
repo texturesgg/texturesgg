@@ -16,6 +16,10 @@
 //!   through `efAlt_Spawn`); his up special spawns 3003 at `TransN` and 3004
 //!   at his hip (`ftFx_SpecialHi_CreateChargeGFX`, `…CreateLaunchGFX`).
 //!   Falco's moves are Fox's code (`ftfalco.c`), so his are the same.
+//! - Actions: the blaster comes out in `SpecialNStart` and fires lasers
+//!   through `SpecialNLoop` (`ftFox_SpecialN_StartAnimation` sets
+//!   `ftFx_SpecialN_CreateBlasterShot`); the illusion trails `SpecialS`
+//!   (`ftFox_SpecialS_CreateGhostItem`).
 
 use crate::error::Result;
 use crate::file_names::{Character, Effects, MeleeSlot};
@@ -35,27 +39,30 @@ enum Place {
     Effects(&'static [u32]),
 }
 
-/// Each fighter's shared models, by its file code: what players call each,
-/// and where it lives.
-const SHARED: &[(&str, &[(&str, Place)])] = &[
+/// One shared model as listed: what players call it, where it lives, and
+/// the action that shows it.
+type Listing = (&'static str, Place, &'static str);
+
+/// Each fighter's shared models, by its file code.
+const SHARED: &[(&str, &[Listing])] = &[
     (
         "Fx",
         &[
-            ("Laser", Place::Article(0)),
-            ("Blaster", Place::Article(1)),
-            ("Illusion", Place::Article(2)),
-            ("Shine", Place::Effects(&[0])),
-            ("Fire Fox", Place::Effects(&[3, 4])),
+            ("Laser", Place::Article(0), "SpecialNLoop"),
+            ("Blaster", Place::Article(1), "SpecialNLoop"),
+            ("Illusion", Place::Article(2), "SpecialS"),
+            ("Shine", Place::Effects(&[0]), "SpecialLwLoop"),
+            ("Fire Fox", Place::Effects(&[3, 4]), "SpecialHiHold"),
         ],
     ),
     (
         "Fc",
         &[
-            ("Laser", Place::Article(0)),
-            ("Blaster", Place::Article(1)),
-            ("Phantasm", Place::Article(3)),
-            ("Shine", Place::Effects(&[0])),
-            ("Fire Bird", Place::Effects(&[3, 4])),
+            ("Laser", Place::Article(0), "SpecialNLoop"),
+            ("Blaster", Place::Article(1), "SpecialNLoop"),
+            ("Phantasm", Place::Article(3), "SpecialS"),
+            ("Shine", Place::Effects(&[0]), "SpecialLwLoop"),
+            ("Fire Bird", Place::Effects(&[3, 4]), "SpecialHiHold"),
         ],
     ),
 ];
@@ -80,6 +87,7 @@ pub struct SharedModel {
     character: Character,
     name: &'static str,
     place: Place,
+    action: &'static str,
 }
 
 impl SharedModel {
@@ -91,10 +99,11 @@ impl SharedModel {
             .find(|(code, _)| *code == character.code())
             .into_iter()
             .flat_map(|(_, models)| models.iter())
-            .map(move |&(name, place)| Self {
+            .map(move |&(name, place, action)| Self {
                 character,
                 name,
                 place,
+                action,
             })
     }
 
@@ -113,6 +122,12 @@ impl SharedModel {
     /// The name players use ("Laser").
     pub fn name(self) -> &'static str {
         self.name
+    }
+
+    /// The fighter's action that shows it, as its animations name it
+    /// (`SpecialLwLoop`, where the shine spawns).
+    pub fn action(self) -> &'static str {
+        self.action
     }
 
     /// The file it lives in: the fighter's data file, or its effects file.

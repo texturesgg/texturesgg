@@ -212,3 +212,40 @@ fn every_shared_model_is_found_and_vanilla_on_the_clean_disc() {
     }
     assert!(checked >= 10, "{checked}");
 }
+
+/// Each shared model's action is one its fighter plays, so choosing the
+/// model shows the move that spawns it rather than nothing.
+#[test]
+fn every_shared_model_names_an_action_its_fighter_plays() {
+    let mut disc = disc();
+    let catalog = MeleeReferenceCatalog::checked_in();
+    for character in crate::Character::all() {
+        let models: Vec<_> = crate::SharedModel::of(character).collect();
+        if models.is_empty() {
+            continue;
+        }
+        let bytes = disc
+            .read(&format!("Pl{}Nr.dat", character.code()))
+            .expect("neutral costume");
+        let source =
+            HsdSource::from_dat(&bytes, HsdDrawEvaluationPolicy::MELEE_FIGHTER).expect("source");
+        let store = references(&mut disc, catalog, &source.scene);
+        let FighterAttach::Attached(playback) =
+            MeleeFighterPlayback::attach(source, catalog, &store)
+        else {
+            panic!("{} attaches", character.name());
+        };
+        for model in models {
+            assert!(
+                playback
+                    .animations()
+                    .iter()
+                    .any(|animation| animation.action.as_deref() == Some(model.action())),
+                "{}'s {} names {}",
+                character.name(),
+                model.name(),
+                model.action()
+            );
+        }
+    }
+}
