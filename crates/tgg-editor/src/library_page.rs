@@ -14,7 +14,7 @@ use gpui::{
     ParentElement, Render, RenderImage, SharedString, StatefulInteractiveElement, Styled, Window,
     div,
 };
-use melee_dat::MeleeSlot;
+use melee_dat::{MeleeSlot, SharedModel};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tgg_ui::page_header::INSET;
@@ -45,6 +45,8 @@ pub(crate) struct LibraryPage {
     pub notice: Option<Notice>,
     /// Renders as they arrive; a skin's is under its id.
     pub renders: HashMap<RenderKey, Arc<RenderImage>>,
+    /// What each skin for a shared file changes (its Laser), by name.
+    changes: HashMap<SkinId, Vec<SharedModel>>,
     filter: Filter,
 }
 
@@ -55,12 +57,14 @@ impl LibraryPage {
         skins: Vec<Skin>,
         states: HashMap<MeleeSlot, SlotState>,
         renders: HashMap<RenderKey, Arc<RenderImage>>,
+        changes: HashMap<SkinId, Vec<SharedModel>>,
     ) -> Self {
         Self {
             skins,
             states,
             notice: None,
             renders,
+            changes,
             filter: Filter::All,
         }
     }
@@ -106,14 +110,24 @@ impl LibraryPage {
     fn card(&self, skin: &Skin, cx: &mut Context<Self>) -> AnyElement {
         let palette = Theme::global(cx).palette;
         let installed = self.installed(skin);
-        // "Red", "Fighter file", "Effects" or the stage's name: the fighter
-        // is the group's heading.
-        let place = match skin.slot {
-            Some(MeleeSlot::Costume { color, .. }) => color.name(),
-            Some(MeleeSlot::FighterData(_)) => FIGHTER_FILE,
-            Some(MeleeSlot::Effects(_)) => EFFECTS_FILE,
-            Some(MeleeSlot::Stage(stage)) => stage.name(),
-            None => "no slot",
+        // "Red", "Changes Laser" or the stage's name: the fighter is the
+        // group's heading. A shared file that changes nothing the app knows
+        // reads as the file it is.
+        let changes = self
+            .changes
+            .get(&skin.id)
+            .filter(|changes| !changes.is_empty())
+            .map(|changes| {
+                let names: Vec<&str> = changes.iter().map(|model| model.name()).collect();
+                format!("Changes {}", names.join(", "))
+            });
+        let place = match (skin.slot, changes) {
+            (Some(MeleeSlot::Costume { color, .. }), _) => color.name().to_owned(),
+            (Some(MeleeSlot::FighterData(_) | MeleeSlot::Effects(_)), Some(changes)) => changes,
+            (Some(MeleeSlot::FighterData(_)), None) => FIGHTER_FILE.to_owned(),
+            (Some(MeleeSlot::Effects(_)), None) => EFFECTS_FILE.to_owned(),
+            (Some(MeleeSlot::Stage(stage)), _) => stage.name().to_owned(),
+            (None, _) => "no slot".to_owned(),
         };
         let install = skin.slot.filter(|_| !installed).map(|slot| {
             let this = cx.entity();
