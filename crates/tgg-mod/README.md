@@ -15,7 +15,7 @@ dependency, a fact about their code.
 - **Manifests.** The fields an author writes, plus the ones packing fills from the
   library. Validation covers what the runtime and installers rely on.
 - **Library records.** Reading the `tgg_decls` section of an x86-64 ELF mod library:
-  hooks, exports, imports, and the game layout id.
+  hooks, exports, imports, the game layout id, and the target triple.
 - **Packages.** Packing a built mod into a zip that is byte-identical for the same
   inputs. Opening a zip re-reads its library and refuses a manifest that disagrees.
 - **Catalogs.** The list of packages a registry offers, with each package's location,

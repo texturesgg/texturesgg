@@ -28,7 +28,11 @@ pub enum PackageError {
     Declarations(#[from] DeclError),
     #[error("the library declares no game layout; build it with tgg_add_mod")]
     NoGameLayout,
-    #[error("the manifest's hooks, exports, imports or game layout differ from its library's")]
+    #[error("the library declares no target; build it with the SDK's flags")]
+    NoTarget,
+    #[error(
+        "the manifest's hooks, exports, imports, game layout or target differ from its library's"
+    )]
     Mismatch,
     #[error("not a package zip: {0}")]
     Zip(#[from] zip::result::ZipError),
@@ -47,6 +51,7 @@ impl Package {
         manifest.validate()?;
         let declared = decls::read(&library)?;
         manifest.game_abi = Some(declared.game_abi.ok_or(PackageError::NoGameLayout)?);
+        manifest.target = Some(declared.target.ok_or(PackageError::NoTarget)?);
         manifest.hooks = declared.hooks;
         manifest.exports = declared.exports;
         manifest.imports = declared.imports;
@@ -63,7 +68,11 @@ impl Package {
         if declared.game_abi.is_none() {
             return Err(PackageError::NoGameLayout);
         }
+        if declared.target.is_none() {
+            return Err(PackageError::NoTarget);
+        }
         if declared.game_abi != manifest.game_abi
+            || declared.target != manifest.target
             || declared.hooks != manifest.hooks
             || declared.exports != manifest.exports
             || declared.imports != manifest.imports
@@ -125,7 +134,9 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decls::tests::{BEFORE, EXPORT, GAME_ABI, IMPORT, REPLACE, SYMBOL, library, record};
+    use crate::decls::tests::{
+        BEFORE, EXPORT, GAME_ABI, IMPORT, REPLACE, SYMBOL, TARGET, library, record,
+    };
     use crate::manifest::Netplay;
 
     fn manifest() -> Manifest {
@@ -139,6 +150,7 @@ mod tests {
             description: None,
             license: None,
             game_abi: None,
+            target: None,
             hooks: Default::default(),
             exports: Vec::new(),
             imports: Vec::new(),
@@ -149,6 +161,7 @@ mod tests {
     fn hooks_come_from_the_library_and_a_manifest_claiming_others_is_refused() {
         let lib = library(&[
             record(GAME_ABI, "e954031487f52421"),
+            record(TARGET, "x86_64-linux-gnu"),
             record(REPLACE, "ftCo_Landing_IASA"),
             record(BEFORE, "ftCo_Jump.c:ftCo_Jump_Anim"),
             record(EXPORT, "register_clone"),

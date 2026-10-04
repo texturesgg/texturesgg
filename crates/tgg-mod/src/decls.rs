@@ -29,6 +29,7 @@ const KIND_IMPORT: u32 = 6;
 /// A game symbol whose address the runtime fills into the mod. It changes
 /// nothing about the game, so it never reaches the manifest or a conflict.
 const KIND_SYMBOL: u32 = 7;
+const KIND_TARGET: u32 = 8;
 
 /// The game functions a mod hooks, each list sorted and without repeats.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,6 +56,9 @@ impl Hooks {
 pub struct Declarations {
     /// The game layout id it was built against; `None` when it carries none.
     pub game_abi: Option<String>,
+    /// The target triple it was built for, such as `x86_64-linux-gnu`;
+    /// `None` when it carries none.
+    pub target: Option<String>,
     pub hooks: Hooks,
     /// Names of the functions it offers other mods, sorted.
     pub exports: Vec<String>,
@@ -75,6 +79,8 @@ pub enum DeclError {
     Malformed(usize),
     #[error("the library declares two game layouts ({0} and {1})")]
     TwoLayouts(String, String),
+    #[error("the library declares two targets ({0} and {1})")]
+    TwoTargets(String, String),
 }
 
 /// Read the declarations of `library`, an ELF shared object.
@@ -118,6 +124,12 @@ pub fn read(library: &[u8]) -> Result<Declarations, DeclError> {
             }
             KIND_IMPORT if import_is_valid(&symbol) => declarations.imports.push(symbol),
             KIND_SYMBOL if !symbol.is_empty() => {}
+            KIND_TARGET => match &declarations.target {
+                Some(known) if *known != symbol => {
+                    return Err(DeclError::TwoTargets(known.clone(), symbol));
+                }
+                _ => declarations.target = Some(symbol),
+            },
             KIND_GAME_ABI => match &declarations.game_abi {
                 Some(known) if *known != symbol => {
                     return Err(DeclError::TwoLayouts(known.clone(), symbol));
@@ -178,4 +190,5 @@ pub(crate) mod tests {
     pub(crate) const EXPORT: u32 = KIND_EXPORT;
     pub(crate) const IMPORT: u32 = KIND_IMPORT;
     pub(crate) const SYMBOL: u32 = KIND_SYMBOL;
+    pub(crate) const TARGET: u32 = KIND_TARGET;
 }

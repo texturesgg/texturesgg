@@ -243,9 +243,11 @@ fn build(dir: &Path, sdk: &Path, cc: &Path, output: Option<PathBuf>, json: bool)
     std::fs::remove_dir_all(dir.join(scratch))?;
     let package = Package::pack(bytes, manifest)?;
     ensure!(
-        package.manifest.game_abi.as_deref() == Some(sdk.game_abi.as_str()),
-        "the library declares a game layout other than the SDK's {}",
-        sdk.game_abi
+        package.manifest.game_abi.as_deref() == Some(sdk.game_abi.as_str())
+            && package.manifest.target.as_deref() == Some(sdk.target.as_str()),
+        "the library declares a game layout or target other than the SDK's {} {}",
+        sdk.game_abi,
+        sdk.target
     );
     write_package(package, output, json)
 }
@@ -295,6 +297,7 @@ fn inspect(path: &Path) -> Result<()> {
             print_json(&json!({
                 "runtime": tgg_mod::API,
                 "game_abi": port.game_abi,
+                "target": port.target,
                 "port": port.name,
             }));
             return Ok(());
@@ -310,6 +313,7 @@ fn inspect(path: &Path) -> Result<()> {
     );
     print_json(&json!({
         "game_abi": declared.game_abi,
+        "target": declared.target,
         "hooks": declared.hooks,
         "exports": declared.exports,
         "imports": declared.imports,
@@ -376,13 +380,17 @@ fn install(port: &Port, packages: &[PathBuf]) -> Result<()> {
     for path in packages {
         let (package, _) = open_package(path)?;
         let manifest = &package.manifest;
-        if manifest.game_abi.as_deref() != Some(port.game_abi.as_str()) {
+        if manifest.game_abi.as_deref() != Some(port.game_abi.as_str())
+            || manifest.target.as_deref() != Some(port.target.as_str())
+        {
             bail!(
-                "{} is built for game layout {}; {} is {}",
+                "{} is built for game layout {} on {}; {} is {} on {}",
                 manifest.id,
                 manifest.game_abi.as_deref().unwrap_or("none"),
+                manifest.target.as_deref().unwrap_or("no target"),
                 port.name,
-                port.game_abi
+                port.game_abi,
+                port.target
             );
         }
         let installed = mods.list()?;
