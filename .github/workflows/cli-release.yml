@@ -1,0 +1,197 @@
+name: CLI release
+
+# A tag `cli-v<version>` (the version in crates/tgg-cli/Cargo.toml) builds
+# `tgg` for Linux, macOS and Windows and publishes a GitHub release with the
+# archives, SHA256SUMS, and a build provenance attestation for each archive,
+# then points the install scripts at it. A pull request that changes the
+# packaging builds every archive, unsigned, without publishing.
+#
+# Secrets, in the `release` environment (shared with the app's release):
+#   MACOS_CERTIFICATE_P12, MACOS_CERTIFICATE_PASSWORD
+#   APPLE_API_KEY_P8, APPLE_API_KEY_ID, APPLE_API_ISSUER_ID
+#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+
+on:
+  push:
+    tags: ["cli-v*"]
+  pull_request:
+    paths:
+      - scripts/package-cli.sh
+      - .github/workflows/cli-release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux (${{ matrix.target }})
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-24.04
+          - target: aarch64-unknown-linux-musl
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      # ring compiles C, which a static musl build needs musl's compiler for.
+      - run: sudo apt-get update -qq && sudo apt-get install --no-install-recommends -y -qq musl-tools jq
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Check the tag names this version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: scripts/check-release-tag.sh "$GITHUB_REF_NAME"
+
+      - run: scripts/package-cli.sh ${{ matrix.target }}
+
+      - name: The binary is static and runs
+        run: |
+          file target/${{ matrix.target }}/release/tgg | grep -Eq "statically linked|static-pie linked"
+          target/${{ matrix.target }}/release/tgg --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: target/package/*.tar.gz
+          if-no-files-found: error
+
+  macos:
+    name: macOS (universal)
+    runs-on: macos-latest
+    # The `release` environment, and its signing secrets, only admit release tags.
+    environment: ${{ startsWith(github.ref, 'refs/tags/') && 'release' || '' }}
+    env:
+      MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check the tag names this version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: scripts/check-release-tag.sh "$GITHUB_REF_NAME"
+
+      - name: Import the signing certificate
+        if: env.MACOS_CERTIFICATE_P12 != ''
+        run: |
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          password="$(openssl rand -hex 16)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 --decode >"$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          identity="$(security find-identity -p codesigning "$keychain" |
+            sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)"
+          [ -n "$identity" ] || { echo "the certificate holds no Developer ID Application identity"; exit 1; }
+          echo "CODESIGN_IDENTITY=$identity" >>"$GITHUB_ENV"
+
+      - name: Set up notarization
+        if: env.APPLE_API_KEY_P8 != ''
+        run: |
+          printf '%s' "$APPLE_API_KEY_P8" >"$RUNNER_TEMP/notary-key.p8"
+          {
+            echo "NOTARY_KEY_PATH=$RUNNER_TEMP/notary-key.p8"
+            echo "NOTARY_KEY_ID=$APPLE_API_KEY_ID"
+            echo "NOTARY_ISSUER_ID=$APPLE_API_ISSUER_ID"
+          } >>"$GITHUB_ENV"
+
+      - name: A release is signed and notarized
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          [ -n "${CODESIGN_IDENTITY:-}" ] && [ -n "${NOTARY_KEY_PATH:-}" ] ||
+            { echo "a release needs the signing and notarization secrets"; exit 1; }
+
+      - run: scripts/package-cli.sh universal-apple-darwin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-universal-apple-darwin
+          path: target/package/*.tar.gz
+          if-no-files-found: error
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check the tag names this version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: scripts/check-release-tag.sh "$GITHUB_REF_NAME"
+
+      - run: scripts/package-cli.sh x86_64-pc-windows-msvc
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-x86_64-pc-windows-msvc
+          path: target/package/*.zip
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cli-*
+          path: packages
+          merge-multiple: true
+
+      - name: Write SHA256SUMS
+        working-directory: packages
+        run: sha256sum tgg-* >SHA256SUMS
+
+      # `gh attestation verify <archive> --repo texturesgg/texturesgg` checks
+      # an archive was built here, from this tag.
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: packages/tgg-*
+
+      # Not marked latest: the app's releases keep that.
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" packages/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" packages/* --repo "$GITHUB_REPOSITORY" \
+              --title "tgg ${GITHUB_REF_NAME#cli-v}" --generate-notes --latest=false
+          fi
+
+      # Last, so the install scripts only hear of a version that can be downloaded.
+      - name: Point the install scripts at it
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          jq -n --arg version "${GITHUB_REF_NAME#cli-v}" '{version: $version}' >latest.json
+          npx --yes wrangler@4.146.0 r2 object put vgskins-assets/cli/latest.json \
+            --file latest.json --content-type application/json \
+            --cache-control "public, max-age=300" --remote
