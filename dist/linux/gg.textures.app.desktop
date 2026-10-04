@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=textures.gg
+GenericName=Melee Skin Manager
+Comment=Install and edit Super Smash Bros. Melee skins
+Exec=tgg-editor
+TryExec=tgg-editor
+Icon=gg.textures.app
+Terminal=false
+Categories=Game;
+Keywords=melee;ssbm;skins;textures;costumes;dat;
+StartupWMClass=gg.textures.app

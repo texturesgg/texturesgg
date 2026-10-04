@@ -206,7 +206,7 @@ pub fn run(launch: Launch) {
         }
         cx.open_window(
             WindowOptions {
-                app_id: Some("gg.textures.editor".into()),
+                app_id: Some("gg.textures.app".into()),
                 titlebar: Some(tgg_ui::title_bar::options("textures.gg editor")),
                 window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
                     None,

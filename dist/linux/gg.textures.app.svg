@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- The textures.gg mark: a "t." on the accent tile, as on the site. -->
+  <rect width="64" height="64" rx="14" fill="#F5C84B"/>
+  <path d="M22 11h10v10h11v9H32v9q0 5 5 5h6v9h-8q-13 0-13-14z" fill="#111110"/>
+  <circle cx="50" cy="48" r="5.5" fill="#111110"/>
+</svg>
