@@ -1134,6 +1134,7 @@ fn runtime_visibility_must_cover_the_root_and_leave_instances_unchanged() {
         root_index: 0,
         transforms: &transforms,
         hidden_joints: Some(hidden),
+        constraints: &[],
     };
     assert!(matches!(
         draw.evaluate(&scene, &[pose(&[false, false])]),

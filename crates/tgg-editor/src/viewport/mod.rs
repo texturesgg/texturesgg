@@ -12,6 +12,7 @@
 
 mod camera;
 mod frame;
+mod spawns;
 
 use crate::Error;
 use dat_parser::hsd::scene::{HsdTextureIndex, HsdTextureSourceId};
@@ -23,8 +24,11 @@ use gpui_wgpu::{WgpuContextHandle, WgpuRenderTarget};
 use hsd_render::{CameraView, HsdRenderer, ModelId, Orbit, PendingPick};
 use melee_dat::MeleeFighterPlayback;
 use melee_dat::MeleeModel;
+use melee_dat::SharedModel;
+use spawns::Spawns;
 use std::collections::BTreeMap;
 use std::collections::VecDeque;
+use std::rc::Rc;
 use std::time::Instant;
 
 /// What a click in the viewport landed on, or an edit it couldn't show.
@@ -154,6 +158,10 @@ pub(crate) struct Viewport {
     /// Mirror the status to stderr every couple of seconds.
     report: bool,
     error: Option<String>,
+    /// What the fighter's current move spawns on it.
+    spawns: Spawns,
+    /// The camera the model's billboards last faced.
+    posed_orbit: Option<Orbit>,
 }
 
 impl EventEmitter<ViewportEvent> for Viewport {}
@@ -183,6 +191,8 @@ impl Viewport {
             last_report: None,
             report: true,
             error: None,
+            spawns: Spawns::new(Vec::new()),
+            posed_orbit: None,
         }
     }
 
@@ -251,6 +261,8 @@ impl Viewport {
             return Err(Error::NoAnimations);
         };
         playback.play(index)?;
+        // The move starts again, and so does what it spawns.
+        self.spawns.reset();
         self.clock_start = None;
         self.paused_at = None;
         self.ticks = 0;
@@ -265,6 +277,8 @@ impl Viewport {
             return Ok(());
         }
         self.model.seek(frame)?;
+        // What the move spawns catches up to the frame afresh.
+        self.spawns.reset();
         if self.paused_at.is_none() {
             self.paused_at = Some(Instant::now());
         }
@@ -372,6 +386,13 @@ impl Viewport {
     /// Without the status on stderr: for many viewports at once.
     pub fn quiet(mut self) -> Self {
         self.report = false;
+        self
+    }
+
+    /// Draw `shared`, the models the fighter's costumes share with their
+    /// files, on the fighter as its moves spawn them.
+    pub fn with_shared(mut self, shared: Vec<(SharedModel, Rc<Vec<u8>>)>) -> Self {
+        self.spawns = Spawns::new(shared);
         self
     }
 

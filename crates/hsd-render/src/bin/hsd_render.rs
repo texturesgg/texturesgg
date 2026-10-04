@@ -15,8 +15,11 @@
 //! the current captures and adapter instead. `--reference DIR` also diffs each
 //! capture against an earlier run's PNG of the same name. Inputs are the
 //! files of a clean Melee NTSC 1.02 disc image, found by SHA-256. A case's `frame`
-//! captures a stage that many frames after it loads. A matching hash is
-//! deterministic-capture evidence, not a Melee fidelity claim.
+//! captures a stage that many frames after it loads. A case with an `action`
+//! captures its costume playing that move, `frame` ticks in, with the models
+//! the move spawns on it and the shots it has fired, drawn together as the
+//! editor draws them. A matching hash is deterministic-capture evidence, not a
+//! Melee fidelity claim.
 //!
 //! `idle` plays one full cycle of the catalog Wait1 (or `--animation N`)
 //! through the renderer, writing a capture every N ticks, and requires the
@@ -42,7 +45,10 @@ use hsd_render::{
     CameraView, HsdRenderer, PacketIndex, PreparedGeometry, neutral_preview_lighting,
 };
 use melee_dat::MeleeModel;
-use melee_dat::{FighterAttach, MeleeFighterPlayback, MeleeReferenceCatalog, MeleeReferenceStore};
+use melee_dat::{
+    FighterAttach, MeleeFighterPlayback, MeleeReferenceCatalog, MeleeReferenceStore, MeleeSlot,
+    SharedModel, Shot,
+};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -225,6 +231,9 @@ fn run_regression(args: &[String]) -> CliResult<ExitCode> {
         .collect();
     let wanted_refs: Vec<&str> = wanted.iter().map(String::as_str).collect();
     let found = index_inputs(&iso, &wanted_refs)?;
+    // A case mid-move reads its fighter's files from the disc by name.
+    let mut disc =
+        gc_iso::Disc::open(&iso).map_err(|error| format!("{}: {error}", iso.display()))?;
     std::fs::create_dir_all(&out)?;
     let gpu = request_gpu(options.software)?;
     let info = gpu.adapter.get_info();
@@ -266,19 +275,25 @@ fn run_regression(args: &[String]) -> CliResult<ExitCode> {
                 .and_then(|frame| u32::try_from(frame).ok())
                 .ok_or_else(|| format!("{name}: frame must be a small whole number"))?,
         };
+        let action = case["action"].as_str().map(str::to_owned);
         let views = case["views"].as_object_mut().ok_or("case without views")?;
         for (view_id, expected) in views.iter_mut() {
             let view =
                 CameraView::from_id(view_id).ok_or_else(|| format!("unknown view {view_id}"))?;
             let label = format!("{name}-{view_id}");
-            let image = match render_view(
-                &gpu,
-                bytes,
-                HsdDrawEvaluationPolicy::GENERIC_HSD,
-                view,
-                size,
-                frame,
-            ) {
+            let rendered = match action.as_deref() {
+                // A costume mid-move, with what the move spawns and fires.
+                Some(action) => render_move_view(&gpu, &mut disc, bytes, action, view, size, frame),
+                None => render_view(
+                    &gpu,
+                    bytes,
+                    HsdDrawEvaluationPolicy::GENERIC_HSD,
+                    view,
+                    size,
+                    frame,
+                ),
+            };
+            let image = match rendered {
                 Ok(image) => image,
                 Err(error) => {
                     println!("failed   {label}: {error}");
@@ -513,6 +528,106 @@ fn render_view(
     Ok(capture(gpu, &renderer)?)
 }
 
+/// A stock costume playing `action`, `frame` ticks in, with what the move
+/// spawns on it and what it has fired, as the editor composes them: a set of
+/// models posed on the fighter's parts, billboards facing the camera.
+fn render_move_view(
+    gpu: &Gpu,
+    disc: &mut gc_iso::Disc,
+    bytes: &[u8],
+    action: &str,
+    view: CameraView,
+    size: (u32, u32),
+    frame: u32,
+) -> CliResult<RgbaImage> {
+    let catalog = MeleeReferenceCatalog::checked_in();
+    let source = HsdSource::from_dat(bytes, HsdDrawEvaluationPolicy::MELEE_FIGHTER)?;
+    let store = MeleeReferenceStore::for_costume(catalog, &source.scene, |asset| {
+        disc.read(&asset.file_name).ok()
+    })
+    .ok_or("not a stock costume")?;
+    let FighterAttach::Attached(mut playback) =
+        MeleeFighterPlayback::attach(source, catalog, &store)
+    else {
+        return Err("the costume's fighter doesn't attach".into());
+    };
+    let animation = playback
+        .animations()
+        .iter()
+        .find(|animation| animation.action.as_deref() == Some(action))
+        .ok_or_else(|| format!("no action {action}"))?
+        .index;
+    playback.play(animation)?;
+    let character = catalog
+        .costume_slot(
+            playback
+                .scene()
+                .roots
+                .iter()
+                .filter_map(|root| root.name.as_deref()),
+        )
+        .and_then(MeleeSlot::character)
+        .ok_or("the costume names no fighter")?;
+    let mut spawned = Vec::new();
+    let mut firings = Vec::new();
+    for model in SharedModel::of(character) {
+        let file = disc.read(&model.slot().file_name())?;
+        spawned.extend(model.spawned(&file, action)?);
+        firings.extend(model.firing(&file, action, animation)?);
+    }
+    let mut shots: Vec<Shot> = Vec::new();
+    for tick in 1..=frame {
+        playback.advance()?;
+        for model in &mut spawned {
+            model.advance()?;
+        }
+        for shot in &mut shots {
+            shot.advance();
+        }
+        for firing in &firings {
+            if firing.frames.contains(&(tick as f32)) {
+                let (root, joint) = playback
+                    .part_joint(firing.part)
+                    .ok_or("the fighter lacks the part it fires from")?;
+                let muzzle = playback.evaluate()?.1.roots[root].joint_world_matrices[joint.0];
+                shots.push(firing.fire(muzzle, 1.0)?);
+            }
+        }
+    }
+
+    let (scene, work) = playback.evaluate()?;
+    let (mut renderer, fighter) = HsdRenderer::with_model(
+        &gpu.device,
+        &gpu.queue,
+        CAPTURE_FORMAT,
+        PreparedGeometry::new(scene, work)?,
+        neutral_preview_lighting(),
+        size,
+        view.orbit(),
+    )?;
+    let camera = renderer.camera().view_matrix();
+    playback.set_view(Some(camera));
+    let parts: Vec<_> = spawned
+        .iter()
+        .map(|model| playback.part_joint(model.spawn().part))
+        .collect();
+    let scale = playback.scale();
+    let (scene, work) = playback.evaluate()?;
+    renderer.update_draw_work(&gpu.queue, fighter, scene, work)?;
+    for (model, part) in spawned.iter_mut().zip(parts) {
+        let (root, joint) = part.ok_or("the fighter lacks a spawned model's part")?;
+        model.set_view(Some(camera));
+        model.pose(work.roots[root].joint_world_matrices[joint.0], scale)?;
+        let (scene, work) = model.drawn();
+        renderer.add_model(&gpu.device, &gpu.queue, PreparedGeometry::new(scene, work)?)?;
+    }
+    for shot in &mut shots {
+        shot.pose()?;
+        let (scene, work) = shot.drawn();
+        renderer.add_model(&gpu.device, &gpu.queue, PreparedGeometry::new(scene, work)?)?;
+    }
+    Ok(capture(gpu, &renderer)?)
+}
 /// The disc image to read: `--iso`, else `TGG_MELEE_ISO`.
 fn iso_path(flags: &HashMap<String, String>) -> CliResult<PathBuf> {
     flags

@@ -3,7 +3,9 @@
 
 use super::{Gpu, Viewport, ViewportEvent};
 use crate::Error;
+use dat_parser::descriptor::jobj::flags::BILLBOARD_FIELD;
 use dat_parser::hsd::scene::HsdTextureIndex;
+use dat_parser::math::Mat4;
 use gpui::{Bounds, Context, DevicePixels, Pixels, SurfaceSource, Window, size};
 use gpui_wgpu::{WgpuContextHandle, WgpuRenderTarget};
 use hsd_render::{HsdRenderer, neutral_preview_lighting};
@@ -130,6 +132,13 @@ impl Viewport {
             }
         }
         self.advance_animation()?;
+        // Billboards turn to face the camera wherever it moves.
+        if let Some(gpu) = &mut self.gpu {
+            gpu.renderer.set_orbit(context.queue(), self.orbit)?;
+            if self.posed_orbit != Some(gpu.renderer.orbit()) && self.faces_camera() {
+                self.pose()?;
+            }
+        }
         let pick = self.picks.next();
         let changed = std::mem::take(&mut self.dirty)
             || !self.pending.is_empty()
@@ -194,6 +203,8 @@ impl Viewport {
     pub(super) fn drop_gpu(&mut self) {
         self.gpu = None;
         self.picks.clear();
+        self.spawns.forget_renderer();
+        self.posed_orbit = None;
     }
 
     /// Collect a finished pick and report what it landed on.
@@ -254,24 +265,87 @@ impl Viewport {
         let steps = pending.min(u64::from(MAX_TICKS_PER_FRAME));
         for _ in 0..steps {
             self.model.advance()?;
+            let frame = self.model.frame();
+            let expired = self.spawns.advance(frame)?;
+            if let Some(gpu) = &mut self.gpu {
+                for shot in expired {
+                    gpu.renderer.remove_model(shot);
+                }
+            }
         }
         // Drop any backlog beyond the cap instead of replaying it later.
         self.ticks = due;
         self.upload_pose()
     }
 
-    /// Draw the fighter's current pose.
+    /// Whether anything drawn turns to face the camera: a billboarded joint
+    /// of the model, or what its move spawns (the shine).
+    fn faces_camera(&self) -> bool {
+        self.spawns.faces_camera()
+            || self.model.scene().roots.iter().any(|root| {
+                root.joints
+                    .iter()
+                    .any(|joint| joint.flags & BILLBOARD_FIELD != 0)
+            })
+    }
+
+    /// Draw the fighter's current pose, with what its move spawns on it.
     pub(super) fn upload_pose(&mut self) -> Result<(), Error> {
-        let Some(gpu) = &mut self.gpu else {
-            return Ok(());
-        };
         if !self.model.is_animated() {
             return Ok(());
         }
+        self.pose()
+    }
+
+    /// Pose the model and what its move spawns for this frame, facing their
+    /// billboards toward the camera, and upload them.
+    fn pose(&mut self) -> Result<(), Error> {
+        let Some(gpu) = &mut self.gpu else {
+            return Ok(());
+        };
+        let queue = gpu.context.queue();
+        let view = gpu.renderer.camera().view_matrix();
+        self.posed_orbit = Some(gpu.renderer.orbit());
+        self.model.set_view(Some(view));
+        // A new move spawns its own; let go of the last one's.
+        if let Some(playback) = self.model.fighter() {
+            for replaced in self.spawns.follow(playback)? {
+                gpu.renderer.remove_model(replaced);
+            }
+        }
+        // Where each part the spawns follow is, found before the pose and
+        // read from it after.
+        let fighter = self.model.fighter();
+        let parts: Vec<_> = self
+            .spawns
+            .parts()
+            .into_iter()
+            .filter_map(|part| Some((part, fighter?.part_joint(part)?)))
+            .collect();
+        let scale = fighter.map_or(1.0, |playback| playback.scale());
+
         let (scene, work) = self.model.evaluate()?;
+        let joints: Vec<(u8, Mat4)> = parts
+            .into_iter()
+            .map(|(part, (root, joint))| (part, work.roots[root].joint_world_matrices[joint.0]))
+            .collect();
+        gpu.renderer
+            .update_draw_work(queue, gpu.model, scene, work)?;
+        let joint = |part| {
+            joints
+                .iter()
+                .find(|(each, _)| *each == part)
+                .map(|&(_, matrix)| matrix)
+        };
+        self.spawns.upload(
+            &mut gpu.renderer,
+            gpu.context.device(),
+            queue,
+            joint,
+            view,
+            scale,
+        )?;
         self.dirty = true;
-        Ok(gpu
-            .renderer
-            .update_draw_work(gpu.context.queue(), gpu.model, scene, work)?)
+        Ok(())
     }
 }

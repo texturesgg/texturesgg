@@ -16,6 +16,7 @@ use dat_parser::descriptor::map_head::MapHead;
 use dat_parser::hsd::draw::{HsdDrawEvaluationPolicy, HsdEvaluatedDrawWork};
 use dat_parser::hsd::scene::HsdScene;
 use dat_parser::hsd::source::{self, HsdFocus, HsdSource};
+use dat_parser::math::Mat4;
 
 /// A loaded DAT: see the module documentation.
 pub struct MeleeModel(Model);
@@ -213,6 +214,17 @@ impl MeleeModel {
     }
 
     /// Evaluate the current pose; returns the scene with its draw work.
+    /// Face the model's billboarded joints toward a camera with this `view`
+    /// in later evaluations, as the game draws them; `None` leaves them as
+    /// posed.
+    pub fn set_view(&mut self, view: Option<Mat4>) {
+        match &mut self.0 {
+            Fighter(playback) => playback.set_view(view),
+            Stage(playback) => playback.set_view(view),
+            Static(source) => source.evaluator.set_view(view),
+        }
+    }
+
     pub fn evaluate(&mut self) -> Result<(&HsdScene, &HsdEvaluatedDrawWork)> {
         match &mut self.0 {
             Fighter(playback) => playback.evaluate(),

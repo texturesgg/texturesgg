@@ -20,12 +20,14 @@ what every costume shares, from its fighter file (`PlFc.dat`) and the effects
 file it may share with others (`EfFxData.dat`, Fox and Falco's). Where the app
 knows those files, each model is a row of its own with its picture, such as
 Falco's Laser and Shine, and says whether the installed file changes it;
-choosing one plays the move that shows it on the costume on stage. Any other
-file is one row. While a fighter file is installed over, costumes preview
-with the original the install kept. The library holds skins added from files
-or zip archives, kept by content hash. Installing writes a skin into its slot
-in the ISO and records what was there, so an install can be undone back to the
-original file.
+choosing one plays the move that shows it on the costume on stage. Whatever
+plays a move, that row or the Moves pane, draws what it spawns on the fighter
+as the game does: the shine at the hip, the blaster in the hand, lasers fired
+from it. Any other file is one row. While a fighter file is installed over,
+costumes preview with the original the install kept. The library holds skins
+added from files or zip archives, kept by content hash. Installing writes a
+skin into its slot in the ISO and records what was there, so an install can be
+undone back to the original file.
 
 Edit textures opens a slot as a document. The model takes the window, and the
 Textures, Texture, Moves and Colors panes float over it. Textures import from

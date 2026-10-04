@@ -5,6 +5,7 @@
 
 use crate::error::{HsdRenderError, Result};
 use crate::geometry::Bounds;
+use dat_parser::math::Mat4;
 use std::f64::consts::PI;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -199,6 +200,23 @@ pub struct Camera {
 }
 
 impl Camera {
+    /// The view as `dat-parser`'s matrix, for an evaluator to face its
+    /// billboards toward ([`HsdDrawWorkEvaluator::set_view`]).
+    ///
+    /// [`HsdDrawWorkEvaluator::set_view`]: dat_parser::hsd::draw::HsdDrawWorkEvaluator::set_view
+    pub fn view_matrix(&self) -> Mat4 {
+        let column = |index: usize| {
+            let at = index * 4;
+            [
+                self.view[at],
+                self.view[at + 1],
+                self.view[at + 2],
+                self.view[at + 3],
+            ]
+        };
+        Mat4([column(0), column(1), column(2), column(3)])
+    }
+
     /// Frame `focus`, or the whole of `bounds` without one. The clip planes
     /// take in all of `bounds` either way.
     pub fn frame(

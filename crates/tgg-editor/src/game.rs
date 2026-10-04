@@ -12,7 +12,7 @@ use dat_parser::hsd::scene::HsdScene;
 use gc_iso::Disc;
 use melee_dat::catalog::ReferenceAsset;
 use melee_dat::vanilla::{is_vanilla, vanilla_files};
-use melee_dat::{MeleeReferenceCatalog, MeleeReferenceStore, MeleeSlot};
+use melee_dat::{Character, MeleeReferenceCatalog, MeleeReferenceStore, MeleeSlot, SharedModel};
 use std::cell::RefCell;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -279,6 +279,34 @@ impl References {
     pub fn store_for(&self, scene: &HsdScene) -> Option<Rc<MeleeReferenceStore>> {
         MeleeReferenceStore::for_costume(self.catalog, scene, |asset| self.original(asset))
             .map(Rc::new)
+    }
+
+    /// The models `character`'s costumes share, each with its file as the
+    /// game holds it, to draw on a costume as its moves spawn them. A file
+    /// the game can't supply leaves its models out.
+    pub fn shared_models(&self, character: Character) -> Vec<(SharedModel, Rc<Vec<u8>>)> {
+        let mut files: Vec<(MeleeSlot, Rc<Vec<u8>>)> = Vec::new();
+        SharedModel::of(character)
+            .filter_map(|model| {
+                let slot = model.slot();
+                let bytes = match files.iter().find(|(file, _)| *file == slot) {
+                    Some((_, bytes)) => bytes.clone(),
+                    None => {
+                        let bytes = Rc::new(
+                            self.game
+                                .read_slot(slot)
+                                .inspect_err(|error| {
+                                    crate::log(&format!("shared file unavailable: {error}"))
+                                })
+                                .ok()?,
+                        );
+                        files.push((slot, bytes.clone()));
+                        bytes
+                    }
+                };
+                Some((model, bytes))
+            })
+            .collect()
     }
 
     /// The original of `asset`: the game's file, or the library's copy of it

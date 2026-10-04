@@ -31,7 +31,7 @@ pub mod vanilla;
 pub use catalog::MeleeReferenceCatalog;
 pub use error::{MeleeError, Result};
 pub use fighter::playback::{FighterAttach, MeleeFighterPlayback};
-pub use fighter::shared::SharedModel;
+pub use fighter::shared::{Firing, SharedModel, Shot, SpawnedModel};
 pub use fighter::{CostumeIndex, FighterKind};
 pub use file_names::{
     Character, CostumeColor, Effects, MeleeSlot, NotASlot, Stage, parse_filename,
