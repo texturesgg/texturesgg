@@ -125,7 +125,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decls::tests::{BEFORE, EXPORT, GAME_ABI, IMPORT, REPLACE, library, record};
+    use crate::decls::tests::{BEFORE, EXPORT, GAME_ABI, IMPORT, REPLACE, SYMBOL, library, record};
     use crate::manifest::Netplay;
 
     fn manifest() -> Manifest {
@@ -150,13 +150,17 @@ mod tests {
         let lib = library(&[
             record(GAME_ABI, "e954031487f52421"),
             record(REPLACE, "ftCo_Landing_IASA"),
-            record(BEFORE, "ftCo_Jump_Anim"),
+            record(BEFORE, "ftCo_Jump.c:ftCo_Jump_Anim"),
             record(EXPORT, "register_clone"),
             record(IMPORT, "ref.core/clone_count"),
+            record(SYMBOL, "ftCo_Damage.c:ftCo_803C1A20"),
         ]);
         let package = Package::pack(lib, manifest()).expect("pack");
         assert_eq!(package.manifest.hooks.replaces, ["ftCo_Landing_IASA"]);
-        assert_eq!(package.manifest.hooks.before, ["ftCo_Jump_Anim"]);
+        assert_eq!(
+            package.manifest.hooks.before,
+            ["ftCo_Jump.c:ftCo_Jump_Anim"]
+        );
         assert_eq!(
             package.manifest.game_abi.as_deref(),
             Some("e954031487f52421")
