@@ -47,6 +47,18 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Tag the mod's version and push it to its repository on textures.gg,
+    /// which builds the tag: DIR is the mod's git checkout.
+    Publish {
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+        /// The mod's repository, from its page on textures.gg.
+        #[arg(long, env = "TGG_REMOTE")]
+        remote: String,
+        /// A push token from the mod's page.
+        #[arg(long, env = "TGG_PUSH_TOKEN", hide_env_values = true)]
+        token: String,
+    },
     /// Read the functions a port build lets mods name, for a registry to check
     /// hooks against.
     Layout {
@@ -144,6 +156,7 @@ fn main() -> Result<()> {
             build(&dir, &sdk, layout.as_ref(), &cc, output, json)
         }
         Command::Layout { executable, output } => write_layout(&executable, &output),
+        Command::Publish { dir, remote, token } => publish(&dir, &remote, &token),
         Command::Pack { dir, output, json } => pack(&dir, output, json),
         Command::Inspect { file } => inspect(&file),
         Command::Catalog { output, packages } => write_catalog(&output, &packages),
@@ -296,6 +309,80 @@ fn build(
         None => None,
     };
     write_package(package, canonical, output, json)
+}
+
+/// Run git in `dir`, returning its trimmed output, or failing with its error.
+fn git(dir: &Path, args: &[&str]) -> Result<String> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .output()
+        .context("running git")?;
+    ensure!(
+        output.status.success(),
+        "git {}: {}",
+        args.join(" "),
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+/// Tag `v<version>` at HEAD (or reuse that tag if it is already there) and
+/// push HEAD and the tag. The registry builds every tag pushed to it.
+fn publish(dir: &Path, remote: &str, token: &str) -> Result<()> {
+    let manifest_path = dir.join("manifest.json");
+    let manifest = Manifest::parse(&read(&manifest_path)?)
+        .with_context(|| manifest_path.display().to_string())?;
+    sdk::mod_sources(dir)?;
+    ensure!(
+        git(dir, &["status", "--porcelain"])?.is_empty(),
+        "commit your changes first; the registry builds what is committed"
+    );
+    let head = git(dir, &["rev-parse", "HEAD"])?;
+    let tag = format!("v{}", manifest.version);
+    match git(
+        dir,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("refs/tags/{tag}^{{commit}}"),
+        ],
+    ) {
+        Ok(commit) if commit == head => {}
+        Ok(_) => bail!(
+            "{tag} already tags another commit; bump the version in manifest.json to release again"
+        ),
+        Err(_) => {
+            git(dir, &["tag", "-a", &tag, "-m", &tag])?;
+            println!("Tagged {tag}");
+        }
+    }
+    // The token goes through git's environment, not its command line.
+    let status = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args([
+            "push",
+            remote,
+            "HEAD:refs/heads/main",
+            &format!("refs/tags/{tag}"),
+        ])
+        .env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "http.extraHeader")
+        .env(
+            "GIT_CONFIG_VALUE_0",
+            format!("Authorization: Bearer {token}"),
+        )
+        .status()
+        .context("running git")?;
+    ensure!(status.success(), "git push failed");
+    println!(
+        "Pushed {} {}. It builds in a few seconds; its page on textures.gg shows the result.",
+        manifest.id, manifest.version
+    );
+    Ok(())
 }
 
 fn read_layout(path: &Path) -> Result<Layout> {
