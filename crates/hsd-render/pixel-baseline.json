@@ -749,6 +749,28 @@
       "views": {
         "front": "3b0c7843d61941d242a4629328302f301849f0310499870ce1ae9c0ba35a0892"
       }
+    },
+    {
+      "action": "SpecialLwLoop",
+      "frame": 4,
+      "input_sha256": "f1ebe2af74d34be113614da3204730ea6d09b078ebf8a82d2a9036d58d8e4f8b",
+      "name": "move-fox-shine",
+      "note": "PlFxNr.dat in its down special: the shine held to the hip by position, billboarded, drawn over Fox (ZMODE_ALWAYS)",
+      "views": {
+        "front": "02ed1a9093c0360593b4c010986350050f179126205582f57b3a6b1c0a1644c8",
+        "positive-x": "ba5b0eae8d19a88b4a340b2d5616824a21ff53764dec9f283e4d210fd986fa14"
+      }
+    },
+    {
+      "action": "SpecialNLoop",
+      "frame": 8,
+      "input_sha256": "f1ebe2af74d34be113614da3204730ea6d09b078ebf8a82d2a9036d58d8e4f8b",
+      "name": "move-fox-blaster",
+      "note": "PlFxNr.dat in its neutral special: the blaster held by its grip joint, a laser fired at frame 5 three frames out",
+      "views": {
+        "front": "41c030832108ff34ebd9eb3698f0785b8479dde00ba71e6e621dc88ad4f3c8ac",
+        "positive-x": "1092054179f4807f34aeb4c8816db2e408f73ff0261d25cc6a90a663b3eafd4a"
+      }
     }
   ],
   "pixel_hash": "sha256 of width and height (u32 little-endian) then RGBA8 rows",

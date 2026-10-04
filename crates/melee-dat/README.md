@@ -32,7 +32,10 @@ for the fighter tables, `StagePointKind` for a stage's general points, and
 finds the slot a descriptively named file was made for;
 `MeleeSlot::from_file_name` takes only the slot's own name. `SharedModel` is a
 model every costume of a fighter shares (Fox's laser, his shine): where it
-lives in its data or effects file, and whether it still draws as shipped.
+lives in its data or effects file, whether it still draws as shipped, and how
+the game shows it: spawned on the fighter as a move plays (`SpawnedModel`, held
+to a fighter part as the game's constraints hold it) or fired from it at the
+frames the move's script says (`Firing`, `Shot`).
 
 ## Layout
 
@@ -44,7 +47,8 @@ lives in its data or effects file, and whether it still draws as shipped.
 | `fighter::parts`       | Which model parts the game shows (faces, hands, items, detail levels).                                  |
 | `fighter::moves`       | What each animation is called as a move ("Jab 1", "Up smash").                                          |
 | `fighter::places`      | Where a stock costume draws each texture ("Head", "Eyes").                                              |
-| `fighter::shared`      | `SharedModel`: what every costume shares (a laser, a shine), named, found and fingerprinted.            |
+| `fighter::shared`      | `SharedModel`: what costumes share (a laser, a shine), named, fingerprinted, spawned and fired.         |
+| `fighter::script`      | Move scripts read for the frames they act on (when a laser fires).                                      |
 | `stage::points`        | A stage's general points: camera range, blast zone, spawn points.                                       |
 | `stage::playback`      | `MeleeStagePlayback`: the joint animations a stage starts when it loads.                                |
 | `stage::texture_names` | HAL's own names for a stage's textures.                                                                 |

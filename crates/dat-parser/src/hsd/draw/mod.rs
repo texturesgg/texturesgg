@@ -3,7 +3,11 @@
 //! This module consumes a settled [`HsdScene`], an
 //! optional root-local pose, and the source-backed envelope evaluator. It emits
 //! evaluator-owned world matrices and position/normal streams in source occurrence order;
-//! it does not select cameras, materials, render passes, or backend resources.
+//! it does not select cameras, materials, render passes, or backend resources. A
+//! caller that gives it the camera's view ([`HsdDrawWorkEvaluator::set_view`]) gets
+//! billboarded joints turned to face it, as the game draws them.
+
+mod billboard;
 
 use super::{
     envelope::{
@@ -71,6 +75,48 @@ pub struct HsdRootPose<'a> {
     /// Runtime JOBJ_HIDDEN per joint in the same order; `None` uses serialized flags.
     /// An INSTANCE JObj's state must match preparation, which fixes its expansion.
     pub hidden_joints: Option<&'a [bool]>,
+    /// Joints held to another model's joint, as HSD's RObj constraints hold
+    /// an effect to a fighter's hip or an item to its hand.
+    pub constraints: &'a [HsdJointConstraint],
+}
+
+/// A joint held to a world matrix, another model's joint, as an HSD RObj
+/// constraint holds it (`HSD_RObjUpdateAll`, `robj.c`): by position, its
+/// world translation is the matrix's (type 1); by orientation, its world
+/// rotation is the matrix's with the joint's own scale kept
+/// (`resolveCnsOrientation`, type 4). Its children follow it.
+#[derive(Clone, Copy, Debug)]
+pub struct HsdJointConstraint {
+    pub joint: HsdJointIndex,
+    pub target: Mat4,
+    pub position: bool,
+    pub orientation: bool,
+}
+
+impl HsdJointConstraint {
+    /// `world`, the joint's unconstrained world matrix, held to the target.
+    fn apply(&self, world: Mat4) -> Mat4 {
+        let mut held = world;
+        if self.orientation {
+            let length = |column: &[f32; 4]| column[..3].iter().map(|v| v * v).sum::<f32>().sqrt();
+            for (held, target) in held.0.iter_mut().zip(&self.target.0).take(3) {
+                let own = length(held);
+                let target_length = length(target);
+                let scale = if target_length > 1e-10 {
+                    own / target_length
+                } else {
+                    own
+                };
+                for (value, target) in held[..3].iter_mut().zip(target) {
+                    *value = target * scale;
+                }
+            }
+        }
+        if self.position {
+            held.0[3][..3].copy_from_slice(&self.target.0[3][..3]);
+        }
+        held
+    }
 }
 
 /// Stable identity and vertex range for one evaluated source PObj.
@@ -198,6 +244,9 @@ pub struct HsdDrawWorkEvaluator {
     scratch: Vec<DrawRootScratch>,
     /// Indices into this call's pose slice, never borrowed transforms from an old frame.
     pose_by_root: Vec<Option<usize>>,
+    /// The camera's view and its inverse, which billboarded joints face;
+    /// `None` leaves them as posed.
+    view: Option<(Mat4, Mat4)>,
 }
 
 impl HsdDrawWorkEvaluator {
@@ -418,6 +467,7 @@ impl HsdDrawWorkEvaluator {
             output,
             scratch,
             pose_by_root,
+            view: None,
         })
     }
 
@@ -505,6 +555,20 @@ impl HsdDrawWorkEvaluator {
             })
     }
 
+    /// Face billboarded joints toward a camera with this `view` matrix in
+    /// later evaluations; `None` leaves them as posed. A view that can't be
+    /// inverted is ignored, as `None`.
+    pub fn set_view(&mut self, view: Option<Mat4>) {
+        self.view = view.and_then(|view| Some((view, psmtx_inverse_affine(view)?)));
+    }
+
+    /// The draw work the last evaluation left in retained frame storage,
+    /// for reading after evaluating several models in turn; a failed
+    /// evaluation leaves its streams empty.
+    pub fn work(&self) -> &HsdEvaluatedDrawWork {
+        &self.output
+    }
+
     /// Evaluate bind pose for every root into retained frame storage.
     pub fn evaluate_bind_pose(
         &mut self,
@@ -544,6 +608,7 @@ impl HsdDrawWorkEvaluator {
             return Err(HsdDrawWorkError::SceneTopologyMismatch);
         }
 
+        let view = self.view;
         self.pose_by_root.fill(None);
         for (pose_index, pose) in poses.iter().enumerate() {
             let root_count = scene.roots.len();
@@ -594,6 +659,7 @@ impl HsdDrawWorkEvaluator {
         {
             let pose = pose_index.map(|index| poses[index].transforms);
             let hidden_joints = pose_index.and_then(|index| poses[index].hidden_joints);
+            let constraints = pose_index.map_or(&[][..], |index| poses[index].constraints);
             verify_root_topology(root, prepared)?;
             if let Some(transforms) = pose
                 && transforms.len() != root.joints.len()
@@ -647,6 +713,12 @@ impl HsdDrawWorkEvaluator {
                     Some(parent) => joint_world_matrices[parent.0].mul(&local),
                     None => local,
                 };
+                // HSD_JObjSetupMatrixSub resolves a joint's constraints after
+                // its own matrix, so its children follow the held one.
+                let world = constraints
+                    .iter()
+                    .filter(|constraint| constraint.joint.0 == joint_index)
+                    .fold(world, |world, constraint| constraint.apply(world));
                 if !matrix_is_finite(world) {
                     return Err(HsdDrawWorkError::NonFiniteWorldMatrix {
                         root_index,
@@ -717,6 +789,20 @@ impl HsdDrawWorkEvaluator {
                                 let world = joint_world_matrices[rigid_joint.0];
                                 let world =
                                     correction.map_or(world, |correction| correction.mul(&world));
+                                // A billboarded joint's own geometry faces the camera.
+                                let world = match view {
+                                    Some((view, view_inverse)) => billboard::billboarded(
+                                        world,
+                                        root.joints[rigid_joint.0].flags,
+                                        pose.map_or(root.joints[rigid_joint.0].local, |pose| {
+                                            pose[rigid_joint.0]
+                                        })
+                                        .rotation[2],
+                                        &view,
+                                        &view_inverse,
+                                    ),
+                                    None => world,
+                                };
                                 entry.insert(HsdEnvelopeMatrix::from_rigid(world).map_err(
                                     |source| HsdDrawWorkError::Evaluation {
                                         root_index,

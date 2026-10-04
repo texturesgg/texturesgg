@@ -571,6 +571,7 @@ impl<'a> HsdJointPoseEvaluator<'a> {
             root_index: self.root_index,
             transforms: &self.transforms,
             hidden_joints: Some(&self.hidden),
+            constraints: &[],
         })
     }
 

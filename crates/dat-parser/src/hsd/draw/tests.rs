@@ -281,6 +281,7 @@ fn animated_pose_updates_rigid_and_weighted_vertices_and_normals() {
                 root_index: 0,
                 transforms: &pose,
                 hidden_joints: None,
+                constraints: &[],
             }],
         )
         .expect("evaluate animated pose");
@@ -292,6 +293,64 @@ fn animated_pose_updates_rigid_and_weighted_vertices_and_normals() {
     assert_vec3(root.normals[1], [0.496_138_93, 0.868_243_16, 0.0]);
 }
 
+/// A joint held to another model's joint, as an effect is to a fighter's hip
+/// or an item to its hand: by position it moves there and keeps its own
+/// rotation; by orientation too it turns as the target does, keeping its
+/// own scale. Either way its children follow it.
+#[test]
+fn a_constrained_joint_follows_its_target_and_its_children_follow_it() {
+    let scene = scene();
+    let mut evaluator =
+        HsdDrawWorkEvaluator::prepare(&scene, HsdDrawEvaluationPolicy::MELEE_FIGHTER)
+            .expect("prepare");
+    let mut pose = scene.roots[0]
+        .joints
+        .iter()
+        .map(|joint| joint.local)
+        .collect::<Vec<_>>();
+    // The root is scaled 2; the target is scaled 3 and turned a quarter
+    // turn about Z, at (10, 0, 0).
+    pose[0].scale = [2.0; 3];
+    let target = Mat4::from_srt(
+        [3.0; 3],
+        [0.0, 0.0, std::f32::consts::FRAC_PI_2],
+        [10.0, 0.0, 0.0],
+    );
+    let mut evaluate = |orientation| {
+        let constraint = HsdJointConstraint {
+            joint: HsdJointIndex(0),
+            target,
+            position: true,
+            orientation,
+        };
+        let work = evaluator
+            .evaluate(
+                &scene,
+                &[HsdRootPose {
+                    root_index: 0,
+                    transforms: &pose,
+                    hidden_joints: None,
+                    constraints: &[constraint],
+                }],
+            )
+            .expect("evaluate held");
+        work.roots[0].joint_world_matrices.clone()
+    };
+
+    // By position: at the target, unturned, the child 2 × 2 above it.
+    let held = evaluate(false);
+    assert_vec3(column(held[0], 3), [10.0, 0.0, 0.0]);
+    assert_vec3(column(held[1], 3), [10.0, 4.0, 0.0]);
+    // By orientation too: turned a quarter turn, at the root's own scale of
+    // 2, not the target's 3, so the child is 4 along -X.
+    let held = evaluate(true);
+    assert_vec3(column(held[0], 0), [0.0, 2.0, 0.0]);
+    assert_vec3(column(held[1], 3), [6.0, 0.0, 0.0]);
+}
+
+fn column(matrix: Mat4, index: usize) -> [f32; 3] {
+    [matrix.0[index][0], matrix.0[index][1], matrix.0[index][2]]
+}
 #[test]
 fn repeated_frames_reuse_streams_and_recover_after_partial_vertex_failure() {
     let mut scene = scene();
@@ -342,6 +401,7 @@ fn repeated_frames_reuse_streams_and_recover_after_partial_vertex_failure() {
                 root_index: 0,
                 transforms: &pose,
                 hidden_joints: None,
+                constraints: &[],
             }],
         )
         .unwrap();
@@ -387,6 +447,7 @@ fn repeated_frames_clear_pose_assignments_after_early_and_late_root_errors() {
         root_index: 0,
         transforms: &pose,
         hidden_joints: None,
+        constraints: &[],
     };
     assert!(matches!(
         evaluator.evaluate(&scene, &[root_pose, root_pose]),
@@ -400,6 +461,7 @@ fn repeated_frames_clear_pose_assignments_after_early_and_late_root_errors() {
                 HsdRootPose {
                     root_index: 2,
                     hidden_joints: None,
+                    constraints: &[],
                     transforms: &pose
                 }
             ]
@@ -567,6 +629,7 @@ fn pose_shape_and_prepared_scene_mismatches_fail_closed() {
                 root_index: 0,
                 transforms: &[],
                 hidden_joints: None,
+                constraints: &[],
             }]
         ),
         Err(HsdDrawWorkError::PoseJointCountMismatch { .. })
@@ -807,6 +870,7 @@ fn animated_instances_recompute_correction_using_owned_target_matrices() {
                 root_index: 0,
                 transforms: &pose,
                 hidden_joints: None,
+                constraints: &[],
             }],
         )
         .unwrap();
@@ -1108,6 +1172,7 @@ fn instance_target_inverse_preserves_exact_singular_and_finite_error_boundaries(
             &[HsdRootPose {
                 root_index: 0,
                 hidden_joints: None,
+                constraints: &[],
                 transforms: &pose
             }]
         ),
@@ -1125,6 +1190,7 @@ fn instance_target_inverse_preserves_exact_singular_and_finite_error_boundaries(
                 &[HsdRootPose {
                     root_index: 0,
                     hidden_joints: None,
+                    constraints: &[],
                     transforms: &pose
                 }]
             )
@@ -1137,6 +1203,7 @@ fn instance_target_inverse_preserves_exact_singular_and_finite_error_boundaries(
             &[HsdRootPose {
                 root_index: 0,
                 hidden_joints: None,
+                constraints: &[],
                 transforms: &pose
             }]
         ),
@@ -1150,6 +1217,7 @@ fn instance_target_inverse_preserves_exact_singular_and_finite_error_boundaries(
             &[HsdRootPose {
                 root_index: 0,
                 hidden_joints: None,
+                constraints: &[],
                 transforms: &pose
             }]
         ),

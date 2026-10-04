@@ -11,6 +11,16 @@ game to `melee-dat`, with three exceptions that are Melee's and live here
 because the evaluation they feed does: the fighter envelope weight policy,
 FigaTree joint animation, and the stage `map_head` descriptor.
 
+A scene is built from the archive's model roots, or from roots a caller found
+by structures the root table doesn't list
+(`HsdScene::from_model_roots_with_limits`, for a fighter's articles or an
+effect table's models). Evaluation follows HSD's runtime as far as the draw
+work needs: a pose can hold joints to another
+model's joint as RObj constraints do (`HsdJointConstraint`, by position and
+orientation), and an evaluator given the camera's view
+(`HsdDrawWorkEvaluator::set_view`) turns billboarded joints to face it, as
+`HSD_JObjMakePositionMtx` does.
+
 ## Layout
 
 - `hal-dat-raw` (re-exported as `dat_parser::raw`, with `DatFile` and its errors

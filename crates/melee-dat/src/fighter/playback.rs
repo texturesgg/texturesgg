@@ -7,6 +7,7 @@ use crate::error::{MeleeError, Result};
 use crate::fighter::animation::{
     AttachedFighterAnimation, FighterAnimationBindingError, FighterAnimationFiles,
     bind_nana_fighter_animation, bind_same_kind_fighter_animation, fighter_animation_actions,
+    fighter_part_slots,
 };
 use crate::fighter::moves::{MoveGroup, move_group, move_name};
 use crate::fighter::parts::{FighterModelParts, default_selections, wait1_script_selections};
@@ -17,6 +18,7 @@ use dat_parser::hsd::HsdScene;
 use dat_parser::hsd::draw::{HsdDrawEvaluationPolicy, HsdEvaluatedDrawWork};
 use dat_parser::hsd::scene::{DObjId, HsdJointIndex, HsdTransform, JObjId};
 use dat_parser::hsd::source::HsdSource;
+use dat_parser::math::Mat4;
 
 /// ftParts_80074194 caps the game's global display-object list at 124.
 const MAX_FIGHTER_DISPLAY_OBJECTS: usize = 124;
@@ -156,6 +158,9 @@ pub struct MeleeFighterPlayback {
     scale_receiver: HsdJointIndex,
     scale_transform: HsdTransform,
     root_transform: HsdTransform,
+    /// Each fighter part (`Fighter_Part`) the costume has, with its joint,
+    /// as `ftParts_GetBoneIndex` finds it.
+    part_joints: Vec<(u8, HsdJointIndex)>,
     /// The animation frame shown, and how many frames each tick advances.
     frame: f32,
     rate: f32,
@@ -194,6 +199,7 @@ impl MeleeFighterPlayback {
                     scale_receiver: parts.scale_receiver,
                     scale_transform: parts.scale_transform,
                     root_transform: parts.root_transform,
+                    part_joints: parts.part_joints,
                     frame: 0.0,
                     rate: 1.0,
                     tick: 0,
@@ -279,6 +285,16 @@ impl MeleeFighterPlayback {
 
         let aj = store.load(catalog.animations_asset(record))?;
         let common = store.load_dat(catalog.common_asset())?;
+        // ftParts_GetBoneIndex: each logical part to the joint in its slot.
+        let slots =
+            fighter_part_slots(&common, entry.kind, root).map_err(MeleeError::FighterParts)?;
+        let part_joints = slots
+            .slots
+            .iter()
+            .zip(&slots.logical)
+            .filter(|(_, part)| **part != 0xff)
+            .filter_map(|(slot, &part)| Some((part, joint_index(source, root_index, (*slot)?)?)))
+            .collect();
         // Nana's unresolved motions play Popo's record and AJ (ftData_80085FD4).
         let record_fighter = if record.kind == entry.kind {
             None
@@ -344,6 +360,7 @@ impl MeleeFighterPlayback {
                 translation: root.joints[0].local.translation,
             },
             scale_receiver,
+            part_joints,
             animation,
         }))
     }
@@ -368,6 +385,12 @@ impl MeleeFighterPlayback {
 
     pub fn loops(&self) -> u64 {
         self.loops
+    }
+
+    /// Face the model's billboarded joints toward a camera with this `view`
+    /// in later evaluations; `None` leaves them as posed.
+    pub fn set_view(&mut self, view: Option<Mat4>) {
+        self.source.evaluator.set_view(view);
     }
 
     pub fn scene(&self) -> &HsdScene {
@@ -471,6 +494,22 @@ impl MeleeFighterPlayback {
         Ok(())
     }
 
+    /// Where fighter part `part` (a `Fighter_Part`, such as `HipN`) is in
+    /// the scene: its root and joint, whose world matrix [`Self::evaluate`]'s
+    /// draw work holds. `None` when the costume has no joint for it.
+    pub fn part_joint(&self, part: u8) -> Option<(usize, HsdJointIndex)> {
+        self.part_joints
+            .iter()
+            .find(|(each, _)| *each == part)
+            .map(|&(_, joint)| (self.inputs.root_index, joint))
+    }
+
+    /// The fighter's model scale, as an attached effect takes it
+    /// (`efLib_Create_Attach_Scale` reads the fighter joint's Y scale).
+    pub fn scale(&self) -> f32 {
+        self.root_transform.scale[1]
+    }
+
     /// Evaluate the current pose; returns the scene with its draw work.
     pub fn evaluate(&mut self) -> Result<(&HsdScene, &HsdEvaluatedDrawWork)> {
         let pose = self.animation.pose().pose()?;
@@ -514,6 +553,7 @@ pub(crate) struct AttachParts {
     scale_transform: HsdTransform,
     root_transform: HsdTransform,
     scale_receiver: HsdJointIndex,
+    part_joints: Vec<(u8, HsdJointIndex)>,
     animation: AttachedFighterAnimation,
 }
 

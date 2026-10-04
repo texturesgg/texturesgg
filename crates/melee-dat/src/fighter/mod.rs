@@ -8,6 +8,7 @@ pub mod moves;
 pub mod parts;
 pub mod places;
 pub mod playback;
+pub mod script;
 pub mod shared;
 
 pub use kind::{CostumeIndex, FighterKind};

@@ -20,6 +20,7 @@ use dat_parser::hsd::animation::{HsdJointPoseEvaluator, HsdJointPoseLimits, atta
 use dat_parser::hsd::draw::{HsdDrawEvaluationPolicy, HsdEvaluatedDrawWork};
 use dat_parser::hsd::scene::HsdScene;
 use dat_parser::hsd::source::{HsdFocus, HsdSource};
+use dat_parser::math::Mat4;
 
 const ANIMATION: u32 = 0;
 /// The furthest a seek plays to: ten minutes of frames. Seeking replays from
@@ -79,6 +80,12 @@ impl MeleeStagePlayback {
         };
         playback.reset()?;
         Ok(playback)
+    }
+
+    /// Face the model's billboarded joints toward a camera with this `view`
+    /// in later evaluations; `None` leaves them as posed.
+    pub fn set_view(&mut self, view: Option<Mat4>) {
+        self.source.evaluator.set_view(view);
     }
 
     pub fn scene(&self) -> &HsdScene {

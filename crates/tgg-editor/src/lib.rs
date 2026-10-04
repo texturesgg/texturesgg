@@ -44,7 +44,10 @@ pub use game::{Found, Game, GameChoice, GameError, References};
 use gpui::{App, AppContext, Bounds, KeyBinding, WindowBounds, WindowOptions, actions, px, size};
 use library::Library;
 pub(crate) use log::log;
-use melee_dat::{FighterAttachOutcome, MeleeModelKind, MeleeReferenceCatalog, MeleeReferenceStore};
+use melee_dat::{
+    FighterAttachOutcome, MeleeModelKind, MeleeReferenceCatalog, MeleeReferenceStore, MeleeSlot,
+    SharedModel, parse_filename,
+};
 
 actions!(
     app,
@@ -82,6 +85,9 @@ pub struct Loaded {
     /// The reference files the costume needs, when it is a stock costume
     /// the catalog knows; its texture names come from them too.
     pub store: Option<Rc<MeleeReferenceStore>>,
+    /// The models its fighter's costumes share, with their files, to draw
+    /// on it as its moves spawn them; none but for a stock costume.
+    pub shared: Vec<(SharedModel, Rc<Vec<u8>>)>,
 }
 
 /// Parse a costume and attach its fighter's animations when `references`
@@ -114,10 +120,28 @@ pub fn load_model(
         None if model.kind() == MeleeModelKind::Stage => name.to_owned(),
         None => format!("{name} · bind pose"),
     };
+    // The shared models of whose costume it is: its root names say, else
+    // its file name.
+    let shared = references
+        .filter(|_| model.fighter().is_some())
+        .and_then(|references| {
+            let roots = model
+                .scene()
+                .roots
+                .iter()
+                .filter_map(|root| root.name.as_deref());
+            references
+                .catalog
+                .costume_slot(roots)
+                .or_else(|| parse_filename(name))
+                .and_then(MeleeSlot::character)
+                .map(|character| references.shared_models(character))
+        });
     Ok(Loaded {
         model,
         title,
         store,
+        shared: shared.unwrap_or_default(),
     })
 }
 

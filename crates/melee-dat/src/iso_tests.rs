@@ -249,3 +249,33 @@ fn every_shared_model_names_an_action_its_fighter_plays() {
         }
     }
 }
+
+/// Fox's neutral special fires from its loops alone, at the frame their
+/// scripts set the shot flag (`cmd_vars[2]`); its start and end never do.
+#[test]
+fn foxs_blaster_fires_from_its_loops_at_the_scripted_frame() {
+    let mut disc = disc();
+    let catalog = MeleeReferenceCatalog::checked_in();
+    let costume = disc.read("PlFxNr.dat").expect("Fox's costume");
+    let source =
+        HsdSource::from_dat(&costume, HsdDrawEvaluationPolicy::MELEE_FIGHTER).expect("source");
+    let store = references(&mut disc, catalog, &source.scene);
+    let FighterAttach::Attached(playback) = MeleeFighterPlayback::attach(source, catalog, &store)
+    else {
+        panic!("Fox attaches");
+    };
+    let fox = DatFile::parse(&disc.read("PlFx.dat").expect("Fox's data")).expect("parses");
+    let frames = |action: &str| {
+        let index = playback
+            .animations()
+            .iter()
+            .find(|each| each.action.as_deref() == Some(action))
+            .expect(action)
+            .index;
+        crate::fighter::script::cmd_var_frames(&fox, index, 2).expect("script")
+    };
+    assert_eq!(frames("SpecialNLoop"), [5.0]);
+    assert_eq!(frames("SpecialAirNLoop"), [5.0]);
+    assert_eq!(frames("SpecialNStart"), [] as [f32; 0]);
+    assert_eq!(frames("SpecialNEnd"), [] as [f32; 0]);
+}

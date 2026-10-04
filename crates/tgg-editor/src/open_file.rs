@@ -61,7 +61,9 @@ impl OpenFile {
             path,
             slot: None,
             store: loaded.store,
-            viewport: cx.new(|cx| Viewport::new(loaded.model, cx.focus_handle())),
+            viewport: cx.new(|cx| {
+                Viewport::new(loaded.model, cx.focus_handle()).with_shared(loaded.shared)
+            }),
         }
     }
 }
