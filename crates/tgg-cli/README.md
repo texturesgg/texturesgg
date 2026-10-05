@@ -74,6 +74,17 @@ layout. Commands that build a mod install the SDK they need.
 `port run` and `mod dev` start the game with `TGG_MELEE_ISO`, else the disc image set
 with `tgg config set iso` (kept in `~/.config/tgg/config.json`).
 
+## `tgg doctor`
+
+`tgg doctor` checks what building and running mods needs, and prints the command that
+fixes each problem: glibc 2.34 or later, an installed game and its SDK, a C compiler
+(`--cc` or `CC`) that is GCC 12 or later (clang lacks the `scalar_storage_order` the
+game's headers use), and a disc image. For a missing or old GCC it names the install
+command for the system (`apt`, `dnf`, `pacman`, `zypper`), a newer `gcc-<n>` already on
+`PATH`, or on NixOS `nix shell` with the GCC of the nixpkgs revision the game was built
+with. The system's GCC is enough: the x86-64 ABI fixes the layout, and `build`'s checks
+keep a mod loadable on the oldest glibc the game runs on.
+
 ## `tgg mod`
 
 ```text

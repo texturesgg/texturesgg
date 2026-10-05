@@ -4,6 +4,7 @@ mod account;
 mod build;
 mod config;
 mod dev;
+mod doctor;
 mod mods;
 mod paths;
 mod ports;
@@ -49,6 +50,12 @@ enum Command {
     /// Code mods for tgg-melee: build, publish, install.
     #[command(subcommand)]
     Mod(mods::ModCommand),
+    /// Check this machine can build and run mods, and say how to fix what's
+    /// missing.
+    Doctor {
+        #[command(flatten)]
+        cc: mods::Cc,
+    },
     /// Settings, such as your disc image.
     #[command(subcommand)]
     Config(config::ConfigCommand),
@@ -63,5 +70,6 @@ fn main() -> Result<()> {
         Command::Sdk(command) => sdks::run(command),
         Command::Mod(command) => mods::run(command, &cli.api),
         Command::Config(command) => config::run(command),
+        Command::Doctor { cc } => doctor::run(&cc.cc),
     }
 }
