@@ -1,7 +1,12 @@
 //! `tgg`: the textures.gg command line.
 
 mod account;
+mod config;
 mod mods;
+mod paths;
+mod ports;
+mod releases;
+mod sdks;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -31,9 +36,18 @@ enum Command {
     },
     /// Sign out of textures.gg.
     Logout,
+    /// Install, pick and run released builds of tgg-melee.
+    #[command(subcommand)]
+    Port(ports::PortCommand),
+    /// The SDK mods build against.
+    #[command(subcommand)]
+    Sdk(sdks::SdkCommand),
     /// Code mods for tgg-melee: build, publish, install.
     #[command(subcommand)]
     Mod(mods::ModCommand),
+    /// Settings, such as your disc image.
+    #[command(subcommand)]
+    Config(config::ConfigCommand),
 }
 
 fn main() -> Result<()> {
@@ -41,6 +55,9 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Login { no_browser } => account::login(&cli.api, !no_browser),
         Command::Logout => account::logout(&cli.api),
+        Command::Port(command) => ports::run(command),
+        Command::Sdk(command) => sdks::run(command),
         Command::Mod(command) => mods::run(command, &cli.api),
+        Command::Config(command) => config::run(command),
     }
 }
