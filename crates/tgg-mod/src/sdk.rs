@@ -243,8 +243,9 @@ fn c_identifier(text: &str) -> String {
     out
 }
 
-/// Every `.c` file under `dir/src`, relative to `dir` and sorted, so the
-/// compiler sees them in the same order everywhere.
+/// Every `.c` file under `dir/src`, but names starting with a dot, relative
+/// to `dir` and sorted, so the compiler sees them in the same order
+/// everywhere.
 pub fn mod_sources(dir: &Path) -> Result<Vec<PathBuf>, SdkError> {
     let mut sources = Vec::new();
     let mut pending = vec![PathBuf::from("src")];
@@ -258,6 +259,10 @@ pub fn mod_sources(dir: &Path) -> Result<Vec<PathBuf>, SdkError> {
         };
         for entry in entries {
             let entry = entry.map_err(|e| SdkError::Io(dir.join(&relative), e))?;
+            // Names starting with a dot are left out, as from a package.
+            if entry.file_name().to_string_lossy().starts_with('.') {
+                continue;
+            }
             let path = relative.join(entry.file_name());
             let kind = entry
                 .file_type()

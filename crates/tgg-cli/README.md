@@ -82,6 +82,7 @@ tgg mod new [DIR] [--id ID] [--name NAME] [--example NAME]
 tgg mod build [DIR] [--debug] [--sdk SDK] [--source-zip ZIP|-] [-o OUT.zip] [--json]
                                          compile DIR's src/**/*.c against the game's SDK, check it,
                                          and pack it with DIR's files/, assets/ and include/
+tgg mod dev [DIR] [--watch] [--gdb]     build it for debugging and run the game with it
 tgg mod register [DIR]                   create the mod on textures.gg from its manifest
 tgg mod publish [DIR]                    tag v<version> and push it to textures.gg, which builds it
 tgg mod pack DIR [-o OUT.zip] [--json]   DIR is a built mod's folder
@@ -136,6 +137,25 @@ Installed mods live in the folder the game loads: `TGG_MODS_DIR`, else
 folder is `.<id>`. `install` refuses packages built for another game layout than the game
 in use (or the executable `--port` or `TGG_PORT` names); a file two mods ship is a
 warning that names the mod whose copy the game uses (the one that loads later).
+
+## `tgg mod dev`
+
+```text
+tgg mod dev [DIR] [--watch] [--gdb] [--port VERSION] [--keep] [-- GAME ARGS]
+```
+
+`dev` builds the mod with `-O0 -g` into `DIR/build/dev/<id>/`, links the game's mods
+folder's `<id>` to it, and runs the game (the one in use, or `--port`'s version) with your
+disc image, its output passed through with this mod's refusals in red. An installed copy
+of the same mod is moved aside to `.~dev-<id>` for the session and put back after; so is
+the link, unless `--keep`. Before the game starts it warns about installed mods that
+replace the same function or that the mod needs and are missing. `--watch` rebuilds on
+each change to `manifest.json`, `src/`, `include/`, `files/` or `assets/` and restarts
+the game when it builds; Ctrl-C ends the session. `--gdb` runs the game under gdb, which
+needs its debug info (`tgg port install --debug`). The game's own switches pass through
+the environment: `TGG_SKIP_INTRO=1`, `TGG_INPUT_SCRIPT`, `TGG_SYNCTEST=1` (the rollback
+check), `TGG_UCF=0`, `TGG_UNLOCK_ALL=0`. A dev build never matches a registry build, so
+it never matches a netplay peer's.
 
 ## License
 

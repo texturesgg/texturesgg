@@ -62,6 +62,29 @@ pub enum ModCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Build the mod for debugging, put it in the game's mods folder, and run
+    /// the game with your disc image.
+    Dev {
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+        /// Rebuild on each change, and restart the game when it builds.
+        #[arg(long)]
+        watch: bool,
+        /// Run the game under gdb (needs tgg port install --debug).
+        #[arg(long)]
+        gdb: bool,
+        /// The installed tgg-melee version to run [default: the one in use]
+        #[arg(long)]
+        port: Option<String>,
+        /// Leave the dev build linked in the mods folder afterwards.
+        #[arg(long)]
+        keep: bool,
+        #[command(flatten)]
+        cc: Cc,
+        /// Arguments for the game.
+        #[arg(last = true)]
+        args: Vec<String>,
+    },
     /// Create the mod on textures.gg from DIR's manifest.json, under your
     /// account. tgg mod publish does this the first time too.
     Register {
@@ -195,6 +218,23 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
                 json,
             )
         }
+        ModCommand::Dev {
+            dir,
+            watch,
+            gdb,
+            port,
+            keep,
+            cc,
+            args,
+        } => crate::dev::dev(crate::dev::Dev {
+            dir: &dir,
+            watch,
+            gdb,
+            version: port.as_deref(),
+            keep,
+            cc: &cc.cc,
+            args: &args,
+        }),
         ModCommand::Register { dir } => {
             crate::publish::register(Site::new(api)?.signed_in()?, &dir)
         }

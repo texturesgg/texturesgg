@@ -3,6 +3,7 @@
 mod account;
 mod build;
 mod config;
+mod dev;
 mod mods;
 mod paths;
 mod ports;
