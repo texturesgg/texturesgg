@@ -108,17 +108,22 @@ pub enum ModCommand {
 #[derive(Args)]
 pub struct PortArg {
     /// The game's executable, to refuse packages built for another game
-    /// layout.
+    /// layout [default: the tgg-melee in use, if one is installed]
     #[arg(long, env = "TGG_PORT")]
     port: Option<PathBuf>,
 }
 
 impl PortArg {
     fn open(&self) -> Result<Option<Port>> {
-        self.port
-            .as_deref()
-            .map(|path| Port::open(path).with_context(|| path.display().to_string()))
-            .transpose()
+        match &self.port {
+            Some(path) => Ok(Some(
+                Port::open(path).with_context(|| path.display().to_string())?,
+            )),
+            None if crate::ports::current_version()?.is_some() => {
+                Ok(Some(crate::ports::resolve(None)?.port()?))
+            }
+            None => Ok(None),
+        }
     }
 }
 

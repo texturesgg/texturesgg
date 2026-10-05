@@ -1,7 +1,8 @@
 # tgg-cli
 
-`tgg`, the textures.gg command line. Its `mod` commands build, publish and install
-code mods for tgg-melee, on the [`tgg-mod`](../tgg-mod) library.
+`tgg`, the textures.gg command line. It installs tgg-melee, the Melee port with a mod
+loader built in, and the SDK mods build against, and its `mod` commands build, publish
+and install code mods for it, on the [`tgg-mod`](../tgg-mod) library.
 
 ## Installing
 
@@ -39,6 +40,39 @@ and forgets the token.
 
 `--api URL` (or `TGG_API`) points every command at another textures.gg API, such as a
 local one; the default is `https://api.textures.gg`.
+
+## `tgg port` and `tgg sdk`
+
+```text
+tgg port install [VERSION|latest] [--debug]   download a release of tgg-melee and install it
+tgg port list                                 the installed versions, and the one in use
+tgg port use VERSION                          use this version by default
+tgg port remove VERSION
+tgg port path [VERSION]                       the installed game's folder
+tgg port run [--version VERSION] [-- ARGS]    run the game with your disc image
+tgg sdk install [VERSION | --port EXE]        the SDK mods build against
+tgg sdk list
+tgg sdk path [VERSION | --port EXE]           its folder, for cmake -DTGG_SDK=$(tgg sdk path)
+tgg config set|get|unset iso [PATH]           your Melee disc image (NTSC 1.02)
+```
+
+Releases of tgg-melee are for Linux x86-64 and run on glibc 2.34 or later. `port
+install` downloads a release's `release.json` from `https://dl.textures.gg/tgg-melee`
+(`TGG_RELEASES` names another mirror: a URL, or a folder laid out the same way), checks
+the game's archive against the SHA-256 it gives, and unpacks it to
+`~/.local/share/tgg/ports/<version>/`; the first version installed becomes the one in
+use (`ports/current`). `--debug` adds the debug info gdb reads. Downloads are cached in
+`~/.cache/tgg/downloads/`. Every installed version shares the game's own data: its mods
+folder, pack and saves.
+
+An SDK is the headers, symbol list and examples mods build against. It installs to
+`~/.local/share/tgg/sdks/<game layout>/`, so releases that share a game layout share one
+(a patch release keeps its layout, and a mod built for 0.3.0 loads on 0.3.2). With no
+version, `sdk` commands use the game in use; `--port` reads an executable's version and
+layout. Commands that build a mod install the SDK they need.
+
+`port run` and `mod dev` start the game with `TGG_MELEE_ISO`, else the disc image set
+with `tgg config set iso` (kept in `~/.config/tgg/config.json`).
 
 ## `tgg mod`
 
@@ -90,9 +124,9 @@ the tag; textures.gg builds every tag pushed to it.
 
 Installed mods live in the folder the game loads: `TGG_MODS_DIR`, else
 `$XDG_DATA_HOME/tgg-melee/mods`, else `~/.local/share/tgg-melee/mods`. A turned-off mod's
-folder is `.<id>`. `install --port EXE` (or `TGG_PORT`) refuses packages built for another
-game layout than that executable's; a file two mods ship is a warning that names the mod
-whose copy the game uses (the one that loads later).
+folder is `.<id>`. `install` refuses packages built for another game layout than the game
+in use (or the executable `--port` or `TGG_PORT` names); a file two mods ship is a
+warning that names the mod whose copy the game uses (the one that loads later).
 
 ## License
 
