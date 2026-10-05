@@ -1,23 +1,21 @@
 //! What a mod says about itself, in its package's `manifest.json`.
 //!
-//! An author writes the identity fields. Packing adds `game_abi`, `target`, `state`, `hooks`,
-//! `exports` and `imports`, read from the library, so they never come from
-//! the author.
+//! An author writes the identity fields and `depends`. Packing adds
+//! `game_abi`, `target`, `api_version`, `state`, `hooks`, `events`, `exports`
+//! and `imports`, read from the library, and `files` and `assets`, read from
+//! the mod's folders, so they never come from the author.
+//!
+//! A mod's netplay class is never written down: the game works out whether a
+//! mod counts, and refuses a manifest with a `netplay` field. [`crate::netplay`]
+//! gives the same answer from a manifest.
 
 use crate::decls::Hooks;
+use crate::depends::Range;
 use crate::files::ModFile;
 use semver::Version;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt;
-
-/// Whether a mod changes the match. Gameplay mods enter the identity peers
-/// compare before playing online; cosmetic mods never split players.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Netplay {
-    Cosmetic,
-    Gameplay,
-}
 
 /// A mod's id: 1 to 64 lowercase letters, digits, `.`, `-` or `_`, not
 /// starting with `.`. It names the mod's folder once installed, so a value of
@@ -78,18 +76,19 @@ impl PartialEq<str> for ModId {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Manifest {
-    /// The runtime API the mod is written against: `tgg/1`.
+    /// The manifest API: `tgg-melee/0`.
     pub api: String,
     pub id: ModId,
     pub name: String,
     pub version: Version,
-    /// The library in the package; absent for a mod that only ships files.
-    /// A package with a library always names it.
+    /// The library in the package; absent for a mod without one. A package
+    /// with a library always names it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry: Option<String>,
-    /// A missing value counts as gameplay, as the runtime reads it.
-    #[serde(default = "default_netplay")]
-    pub netplay: Netplay,
+    /// Every mod this one needs, each with a version range; the game loads
+    /// it after them.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub depends: BTreeMap<ModId, Range>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -100,6 +99,10 @@ pub struct Manifest {
     /// The target triple the library was built for, from the library.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
+    /// The mod API `major.minor` the library was built against, from the
+    /// library.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_version: Option<String>,
     /// Bytes of the mod's own state that roll back with the game, from the
     /// library; absent when it keeps none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -107,6 +110,9 @@ pub struct Manifest {
     /// The functions the library hooks, from the library.
     #[serde(default, skip_serializing_if = "Hooks::is_empty")]
     pub hooks: Hooks,
+    /// The events the library subscribes to, from the library.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub events: Vec<String>,
     /// The functions the library offers other mods, from the library.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exports: Vec<String>,
@@ -114,14 +120,14 @@ pub struct Manifest {
     /// from the library.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imports: Vec<String>,
-    /// The game files the package ships under `files/`, in byte order of
-    /// path, from packing.
+    /// The disc files the package replaces or adds under `files/`, in byte
+    /// order of path, from packing.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<ModFile>,
-}
-
-fn default_netplay() -> Netplay {
-    Netplay::Gameplay
+    /// The new files the package ships under `assets/`, which the game
+    /// serves at `/mods/<id>/<path>`, in byte order of path, from packing.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub assets: Vec<ModFile>,
 }
 
 /// The library's name when the manifest names none.
@@ -143,6 +149,12 @@ pub enum ManifestError {
     Name,
     #[error("the entry {0:?} must be a file name, not a path")]
     Entry(String),
+    #[error(
+        "manifest.json has a netplay field; remove it, the game works out what counts for netplay"
+    )]
+    Netplay,
+    #[error("the mod depends on itself")]
+    DependsOnItself,
 }
 
 impl Manifest {
@@ -150,7 +162,13 @@ impl Manifest {
     /// [`Manifest::validate`].
     pub fn parse(bytes: &[u8]) -> Result<Self, ManifestError> {
         let json = std::str::from_utf8(bytes).map_err(|_| ManifestError::Utf8)?;
-        let manifest: Self = serde_json::from_str(json)?;
+        let value: serde_json::Value = serde_json::from_str(json)?;
+        // The game refuses the field outright, so a manifest with it never
+        // gets as far as a package.
+        if value.get("netplay").is_some() {
+            return Err(ManifestError::Netplay);
+        }
+        let manifest: Self = serde_json::from_value(value)?;
         manifest.validate()?;
         Ok(manifest)
     }
@@ -166,8 +184,8 @@ impl Manifest {
         json
     }
 
-    /// Check the fields the runtime and installers rely on that the types
-    /// alone don't.
+    /// Check the fields the game and installers rely on that the types alone
+    /// don't.
     pub fn validate(&self) -> Result<(), ManifestError> {
         if self.api != crate::API {
             return Err(ManifestError::Api(self.api.clone()));
@@ -180,6 +198,45 @@ impl Manifest {
         {
             return Err(ManifestError::Entry(entry.clone()));
         }
+        if self.depends.contains_key(&self.id) {
+            return Err(ManifestError::DependsOnItself);
+        }
         Ok(())
+    }
+
+    /// A manifest with only the fields an author writes.
+    pub fn new(id: ModId, name: String, version: Version) -> Self {
+        Self {
+            api: crate::API.to_owned(),
+            id,
+            name,
+            version,
+            entry: None,
+            depends: BTreeMap::new(),
+            description: None,
+            license: None,
+            game_abi: None,
+            target: None,
+            api_version: None,
+            state: None,
+            hooks: Hooks::default(),
+            events: Vec::new(),
+            exports: Vec::new(),
+            imports: Vec::new(),
+            files: Vec::new(),
+            assets: Vec::new(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_manifest_with_a_netplay_field_is_refused() {
+        let json = br#"{"api": "tgg-melee/0", "id": "me.x", "name": "X", "version": "1.0.0",
+            "netplay": "cosmetic"}"#;
+        assert!(matches!(Manifest::parse(json), Err(ManifestError::Netplay)));
     }
 }

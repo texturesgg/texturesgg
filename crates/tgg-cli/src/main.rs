@@ -31,7 +31,7 @@ enum Command {
     },
     /// Sign out of textures.gg.
     Logout,
-    /// Code mods for tgg-mod-runtime: build, publish, install.
+    /// Code mods for tgg-melee: build, publish, install.
     #[command(subcommand)]
     Mod(mods::ModCommand),
 }

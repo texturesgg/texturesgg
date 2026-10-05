@@ -19,7 +19,7 @@ crates/
   melee-dat/     Melee on top of dat-parser: fighters, stages, their animation
   dat-edit/      In-place texture and color edits to a DAT
   hsd-render/    wgpu renderer for HSD models
-  tgg-mod/       Code-mod packages for tgg-mod-runtime: manifests, catalogs, installs
+  tgg-mod/       Code-mod packages for tgg-melee: manifests, catalogs, installs
 
   tgg-cli/       The `tgg` command line: build, publish and install code mods
   tgg-ui/        The desktop app's theme and components, on gpui-ce

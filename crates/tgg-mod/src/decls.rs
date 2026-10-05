@@ -1,12 +1,15 @@
-//! The hooks, exports, imports and game layout a mod's library declares.
+//! The hooks, events, exports, imports and game layout a mod's library
+//! declares.
 //!
-//! Every `TGG_BEFORE`, `TGG_AFTER`, `TGG_REPLACE`, `TGG_EXPORT`,
-//! `TGG_IMPORT` and game symbol reference in a mod's source becomes a
-//! fixed-size record in its library's `tggdecls` section, as does the game
-//! layout id it was compiled against. A hooked function is a game symbol: a
-//! plain name, or `file.c:name` for a static. The runtime reads the same
-//! records to install the hooks, so what this module reports is what the mod
-//! does. The record layout is tgg-mod-runtime's `tgg_decl` (`tgg/tgg.h`).
+//! Every `TGG_BEFORE`, `TGG_AFTER`, `TGG_REPLACE`, `TGG_ON`, `TGG_INIT`,
+//! `TGG_EXPORT`, `TGG_IMPORT`, `TGG_API`, `TGG_STATE` and game symbol
+//! reference in a mod's source becomes a fixed-size record in its library's
+//! `tggdecls` section, as do the game layout id, target and mod API version it
+//! was compiled against. A hooked function is a game symbol: a plain name, or
+//! `file.c:name` for a static. The game reads the same records to install the
+//! hooks, so what this module reports is what the mod does. The record layout
+//! is tgg-melee's `tgg_decl` (`tgg/mod.h`, and `package-format.md` in its
+//! docs).
 
 use object::{Object, ObjectSection};
 use serde::{Deserialize, Serialize};
@@ -26,14 +29,19 @@ const KIND_REPLACE: u32 = 3;
 const KIND_GAME_ABI: u32 = 4;
 const KIND_EXPORT: u32 = 5;
 const KIND_IMPORT: u32 = 6;
-/// A game symbol whose address the runtime fills into the mod. It changes
-/// nothing about the game, so it never reaches the manifest or a conflict.
+/// A game symbol whose address the game fills into the mod.
 const KIND_SYMBOL: u32 = 7;
 const KIND_TARGET: u32 = 8;
 /// A mod's own state that rolls back with the game: the name is the first
 /// 112 bytes of the string field, and the size a u64 after it.
 const KIND_STATE: u32 = 9;
 const STATE_NAME_SIZE: usize = 112;
+/// An event subscription: the event's name, from `tgg/events.h`.
+const KIND_EVENT: u32 = 10;
+/// The mod's `TGG_INIT` function; a library has at most one.
+const KIND_INIT: u32 = 13;
+/// The mod API `major.minor` the library was built against.
+const KIND_API_VERSION: u32 = 14;
 
 /// The game functions a mod hooks, each list sorted and without repeats.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,19 +71,30 @@ pub struct Declarations {
     /// The target triple it was built for, such as `x86_64-linux-gnu`;
     /// `None` when it carries none.
     pub target: Option<String>,
+    /// The mod API `major.minor` it was built against; `None` when it carries
+    /// none.
+    pub api_version: Option<String>,
     /// Bytes of the mod's own state that roll back with the game.
     pub state: u64,
+    /// Whether it has a `TGG_INIT` function.
+    pub init: bool,
     pub hooks: Hooks,
+    /// The events it subscribes to, sorted.
+    pub events: Vec<String>,
+    /// The game symbols whose addresses it takes, sorted. They change nothing
+    /// about the game, so they never reach the manifest or a conflict; a
+    /// build checks them against the game's symbols.
+    pub symbols: Vec<String>,
     /// Names of the functions it offers other mods, sorted.
     pub exports: Vec<String>,
     /// What it takes from other mods, as `provider-id/export-name`, sorted.
-    /// The runtime loads it only after every provider.
+    /// The game loads it only after every provider.
     pub imports: Vec<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum DeclError {
-    #[error("not a library this runtime loads: {0}")]
+    #[error("not a library the game loads: {0}")]
     Object(#[from] object::Error),
     #[error("the library is not 64-bit little-endian x86-64 ELF")]
     Architecture,
@@ -83,10 +102,16 @@ pub enum DeclError {
     Truncated,
     #[error("record {0} of the library's {SECTION} section is malformed")]
     Malformed(usize),
+    #[error("record {0} of the library has kind {1}, which the game doesn't have")]
+    UnknownKind(usize, u32),
     #[error("the library declares two game layouts ({0} and {1})")]
     TwoLayouts(String, String),
     #[error("the library declares two targets ({0} and {1})")]
     TwoTargets(String, String),
+    #[error("the library declares two mod API versions ({0} and {1})")]
+    TwoApiVersions(String, String),
+    #[error("the library declares TGG_INIT twice")]
+    TwoInits,
 }
 
 /// Read the declarations of `library`, an ELF shared object.
@@ -146,7 +171,10 @@ pub fn read(library: &[u8]) -> Result<Declarations, DeclError> {
                 declarations.exports.push(symbol)
             }
             KIND_IMPORT if import_is_valid(&symbol) => declarations.imports.push(symbol),
-            KIND_SYMBOL if !symbol.is_empty() => {}
+            KIND_SYMBOL if !symbol.is_empty() => declarations.symbols.push(symbol),
+            KIND_EVENT if !symbol.is_empty() => declarations.events.push(symbol),
+            KIND_INIT if declarations.init => return Err(DeclError::TwoInits),
+            KIND_INIT => declarations.init = true,
             KIND_TARGET => match &declarations.target {
                 Some(known) if *known != symbol => {
                     return Err(DeclError::TwoTargets(known.clone(), symbol));
@@ -159,13 +187,24 @@ pub fn read(library: &[u8]) -> Result<Declarations, DeclError> {
                 }
                 _ => declarations.game_abi = Some(symbol),
             },
-            _ => return Err(DeclError::Malformed(index)),
+            KIND_API_VERSION if api_version_is_valid(&symbol) => match &declarations.api_version {
+                Some(known) if *known != symbol => {
+                    return Err(DeclError::TwoApiVersions(known.clone(), symbol));
+                }
+                _ => declarations.api_version = Some(symbol),
+            },
+            KIND_EXPORT | KIND_IMPORT | KIND_SYMBOL | KIND_EVENT | KIND_API_VERSION => {
+                return Err(DeclError::Malformed(index));
+            }
+            kind => return Err(DeclError::UnknownKind(index, kind)),
         }
     }
     for list in [
         &mut declarations.hooks.before,
         &mut declarations.hooks.after,
         &mut declarations.hooks.replaces,
+        &mut declarations.events,
+        &mut declarations.symbols,
         &mut declarations.exports,
         &mut declarations.imports,
     ] {
@@ -173,6 +212,12 @@ pub fn read(library: &[u8]) -> Result<Declarations, DeclError> {
         list.dedup();
     }
     Ok(declarations)
+}
+
+/// `major.minor`, both numbers.
+fn api_version_is_valid(symbol: &str) -> bool {
+    let number = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+    matches!(symbol.split_once('.'), Some((major, minor)) if number(major) && number(minor))
 }
 
 /// `provider-id/export-name`, both parts present.
@@ -186,7 +231,7 @@ pub(crate) mod tests {
     use object::write::{Object as WriteObject, StandardSection};
     use object::{Architecture, BinaryFormat, Endianness, SectionKind};
 
-    /// One record as the runtime's macros lay it out.
+    /// One record as the game's macros lay it out.
     pub(crate) fn record(kind: u32, symbol: &str) -> Vec<u8> {
         let mut bytes = vec![0; RECORD_SIZE];
         bytes[..4].copy_from_slice(&MAGIC.to_le_bytes());
@@ -214,6 +259,18 @@ pub(crate) mod tests {
     pub(crate) const IMPORT: u32 = KIND_IMPORT;
     pub(crate) const SYMBOL: u32 = KIND_SYMBOL;
     pub(crate) const TARGET: u32 = KIND_TARGET;
+    pub(crate) const EVENT: u32 = KIND_EVENT;
+    pub(crate) const INIT: u32 = KIND_INIT;
+    pub(crate) const API_VERSION: u32 = KIND_API_VERSION;
+
+    /// The records every source file of a mod built with the SDK carries.
+    pub(crate) fn built_with_sdk() -> Vec<Vec<u8>> {
+        vec![
+            record(GAME_ABI, "6a0e926ca3e90452"),
+            record(TARGET, "x86_64-linux-gnu"),
+            record(API_VERSION, "0.1"),
+        ]
+    }
 
     /// A state record for `size` bytes named `name`.
     pub(crate) fn state_record(name: &str, size: u64) -> Vec<u8> {
@@ -221,5 +278,20 @@ pub(crate) mod tests {
         let at = SYMBOL_OFFSET + STATE_NAME_SIZE;
         bytes[at..at + 8].copy_from_slice(&size.to_le_bytes());
         bytes
+    }
+
+    #[test]
+    fn a_record_kind_the_game_doesnt_have_is_refused_as_the_loader_refuses_it() {
+        // Kinds 11 and 12 (content, settings) are reserved; this game has
+        // neither.
+        let mut records = built_with_sdk();
+        records.push(record(11, "menu"));
+        assert!(matches!(
+            read(&library(&records)),
+            Err(DeclError::UnknownKind(3, 11))
+        ));
+        let mut records = built_with_sdk();
+        records.extend([record(INIT, ""), record(INIT, "")]);
+        assert!(matches!(read(&library(&records)), Err(DeclError::TwoInits)));
     }
 }
