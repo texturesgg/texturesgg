@@ -77,10 +77,12 @@ with `tgg config set iso` (kept in `~/.config/tgg/config.json`).
 ## `tgg mod`
 
 ```text
-tgg mod build [DIR] [--sdk SDK] [--source-zip ZIP|-] [-o OUT.zip] [--json]
+tgg mod new [DIR] [--id ID] [--name NAME] [--example NAME]
+                                         start a mod from the SDK's template, and build it once
+tgg mod build [DIR] [--debug] [--sdk SDK] [--source-zip ZIP|-] [-o OUT.zip] [--json]
                                          compile DIR's src/**/*.c against the game's SDK, check it,
                                          and pack it with DIR's files/, assets/ and include/
-tgg mod new [DIR]                        create the mod on textures.gg from its manifest
+tgg mod register [DIR]                   create the mod on textures.gg from its manifest
 tgg mod publish [DIR]                    tag v<version> and push it to textures.gg, which builds it
 tgg mod pack DIR [-o OUT.zip] [--json]   DIR is a built mod's folder
 tgg mod inspect FILE                     a package zip, a mod library, or a game executable
@@ -90,6 +92,11 @@ tgg mod install [--port EXE] ZIP...      install packages, refusing another game
 tgg mod enable|disable|remove ID...
 ```
 
+`new` copies the SDK's `examples/template/` (or `--example`'s) into an empty `DIR`, sets
+the manifest's `id` (`DIR`'s name unless `--id`) and `name`, runs `git init`, and builds
+once so `build/compile_commands.json` is there for the editor: the template's `.clangd`
+points clangd at it, so completion and go-to-definition reach the game's headers.
+
 A mod's source is `manifest.json` at its root, C sources under `src/`, headers for other
 mods under `include/`, disc files under `files/`, mirroring the disc (`files/PlMrNr.dat`
 replaces `/PlMrNr.dat`), and new files under `assets/`; names starting with `.` are left
@@ -97,8 +104,10 @@ out. A mod needs sources, files or assets. `build` compiles every `src/**/*.c` w
 (`--cc` or `CC`, version 12 or later) in one call, with the SDK's include path,
 definitions, options, force includes and libraries plus `-shared -fPIC
 -fvisibility=hidden -O2` and the `TGG_SELF_<id>` define, on paths relative to `DIR`, so
-the same source and SDK give the same package anywhere. `SDK` is the SDK's folder or its
-`tgg-game-sdk.json`, or the `TGG_GAME_SDK` environment variable. A mod without sources
+the same source and SDK give the same package anywhere; `--debug` builds with `-O0 -g`
+instead. `SDK` is the SDK's folder or its `tgg-game-sdk.json`, or `TGG_GAME_SDK`; by
+default it is the SDK of the game in use, installed if it's missing. The package goes to
+`DIR/build/<id>-<version>.zip` unless `-o` says otherwise. A mod without sources
 needs no SDK: `build` packs it without compiling, and leaves `entry` out of its manifest.
 `--source-zip` first unpacks `manifest.json` and those folders from a zip (up to 256 MiB),
 or from stdin with `-`, into an empty `DIR`; the registry's builder sends each mod's source
@@ -115,9 +124,9 @@ for a static, which is what conflict checks compare) and its netplay class: `cod
 `files` (it counts), `costumes` (it counts unless the game finds its costumes only change
 looks) or `data` (free).
 
-`new` and `publish` act as the signed-in user. `new` registers the manifest's id, name
-and description as a mod on textures.gg (an id is unique there) and runs `git init` in
-`DIR` if it isn't a repository yet. `publish` refuses uncommitted changes, tags
+`register` and `publish` act as the signed-in user. `register` creates the mod on
+textures.gg from the manifest's id, name and description (an id is unique there).
+`publish` refuses uncommitted changes, creates the mod the first time, tags
 `v<version>` from manifest.json at HEAD (or reuses that tag if it already points there),
 gets a short-lived push token for the mod's repository, and pushes HEAD to `main` with
 the tag; textures.gg builds every tag pushed to it.

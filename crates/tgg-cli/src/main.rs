@@ -1,11 +1,14 @@
 //! `tgg`: the textures.gg command line.
 
 mod account;
+mod build;
 mod config;
 mod mods;
 mod paths;
 mod ports;
+mod publish;
 mod releases;
+mod scaffold;
 mod sdks;
 
 use anyhow::Result;
