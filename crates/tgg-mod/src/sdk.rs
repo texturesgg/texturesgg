@@ -177,17 +177,9 @@ impl Sdk {
         })
     }
 
-    /// The arguments, after the compiler's own name, that build the mod `id`'s
-    /// `sources` into the library `output`: `-O2`, or `-O0 -g` for `debug`.
-    /// Run it in the mod's folder, with `sources` relative to it, so no path
-    /// of the build machine reaches a release library.
-    pub fn compile_args(
-        &self,
-        id: &ModId,
-        sources: &[PathBuf],
-        output: &Path,
-        debug: bool,
-    ) -> Vec<OsString> {
+    /// The flags every source of the mod `id` compiles with: `-O2`, or
+    /// `-O0 -g` for `debug`, and the SDK's own.
+    pub fn compile_flags(&self, id: &ModId, debug: bool) -> Vec<OsString> {
         let mut args: Vec<OsString> = MOD_FLAGS.iter().map(OsString::from).collect();
         if debug {
             args.extend(["-O0", "-g"].map(OsString::from));
@@ -207,6 +199,21 @@ impl Sdk {
         // Tells the mod's own provider header that it is the provider, so its
         // APIs are exports rather than imports.
         args.push(format!("-DTGG_SELF_{}=1", c_identifier(id.as_str())).into());
+        args
+    }
+
+    /// The arguments, after the compiler's own name, that build the mod `id`'s
+    /// `sources` into the library `output`. Run it in the mod's folder, with
+    /// `sources` relative to it, so no path of the build machine reaches a
+    /// release library.
+    pub fn compile_args(
+        &self,
+        id: &ModId,
+        sources: &[PathBuf],
+        output: &Path,
+        debug: bool,
+    ) -> Vec<OsString> {
+        let mut args = self.compile_flags(id, debug);
         args.push("-o".into());
         args.push(output.into());
         args.extend(sources.iter().map(OsString::from));
