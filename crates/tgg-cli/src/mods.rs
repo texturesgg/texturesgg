@@ -1,6 +1,6 @@
-//! `tgg mod`: build and pack mods, look inside packages, libraries and ports,
-//! write catalogs, publish to textures.gg, and manage the mods installed in a
-//! port.
+//! `tgg mod`: build and pack mods, look inside packages, libraries and game
+//! builds, write catalogs, publish to textures.gg, and manage the mods
+//! installed in the game's mods folder.
 
 use crate::account::Site;
 use anyhow::{Context, Result, anyhow, bail, ensure};
@@ -11,37 +11,34 @@ use std::path::{Path, PathBuf};
 use tgg_mod::port::PortError;
 use tgg_mod::sdk::SdkError;
 use tgg_mod::{
-    Catalog, CatalogEntry, Files, Hooks, Layout, Manifest, ModId, Netplay, Package, PackageRef,
-    Port, Sdk, Symbols, catalog, conflicts, decls, files, package, sdk, unmet_imports,
+    Catalog, CatalogEntry, Files, Hooks, Manifest, ModId, ModsDir, Package, PackageRef, Port, Sdk,
+    Symbols, catalog, conflicts, decls, files, links, netplay, overlaps, package, sdk, unmet,
 };
 
 #[derive(Subcommand)]
 pub enum ModCommand {
-    /// Build a mod's source against a port's game SDK and pack it: DIR holds
-    /// manifest.json, the C sources under src/, and any game files under
-    /// files/. A mod with only files packs without compiling.
+    /// Build a mod's source against the game's SDK and pack it: DIR holds
+    /// manifest.json, the C sources under src/, and any of files/, assets/
+    /// and include/. A mod without C sources packs without compiling.
     Build {
         #[arg(default_value = ".")]
         dir: PathBuf,
         /// First unpack the source from this zip ("-" for stdin) into DIR,
-        /// which must be empty or missing. Only manifest.json, src/ and
-        /// files/ are taken from it.
+        /// which must be empty or missing. Only manifest.json, src/,
+        /// include/, files/ and assets/ are taken from it.
         #[arg(long)]
         source_zip: Option<PathBuf>,
         /// The game SDK's folder or tgg-game-sdk.json; needed to compile C.
         #[arg(long, env = "TGG_GAME_SDK")]
         sdk: Option<PathBuf>,
-        /// A layout file from `tgg mod layout`: refuse hooks the game can't
-        /// take, and report each hook's canonical name.
-        #[arg(long)]
-        layout: Option<PathBuf>,
         /// The C compiler; it must be GCC.
         #[arg(long, env = "CC", default_value = "gcc")]
         cc: PathBuf,
         /// The package zip to write [default: <id>-<version>.zip]
         #[arg(short, long)]
         output: Option<PathBuf>,
-        /// Print the package's path, SHA-256, size and manifest as JSON.
+        /// Print the package's path, SHA-256, size, manifest, canonical hooks
+        /// and netplay class as JSON.
         #[arg(long)]
         json: bool,
     },
@@ -57,26 +54,19 @@ pub enum ModCommand {
         #[arg(default_value = ".")]
         dir: PathBuf,
     },
-    /// Read the functions a port build lets mods name, for a registry to check
-    /// hooks against.
-    Layout {
-        /// The port's executable.
-        executable: PathBuf,
-        #[arg(short, long)]
-        output: PathBuf,
-    },
-    /// Pack a built mod: DIR holds manifest.json and the library it names,
-    /// as tgg_add_mod writes them.
+    /// Pack a built mod: DIR is the mod's installed folder, as the SDK's
+    /// tgg_add_mod writes it (manifest.json, the library, and its folders).
     Pack {
         dir: PathBuf,
         /// The package zip to write [default: <id>-<version>.zip]
         #[arg(short, long)]
         output: Option<PathBuf>,
-        /// Print the package's path, SHA-256, size and manifest as JSON.
+        /// Print the package's path, SHA-256, size, manifest and netplay
+        /// class as JSON.
         #[arg(long)]
         json: bool,
     },
-    /// Print what a package zip, a mod library, or a port executable declares,
+    /// Print what a package zip, a mod library, or a game executable declares,
     /// as JSON.
     Inspect { file: PathBuf },
     /// Write a catalog of package zips, with URLs relative to the catalog.
@@ -86,14 +76,12 @@ pub enum ModCommand {
         #[arg(required = true)]
         packages: Vec<PathBuf>,
     },
-    /// List the mods installed in a port, in load order.
+    /// List the installed mods, by id.
     List {
-        #[command(flatten)]
-        port: PortArg,
         #[arg(long)]
         json: bool,
     },
-    /// Install package zips into a port, replacing installed versions.
+    /// Install package zips, replacing installed versions.
     Install {
         #[command(flatten)]
         port: PortArg,
@@ -102,22 +90,16 @@ pub enum ModCommand {
     },
     /// Turn installed mods on.
     Enable {
-        #[command(flatten)]
-        port: PortArg,
         #[arg(required = true)]
         ids: Vec<ModId>,
     },
-    /// Turn installed mods off; the runtime skips them.
+    /// Turn installed mods off; the game skips them.
     Disable {
-        #[command(flatten)]
-        port: PortArg,
         #[arg(required = true)]
         ids: Vec<ModId>,
     },
     /// Remove installed mods.
     Remove {
-        #[command(flatten)]
-        port: PortArg,
         #[arg(required = true)]
         ids: Vec<ModId>,
     },
@@ -125,14 +107,18 @@ pub enum ModCommand {
 
 #[derive(Args)]
 pub struct PortArg {
-    /// The port's executable; mods install beside it in mods/.
+    /// The game's executable, to refuse packages built for another game
+    /// layout.
     #[arg(long, env = "TGG_PORT")]
-    port: PathBuf,
+    port: Option<PathBuf>,
 }
 
 impl PortArg {
-    fn open(&self) -> Result<Port> {
-        Port::open(&self.port).with_context(|| self.port.display().to_string())
+    fn open(&self) -> Result<Option<Port>> {
+        self.port
+            .as_deref()
+            .map(|path| Port::open(path).with_context(|| path.display().to_string()))
+            .transpose()
     }
 }
 
@@ -142,7 +128,6 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
             dir,
             source_zip,
             sdk,
-            layout,
             cc,
             output,
             json,
@@ -150,21 +135,21 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
             if let Some(zip) = source_zip {
                 unpack_source(&zip, &dir)?;
             }
-            let layout = layout.map(|path| read_layout(&path)).transpose()?;
-            build(&dir, sdk.as_deref(), layout.as_ref(), &cc, output, json)
+            build(&dir, sdk.as_deref(), &cc, output, json)
         }
-        ModCommand::Layout { executable, output } => write_layout(&executable, &output),
         ModCommand::New { dir } => new(Site::new(api)?.signed_in()?, &dir),
         ModCommand::Publish { dir } => publish(Site::new(api)?.signed_in()?, &dir),
         ModCommand::Pack { dir, output, json } => pack(&dir, output, json),
         ModCommand::Inspect { file } => inspect(&file),
         ModCommand::Catalog { output, packages } => write_catalog(&output, &packages),
-        ModCommand::List { port, json } => list(&port.open()?, json),
-        ModCommand::Install { port, packages } => install(&port.open()?, &packages),
-        ModCommand::Enable { port, ids } => set_enabled(&port.open()?, &ids, true),
-        ModCommand::Disable { port, ids } => set_enabled(&port.open()?, &ids, false),
-        ModCommand::Remove { port, ids } => {
-            let mods = port.open()?.mods();
+        ModCommand::List { json } => list(&ModsDir::game(), json),
+        ModCommand::Install { port, packages } => {
+            install(&ModsDir::game(), port.open()?.as_ref(), &packages)
+        }
+        ModCommand::Enable { ids } => set_enabled(&ModsDir::game(), &ids, true),
+        ModCommand::Disable { ids } => set_enabled(&ModsDir::game(), &ids, false),
+        ModCommand::Remove { ids } => {
+            let mods = ModsDir::game();
             for id in &ids {
                 mods.remove(id).with_context(|| format!("removing {id}"))?;
             }
@@ -187,6 +172,33 @@ fn print_json(value: &serde_json::Value) {
     println!("{}", serde_json::to_string_pretty(value).expect("json"));
 }
 
+/// The folders a mod ships beside its library, read from `dir`.
+struct Folders {
+    files: Files,
+    assets: Files,
+    include: Files,
+}
+
+impl Folders {
+    fn read(dir: &Path) -> Result<Self> {
+        Ok(Self {
+            files: files::read_dir(dir, "files")?,
+            assets: files::read_dir(dir, "assets")?,
+            include: files::read_dir(dir, "include")?,
+        })
+    }
+
+    fn pack(self, manifest: Manifest, library: Option<Vec<u8>>) -> Result<Package> {
+        Ok(Package::pack(
+            manifest,
+            library,
+            self.files,
+            self.assets,
+            self.include,
+        )?)
+    }
+}
+
 fn pack(dir: &Path, output: Option<PathBuf>, json: bool) -> Result<()> {
     let manifest = read_manifest(dir)?;
     let library_path = dir.join(manifest.library_name());
@@ -196,16 +208,19 @@ fn pack(dir: &Path, output: Option<PathBuf>, json: bool) -> Result<()> {
     } else {
         Some(read(&library_path)?)
     };
-    let files = files::read_dir(&dir.join("files"))?;
-    write_package(Package::pack(library, manifest, files)?, None, output, json)
+    let package = Folders::read(dir)?.pack(manifest, library)?;
+    write_package(package, None, output, json)
 }
 
 /// The largest source zip `build --source-zip` takes. Game files make mods
 /// megabytes, a whole fighter tens of them.
 const SOURCE_ZIP_LIMIT: u64 = 256 * 1024 * 1024;
 
-/// Unpack a mod's source (`manifest.json`, `src/` and `files/`) from a zip
-/// into `dir`.
+/// The parts of a mod's folder that are its source.
+const SOURCE: &[&str] = &["src", "include", "files", "assets"];
+
+/// Unpack a mod's source (`manifest.json` and the [`SOURCE`] folders) from
+/// a zip into `dir`.
 fn unpack_source(zip: &Path, dir: &Path) -> Result<()> {
     use std::io::Read;
     let mut bytes = Vec::new();
@@ -238,8 +253,7 @@ fn unpack_source(zip: &Path, dir: &Path) -> Result<()> {
             );
         };
         let wanted = relative == Path::new("manifest.json")
-            || relative.starts_with("src")
-            || relative.starts_with("files");
+            || SOURCE.iter().any(|folder| relative.starts_with(folder));
         if !wanted || entry.is_dir() {
             continue;
         }
@@ -251,44 +265,39 @@ fn unpack_source(zip: &Path, dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// The C sources under `dir`'s src/ and the game files under its files/; a
-/// mod needs one or the other.
-fn mod_source(dir: &Path) -> Result<(Vec<PathBuf>, Files)> {
-    let files = files::read_dir(&dir.join("files"))?;
+/// The C sources under `dir`'s src/ and its other folders; a mod needs
+/// sources, files or assets.
+fn mod_source(dir: &Path) -> Result<(Vec<PathBuf>, Folders)> {
+    let folders = Folders::read(dir)?;
     match sdk::mod_sources(dir) {
-        Ok(sources) => Ok((sources, files)),
-        Err(SdkError::NoSources) if !files.is_empty() => Ok((Vec::new(), files)),
+        Ok(sources) => Ok((sources, folders)),
+        Err(SdkError::NoSources) if !folders.files.is_empty() || !folders.assets.is_empty() => {
+            Ok((Vec::new(), folders))
+        }
         Err(SdkError::NoSources) => bail!(
-            "{} has no C sources under src/ and no game files under files/",
+            "{} has no C sources under src/ and nothing under files/ or assets/",
             dir.display()
         ),
         Err(error) => Err(error.into()),
     }
 }
 
-/// Compile the mod in `dir` with `cc` against `sdk` and pack the library
-/// with the mod's files. The compiler runs in `dir` on relative paths,
-/// writing to a scratch folder inside it, so the library carries no path of
-/// this machine. A mod with only files packs as it is.
+/// Compile the mod in `dir` with `cc` against `sdk`, check the library as the
+/// game will check it, and pack it with the mod's folders. The compiler runs
+/// in `dir` on relative paths, writing to a scratch folder inside it, so the
+/// library carries no path of this machine. A mod without sources packs as it
+/// is.
 fn build(
     dir: &Path,
     sdk: Option<&Path>,
-    layout: Option<&Layout>,
     cc: &Path,
     output: Option<PathBuf>,
     json: bool,
 ) -> Result<()> {
     let manifest = read_manifest(dir)?;
-    let (sources, files) = mod_source(dir)?;
+    let (sources, folders) = mod_source(dir)?;
     if sources.is_empty() {
-        // Nothing hooks, so a checked layout has no canonical hooks to report.
-        let canonical = layout.map(|_| Hooks::default());
-        return write_package(
-            Package::pack(None, manifest, files)?,
-            canonical,
-            output,
-            json,
-        );
+        return write_package(folders.pack(manifest, None)?, None, output, json);
     }
     let sdk =
         sdk.ok_or_else(|| anyhow!("compiling src/ needs the game SDK: --sdk or TGG_GAME_SDK"))?;
@@ -299,50 +308,68 @@ fn build(
         sdk.name,
         sdk.compiler
     );
+    let symbols = Symbols::open(&sdk.symbols)?;
     let scratch = Path::new(".tgg-build");
     let library = scratch.join(manifest.library_name());
     std::fs::create_dir_all(dir.join(scratch))?;
-    let status = std::process::Command::new(cc)
-        .args(sdk.compile_args(&manifest.id, &sources, &library))
+    let compiled = std::process::Command::new(cc)
+        .args(sdk.compile_args(&manifest.id, &sources, &library, false))
         .current_dir(dir)
         .status()
-        .with_context(|| format!("running {}", cc.display()))?;
-    ensure!(status.success(), "{} failed: {status}", cc.display());
-    let bytes = read(&dir.join(&library))?;
+        .with_context(|| format!("running {}", cc.display()))
+        .and_then(|status| {
+            ensure!(status.success(), "{} failed: {status}", cc.display());
+            read(&dir.join(&library))
+        });
     std::fs::remove_dir_all(dir.join(scratch))?;
-    let package = Package::pack(Some(bytes), manifest, files)?;
+    let bytes = compiled?;
+    let canonical = check_library(&bytes, &sdk, &symbols)?;
+    let package = folders.pack(manifest, Some(bytes))?;
+    write_package(package, Some(canonical), output, json)
+}
+
+/// Check a built library as the game checks it at load: its records against
+/// the SDK, every symbol it names against the game's, and what it links
+/// against. Returns its hooks by canonical name.
+fn check_library(library: &[u8], sdk: &Sdk, symbols: &Symbols) -> Result<Hooks> {
+    let declared = decls::read(library)?;
     ensure!(
-        package.manifest.game_abi.as_deref() == Some(sdk.game_abi.as_str())
-            && package.manifest.target.as_deref() == Some(sdk.target.as_str()),
-        "the library declares a game layout or target other than the SDK's {} {}",
+        declared.game_abi.as_deref() == Some(sdk.game_abi.as_str())
+            && declared.target.as_deref() == Some(sdk.target.as_str())
+            && declared.api_version.as_deref() == Some(sdk.api_version.as_str()),
+        "the library declares game layout {}, target {} and mod API {}; the SDK is {}, {} and {}",
+        declared.game_abi.as_deref().unwrap_or("none"),
+        declared.target.as_deref().unwrap_or("none"),
+        declared.api_version.as_deref().unwrap_or("none"),
         sdk.game_abi,
-        sdk.target
+        sdk.target,
+        sdk.api_version
     );
-    let canonical = match layout {
-        Some(layout) => {
-            ensure!(
-                layout.game_abi == sdk.game_abi && layout.target == sdk.target,
-                "the layout file is for {} {}, the SDK for {} {}",
-                layout.game_abi,
-                layout.target,
-                sdk.game_abi,
-                sdk.target
-            );
-            let canonical = layout.symbols.canonical_hooks(&package.manifest.hooks);
-            match canonical {
-                Ok(hooks) => Some(hooks),
-                Err(errors) => {
-                    let errors: Vec<String> = errors.iter().map(ToString::to_string).collect();
-                    bail!(
-                        "the mod hooks functions the game can't take:\n  {}",
-                        errors.join("\n  ")
-                    );
-                }
-            }
+    let mut problems: Vec<String> = Vec::new();
+    let canonical = match symbols.canonical_hooks(&declared.hooks) {
+        Ok(hooks) => hooks,
+        Err(errors) => {
+            problems.extend(errors.iter().map(ToString::to_string));
+            Hooks::default()
         }
-        None => None,
     };
-    write_package(package, canonical, output, json)
+    for name in &declared.symbols {
+        if let Err(error) = symbols.resolve(name) {
+            problems.push(error.to_string());
+        }
+    }
+    problems.extend(
+        links::check(library, symbols, &sdk.glibc)?
+            .iter()
+            .map(ToString::to_string),
+    );
+    if !problems.is_empty() {
+        bail!(
+            "the game would refuse this mod:\n  {}",
+            problems.join("\n  ")
+        );
+    }
+    Ok(canonical)
 }
 
 /// Run git in `dir`, returning its trimmed output, or failing with its error.
@@ -456,43 +483,9 @@ fn publish(site: &Site, dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn read_layout(path: &Path) -> Result<Layout> {
-    serde_json::from_slice(&read(path)?).with_context(|| path.display().to_string())
-}
-
-fn write_layout(executable: &Path, output: &Path) -> Result<()> {
-    let port = Port::open(executable).with_context(|| executable.display().to_string())?;
-    let symbols = Symbols::read(&read(executable)?).context("reading the symbol table")?;
-    ensure!(
-        !symbols.exported.is_empty(),
-        "{} has no symbol table; ports ship with .symtab",
-        executable.display()
-    );
-    let statics: usize = symbols.statics.values().map(|names| names.len()).sum();
-    let layout = Layout {
-        api: tgg_mod::API.to_owned(),
-        game_abi: port.game_abi,
-        target: port.target,
-        port: port.name,
-        symbols,
-    };
-    let json = serde_json::to_vec(&layout).expect("json");
-    std::fs::write(output, json).with_context(|| output.display().to_string())?;
-    println!(
-        "{}: {} {} on {}, {} exported, {} static",
-        output.display(),
-        layout.port,
-        layout.game_abi,
-        layout.target,
-        layout.symbols.exported.len(),
-        statics
-    );
-    Ok(())
-}
-
 /// Write `package` to `output`, or `<id>-<version>.zip`, and report it.
-/// `canonical` is the package's hooks under their canonical names, when a
-/// layout was checked.
+/// `canonical` is the library's hooks under their canonical names, when it
+/// was checked against the game's symbols.
 fn write_package(
     package: Package,
     canonical: Option<Hooks>,
@@ -511,17 +504,19 @@ fn write_package(
             "size": zip.len(),
             "manifest": manifest,
             "canonical_hooks": canonical,
+            "netplay": netplay::classify(manifest),
         }));
     } else {
         let hooks = &manifest.hooks;
         println!(
-            "{}: {} {} ({} before, {} after, {} replaced)",
+            "{}: {} {} ({} before, {} after, {} replaced, {} events)",
             output.display(),
             manifest.id,
             manifest.version,
             hooks.before.len(),
             hooks.after.len(),
-            hooks.replaces.len()
+            hooks.replaces.len(),
+            manifest.events.len()
         );
     }
     Ok(())
@@ -535,16 +530,18 @@ fn inspect(path: &Path) -> Result<()> {
             "sha256": package::sha256_hex(&bytes),
             "size": bytes.len(),
             "manifest": package.manifest,
+            "netplay": netplay::classify(&package.manifest),
         }));
         return Ok(());
     }
     match Port::open(path) {
         Ok(port) => {
             print_json(&json!({
-                "runtime": tgg_mod::API,
+                "api": tgg_mod::API,
                 "game_abi": port.game_abi,
+                "name": port.name,
                 "target": port.target,
-                "port": port.name,
+                "version": port.version,
             }));
             return Ok(());
         }
@@ -554,13 +551,18 @@ fn inspect(path: &Path) -> Result<()> {
     let declared = decls::read(&bytes).with_context(|| path.display().to_string())?;
     ensure!(
         declared.game_abi.is_some(),
-        "{} is neither a mod library nor a port build with the mod loader",
+        "{} is neither a mod library nor a game build with the mod loader",
         path.display()
     );
     print_json(&json!({
         "game_abi": declared.game_abi,
         "target": declared.target,
+        "api_version": declared.api_version,
+        "state": declared.state,
+        "init": declared.init,
         "hooks": declared.hooks,
+        "events": declared.events,
+        "symbols": declared.symbols,
         "exports": declared.exports,
         "imports": declared.imports,
     }));
@@ -578,6 +580,7 @@ fn write_catalog(output: &Path, packages: &[PathBuf]) -> Result<()> {
             .to_string_lossy()
             .replace('\\', "/");
         mods.push(CatalogEntry {
+            netplay: netplay::classify(&package.manifest),
             manifest: package.manifest,
             package: PackageRef {
                 url,
@@ -597,64 +600,90 @@ fn write_catalog(output: &Path, packages: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
-fn list(port: &Port, json: bool) -> Result<()> {
-    let installed = port.mods().list()?;
+/// How `tgg mod list` names a netplay class.
+fn netplay_label(class: tgg_mod::Netplay) -> &'static str {
+    match class {
+        tgg_mod::Netplay::Code => "counts for netplay: code",
+        tgg_mod::Netplay::Files => "counts for netplay: files",
+        tgg_mod::Netplay::Costumes => "counts for netplay unless its costumes only change looks",
+        tgg_mod::Netplay::Data => "free for netplay",
+    }
+}
+
+fn list(mods: &ModsDir, json: bool) -> Result<()> {
+    let installed = mods.list()?;
     if json {
         print_json(&json!(
             installed
                 .iter()
-                .map(|mod_| json!({ "enabled": mod_.enabled, "manifest": mod_.manifest }))
+                .map(|mod_| json!({
+                    "enabled": mod_.enabled,
+                    "netplay": netplay::classify(&mod_.manifest),
+                    "manifest": mod_.manifest,
+                }))
                 .collect::<Vec<_>>()
         ));
         return Ok(());
     }
+    if installed.is_empty() {
+        println!("No mods in {}", mods.root().display());
+    }
     for mod_ in &installed {
         let manifest = &mod_.manifest;
-        let netplay = match manifest.netplay {
-            Netplay::Cosmetic => "cosmetic",
-            Netplay::Gameplay => "gameplay",
-        };
-        let off = if mod_.enabled { "" } else { " (off)" };
-        println!("{} {} {netplay}{off}", manifest.id, manifest.version);
+        let off = if mod_.enabled { "" } else { ", off" };
+        println!(
+            "{} {} ({}{off})",
+            manifest.id,
+            manifest.version,
+            netplay_label(netplay::classify(manifest))
+        );
     }
     Ok(())
 }
 
 /// Install each package in order, refusing one built for another game layout
-/// or one that replaces a function a turned-on mod already replaces.
-fn install(port: &Port, packages: &[PathBuf]) -> Result<()> {
-    let mods = port.mods();
+/// than `port`'s or one that replaces a function a turned-on mod already
+/// replaces. A file another mod also ships is a warning naming the mod whose
+/// copy the game serves.
+fn install(mods: &ModsDir, port: Option<&Port>, packages: &[PathBuf]) -> Result<()> {
     for path in packages {
         let (package, _) = open_package(path)?;
         let manifest = &package.manifest;
-        // A mod of files only fits the game, not one port build.
-        if manifest.game_abi.is_some()
+        // A mod of files only fits the game, not one build of it.
+        if let Some(port) = port
+            && manifest.game_abi.is_some()
             && (manifest.game_abi.as_deref() != Some(port.game_abi.as_str())
                 || manifest.target.as_deref() != Some(port.target.as_str()))
         {
             bail!(
-                "{} is built for game layout {} on {}; {} is {} on {}",
+                "{} is built for game layout {} on {}; tgg-melee {} is {} on {}",
                 manifest.id,
                 manifest.game_abi.as_deref().unwrap_or("none"),
                 manifest.target.as_deref().unwrap_or("no target"),
-                port.name,
+                port.version,
                 port.game_abi,
                 port.target
             );
         }
         let installed = mods.list()?;
-        let clashes = conflicts(manifest, &installed);
+        let clashes = conflicts(manifest, &installed, None);
         if !clashes.is_empty() {
             let clashes: Vec<_> = clashes
                 .iter()
-                .map(|c| format!("{} (so does {})", c.clash, c.with))
+                .map(|c| format!("replaces {} (so does {})", c.replaces, c.with))
                 .collect();
             bail!("{} conflicts: {}", manifest.id, clashes.join(", "));
         }
         mods.install(&package)
             .with_context(|| format!("installing {}", manifest.id))?;
         println!("{} {}", manifest.id, manifest.version);
-        let missing = unmet_imports(manifest, &installed);
+        for overlap in overlaps(manifest, &installed) {
+            eprintln!(
+                "warning: {} and {} both ship {}; the game uses {}'s",
+                manifest.id, overlap.with, overlap.path, overlap.wins
+            );
+        }
+        let missing = unmet(manifest, &installed);
         if !missing.is_empty() {
             eprintln!(
                 "warning: {} won't load until these are installed and on: {}",
@@ -666,8 +695,7 @@ fn install(port: &Port, packages: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
-fn set_enabled(port: &Port, ids: &[ModId], enabled: bool) -> Result<()> {
-    let mods = port.mods();
+fn set_enabled(mods: &ModsDir, ids: &[ModId], enabled: bool) -> Result<()> {
     for id in ids {
         mods.set_enabled(id, enabled)
             .with_context(|| format!("turning {id} {}", if enabled { "on" } else { "off" }))?;

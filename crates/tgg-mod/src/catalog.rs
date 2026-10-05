@@ -2,6 +2,7 @@
 //! download it, and the SHA-256 it must have.
 
 use crate::manifest::Manifest;
+use crate::netplay::Netplay;
 use serde::{Deserialize, Serialize};
 
 /// The catalog format this crate reads and writes.
@@ -17,6 +18,8 @@ pub struct Catalog {
 pub struct CatalogEntry {
     #[serde(flatten)]
     pub manifest: Manifest,
+    /// The class the package's contents give it.
+    pub netplay: Netplay,
     pub package: PackageRef,
 }
 
