@@ -87,11 +87,12 @@ same links in a new mod's README and `src/mod.c`.
 `tgg doctor` checks what building and running mods needs, and prints the command that
 fixes each problem: glibc 2.34 or later, an installed game and its SDK, a C compiler
 (`--cc` or `CC`) that is GCC 12 or later (clang lacks the `scalar_storage_order` the
-game's headers use), and a disc image. For a missing or old GCC it names the install
-command for the system (`apt`, `dnf`, `pacman`, `zypper`), a newer `gcc-<n>` already on
-`PATH`, or on NixOS `nix shell` with the GCC of the nixpkgs revision the game was built
-with. The system's GCC is enough: the x86-64 ABI fixes the layout, and `build`'s checks
-keep a mod loadable on the oldest glibc the game runs on.
+game's headers use), CMake 3.25 or later (Ninja too, for faster builds), and a disc image.
+For a missing or old tool it names the install command for the system (`apt`, `dnf`,
+`pacman`, `zypper`), a newer `gcc-<n>` already on `PATH`, or on NixOS `nix shell` with the
+tool from the nixpkgs revision the game was built with. The system's GCC is enough: the
+x86-64 ABI fixes the layout, and the SDK's checks keep a mod loadable on the oldest glibc
+the game runs on.
 
 ## `tgg mod`
 
@@ -122,30 +123,32 @@ the project's dev shell (`direnv exec . clangd`) with `--query-driver=/nix/store
 A mod's source is `manifest.json` at its root, C sources under `src/`, headers for other
 mods under `include/`, disc files under `files/`, mirroring the disc (`files/PlMrNr.dat`
 replaces `/PlMrNr.dat`), and new files under `assets/`; names starting with `.` are left
-out. A mod needs sources, files or assets. `build` compiles every `src/**/*.c` with GCC
-(`--cc` or `CC`, version 12 or later) in one call, with the SDK's include path
-(as system directories, so the game's headers don't warn), definitions, options, force
-includes and libraries plus `-shared -fPIC -fvisibility=hidden -O2` and the
-`TGG_SELF_<id>` define, on paths relative to `DIR`, so the same source and SDK give the
-same package anywhere; `--debug` builds with `-O0 -g`
-instead. `SDK` is the SDK's folder or its `tgg-game-sdk.json`, or `TGG_GAME_SDK`; by
+out. A mod needs sources, files or assets. `build` builds the sources with the SDK's own
+CMake files (`TggMod.cmake`): it writes a small CMake project in `DIR/build/tgg-project/`
+naming `DIR`'s manifest and `src/**/*.c`, whatever `CMakeLists.txt` the mod has, and runs
+CMake (with Ninja when it's installed) in `DIR/build/tgg/`, with GCC (`--cc` or `CC`,
+version 12 or later). So a mod builds the same way here and on textures.gg, the same
+source and SDK give the same package from any folder, and each SDK compiles, links and
+checks mods its own way: what a mod takes from the game, the warning for a game function
+used as a value, and the link and glibc check are the SDK's. `--debug` builds with
+`-O0 -g` instead of `-O2`. CMake's `compile_commands.json` is copied to `DIR/build/` for
+editors. `SDK` is the SDK's folder or its `tgg-game-sdk.json`, or `TGG_GAME_SDK`; by
 default it is the SDK of the game in use, installed if it's missing. The package goes to
-`DIR/build/<id>-<version>.zip` unless `-o` says otherwise. A mod without sources
-needs no SDK: `build` packs it without compiling, and leaves `entry` out of its manifest.
+`DIR/build/<id>-<version>.zip` unless `-o` says otherwise. A mod without sources needs no
+SDK: `build` packs it without compiling, and leaves `entry` out of its manifest.
 `--source-zip` first unpacks `manifest.json` and those folders from a zip (up to 256 MiB),
 or from stdin with `-`, into an empty `DIR`; the registry's builder sends each mod's source
 that way.
 
-Before packing, `build` checks the library as the game will at load, and fails with what
-to change: its game layout, target and mod API version must be the SDK's; every hook and
-game symbol it names must be in the SDK's `symbols.txt` (no static whose name several
-files share, no hook on a static the compiler also copied or on the mod runtime's own
-functions); everything it links against must be something the game exports, and no glibc
-symbol may be newer than the oldest glibc the game runs on. `--json` reports the package,
-its manifest, each hook's canonical name (`name` for an exported function, `file.c:name`
-for a static, which is what conflict checks compare) and its netplay class: `code` or
-`files` (it counts), `costumes` (it counts unless the game finds its costumes only change
-looks) or `data` (free).
+Before packing, `build` checks the library's records as the game will at load, and fails
+with what to change: its game layout, target and mod API version must be the SDK's, and
+every hook and game symbol it names must be in the SDK's `symbols.txt` (no static whose
+name several files share, no hook on a static the compiler also copied or on the mod
+runtime's own functions). `--json` reports the package, its manifest, each hook's
+canonical name (`name` for an exported function, `file.c:name` for a static, which is what
+conflict checks compare) and its netplay class: `code` or `files` (it counts), `costumes`
+(it counts unless the game finds its costumes only change looks) or `data` (free). CMake's
+own output goes to stderr, so stdout is only the report.
 
 `register` and `publish` act as the signed-in user. `register` creates the mod on
 textures.gg from the manifest's id, name and description (an id is unique there).
