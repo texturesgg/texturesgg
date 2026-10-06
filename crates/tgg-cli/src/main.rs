@@ -4,6 +4,7 @@ mod account;
 mod build;
 mod config;
 mod dev;
+mod docs;
 mod doctor;
 mod mods;
 mod paths;
@@ -50,6 +51,11 @@ enum Command {
     /// Code mods for tgg-melee: build, publish, install.
     #[command(subcommand)]
     Mod(mods::ModCommand),
+    /// Open the mod docs for the installed game (offline, the SDK's copy).
+    Docs {
+        /// A page, such as writing-mods or hooks [default: the index]
+        page: Option<String>,
+    },
     /// Check this machine can build and run mods, and say how to fix what's
     /// missing.
     Doctor {
@@ -71,5 +77,6 @@ fn main() -> Result<()> {
         Command::Mod(command) => mods::run(command, &cli.api),
         Command::Config(command) => config::run(command),
         Command::Doctor { cc } => doctor::run(&cc.cc),
+        Command::Docs { page } => docs::run(page.as_deref()),
     }
 }
