@@ -20,10 +20,8 @@
 //! - [`catalog`]: the list of packages a registry offers.
 //! - [`symbols`]: the game symbols the SDK lets mods name, and each hook's
 //!   canonical name.
-//! - [`links`]: whether a library would link when the game loads it.
 //! - [`port`]: a game executable, and which mods fit it.
-//! - [`sdk`]: the game's SDK, and the compiler command that builds a mod
-//!   against it.
+//! - [`sdk`]: the game's SDK, which mods are built with.
 //! - [`install`]: the mods folder, load order, and what stops a mod from
 //!   loading beside others.
 
@@ -32,7 +30,6 @@ pub mod decls;
 pub mod depends;
 pub mod files;
 pub mod install;
-pub mod links;
 pub mod manifest;
 pub mod netplay;
 pub mod package;

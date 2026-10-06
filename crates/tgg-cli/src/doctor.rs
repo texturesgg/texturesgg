@@ -5,7 +5,8 @@
 //! `scalar_storage_order`, which clang lacks, and the options the SDK passes
 //! need 12. The system's GCC is enough; the x86-64 ABI fixes the layout, and
 //! the build's checks keep a mod loadable on the oldest glibc the game runs
-//! on.
+//! on. The SDK's own CMake files build each mod (TggMod.cmake), so CMake 3.25
+//! or later is needed too, and Ninja makes it faster.
 
 use anyhow::{Result, bail};
 use std::path::Path;
@@ -62,42 +63,117 @@ fn distro() -> (String, String, String) {
     (field("ID"), field("ID_LIKE"), field("VERSION_ID"))
 }
 
-/// The command that installs a GCC new enough here.
-fn install_gcc(nixpkgs: Option<&str>) -> String {
+/// A tool mod builds need.
+#[derive(Clone, Copy)]
+enum Tool {
+    Gcc,
+    Cmake,
+    Ninja,
+}
+
+impl Tool {
+    /// Its package on Debian-like, Fedora-like, Arch-like and SUSE systems,
+    /// and in nixpkgs.
+    fn packages(self) -> [&'static str; 5] {
+        match self {
+            Tool::Gcc => ["gcc", "gcc", "gcc", "gcc", "gcc15"],
+            Tool::Cmake => ["cmake", "cmake", "cmake", "cmake", "cmake"],
+            Tool::Ninja => ["ninja-build", "ninja-build", "ninja", "ninja", "ninja"],
+        }
+    }
+}
+
+/// The command that installs `tool`, new enough, here.
+fn install(tool: Tool, nixpkgs: Option<&str>) -> String {
     let (id, like, version) = distro();
     let is = |name: &str| id == name || like.split(' ').any(|l| l == name);
+    let [apt, dnf, pacman, zypper, nix_name] = tool.packages();
     // The nixpkgs revision the game was built with gives the exact GCC the
     // game and the registry use.
     let nix = || {
         let rev = nixpkgs.unwrap_or("nixos-unstable");
-        format!("nix shell github:NixOS/nixpkgs/{rev}#gcc15")
+        format!("nix shell github:NixOS/nixpkgs/{rev}#{nix_name}")
     };
     if id == "nixos" {
         return nix();
     }
     if id == "ubuntu" && version.starts_with("22.") {
-        // 22.04's default gcc is 11.
-        return "sudo apt install gcc-12, then export CC=gcc-12".into();
+        // 22.04's default gcc is 11 and its cmake 3.22.
+        match tool {
+            Tool::Gcc => return "sudo apt install gcc-12, then export CC=gcc-12".into(),
+            Tool::Cmake => return "sudo snap install cmake --classic".into(),
+            Tool::Ninja => {}
+        }
     }
     if is("debian") || is("ubuntu") {
-        return "sudo apt install gcc".into();
+        return format!("sudo apt install {apt}");
     }
     if is("fedora") || is("rhel") {
-        return "sudo dnf install gcc".into();
+        return format!("sudo dnf install {dnf}");
     }
     if id == "steamos" {
-        return "install the SteamOS developer tools (sudo steamos-devmode enable), then sudo pacman -S gcc".into();
+        return format!(
+            "install the SteamOS developer tools (sudo steamos-devmode enable), then sudo pacman -S {pacman}"
+        );
     }
     if is("arch") {
-        return "sudo pacman -S gcc".into();
+        return format!("sudo pacman -S {pacman}");
     }
     if is("suse") || is("opensuse") {
-        return "sudo zypper install gcc".into();
+        return format!("sudo zypper install {zypper}");
     }
     if on_path("nix") {
         return nix();
     }
-    "install GCC 12 or later with your system's package manager".into()
+    format!("install {apt} with your system's package manager")
+}
+
+/// The oldest CMake the SDK's TggMod.cmake takes.
+const CMAKE_MIN: (u32, u32) = (3, 25);
+
+fn check_build_tools(report: &mut Report, nixpkgs: Option<&str>) {
+    match output(Path::new("cmake"), &["--version"]) {
+        None => report.problem(
+            "CMake",
+            &format!(
+                "not found; mods build with the SDK's CMake files: {}",
+                install(Tool::Cmake, nixpkgs)
+            ),
+        ),
+        Some(text) => {
+            let version = text
+                .lines()
+                .next()
+                .unwrap_or_default()
+                .trim_start_matches("cmake version ")
+                .to_owned();
+            let mut parts = version.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+            let have = (parts.next().unwrap_or(0), parts.next().unwrap_or(0));
+            if have >= CMAKE_MIN {
+                report.ok("CMake", &version);
+            } else {
+                report.problem(
+                    "CMake",
+                    &format!(
+                        "{version}; mods need {}.{} or later: {}",
+                        CMAKE_MIN.0,
+                        CMAKE_MIN.1,
+                        install(Tool::Cmake, nixpkgs)
+                    ),
+                );
+            }
+        }
+    }
+    match output(Path::new("ninja"), &["--version"]) {
+        Some(version) => report.ok("Ninja", &version),
+        None => report.note(
+            "Ninja",
+            &format!(
+                "not found, so builds use make, which is slower: {}",
+                install(Tool::Ninja, nixpkgs)
+            ),
+        ),
+    }
 }
 
 fn major(version: &str) -> Option<u32> {
@@ -117,7 +193,7 @@ fn check_compiler(report: &mut Report, cc: &Path, nixpkgs: Option<&str>) {
     let Some(version) = output(cc, &["-dumpfullversion"]) else {
         report.problem(
             "C compiler",
-            &format!("{name} isn't there; {}", install_gcc(nixpkgs)),
+            &format!("{name} isn't there; {}", install(Tool::Gcc, nixpkgs)),
         );
         return;
     };
@@ -127,7 +203,7 @@ fn check_compiler(report: &mut Report, cc: &Path, nixpkgs: Option<&str>) {
             "C compiler",
             &format!(
                 "{name} is clang, which lacks the scalar_storage_order the game's headers use; {}",
-                install_gcc(nixpkgs)
+                install(Tool::Gcc, nixpkgs)
             ),
         );
         return;
@@ -139,7 +215,7 @@ fn check_compiler(report: &mut Report, cc: &Path, nixpkgs: Option<&str>) {
         _ => {
             let fix = match newer_gcc() {
                 Some(newer) => format!("export CC={newer}"),
-                None => install_gcc(nixpkgs),
+                None => install(Tool::Gcc, nixpkgs),
             };
             report.problem(
                 "C compiler",
@@ -215,6 +291,7 @@ pub fn run(cc: &Path) -> Result<()> {
     }
 
     check_compiler(&mut report, cc, nixpkgs.as_deref());
+    check_build_tools(&mut report, nixpkgs.as_deref());
     if !on_path("gdb") {
         report.note("gdb", "not found; only tgg mod dev --gdb needs it");
     }

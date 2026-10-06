@@ -1,12 +1,11 @@
-//! Building a mod: its source, compiling it against the game's SDK, checking
-//! the library as the game will, and packing it.
+//! Building a mod: its source, building it with the game's SDK, checking the
+//! library's records, and packing it.
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
-use serde_json::json;
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use tgg_mod::sdk::SdkError;
-use tgg_mod::{Files, Hooks, Manifest, Package, Sdk, Symbols, decls, files, links, sdk};
+use tgg_mod::{Files, Hooks, Manifest, Package, Sdk, Symbols, decls, files, sdk};
 
 /// The parts of a mod's folder that are its source, beside `manifest.json`.
 pub const SOURCE: &[&str] = &["src", "include", "files", "assets"];
@@ -100,11 +99,14 @@ pub struct Options<'a> {
     pub debug: bool,
 }
 
-/// Compile the mod in `dir` against the SDK, check the library as the game
-/// will check it, and pack it with the mod's folders. The compiler runs in
-/// `dir` on relative paths, writing to a scratch folder inside it, so the
-/// library carries no path of this machine. A mod without sources packs as
-/// it is. Writes `build/compile_commands.json` for editors on the way.
+/// Build the mod in `dir` with the SDK's own CMake (`TggMod.cmake`), check
+/// the library's records against the SDK, and pack it with the mod's
+/// folders. A mod without sources packs as it is.
+///
+/// Every build goes through a CMake project tgg writes in `build/tgg-project/`,
+/// whatever CMakeLists.txt the mod has, so a mod builds here as it does on
+/// textures.gg, and each SDK compiles, links and checks mods its own way.
+/// CMake's `compile_commands.json` is copied to `build/` for editors.
 pub fn build(dir: &Path, options: &Options) -> Result<Built> {
     let manifest = read_manifest(dir)?;
     let (sources, folders) = mod_source(dir)?;
@@ -115,32 +117,44 @@ pub fn build(dir: &Path, options: &Options) -> Result<Built> {
         });
     }
     let sdk = resolve_sdk(options.sdk)?;
-    ensure!(
-        sdk.compiler == "GNU",
-        "{} was built with {}; mods build with GCC",
-        sdk.name,
-        sdk.compiler
-    );
+    let root = std::path::absolute(dir)?;
+    let build = root.join(BUILD);
+    let project = build.join("tgg-project");
+    let binary = build.join("tgg");
+    write_project(&project, &sdk, &root, &sources)?;
+
+    let mut configure = Command::new("cmake");
+    configure
+        .arg("-S")
+        .arg(&project)
+        .arg("-B")
+        .arg(&binary)
+        .arg(format!("-DCMAKE_C_COMPILER={}", options.cc.display()))
+        .arg(format!(
+            "-DTGG_MOD_DEBUG={}",
+            if options.debug { "ON" } else { "OFF" }
+        ));
+    // Ninja when it's there; a new build folder only, since CMake keeps the
+    // generator it started with.
+    if !binary.join("CMakeCache.txt").exists() && on_path("ninja") {
+        configure.args(["-G", "Ninja"]);
+    }
+    run(configure.arg("--log-level=WARNING"), "cmake")?;
+    run(
+        Command::new("cmake").arg("--build").arg(&binary),
+        "the build",
+    )?;
+
+    let commands = binary.join("compile_commands.json");
+    if commands.is_file() {
+        std::fs::copy(&commands, build.join("compile_commands.json"))?;
+    }
+    let library = binary
+        .join("mods")
+        .join(manifest.id.as_str())
+        .join(manifest.library_name());
+    let bytes = read(&library)?;
     let symbols = Symbols::open(&sdk.symbols)?;
-    write_compile_commands(dir, options, &sdk, &manifest, &sources)?;
-    let scratch = Path::new(".tgg-build");
-    let library = scratch.join(manifest.library_name());
-    std::fs::create_dir_all(dir.join(scratch))?;
-    let compiled = std::process::Command::new(options.cc)
-        .args(sdk.compile_args(&manifest.id, &sources, &library, options.debug))
-        .current_dir(dir)
-        .status()
-        .map_err(|error| anyhow!("couldn't run {}: {error}", options.cc.display()))
-        .and_then(|status| {
-            ensure!(
-                status.success(),
-                "{} failed: {status}",
-                options.cc.display()
-            );
-            read(&dir.join(&library))
-        });
-    std::fs::remove_dir_all(dir.join(scratch))?;
-    let bytes = compiled?;
     let canonical = check_library(&bytes, &sdk, &symbols)?;
     Ok(Built {
         package: folders.pack(manifest, Some(bytes))?,
@@ -148,9 +162,54 @@ pub fn build(dir: &Path, options: &Options) -> Result<Built> {
     })
 }
 
-/// Check a built library as the game checks it at load: its records against
-/// the SDK, every symbol it names against the game's, and what it links
-/// against. Returns its hooks by canonical name.
+fn on_path(program: &str) -> bool {
+    std::env::var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(program).is_file()))
+}
+
+/// Run `command`, failing with `what` if it can't start or doesn't succeed.
+fn run(command: &mut Command, what: &str) -> Result<()> {
+    // Their output goes to stderr: stdout is for what tgg reports (--json).
+    let status = command
+        .stdout(std::io::stderr())
+        .status()
+        .map_err(|error| anyhow!("couldn't run {what}: {error}; tgg doctor says what's missing"))?;
+    ensure!(status.success(), "{what} failed: {status}");
+    Ok(())
+}
+
+/// The CMake project that builds the mod at `root` with the SDK: its sources
+/// and manifest by absolute path, so the project lives apart from the mod.
+fn write_project(project: &Path, sdk: &Sdk, root: &Path, sources: &[PathBuf]) -> Result<()> {
+    // CMake reads `\` as an escape, and quotes end a string.
+    let quote = |path: &Path| format!("\"{}\"", path.display().to_string().replace('\\', "/"));
+    let sources: Vec<String> = sources.iter().map(|s| quote(&root.join(s))).collect();
+    let text = format!(
+        "# Written by tgg mod build: the mod in {root}, built with the SDK's TggMod.cmake.\n\
+         cmake_minimum_required(VERSION 3.25)\n\
+         project(tgg-mod LANGUAGES C)\n\
+         set(TGG_SDK {sdk})\n\
+         set(TGG_MODS_DIR \"${{CMAKE_BINARY_DIR}}/mods\")\n\
+         include(\"${{TGG_SDK}}/TggMod.cmake\")\n\
+         tgg_use_sdk(\"${{TGG_SDK}}\")\n\
+         tgg_add_mod(mod\n    MANIFEST {manifest}\n    SOURCES\n        {sources})\n",
+        root = root.display(),
+        sdk = quote(&sdk.root),
+        manifest = quote(&root.join("manifest.json")),
+        sources = sources.join("\n        "),
+    );
+    std::fs::create_dir_all(project).with_context(|| project.display().to_string())?;
+    let path = project.join("CMakeLists.txt");
+    // Rewritten only when it changes, so CMake doesn't reconfigure for nothing.
+    if std::fs::read_to_string(&path).ok().as_deref() != Some(text.as_str()) {
+        std::fs::write(&path, text).with_context(|| path.display().to_string())?;
+    }
+    Ok(())
+}
+
+/// Check a built library's records against the SDK and every symbol it names
+/// against the game's, as the game does at load (the SDK's own build checks
+/// what it links against). Returns its hooks by canonical name.
 fn check_library(library: &[u8], sdk: &Sdk, symbols: &Symbols) -> Result<Hooks> {
     let declared = decls::read(library)?;
     ensure!(
@@ -178,11 +237,6 @@ fn check_library(library: &[u8], sdk: &Sdk, symbols: &Symbols) -> Result<Hooks> 
             problems.push(error.to_string());
         }
     }
-    problems.extend(
-        links::check(library, symbols, &sdk.glibc)?
-            .iter()
-            .map(ToString::to_string),
-    );
     if !problems.is_empty() {
         bail!(
             "the game would refuse this mod:\n  {}",
@@ -190,38 +244,6 @@ fn check_library(library: &[u8], sdk: &Sdk, symbols: &Symbols) -> Result<Hooks> 
         );
     }
     Ok(canonical)
-}
-
-/// `build/compile_commands.json`: each source's compile command, with
-/// absolute paths, so clangd and other editors see the mod as GCC does.
-fn write_compile_commands(
-    dir: &Path,
-    options: &Options,
-    sdk: &Sdk,
-    manifest: &Manifest,
-    sources: &[PathBuf],
-) -> Result<()> {
-    let root = std::path::absolute(dir)?;
-    let flags = sdk.compile_flags(&manifest.id, options.debug);
-    let text = |arg: &OsString| arg.to_string_lossy().into_owned();
-    let entries: Vec<_> = sources
-        .iter()
-        .map(|source| {
-            let mut arguments = vec![options.cc.to_string_lossy().into_owned()];
-            arguments.extend(flags.iter().map(text));
-            arguments.extend(["-c".to_owned(), source.to_string_lossy().into_owned()]);
-            json!({
-                "directory": root,
-                "file": root.join(source),
-                "arguments": arguments,
-            })
-        })
-        .collect();
-    let build = dir.join(BUILD);
-    std::fs::create_dir_all(&build).with_context(|| build.display().to_string())?;
-    let path = build.join("compile_commands.json");
-    let json = serde_json::to_string_pretty(&entries).expect("json") + "\n";
-    std::fs::write(&path, json).with_context(|| path.display().to_string())
 }
 
 /// The largest source zip `build --source-zip` takes. Game files make mods

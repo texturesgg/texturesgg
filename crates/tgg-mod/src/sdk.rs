@@ -1,4 +1,4 @@
-//! tgg-melee's mod SDK, and the compiler command that builds a mod against it.
+//! tgg-melee's mod SDK: what a mod is built with.
 //!
 //! Every tgg-melee build writes the SDK, and each release ships it as an
 //! archive: the headers a mod compiles against, the game's symbol list, and
@@ -9,17 +9,11 @@
 //! A mod's source follows one layout: `manifest.json` at its root and its C
 //! sources under `src/`.
 
-use crate::manifest::ModId;
 use serde::Deserialize;
-use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 /// The SDK's file name inside its folder.
 pub const FILE: &str = "tgg-game-sdk.json";
-
-/// Flags every mod gets on top of the SDK's own, so a mod builds the same way
-/// wherever it is built.
-const MOD_FLAGS: &[&str] = &["-shared", "-fPIC", "-fvisibility=hidden"];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Sdk {
@@ -176,73 +170,6 @@ impl Sdk {
             glibc: file.glibc,
         })
     }
-
-    /// The flags every source of the mod `id` compiles with: `-O2`, or
-    /// `-O0 -g` for `debug`, and the SDK's own.
-    pub fn compile_flags(&self, id: &ModId, debug: bool) -> Vec<OsString> {
-        let mut args: Vec<OsString> = MOD_FLAGS.iter().map(OsString::from).collect();
-        if debug {
-            args.extend(["-O0", "-g"].map(OsString::from));
-        } else {
-            args.push("-O2".into());
-        }
-        args.extend(self.options.iter().map(OsString::from));
-        // System directories, as the game's own build marks them, so the
-        // game's headers don't flood a mod's build with their warnings.
-        for dir in &self.include_dirs {
-            args.push("-isystem".into());
-            args.push(dir.into());
-        }
-        for file in &self.force_includes {
-            args.push("-include".into());
-            args.push(file.into());
-        }
-        args.extend(self.definitions.iter().map(|d| format!("-D{d}").into()));
-        // Tells the mod's own provider header that it is the provider, so its
-        // APIs are exports rather than imports.
-        args.push(format!("-DTGG_SELF_{}=1", c_identifier(id.as_str())).into());
-        args
-    }
-
-    /// The arguments, after the compiler's own name, that build the mod `id`'s
-    /// `sources` into the library `output`. Run it in the mod's folder, with
-    /// `sources` relative to it, so no path of the build machine reaches a
-    /// release library.
-    pub fn compile_args(
-        &self,
-        id: &ModId,
-        sources: &[PathBuf],
-        output: &Path,
-        debug: bool,
-    ) -> Vec<OsString> {
-        let mut args = self.compile_flags(id, debug);
-        args.push("-o".into());
-        args.push(output.into());
-        args.extend(sources.iter().map(OsString::from));
-        // After the sources, so the linker sees what they need first.
-        args.extend(self.libraries.iter().map(|lib| format!("-l{lib}").into()));
-        args
-    }
-}
-
-/// `text` as a C identifier, as CMake's MAKE_C_IDENTIFIER makes one: every
-/// character outside `[A-Za-z0-9_]` becomes `_`, and a leading digit gets a
-/// `_` before it.
-fn c_identifier(text: &str) -> String {
-    let mut out: String = text
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    if out.starts_with(|c: char| c.is_ascii_digit()) {
-        out.insert(0, '_');
-    }
-    out
 }
 
 /// Every `.c` file under `dir/src`, but names starting with a dot, relative
@@ -305,12 +232,6 @@ mod tests {
     fn paths_resolve_inside_the_sdk_and_never_leave_it() {
         let sdk = Sdk::parse(SDK.as_bytes(), Path::new("/opt/sdk")).expect("parse");
         assert_eq!(sdk.include_dirs[1], Path::new("/opt/sdk/game"));
-        let id: ModId = "7tgg.core-x".parse().expect("id");
-        let args = sdk.compile_args(&id, &["src/mod.c".into()], Path::new("out/mod.so"), false);
-        let args: Vec<_> = args.iter().map(|a| a.to_str().expect("utf-8")).collect();
-        assert!(args.contains(&"-DTGG_SELF__7tgg_core_x=1"));
-        // Libraries come after the sources that need them.
-        assert_eq!(args[args.len() - 2..], ["src/mod.c", "-lm"]);
 
         let escaping = SDK.replace("\"game\"", "\"../outside\"");
         assert!(matches!(

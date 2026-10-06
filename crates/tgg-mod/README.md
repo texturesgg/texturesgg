@@ -30,13 +30,10 @@ it has no library and no game layout, so one package fits every build of the gam
   disagrees.
 - **Catalogs.** The list of packages a registry offers, with each package's location, size,
   SHA-256 and netplay class.
-- **Game SDKs.** Reading the SDK's `tgg-game-sdk.json`, and the compiler command that
-  builds a mod against it.
-- **Symbols.** The SDK's `symbols.txt`: which names a mod may hook or link against, and each
+- **Game SDKs.** Reading the SDK's `tgg-game-sdk.json`: the game layout, target, API
+  version and files a mod builds with. The SDK's own CMake files build mods.
+- **Symbols.** The SDK's `symbols.txt`: which names a mod may hook or refer to, and each
   hook's canonical name (`name` for an exported function, `file.c:name` for a static).
-- **Links.** Whether a library would link when the game loads it: every symbol it takes
-  from the game is one the game exports, and no glibc version it needs is newer than the
-  oldest the game runs on.
 - **Game builds.** Reading an executable's `tgg_port` section: the game layout mods must
   match, the target and the game's version.
 - **Installing.** The game's mods folder: listing, installing over an older version, turning
