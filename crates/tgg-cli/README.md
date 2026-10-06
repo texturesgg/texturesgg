@@ -74,6 +74,14 @@ layout. Commands that build a mod install the SDK they need.
 `port run` and `mod dev` start the game with `TGG_MELEE_ISO`, else the disc image set
 with `tgg config set iso` (kept in `~/.config/tgg/config.json`).
 
+## `tgg docs`
+
+`tgg docs [PAGE]` opens the mod docs for the game in use,
+`https://textures.gg/docs/mods/<major.minor>/<page>`, where a page is a file of the SDK's
+`docs/` without `.md` (`writing-mods`, `hooks`); with no page, the index. When
+textures.gg can't be reached it opens the SDK's own copy instead. `tgg mod new` puts the
+same links in a new mod's README and `src/mod.c`.
+
 ## `tgg doctor`
 
 `tgg doctor` checks what building and running mods needs, and prints the command that
@@ -107,16 +115,19 @@ tgg mod enable|disable|remove ID...
 `new` copies the SDK's `examples/template/` (or `--example`'s) into an empty `DIR`, sets
 the manifest's `id` (`DIR`'s name unless `--id`) and `name`, runs `git init`, and builds
 once so `build/compile_commands.json` is there for the editor: the template's `.clangd`
-points clangd at it, so completion and go-to-definition reach the game's headers.
+points clangd at it, so completion and go-to-definition reach the game's headers. On
+NixOS, an editor's own clangd may not find the C library's headers; run the clangd of
+the project's dev shell (`direnv exec . clangd`) with `--query-driver=/nix/store/*/bin/gcc`.
 
 A mod's source is `manifest.json` at its root, C sources under `src/`, headers for other
 mods under `include/`, disc files under `files/`, mirroring the disc (`files/PlMrNr.dat`
 replaces `/PlMrNr.dat`), and new files under `assets/`; names starting with `.` are left
 out. A mod needs sources, files or assets. `build` compiles every `src/**/*.c` with GCC
-(`--cc` or `CC`, version 12 or later) in one call, with the SDK's include path,
-definitions, options, force includes and libraries plus `-shared -fPIC
--fvisibility=hidden -O2` and the `TGG_SELF_<id>` define, on paths relative to `DIR`, so
-the same source and SDK give the same package anywhere; `--debug` builds with `-O0 -g`
+(`--cc` or `CC`, version 12 or later) in one call, with the SDK's include path
+(as system directories, so the game's headers don't warn), definitions, options, force
+includes and libraries plus `-shared -fPIC -fvisibility=hidden -O2` and the
+`TGG_SELF_<id>` define, on paths relative to `DIR`, so the same source and SDK give the
+same package anywhere; `--debug` builds with `-O0 -g`
 instead. `SDK` is the SDK's folder or its `tgg-game-sdk.json`, or `TGG_GAME_SDK`; by
 default it is the SDK of the game in use, installed if it's missing. The package goes to
 `DIR/build/<id>-<version>.zip` unless `-o` says otherwise. A mod without sources

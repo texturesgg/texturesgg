@@ -75,6 +75,7 @@ pub fn new(new: New) -> Result<()> {
         &path,
         serde_json::to_string_pretty(&manifest).expect("json") + "\n",
     )?;
+    link_docs(dir, &sdk.version)?;
     if example == TEMPLATE {
         let cmake = dir.join("CMakeLists.txt");
         if let Ok(text) = std::fs::read_to_string(&cmake) {
@@ -98,6 +99,38 @@ pub fn new(new: New) -> Result<()> {
     match build::build(dir, &options) {
         Ok(_) => println!("Built it; tgg mod dev runs it in the game"),
         Err(error) => eprintln!("It doesn't build yet: {error:#}"),
+    }
+    Ok(())
+}
+
+/// Point the template's "the docs are in your SDK" lines at the docs for
+/// the SDK's version on textures.gg. A file without them is left as it is.
+fn link_docs(dir: &Path, version: &str) -> Result<()> {
+    let url = |page: &str| crate::docs::url(version, page);
+    let edits = [
+        (
+            "README.md",
+            "- The docs came with the SDK: `$(tgg sdk path)/docs`. Start with `writing-mods.md`.".to_owned(),
+            format!(
+                "- The docs: {}. Start with [writing mods]({}); `tgg docs` opens them, and\n  the SDK has a copy in `$(tgg sdk path)/docs`.",
+                url("README"),
+                url("writing-mods")
+            ),
+        ),
+        (
+            "src/mod.c",
+            " * swap what's below for your own code. The docs are in your SDK: run\n * `tgg sdk path` and open docs/writing-mods.md there.".to_owned(),
+            format!(" * swap what's below for your own code. The docs:\n * {}", url("writing-mods")),
+        ),
+    ];
+    for (file, old, new) in edits {
+        let path = dir.join(file);
+        if let Ok(text) = std::fs::read_to_string(&path)
+            && text.contains(&old)
+        {
+            std::fs::write(&path, text.replace(&old, &new))
+                .with_context(|| path.display().to_string())?;
+        }
     }
     Ok(())
 }

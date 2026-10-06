@@ -187,8 +187,10 @@ impl Sdk {
             args.push("-O2".into());
         }
         args.extend(self.options.iter().map(OsString::from));
+        // System directories, as the game's own build marks them, so the
+        // game's headers don't flood a mod's build with their warnings.
         for dir in &self.include_dirs {
-            args.push("-I".into());
+            args.push("-isystem".into());
             args.push(dir.into());
         }
         for file in &self.force_includes {
