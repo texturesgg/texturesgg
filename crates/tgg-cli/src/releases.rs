@@ -126,9 +126,20 @@ impl Mirror {
         serde_json::from_str(&text).with_context(|| format!("reading {path}"))
     }
 
-    /// The newest release's version.
+    /// The newest release's version. Before the first release, the error
+    /// names the newest prerelease (`latest-prerelease.json`), which
+    /// installs by its version.
     pub fn latest(&self) -> Result<String> {
-        Ok(self.json::<Latest>("latest.json")?.version)
+        match self.json::<Latest>("latest.json") {
+            Ok(latest) => Ok(latest.version),
+            Err(error) => match self.json::<Latest>("latest-prerelease.json") {
+                Ok(pre) => bail!(
+                    "tgg-melee has no release yet, only prereleases; the newest is {0}: tgg port install {0}",
+                    pre.version
+                ),
+                Err(_) => Err(error),
+            },
+        }
     }
 
     /// `version`'s release, or the newest for `latest`.

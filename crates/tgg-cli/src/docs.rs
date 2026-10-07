@@ -42,7 +42,7 @@ pub fn run(page: Option<&str>) -> Result<()> {
         !page.is_empty()
             && page
                 .bytes()
-                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-' || b == b'_'),
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'),
         "{page:?} isn't a docs page; pages are named like writing-mods or hooks"
     );
     let installed = match crate::ports::current_version()? {
