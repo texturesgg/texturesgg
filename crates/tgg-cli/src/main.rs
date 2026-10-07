@@ -13,6 +13,7 @@ mod publish;
 mod releases;
 mod scaffold;
 mod sdks;
+mod signals;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};

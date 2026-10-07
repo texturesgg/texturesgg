@@ -270,11 +270,12 @@ pub fn run(command: PortCommand) -> Result<()> {
         }
         PortCommand::Run { version, args } => {
             let installed = resolve(version.as_deref())?;
-            let status = std::process::Command::new(installed.executable())
-                .arg(crate::config::iso()?)
-                .args(&args)
-                .status()
-                .with_context(|| format!("running {}", installed.executable().display()))?;
+            let status = crate::signals::run(
+                std::process::Command::new(installed.executable())
+                    .arg(crate::config::iso()?)
+                    .args(&args),
+            )
+            .with_context(|| format!("running {}", installed.executable().display()))?;
             if !status.success() {
                 bail!("tgg-melee exited with {status}");
             }

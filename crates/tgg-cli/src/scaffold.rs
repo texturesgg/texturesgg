@@ -3,13 +3,14 @@
 use crate::build::{self, Options};
 use crate::publish::git;
 use anyhow::{Context, Result, anyhow, bail, ensure};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tgg_mod::ModId;
 
 /// The example a new mod starts from unless told otherwise.
 const TEMPLATE: &str = "template";
-/// The name the template's files give its mod.
+/// The id and name the template's files give its mod.
 const TEMPLATE_ID: &str = "my-mod";
+const TEMPLATE_NAME: &str = "My mod";
 
 pub struct New<'a> {
     pub dir: &'a Path,
@@ -21,16 +22,7 @@ pub struct New<'a> {
 
 pub fn new(new: New) -> Result<()> {
     let dir = new.dir;
-    if dir.exists() {
-        ensure!(
-            std::fs::read_dir(dir)
-                .with_context(|| dir.display().to_string())?
-                .next()
-                .is_none(),
-            "{} isn't empty; tgg mod new starts a mod in a new or empty folder",
-            dir.display()
-        );
-    }
+    check_folder(dir)?;
     let folder_name = std::path::absolute(dir)?
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
@@ -62,7 +54,7 @@ pub fn new(new: New) -> Result<()> {
             names.join(", ")
         );
     }
-    copy_dir(&source, dir)?;
+    let created = copy_dir(&source, dir, Path::new(""))?;
 
     // The id and name go in as JSON values, so nothing else in the manifest
     // changes.
@@ -70,16 +62,31 @@ pub fn new(new: New) -> Result<()> {
     let mut manifest: serde_json::Value =
         serde_json::from_slice(&build::read(&path)?).with_context(|| path.display().to_string())?;
     manifest["id"] = id.as_str().into();
-    manifest["name"] = new.name.unwrap_or(folder_name).into();
+    let name = new.name.unwrap_or(folder_name);
+    manifest["name"] = name.as_str().into();
     std::fs::write(
         &path,
         serde_json::to_string_pretty(&manifest).expect("json") + "\n",
     )?;
     link_docs(dir, &sdk.version)?;
     if example == TEMPLATE {
-        let cmake = dir.join("CMakeLists.txt");
-        if let Ok(text) = std::fs::read_to_string(&cmake) {
-            std::fs::write(&cmake, text.replace(TEMPLATE_ID, id.as_str()))?;
+        // The template's own files name its mod; a file that was already
+        // there is left alone.
+        for file in ["CMakeLists.txt", "README.md"] {
+            let path = dir.join(file);
+            if created.iter().any(|c| c == Path::new(file))
+                && let Ok(text) = std::fs::read_to_string(&path)
+            {
+                let text = if file == "README.md" {
+                    // The title and the log lines; its advice on choosing an id
+                    // stays as written.
+                    text.replacen(&format!("# {TEMPLATE_NAME}"), &format!("# {name}"), 1)
+                        .replace(&format!("`{TEMPLATE_ID}: "), &format!("`{id}: "))
+                } else {
+                    text.replace(TEMPLATE_ID, id.as_str())
+                };
+                std::fs::write(&path, text).with_context(|| path.display().to_string())?;
+            }
         }
     }
     build::read_manifest(dir)?;
@@ -135,20 +142,86 @@ fn link_docs(dir: &Path, version: &str) -> Result<()> {
     Ok(())
 }
 
-/// Copy the folder `from` into `to`, leaving out any `build/` folder.
-fn copy_dir(from: &Path, to: &Path) -> Result<()> {
+/// Files a folder may already hold when a mod starts in it: dotfiles (git,
+/// direnv), a README, a license and a Nix flake.
+fn may_already_be_there(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    name.starts_with('.')
+        || ["README", "LICENSE", "LICENCE", "COPYING"]
+            .iter()
+            .any(|prefix| upper.starts_with(prefix))
+        || ["flake.nix", "flake.lock", "shell.nix", "default.nix"].contains(&name)
+}
+
+/// Refuse a folder that holds anything but what [`may_already_be_there`]
+/// allows.
+fn check_folder(dir: &Path) -> Result<()> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error).with_context(|| dir.display().to_string()),
+    };
+    let mut others: Vec<String> = entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| !may_already_be_there(name))
+        .collect();
+    others.sort();
+    ensure!(
+        others.is_empty(),
+        "{} already has {}; tgg mod new starts a mod in a new folder, or one with only \
+         dotfiles, a README, a license and a Nix flake",
+        dir.display(),
+        others.join(", ")
+    );
+    Ok(())
+}
+
+/// Copy the folder `from` into `to`, leaving out any `build/` folder and
+/// keeping files `to` already has; an existing `.gitignore` gets the lines it
+/// lacks. Returns the files it wrote, relative to `to`.
+fn copy_dir(from: &Path, to: &Path, relative: &Path) -> Result<Vec<PathBuf>> {
+    let mut created = Vec::new();
     std::fs::create_dir_all(to).with_context(|| to.display().to_string())?;
     for entry in std::fs::read_dir(from).with_context(|| from.display().to_string())? {
         let entry = entry?;
         let target = to.join(entry.file_name());
+        let path = relative.join(entry.file_name());
         let kind = entry.file_type()?;
         if kind.is_dir() {
             if entry.file_name() != build::BUILD {
-                copy_dir(&entry.path(), &target)?;
+                created.extend(copy_dir(&entry.path(), &target, &path)?);
             }
         } else if kind.is_file() {
-            std::fs::copy(entry.path(), &target).with_context(|| target.display().to_string())?;
+            if !target.exists() {
+                std::fs::copy(entry.path(), &target)
+                    .with_context(|| target.display().to_string())?;
+                created.push(path);
+            } else if entry.file_name() == ".gitignore" {
+                merge_lines(&entry.path(), &target)?;
+            }
         }
     }
-    Ok(())
+    Ok(created)
+}
+
+/// Append to `into` each line of `from` it doesn't have.
+fn merge_lines(from: &Path, into: &Path) -> Result<()> {
+    let ours = std::fs::read_to_string(from).with_context(|| from.display().to_string())?;
+    let mut theirs = std::fs::read_to_string(into).with_context(|| into.display().to_string())?;
+    let missing: Vec<&str> = ours
+        .lines()
+        .filter(|line| !line.trim().is_empty() && !theirs.lines().any(|t| t == *line))
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    if !theirs.is_empty() && !theirs.ends_with('\n') {
+        theirs.push('\n');
+    }
+    for line in missing {
+        theirs.push_str(line);
+        theirs.push('\n');
+    }
+    std::fs::write(into, theirs).with_context(|| into.display().to_string())
 }

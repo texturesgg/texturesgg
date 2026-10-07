@@ -255,6 +255,7 @@ pub fn run(cc: &Path) -> Result<()> {
         report.problem("system", "tgg-melee releases are for Linux x86-64 so far");
     } else {
         check_glibc(&mut report);
+        check_graphics(&mut report);
     }
 
     let mut nixpkgs = None;
@@ -309,5 +310,122 @@ pub fn run(cc: &Path) -> Result<()> {
         0 => Ok(()),
         1 => bail!("1 problem"),
         n => bail!("{n} problems"),
+    }
+}
+
+/// Folders the system's dynamic loader searches, as far as tgg can tell
+/// without loading anything: `LD_LIBRARY_PATH`, nix-ld's libraries,
+/// `ldconfig`'s cache and the usual folders.
+fn library_dirs() -> Vec<std::path::PathBuf> {
+    let mut dirs: Vec<std::path::PathBuf> = ["LD_LIBRARY_PATH", "NIX_LD_LIBRARY_PATH"]
+        .iter()
+        .filter_map(std::env::var_os)
+        .flat_map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
+        .collect();
+    for ldconfig in ["ldconfig", "/sbin/ldconfig", "/usr/sbin/ldconfig"] {
+        if let Some(cache) = output(Path::new(ldconfig), &["-p"]) {
+            dirs.extend(cache.lines().filter_map(|line| {
+                let path = Path::new(line.rsplit_once("=> ")?.1.trim());
+                Some(path.parent()?.to_owned())
+            }));
+            break;
+        }
+    }
+    dirs.extend(
+        [
+            "/lib64",
+            "/usr/lib64",
+            "/lib/x86_64-linux-gnu",
+            "/usr/lib/x86_64-linux-gnu",
+            "/usr/lib",
+            "/lib",
+        ]
+        .map(std::path::PathBuf::from),
+    );
+    dirs
+}
+
+fn has_library(dirs: &[std::path::PathBuf], name: &str) -> bool {
+    dirs.iter().any(|dir| dir.join(name).exists())
+}
+
+/// The game opens Vulkan and an X11 or Wayland client library at runtime.
+fn check_graphics(report: &mut Report) {
+    let dirs = library_dirs();
+    let (id, like, _) = distro();
+    let is = |name: &str| id == name || like.split(' ').any(|l| l == name);
+    let install = |apt: &str, dnf: &str, pacman: &str, nix: &str| {
+        if id == "nixos" {
+            format!("add {nix} to programs.nix-ld.libraries in your NixOS configuration")
+        } else if is("debian") || is("ubuntu") {
+            format!("sudo apt install {apt}")
+        } else if is("fedora") || is("rhel") {
+            format!("sudo dnf install {dnf}")
+        } else if is("arch") || id == "steamos" {
+            format!("sudo pacman -S {pacman}")
+        } else {
+            format!("install {apt} with your system's package manager")
+        }
+    };
+    if has_library(&dirs, "libvulkan.so.1") {
+        report.ok("Vulkan", "libvulkan.so.1");
+    } else {
+        report.problem(
+            "Vulkan",
+            &format!(
+                "the game draws with Vulkan and can't find libvulkan.so.1: {}",
+                install(
+                    "libvulkan1",
+                    "vulkan-loader",
+                    "vulkan-icd-loader",
+                    "vulkan-loader"
+                )
+            ),
+        );
+    }
+    let icds = std::env::var_os("VK_ICD_FILENAMES").is_some()
+        || [
+            "/usr/share/vulkan/icd.d",
+            "/etc/vulkan/icd.d",
+            "/run/opengl-driver/share/vulkan/icd.d",
+        ]
+        .iter()
+        .any(|dir| std::fs::read_dir(dir).is_ok_and(|mut entries| entries.next().is_some()));
+    if !icds {
+        report.note(
+            "Vulkan",
+            "no Vulkan driver found; install your GPU's (Mesa's for AMD and Intel), or run \
+             the game on the CPU with TGG_CPU_GPU=1 and Mesa's lavapipe",
+        );
+    }
+    let x11 = [
+        "libX11.so.6",
+        "libXext.so.6",
+        "libXcursor.so.1",
+        "libXi.so.6",
+        "libXrandr.so.2",
+    ];
+    let has_x11 = x11.iter().all(|lib| has_library(&dirs, lib));
+    let has_wayland =
+        has_library(&dirs, "libwayland-client.so.0") && has_library(&dirs, "libxkbcommon.so.0");
+    match (has_x11, has_wayland) {
+        (true, true) => report.ok("window", "X11 and Wayland"),
+        (true, false) => report.ok("window", "X11"),
+        (false, true) => report.ok(
+            "window",
+            "Wayland (X11's libraries are missing, so the game can't open under X11 or Xvfb)",
+        ),
+        (false, false) => report.problem(
+            "window",
+            &format!(
+                "the game opens its window with X11 or Wayland and can't find either's libraries: {}",
+                install(
+                    "libx11-6 libxext6 libxcursor1 libxi6 libxrandr2 libxkbcommon0",
+                    "libX11 libXext libXcursor libXi libXrandr libxkbcommon",
+                    "libx11 libxext libxcursor libxi libxrandr libxkbcommon",
+                    "libX11, libXext, libXcursor, libXi, libXrandr and libxkbcommon"
+                )
+            ),
+        ),
     }
 }
