@@ -87,7 +87,10 @@ same links in a new mod's README and `src/mod.c`.
 `tgg doctor` checks what building and running mods needs, and prints the command that
 fixes each problem: glibc 2.34 or later, an installed game and its SDK, a C compiler
 (`--cc` or `CC`) that is GCC 12 or later (clang lacks the `scalar_storage_order` the
-game's headers use), CMake 3.25 or later (Ninja too, for faster builds), and a disc image.
+game's headers use), CMake 3.25 or later (Ninja too, for faster builds), the libraries
+the game opens at runtime (libvulkan and a Vulkan driver, and X11's or Wayland's client
+libraries; with no GPU driver, `TGG_CPU_GPU=1` runs it on Mesa's lavapipe), and a disc
+image.
 For a missing or old tool it names the install command for the system (`apt`, `dnf`,
 `pacman`, `zypper`), a newer `gcc-<n>` already on `PATH`, or on NixOS `nix shell` with the
 tool from the nixpkgs revision the game was built with. The system's GCC is enough: the
@@ -113,12 +116,15 @@ tgg mod install [--port EXE] ZIP...      install packages, refusing another game
 tgg mod enable|disable|remove ID...
 ```
 
-`new` copies the SDK's `examples/template/` (or `--example`'s) into an empty `DIR`, sets
-the manifest's `id` (`DIR`'s name unless `--id`) and `name`, runs `git init`, and builds
-once so `build/compile_commands.json` is there for the editor: the template's `.clangd`
-points clangd at it, so completion and go-to-definition reach the game's headers. On
-NixOS, an editor's own clangd may not find the C library's headers; run the clangd of
-the project's dev shell (`direnv exec . clangd`) with `--query-driver=/nix/store/*/bin/gcc`.
+`new` copies the SDK's `examples/template/` (or `--example`'s) into `DIR`, which may
+already hold dotfiles, a README, a license and a Nix flake (it keeps those, and adds the
+template's `.gitignore` lines to an existing one), sets the manifest's `id` (`DIR`'s name
+unless `--id`) and `name`, and the template README's title and log lines to them,
+runs `git init`, and builds once so `build/compile_commands.json` is there for the
+editor: the template's `.clangd` points clangd at it, so completion and go-to-definition
+reach the game's headers. On NixOS, an editor's own clangd may not find the C library's
+headers; run the clangd of the project's dev shell (`direnv exec . clangd`) with
+`--query-driver=/nix/store/*/bin/gcc`.
 
 A mod's source is `manifest.json` at its root, C sources under `src/`, headers for other
 mods under `include/`, disc files under `files/`, mirroring the disc (`files/PlMrNr.dat`
@@ -176,9 +182,10 @@ of the same mod is moved aside to `.~dev-<id>` for the session and put back afte
 the link, unless `--keep`. Before the game starts it warns about installed mods that
 replace the same function or that the mod needs and are missing. `--watch` rebuilds on
 each change to `manifest.json`, `src/`, `include/`, `files/` or `assets/` and restarts
-the game when it builds; Ctrl-C ends the session. `--gdb` runs the game under gdb, which
-needs its debug info (`tgg port install --debug`). The game's own switches pass through
-the environment: `TGG_SKIP_INTRO=1`, `TGG_INPUT_SCRIPT`, `TGG_SYNCTEST=1` (the rollback
+the game when it builds; Ctrl-C ends the session. Ctrl-C or SIGTERM to `tgg` (from
+`timeout`, say) reaches the game too, here and in `tgg port run`, and a game still running
+five seconds later is killed. `--gdb` runs the game under gdb, which needs its debug
+info (`tgg port install --debug`). The game's own switches pass through the environment: `TGG_SKIP_INTRO=1`, `TGG_INPUT_SCRIPT`, `TGG_SYNCTEST=1` (the rollback
 check), `TGG_UCF=0`, `TGG_UNLOCK_ALL=0`. A dev build never matches a registry build, so
 it never matches a netplay peer's.
 

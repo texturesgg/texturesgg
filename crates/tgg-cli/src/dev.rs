@@ -9,12 +9,11 @@
 
 use crate::build::{self, Options};
 use crate::ports::{self, Installed};
+use crate::signals::Signals;
 use anyhow::{Context, Result, bail, ensure};
 use std::io::{BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
 use tgg_mod::{ModId, ModsDir, conflicts, unmet};
 
@@ -58,19 +57,14 @@ pub fn dev(dev: Dev) -> Result<()> {
     )?;
     warn_about(&mods, &id)?;
 
-    // Ctrl-C reaches the game (or gdb) too; tgg waits for it to end, then
+    // Ctrl-C and SIGTERM end the game (or gdb) too; tgg waits for it, then
     // puts the mods folder back.
-    let stop = Arc::new(AtomicBool::new(false));
-    {
-        let stop = stop.clone();
-        ctrlc::set_handler(move || stop.store(true, Ordering::SeqCst))
-            .context("handling Ctrl-C")?;
-    }
+    let signals = crate::signals::handle()?;
 
     let result = if dev.gdb {
         run_gdb(&installed, &iso, dev.args)
     } else if dev.watch {
-        watch(&dev, &installed, &iso, &id, &options, &stop)
+        watch(&dev, &installed, &iso, &id, &options, &signals)
     } else {
         let mut game = Game::start(&installed, &iso, dev.args, &id)?;
         game.wait()
@@ -217,10 +211,14 @@ impl Game {
             pass_through(stdout, refused.clone(), false),
             pass_through(stderr, refused, true),
         ];
+        crate::signals::handle()?.set_game(Some(child.id()));
         Ok(Self { child, readers })
     }
 
     fn finish(&mut self) {
+        if let Ok(signals) = crate::signals::handle() {
+            signals.set_game(None);
+        }
         for reader in self.readers.drain(..) {
             let _ = reader.join();
         }
@@ -274,13 +272,14 @@ fn pass_through(
 }
 
 fn run_gdb(installed: &Installed, iso: &Path, args: &[String]) -> Result<()> {
-    let status = Command::new("gdb")
-        .args(["-ex", "set breakpoint pending on", "--args"])
-        .arg(installed.executable())
-        .arg(iso)
-        .args(args)
-        .status()
-        .context("running gdb; is it installed?")?;
+    let status = crate::signals::run(
+        Command::new("gdb")
+            .args(["-ex", "set breakpoint pending on", "--args"])
+            .arg(installed.executable())
+            .arg(iso)
+            .args(args),
+    )
+    .context("running gdb; is it installed?")?;
     ensure!(status.success(), "gdb exited with {status}");
     Ok(())
 }
@@ -321,7 +320,7 @@ fn watch(
     iso: &Path,
     id: &ModId,
     options: &Options,
-    stop: &AtomicBool,
+    signals: &Signals,
 ) -> Result<()> {
     let mut seen = snapshot(dev.dir);
     let mut game = Some(Game::start(installed, iso, dev.args, id)?);
@@ -329,7 +328,7 @@ fn watch(
         "Watching {} for changes; Ctrl-C ends the session",
         dev.dir.display()
     );
-    while !stop.load(Ordering::SeqCst) {
+    while !signals.stopping() {
         std::thread::sleep(Duration::from_millis(300));
         if let Some(running) = &mut game
             && !running.running()
