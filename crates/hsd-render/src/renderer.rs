@@ -34,7 +34,9 @@ const BACKGROUND_COLOR: wgpu::Color = wgpu::Color {
     b: BACKGROUND_RGB[2] as f64 / 255.0,
     a: 1.0,
 };
-const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth24Plus;
+/// 32-bit float depth: what Apple GPUs store `Depth24Plus` as anyway, and
+/// the only depth format Rune's native Metal backend accepts.
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 struct GpuPacket {
     pipeline: usize,
