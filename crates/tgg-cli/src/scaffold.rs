@@ -8,15 +8,15 @@ use tgg_mod::ModId;
 
 /// The example a new mod starts from unless told otherwise.
 const TEMPLATE: &str = "template";
-/// The id and name the template's files give its mod.
 const TEMPLATE_ID: &str = "my-mod";
-const TEMPLATE_NAME: &str = "My mod";
 
 pub struct New<'a> {
     pub dir: &'a Path,
     pub id: Option<ModId>,
     pub name: Option<String>,
     pub example: Option<String>,
+    /// The SDK, or `None` to use the game in use's.
+    pub sdk: Option<&'a Path>,
     pub cc: &'a Path,
 }
 
@@ -35,7 +35,7 @@ pub fn new(new: New) -> Result<()> {
             )
         })?,
     };
-    let sdk = build::resolve_sdk(None)?;
+    let sdk = build::resolve_sdk(new.sdk)?;
     let example = new.example.as_deref().unwrap_or(TEMPLATE);
     let source = sdk.root.join("examples").join(example);
     if !source.join("manifest.json").is_file() {
@@ -78,10 +78,9 @@ pub fn new(new: New) -> Result<()> {
                 && let Ok(text) = std::fs::read_to_string(&path)
             {
                 let text = if file == "README.md" {
-                    // The title and the log lines; its advice on choosing an id
-                    // stays as written.
-                    text.replacen(&format!("# {TEMPLATE_NAME}"), &format!("# {name}"), 1)
-                        .replace(&format!("`{TEMPLATE_ID}: "), &format!("`{id}: "))
+                    // The template's README describes the template; a new mod
+                    // gets its own, which link_docs then points at the docs
+                    readme(&name, id.as_str())
                 } else {
                     text.replace(TEMPLATE_ID, id.as_str())
                 };
@@ -91,8 +90,16 @@ pub fn new(new: New) -> Result<()> {
     }
     build::read_manifest(dir)?;
 
+    // A repository tgg starts gets a first commit, so the mod's history
+    // starts from the template; one that was already there is left alone
     if git(dir, &["rev-parse", "--git-dir"]).is_err() {
         git(dir, &["init", "--quiet", "--initial-branch=main"])?;
+        let message = format!("Start {id} from the SDK's {example}");
+        if let Err(error) = git(dir, &["add", "--all"])
+            .and_then(|_| git(dir, &["commit", "--quiet", "--message", &message]))
+        {
+            eprintln!("Made a git repository but not its first commit: {error:#}");
+        }
     }
     println!("Created {id} in {} from the SDK's {example}", dir.display());
 
@@ -108,6 +115,17 @@ pub fn new(new: New) -> Result<()> {
         Err(error) => eprintln!("It doesn't build yet: {error:#}"),
     }
     Ok(())
+}
+
+/// A new mod's README: its name and id, and how to build and run it.
+fn readme(name: &str, id: &str) -> String {
+    format!(
+        "# {name}\n\n`{id}`, a mod for tgg-melee.\n\n## Build and run\n\n```sh\n\
+         tgg mod build        # build and pack it into build/\n\
+         tgg mod dev --watch  # run it in the game, rebuilding on every change\n\
+         ```\n\n\
+         - The docs came with the SDK: `$(tgg sdk path)/docs`. Start with `writing-mods.md`.\n"
+    )
 }
 
 /// Point the template's "the docs are in your SDK" lines at the docs for

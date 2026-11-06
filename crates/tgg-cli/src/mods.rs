@@ -30,6 +30,10 @@ pub enum ModCommand {
         /// The SDK example to start from, such as lcancel-trainer.
         #[arg(long)]
         example: Option<String>,
+        /// The SDK's folder or tgg-game-sdk.json [default: the SDK of the
+        /// game in use]
+        #[arg(long, env = "TGG_GAME_SDK")]
+        sdk: Option<PathBuf>,
         #[command(flatten)]
         cc: Cc,
     },
@@ -76,6 +80,10 @@ pub enum ModCommand {
         /// The installed tgg-melee version to run [default: the one in use]
         #[arg(long)]
         port: Option<String>,
+        /// A local build of the port to run instead of an installed version:
+        /// the folder with the tgg-melee executable and tgg-melee-sdk
+        #[arg(long, env = "TGG_GAME", conflicts_with = "port")]
+        game: Option<PathBuf>,
         /// Leave the dev build linked in the mods folder afterwards.
         #[arg(long)]
         keep: bool,
@@ -184,12 +192,14 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
             id,
             name,
             example,
+            sdk,
             cc,
         } => crate::scaffold::new(crate::scaffold::New {
             dir: &dir,
             id,
             name,
             example,
+            sdk: sdk.as_deref(),
             cc: &cc.cc,
         }),
         ModCommand::Build {
@@ -223,6 +233,7 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
             watch,
             gdb,
             port,
+            game,
             keep,
             cc,
             args,
@@ -231,6 +242,7 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
             watch,
             gdb,
             version: port.as_deref(),
+            game: game.as_deref(),
             keep,
             cc: &cc.cc,
             args: &args,
