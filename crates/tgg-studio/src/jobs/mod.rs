@@ -1,0 +1,107 @@
+//! Background work, so the window never waits on the disc: reading what
+//! every slot of the player's game holds, and rendering costumes, each on a
+//! thread of its own. Results come back down one channel and wake the
+//! window; `poll` hands them to the actions that own them before a frame.
+//! Renders skip the channel: the worker fills each picture itself.
+
+pub mod renders;
+
+use melee_dat::MeleeSlot;
+use rune::Waker;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use tgg_app::install::SlotState;
+use tgg_app::library::Library;
+
+/// What a finished job found.
+pub enum Done {
+    /// What each slot of the game at `iso` holds.
+    States { iso: PathBuf, states: HashMap<MeleeSlot, SlotState> },
+}
+
+pub struct Jobs {
+    /// Wakes the window when a result arrives; `None` until the app is
+    /// running (and in tests, which take results themselves).
+    waker: Option<Waker>,
+    done: mpsc::Sender<Done>,
+    results: mpsc::Receiver<Done>,
+}
+
+impl Default for Jobs {
+    fn default() -> Self {
+        let (done, results) = mpsc::channel();
+        Self { waker: None, done, results }
+    }
+}
+
+impl Jobs {
+    pub fn set_waker(&mut self, waker: Waker) {
+        self.waker = Some(waker);
+    }
+
+    /// Read what every slot of the game at `iso` holds, against the
+    /// library at `library`: each slot's file, compared with vanilla and the
+    /// library's skins.
+    pub fn read_states(&self, iso: &Path, library: &Path) {
+        let (iso, library) = (iso.to_owned(), library.to_owned());
+        let (done, waker) = (self.done.clone(), self.waker.clone());
+        std::thread::Builder::new()
+            .name("slot states".into())
+            .spawn(move || {
+                let states = match tgg_app::Game::open(&iso) {
+                    Ok(game) => states_of(&game, &Library::open_at(library)),
+                    Err(error) => {
+                        tgg_app::log(&format!("reading slot states: {error}"));
+                        return;
+                    }
+                };
+                if done.send(Done::States { iso, states }).is_ok()
+                    && let Some(waker) = waker
+                {
+                    waker();
+                }
+            })
+            .expect("start the slot states thread");
+    }
+
+    /// The results that have arrived.
+    pub fn take(&self) -> Vec<Done> {
+        self.results.try_iter().collect()
+    }
+
+    /// The next result, waiting up to `timeout` for it; for tests.
+    #[cfg(test)]
+    pub fn wait(&self, timeout: std::time::Duration) -> Option<Done> {
+        self.results.recv_timeout(timeout).ok()
+    }
+}
+
+/// What each slot of `game` holds.
+fn states_of(game: &tgg_app::Game, library: &Library) -> HashMap<MeleeSlot, SlotState> {
+    game.slots()
+        .into_iter()
+        .filter_map(|slot| {
+            let bytes = game.read_slot(slot).ok()?;
+            Some((slot, SlotState::of(slot, &bytes, library)))
+        })
+        .collect()
+}
+
+/// Once the window runs: keep its waker, and start reading the game.
+pub fn setup(app: &mut crate::state::App, waker: Waker) {
+    app.jobs.set_waker(waker);
+    crate::melee::actions::refresh(app);
+}
+
+/// Before each frame: hand what's arrived to the actions that own it.
+/// True when anything that shows changed.
+pub fn poll(app: &mut crate::state::App, _: f64, _: &mut rune::Tx) -> bool {
+    let mut changed = false;
+    for done in app.jobs.take() {
+        changed |= match done {
+            Done::States { iso, states } => crate::melee::actions::states_read(app, &iso, states),
+        };
+    }
+    changed
+}

@@ -64,3 +64,24 @@ pub fn page_head(title: &str, line: &str, p: &Palette) -> El {
         .child(text(title).font(type_::H1).color(p.ink))
         .child(text(line).font(type_::BODY).color(p.muted))
 }
+
+/// A text tab: its label and count, underlined in ink while it's chosen.
+pub fn tab(label: &str, count: usize, chosen: bool, p: &Palette) -> El {
+    let ink = if chosen { p.ink } else { p.muted };
+    col().role("tab").label(label).focusable(true)
+        .child(row().h(34.0).gap(6.0).items_center()
+            .child(text(label).font(type_::STRONG).color(ink))
+            .child(text(count.to_string()).font(type_::MONO_SMALL).color(p.faint)))
+        .child(el().h(2.0).w_full().fill(if chosen { p.ink } else { rune::Color::TRANSPARENT }))
+}
+
+/// A plate: the frame a model is shown in, on the color hsd-render clears
+/// to, so a render sits in it seamlessly. Square-cornered; the caller sizes it.
+pub fn plate(p: &Palette) -> El {
+    el().fill(p.plate).border(1.0, p.line)
+}
+
+/// A hairline across its container: the rule under tabs, between rows.
+pub fn rule(p: &Palette) -> El {
+    el().h(1.0).w_full().fill(p.line)
+}

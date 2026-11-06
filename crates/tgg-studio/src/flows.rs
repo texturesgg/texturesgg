@@ -143,3 +143,37 @@ fn a_game_found_in_the_players_folders_opens_with_one_press() {
     tap(&mut rt, "welcome/game/0");
     assert!(rt.state.game.is_some());
 }
+
+#[test]
+fn the_roster_shows_the_games_fighters_and_whats_changed_once_its_read() {
+    let (_folder, iso) = melee_iso();
+    let mut rt = runtime(game_at(&iso));
+    assert!(rt.find("melee/fighter/Falco").is_some(), "the test disc holds a Falco costume");
+    assert!(rt.state.melee.states.is_none(), "nothing is read until the window runs");
+    // The disc's PlFcRe.dat isn't the game's own file: it reads as custom.
+    let library = tempfile::tempdir().expect("temp dir");
+    rt.state.jobs.read_states(&iso, library.path());
+    let done = rt.state.jobs.wait(std::time::Duration::from_secs(10)).expect("the states arrive");
+    let crate::jobs::Done::States { iso: read, states } = done;
+    assert!(crate::melee::actions::states_read(&mut rt.state, &read, states));
+    let falco = &rt.state.melee.fighters[0];
+    assert_eq!(rt.state.melee.changed_count(falco), 1);
+}
+
+#[test]
+fn states_read_for_another_game_are_set_aside() {
+    let (_folder, iso) = melee_iso();
+    let mut rt = runtime(game_at(&iso));
+    let elsewhere = Path::new("/elsewhere/melee.iso");
+    assert!(!crate::melee::actions::states_read(&mut rt.state, elsewhere, Default::default()));
+    assert!(rt.state.melee.states.is_none());
+}
+
+#[test]
+fn the_stages_tab_shows_the_stages() {
+    let (_folder, iso) = melee_iso();
+    let mut rt = runtime(game_at(&iso));
+    tap(&mut rt, "melee/tab/stages");
+    assert_eq!(rt.state.melee.tab, crate::melee::Tab::Stages);
+    assert!(rt.find("melee/fighter/Falco").is_none());
+}

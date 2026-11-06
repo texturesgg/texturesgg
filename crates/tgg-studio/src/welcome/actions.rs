@@ -28,8 +28,8 @@ pub fn use_game_at(app: &mut App, path: &Path) {
     match opened {
         Ok(references) => {
             app.change_settings(|settings| remember(settings, path));
-            app.game = Some(references);
             app.welcome = Welcome::default();
+            crate::melee::actions::open_game(app, references);
             nav::go(app, Place::Melee);
         }
         Err(problem) => app.welcome.problem = Some(problem),

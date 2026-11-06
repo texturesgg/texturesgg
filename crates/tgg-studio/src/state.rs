@@ -1,7 +1,10 @@
-//! The app's whole state: read by the view, changed only by handlers between
-//! frames. Each feature owns its slice and the handlers that change it;
-//! this module holds what's shared and how the app starts.
+//! The app's whole state: read by the view, changed only by actions between
+//! frames. Each feature owns its slice; this module holds the root, what's
+//! shared, and how the app starts.
 
+use crate::jobs::Jobs;
+use crate::jobs::renders::Renders;
+use crate::melee::Melee;
 use crate::nav::Nav;
 use crate::welcome::Welcome;
 use tgg_app::References;
@@ -17,6 +20,11 @@ pub struct App {
     pub game: Option<References>,
     pub nav: Nav,
     pub welcome: Welcome,
+    pub melee: Melee,
+    /// Pictures of costumes and stages, shared by every place.
+    pub renders: Renders,
+    /// Work off the window's thread.
+    pub jobs: Jobs,
 }
 
 /// Where the app starts.
@@ -30,14 +38,15 @@ pub enum Start {
 
 impl App {
     /// The app at `start`, with `settings` as read from disk (or the defaults,
-    /// in tests).
+    /// in tests). Nothing is read in the background until it runs.
     pub fn new(start: Start, settings: Settings, persist: bool) -> Self {
         let nav = Nav::from_settings(&settings);
         let (game, welcome) = match start {
             Start::Game(references) => (Some(references), Welcome::default()),
             Start::Welcome(welcome) => (None, welcome),
         };
-        Self { settings, persist, game, nav, welcome }
+        let melee = game.as_ref().map(|references| Melee::of(references.game())).unwrap_or_default();
+        Self { settings, persist, game, nav, welcome, melee, renders: Renders::default(), jobs: Jobs::default() }
     }
 
     /// Change the settings here and, when persisting, on disk: read, change

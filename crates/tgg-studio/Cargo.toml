@@ -10,6 +10,14 @@ publish = false
 
 [dependencies]
 tgg-app = { path = "../tgg-app" }
+dat-parser = { path = "../dat-parser" }
+hsd-render = { path = "../hsd-render", default-features = false }
+melee-dat = { path = "../melee-dat" }
+# Where costume renders are kept.
+dirs = "5"
+# Costume renders are kept as PNGs, by their file's SHA-256.
+image = { version = "0.25", default-features = false, features = ["png"] }
+sha2 = "0.10"
 
 # Pre-release: pin a `dev` rev, which is never rewritten, and move it on
 # deliberately. Off: the Metal backend (macOS gets its own pass), ogg audio

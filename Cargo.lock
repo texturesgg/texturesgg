@@ -3500,7 +3500,13 @@ dependencies = [
 name = "tgg-studio"
 version = "0.1.0"
 dependencies = [
+ "dat-parser",
+ "dirs",
+ "hsd-render",
+ "image",
+ "melee-dat",
  "rune",
+ "sha2",
  "tempfile",
  "tgg-app",
 ]

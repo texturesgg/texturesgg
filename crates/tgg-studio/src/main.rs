@@ -7,6 +7,7 @@
 //! tgg-studio [--iso PATH] --snap out.png [--scene NAME]   headless, as Rune's tooling
 //! ```
 
+mod jobs;
 mod library;
 mod melee;
 mod mods;
@@ -34,6 +35,7 @@ const SCENES: &[Scene] = &[
         app.game = None;
         app.welcome.games = tgg_app::discover_games();
     }),
+    ("stages", |app| app.melee.tab = melee::Tab::Stages),
     ("library", |app| app.nav.place = nav::Place::Library),
     ("mods", |app| app.nav.place = nav::Place::Mods),
     ("no-sidebar", |app| app.nav.sidebar = false),
@@ -49,6 +51,8 @@ fn main() {
         families: ui::fonts::FAMILIES,
         scenes: SCENES,
         on_key: Some(nav::actions::on_key),
+        setup: Some(jobs::setup),
+        poll: Some(jobs::poll),
         ..AppSpec::new("textures.gg", (1280.0, 800.0), launch, shell::view)
     };
     rune::App::new(spec)
