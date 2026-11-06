@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en" data-theme="gallery">
+<head>
+<meta charset="utf-8">
+<title>Catalog: design language</title>
+<link rel="stylesheet" href="b.css">
+<style>
+  body { overflow: auto; }
+  .sheet { max-width: 1180px; margin: 0 auto; padding: 48px 48px 96px; }
+  .mast { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 24px; padding-bottom: 20px; border-bottom: 1px solid var(--line-strong); margin-bottom: 40px; }
+  .mast p { max-width: 620px; margin: 12px 0 0; color: var(--muted); font-size: 15px; line-height: 1.55; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; }
+  section { margin-bottom: 56px; }
+  .principles { counter-reset: p; display: grid; grid-template-columns: repeat(5, 1fr); gap: 24px; }
+  .principles div { border-top: 1px solid var(--line-strong); padding-top: 10px; }
+  .principles b { display: block; font-size: 14px; margin-bottom: 4px; letter-spacing: -0.01em; }
+  .principles p { margin: 0; color: var(--muted); font-size: 13px; }
+  .principles .m { color: var(--faint); font-size: 11.5px; display: block; margin-bottom: 8px; }
+
+  .pal { border: 1px solid var(--line-strong); }
+  .pal-h { display: flex; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--line-strong); font-weight: 700; }
+  .pal-row { display: grid; grid-template-columns: 44px 120px 84px 1fr; align-items: center; gap: 12px; padding: 0 12px; height: 36px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  .pal-row:last-child { border-bottom: 0; }
+  .pal-row i { height: 22px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+  .pal-row .use { color: var(--muted); }
+
+  .type-row { display: grid; grid-template-columns: 150px 1fr; align-items: baseline; gap: 20px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .type-row .m { color: var(--faint); font-size: 11.5px; }
+
+  .spec { border: 1px solid var(--line); background: var(--surface); padding: 20px; }
+  .spec + .note, .note { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+  .lines div { height: 44px; display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; color: var(--muted); }
+  .lines .a { border-bottom: 1px solid var(--line); }
+  .lines .b2 { border-bottom: 1px solid var(--line-strong); }
+  .lines .c { border-bottom: 2px solid var(--ink); }
+
+  .dont { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; border: 1px solid var(--line-strong); }
+  .dont div { padding: 14px; border-right: 1px solid var(--line); font-size: 13px; }
+  .dont div:last-child { border-right: 0; }
+  .dont b { display: block; margin-bottom: 4px; }
+  .dont .x { color: var(--danger); font: 600 11.5px var(--mono); display: block; margin-bottom: 6px; }
+  .dont p { margin: 0; color: var(--muted); }
+
+  .comp { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .stack > * + * { margin-top: 14px; }
+  .theme-flip { position: fixed; right: 20px; top: 16px; }
+</style>
+</head>
+<body>
+<button class="b theme-flip" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'paper' ? 'gallery' : 'paper'">Paper / Gallery</button>
+<div class="sheet">
+
+  <header class="mast">
+    <div>
+      <div class="m fa">tgg-editor · Direction B · draft 2</div>
+      <h1 class="t-display" style="margin-top:10px">Catalog</h1>
+      <p>The editor as a well-made reference book. Type and hairline rules carry the structure, data is set in mono and lines up, and the fighter is a framed plate with a caption. The site's Gallery tokens, used with more restraint.</p>
+    </div>
+    <div class="m fa" style="text-align:right">Schibsted Grotesk<br>DM Mono<br>Paper · Gallery</div>
+  </header>
+
+  <section>
+    <div class="sect"><div class="sect-h"><span class="no">01</span><h3>Principles</h3></div></div>
+    <div class="principles">
+      <div><span class="m">i</span><b>The work is the picture</b><p>Fighters, skins and textures are the only imagery. The interface never decorates around them.</p></div>
+      <div><span class="m">ii</span><b>Rules, not boxes</b><p>Structure comes from hairlines and alignment. A card or a shadow has to earn its place.</p></div>
+      <div><span class="m">iii</span><b>Facts in mono</b><p>Versions, sizes, frames, hashes and file names are set in DM Mono and align in columns.</p></div>
+      <div><span class="m">iv</span><b>Gold means yours</b><p>The accent marks what you changed, chose or installed. Primary actions are ink.</p></div>
+      <div><span class="m">v</span><b>Every action has a key</b><p>Keys show beside the actions they trigger. The mouse is optional.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sect"><div class="sect-h"><span class="no">02</span><h3>Colour</h3><span class="aside">Gallery (dark) is the default; Paper is the same tokens in the light.</span></div></div>
+    <div class="grid2">
+      <div class="pal" data-theme="paper" style="background:var(--bg);color:var(--ink)">
+        <div class="pal-h"><span>Paper</span><span class="m fa">light</span></div>
+        <div class="pal-row"><i style="background:#f3efe6"></i><span class="m">bg</span><span class="m fa">#F3EFE6</span><span class="use">The page</span></div>
+        <div class="pal-row"><i style="background:#faf7f0"></i><span class="m">surface</span><span class="m fa">#FAF7F0</span><span class="use">Bars, panes</span></div>
+        <div class="pal-row"><i style="background:#fffdf8"></i><span class="m">raise</span><span class="m fa">#FFFDF8</span><span class="use">Controls, popovers</span></div>
+        <div class="pal-row"><i style="background:#1c1b19"></i><span class="m">ink</span><span class="m fa">#1C1B19</span><span class="use">Text, primary buttons, section rules</span></div>
+        <div class="pal-row"><i style="background:#5c574e"></i><span class="m">muted</span><span class="m fa">#5C574E</span><span class="use">Secondary text</span></div>
+        <div class="pal-row"><i style="background:#b8af9c"></i><span class="m">line-strong</span><span class="m fa">#B8AF9C</span><span class="use">Frames, table heads</span></div>
+        <div class="pal-row"><i style="background:#e0d9ca"></i><span class="m">line</span><span class="m fa">#E0D9CA</span><span class="use">Row dividers</span></div>
+        <div class="pal-row"><i style="background:#f5c84b"></i><span class="m">accent</span><span class="m fa">#F5C84B</span><span class="use">Yours: installed, changed, selected</span></div>
+        <div class="pal-row"><i style="background:#b42e24"></i><span class="m">danger</span><span class="m fa">#B42E24</span><span class="use">Conflicts, destructive</span></div>
+      </div>
+      <div class="pal" data-theme="gallery" style="background:var(--bg);color:var(--ink)">
+        <div class="pal-h"><span>Gallery</span><span class="m fa">dark</span></div>
+        <div class="pal-row"><i style="background:#111110"></i><span class="m">bg</span><span class="m fa">#111110</span><span class="use">The page</span></div>
+        <div class="pal-row"><i style="background:#1b1b19"></i><span class="m">surface</span><span class="m fa">#1B1B19</span><span class="use">Bars, panes</span></div>
+        <div class="pal-row"><i style="background:#262522"></i><span class="m">raise</span><span class="m fa">#262522</span><span class="use">Controls, popovers</span></div>
+        <div class="pal-row"><i style="background:#f2efe8"></i><span class="m">ink</span><span class="m fa">#F2EFE8</span><span class="use">Text, primary buttons, section rules</span></div>
+        <div class="pal-row"><i style="background:#a8a39a"></i><span class="m">muted</span><span class="m fa">#A8A39A</span><span class="use">Secondary text</span></div>
+        <div class="pal-row"><i style="background:#3a3934"></i><span class="m">line-strong</span><span class="m fa">#3A3934</span><span class="use">Frames, table heads</span></div>
+        <div class="pal-row"><i style="background:#2f2e2a"></i><span class="m">line</span><span class="m fa">#2F2E2A</span><span class="use">Row dividers</span></div>
+        <div class="pal-row"><i style="background:#f5c84b"></i><span class="m">accent</span><span class="m fa">#F5C84B</span><span class="use">Yours: installed, changed, selected</span></div>
+        <div class="pal-row"><i style="background:#f07167"></i><span class="m">danger</span><span class="m fa">#F07167</span><span class="use">Conflicts, destructive</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sect"><div class="sect-h"><span class="no">03</span><h3>Type</h3><span class="aside">Headings tight and heavy; everything else plain.</span></div></div>
+    <div class="type-row"><span class="m">Display 56 / 800</span><span class="t-display">Falco</span></div>
+    <div class="type-row"><span class="m">H1 40 / 800</span><span class="t-h1">Mods for your game</span></div>
+    <div class="type-row"><span class="m">H2 28 / 700</span><span class="t-h2">Preloaded Stadium transformations</span></div>
+    <div class="type-row"><span class="m">H3 18 / 700</span><span class="t-h3">What it replaces</span></div>
+    <div class="type-row"><span class="m">Body 13.5 / 400</span><span>Loads every Stadium transformation up front, so changing forms never stalls.</span></div>
+    <div class="type-row"><span class="m">Label 12.5 / 600</span><span class="t-label">Installed in slot 2</span></div>
+    <div class="type-row"><span class="m">Mono 12.5 / 400</span><span class="m">PlFxRe.dat · 0.1.0 → 0.2.0 · 412 KB · F 28 / 49 · c7cd9a45…34382f</span></div>
+  </section>
+
+  <section>
+    <div class="sect"><div class="sect-h"><span class="no">04</span><h3>Lines, corners, depth</h3></div></div>
+    <div class="grid3">
+      <div>
+        <div class="spec lines">
+          <div class="a"><span>line · 1px</span><span class="m fa">rows</span></div>
+          <div class="b2"><span>line-strong · 1px</span><span class="m fa">frames, heads</span></div>
+          <div class="c"><span>ink · 2px</span><span class="m fa">sections</span></div>
+        </div>
+        <p class="note">Three weights only. A 2px ink rule opens a section; nothing else is that heavy.</p>
+      </div>
+      <div>
+        <div class="spec" style="display:flex;gap:14px;align-items:flex-end">
+          <div style="width:64px;height:64px;border:1px solid var(--line-strong);border-radius:0"></div>
+          <div style="width:64px;height:64px;border:1px solid var(--line-strong);border-radius:4px"></div>
+          <div style="width:64px;height:28px;border:1px solid var(--line-strong);border-radius:4px"></div>
+        </div>
+        <p class="note">Tables and plates are square. Controls and panes take 4px. No pills; that's a deliberate break from the site.</p>
+      </div>
+      <div>
+        <div class="spec" style="position:relative;height:122px">
+          <div style="position:absolute;left:24px;top:22px;width:150px;height:70px;background:var(--raise);border:1px solid var(--line-strong);box-shadow:var(--pop);border-radius:4px"></div>
+        </div>
+        <p class="note">One shadow, for things that float above the page: menus, the command bar, dialogs. Panes sit flat.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sect"><div class="sect-h"><span class="no">05</span><h3>Controls</h3></div></div>
+    <div class="grid2">
+      <div class="stack">
+        <div class="comp"><button class="b ink lg">Install <span class="k">Enter</span></button><button class="b lg">Turn off</button><button class="b quiet">Details</button><button class="b danger">Remove</button></div>
+        <div class="comp"><label class="input" style="width:260px"><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input placeholder="Find a fighter, skin or mod"><kbd>/</kbd></label></div>
+        <div class="tabs" style="max-width:420px"><button class="on">Browse <span class="m">48</span></button><button>Installed <span class="m">4</span></button><button>Updates <span class="m">1</span></button></div>
+        <div class="comp" style="gap:18px"><span class="row" style="gap:8px"><span class="check on"></span>On</span><span class="row" style="gap:8px"><span class="check"></span>Off</span></div>
+      </div>
+      <div>
+        <table class="tbl">
+          <thead><tr><th>Status</th><th>Means</th></tr></thead>
+          <tbody>
+            <tr class="dense"><td><span class="st on">On</span></td><td class="mu">Installed and loading</td></tr>
+            <tr class="dense"><td><span class="st off">Off</span></td><td class="mu">Installed, not loading</td></tr>
+            <tr class="dense"><td><span class="st bad">Conflict</span></td><td class="mu">Can't load alongside another mod</td></tr>
+            <tr class="dense"><td><span class="st up">0.2.0</span></td><td class="mu">Update available</td></tr>
+            <tr class="dense"><td><span class="st mine">Slot 2</span></td><td class="mu">Your skin, installed in the game</td></tr>
+          </tbody>
+        </table>
+        <p class="note">A mark and a word. Colour is never the only signal.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sect"><div class="sect-h"><span class="no">06</span><h3>Tables</h3><span class="aside">Most of the app is lists. They're tables with real columns.</span></div></div>
+    <table class="tbl">
+      <thead><tr><th style="width:36px"></th><th>Mod</th><th>Category</th><th class="num">Version</th><th class="num">Size</th><th class="num">Saves</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><span class="check on"></span></td><td><b>Replay player</b> <span class="mu">textures.gg</span></td><td class="mu">Tools</td><td class="m num">0.1.0</td><td class="m num">412 KB</td><td class="m num">8,420</td><td><span class="st on">On</span></td></tr>
+        <tr class="sel"><td><span class="check on"></span></td><td><b>Preloaded Stadium transformations</b> <span class="mu">textures.gg</span></td><td class="mu">Stages</td><td class="m num">0.1.0</td><td class="m num">54 KB</td><td class="m num">2,210</td><td><span class="st bad">Conflict</span></td></tr>
+        <tr class="dim"><td><span class="check"></span></td><td><b>Camera-free Stadium monitor</b> <span>textures.gg</span></td><td>Stages</td><td class="m num">0.1.0</td><td class="m num">61 KB</td><td class="m num">1,730</td><td><span class="st off">Off</span></td></tr>
+      </tbody>
+    </table>
+    <p class="note">Hover is a 4% wash. Selected is a gold wash with a gold edge. Off rows go faint, not grey boxes.</p>
+  </section>
+
+  <section>
+    <div class="sect"><div class="sect-h"><span class="no">07</span><h3>Plates</h3><span class="aside">The viewport is a framed picture with a caption, not a backdrop.</span></div></div>
+    <div class="grid2" style="grid-template-columns: 1.3fr 1fr; align-items:start">
+      <div>
+        <div class="plate" style="height:340px"><canvas id="fig1"></canvas><div class="ground" style="top:86%"></div><span class="corner" style="left:10px;top:8px">Fig. 1</span><span class="corner" style="right:10px;top:8px">Idle · F 12</span></div>
+        <div class="caption"><b>Ember Fox</b><span>Fox, slot 2</span><span class="m fa" style="margin-left:auto">PlFxRe.dat · drag to turn</span></div>
+      </div>
+      <div class="stack">
+        <p class="note" style="margin:0;font-size:13.5px;line-height:1.6">A flat ground, one hairline for the floor, and labels in the corners in mono. The model gets the warm plate colour behind it in Paper and near-black in Gallery. No glow, no vignette, no floor reflection.</p>
+        <div class="row" style="gap:10px">
+          <div class="plate" style="height:150px;flex:1"><canvas id="fig2"></canvas><div class="ground" style="top:88%"></div></div>
+          <div class="plate" style="height:150px;flex:1"><canvas id="fig3"></canvas><div class="ground" style="top:88%"></div></div>
+          <div class="plate" style="height:150px;flex:1"><canvas id="fig4"></canvas><div class="ground" style="top:88%"></div></div>
+        </div>
+        <p class="note" style="margin-top:0">Small plates for lists and libraries. They hold still until you hover.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sect"><div class="sect-h"><span class="no">08</span><h3>Layout</h3><span class="aside">tgg-editor's shell, kept: one sidebar of places, detail in a pane column.</span></div></div>
+    <div class="grid3">
+      <div>
+        <div class="spec" style="display:grid;grid-template-columns:52px 1fr;gap:6px;height:150px;padding:10px">
+          <div style="background:var(--sunk);border:1px solid var(--line)"></div>
+          <div style="display:grid;grid-template-rows:14px 1fr;gap:6px"><div style="border-bottom:1px solid var(--line-strong)"></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:5px"><div style="border:1px solid var(--line)"></div><div style="border:1px solid var(--line)"></div><div style="border:1px solid var(--line)"></div><div style="border:1px solid var(--line)"></div></div></div>
+        </div>
+        <p class="note"><b style="color:var(--ink)">A place.</b> The sidebar holds places (Melee, Library, Mods) and recent edits, never a place's contents. It hides whole; its toggle never moves.</p>
+      </div>
+      <div>
+        <div class="spec" style="position:relative;height:150px;padding:10px;background:var(--plate)">
+          <div style="position:absolute;right:10px;top:10px;bottom:10px;width:34%;display:grid;grid-template-rows:2fr 1fr 16px;gap:5px"><div style="background:var(--surface);border:1px solid var(--line-strong)"></div><div style="background:var(--surface);border:1px solid var(--line-strong)"></div><div style="background:var(--surface);border:1px solid var(--line-strong)"></div></div>
+          <div style="position:absolute;left:10px;bottom:10px;right:calc(34% + 20px);height:14px;background:var(--surface);border:1px solid var(--line-strong)"></div>
+        </div>
+        <p class="note"><b style="color:var(--ink)">A subject.</b> Opening a fighter or a costume gives it the whole page: the stage, a timeline, and a column of panes that fold to their headers. Escape goes back up.</p>
+      </div>
+      <div>
+        <div class="spec" style="position:relative;height:150px;padding:10px">
+          <div style="position:absolute;left:10px;top:10px;right:calc(34% + 20px);bottom:10px;display:grid;grid-template-rows:repeat(6,1fr)"><div style="border-bottom:1px solid var(--line-strong)"></div><div style="border-bottom:1px solid var(--line)"></div><div style="border-bottom:1px solid var(--line);background:var(--sel)"></div><div style="border-bottom:1px solid var(--line)"></div><div style="border-bottom:1px solid var(--line)"></div><div></div></div>
+          <div style="position:absolute;right:10px;top:10px;bottom:10px;width:34%;background:var(--surface);border:1px solid var(--line-strong)"></div>
+        </div>
+        <p class="note"><b style="color:var(--ink)">A list.</b> A list's selection opens in the same pane column, docked. So there's one kind of side panel, never a second sidebar.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sect"><div class="sect-h"><span class="no">09</span><h3>Motion</h3><span class="aside">Movement explains a change. Rune's motion tokens, one curve.</span></div></div>
+    <table class="tbl">
+      <thead><tr><th>What moves</th><th>How</th><th class="num">Duration</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr class="dense"><td><b>Opening a fighter</b></td><td class="mu">The card's plate opens into the stage; back closes it into the card</td><td class="m num">calm 400</td><td class="mu">You can see where you went and where Escape returns</td></tr>
+        <tr class="dense"><td><b>Panes arriving</b></td><td class="mu">Slide 14 px in from the right, 50 ms apart</td><td class="m num">default 300</td><td class="mu">They belong to the subject that just opened</td></tr>
+        <tr class="dense"><td><b>Selection</b></td><td class="mu">One marker glides between rows instead of the highlight jumping</td><td class="m num">snappy 250</td><td class="mu">Shows the step from old choice to new</td></tr>
+        <tr class="dense"><td><b>Folding</b></td><td class="mu">Panes, notices and the sidebar change height or width, never vanish</td><td class="m num">default 300</td><td class="mu">Space given back is visibly given back</td></tr>
+        <tr class="dense"><td><b>A new costume</b></td><td class="mu">The model's colours ease to the new ones; details rise 4 px in</td><td class="m num">default 300</td><td class="mu">Same fighter, new paint: no flash</td></tr>
+        <tr class="dense"><td><b>State</b></td><td class="mu">Checks, status words, hovers: colour and fades only</td><td class="m num">fade 150</td><td class="mu">Fast enough to never wait on</td></tr>
+      </tbody>
+    </table>
+    <p class="note">Nothing loops but the fighter. No bounce, no overshoot, no parallax. Reduced motion turns every duration to zero and nothing breaks.</p>
+  </section>
+
+  <section>
+    <div class="sect"><div class="sect-h"><span class="no">10</span><h3>Not in this language</h3></div></div>
+    <div class="dont" style="grid-template-columns:repeat(3,1fr)">
+      <div><span class="x">no</span><b>Glass and glow</b><p>Blur, backdrop filters, coloured glows, vignettes.</p></div>
+      <div><span class="x">no</span><b>Gradient icon tiles</b><p>Mods are named, not given app-store icons.</p></div>
+      <div><span class="x">no</span><b>Pills for everything</b><p>Tags, statuses and buttons as rounded chips.</p></div>
+      <div style="border-top:1px solid var(--line)"><span class="x">no</span><b>Top navigation</b><p>Places live in the sidebar; the top row says where you are.</p></div>
+      <div style="border-top:1px solid var(--line)"><span class="x">no</span><b>A second sidebar</b><p>Detail is a pane column, not another nav.</p></div>
+      <div style="border-top:1px solid var(--line)"><span class="x">no</span><b>Decorative motion</b><p>Nothing animates that didn't change.</p></div>
+    </div>
+  </section>
+</div>
+<script src="data.js"></script>
+<script src="figure.js"></script>
+<script>
+  const sk = DATA.skins;
+  const flat = (p) => Object.assign({}, p, { rim: "#8a8377" });
+  Figure.mount(document.getElementById("fig1"), { palette: flat(sk[0].palette), interactive: true, spin: 0.2, scale: 0.72, floor: 0.86, floorColor: "rgba(0,0,0,0)" });
+  [sk[2], sk[3], sk[8]].forEach((s, i) => Figure.mount(document.getElementById("fig" + (i + 2)), { palette: flat(s.palette), scale: 0.74, floor: 0.88, yaw: 0.5, floorColor: "rgba(0,0,0,0)" }));
+</script>
+</body>
+</html>

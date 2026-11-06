@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>textures.gg: Catalog</title>
+<link rel="stylesheet" href="b.css">
+<style>
+  /* ---------- shell: places sidebar + the place ---------- */
+  .shell { --sb: 220px; --pw: 320px; display: grid; grid-template-columns: var(--sb) 1fr; height: 100vh; overflow: hidden; transition: grid-template-columns var(--default) var(--ease); }
+  .shell.nosb { --sb: 0px; }
+  .sidebar { background: var(--sunk); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+  .shell.nosb .sidebar { border-right-color: transparent; }
+  .sb-inner { width: 220px; display: flex; flex-direction: column; height: 100%; transition: opacity var(--fade) var(--ease); }
+  .shell.nosb .sb-inner { opacity: 0; }
+  .sb-head { height: 44px; flex: none; display: flex; align-items: center; padding-left: 50px; }
+  .places { position: relative; padding: 6px 8px; }
+  .place { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: var(--r); color: var(--muted); font-weight: 600; width: 100%; transition: color var(--fade) var(--ease); }
+  .place:hover { color: var(--ink); }
+  .place.on { color: var(--ink); }
+  .place .ico { width: 16px; height: 16px; }
+  .place .count { margin-left: auto; font: 500 11.5px var(--mono); color: var(--faint); }
+  .place .warn { margin-left: auto; font: 600 11.5px var(--mono); color: var(--danger); display: flex; align-items: center; gap: 5px; }
+  .place .warn::before { content: ""; width: 6px; height: 6px; background: var(--danger); transform: rotate(45deg); }
+  .marker { position: absolute; left: 0; right: 0; top: 0; border-radius: var(--r); background: var(--sel); box-shadow: inset 2px 0 0 var(--accent-text); pointer-events: none; transition: transform var(--snappy) var(--ease), height var(--snappy) var(--ease), opacity var(--fade) var(--ease); }
+  .places .marker { left: 8px; right: 8px; background: var(--hover); box-shadow: none; }
+  [data-theme="gallery"] .places .marker, :root:not([data-theme]) .places .marker { background: rgba(255, 248, 230, 0.06); }
+  .sb-label { padding: 18px 18px 6px; font-size: 12px; font-weight: 600; color: var(--faint); }
+  .recent { padding: 0 8px; }
+  .rec { display: flex; align-items: center; gap: 10px; padding: 5px 10px; border-radius: var(--r); cursor: pointer; }
+  .rec:hover { background: var(--hover); }
+  .rec .thumb { width: 30px; height: 36px; flex: none; position: relative; background: var(--plate); border: 1px solid var(--line); }
+  .rec .thumb canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .rec b { display: block; font-size: 12.5px; font-weight: 600; }
+  .rec small { display: block; font-size: 11.5px; color: var(--faint); }
+  .rec .dirty { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-left: auto; flex: none; }
+  .sb-foot { margin-top: auto; padding: 8px 8px 12px; border-top: 1px solid var(--line); }
+  .game-line { padding: 8px 10px 0; font-size: 11.5px; color: var(--faint); line-height: 1.6; }
+  .game-line b { color: var(--muted); font-weight: 600; }
+  .game-line button { color: var(--faint); font-size: 11.5px; }
+  .game-line button:hover { color: var(--ink); }
+
+  .toggle { position: fixed; left: 12px; top: 8px; z-index: 20; width: 28px; height: 28px; border-radius: var(--r); display: grid; place-items: center; color: var(--muted); }
+  .toggle:hover { color: var(--ink); background: var(--hover); }
+  .toggle .ico { width: 17px; height: 17px; }
+
+  .place-area { display: grid; grid-template-rows: 44px 1fr; min-width: 0; min-height: 0; background: var(--bg); }
+  .titlerow { display: flex; align-items: center; gap: 10px; padding: 0 14px 0 20px; transition: padding var(--default) var(--ease); border-bottom: 1px solid transparent; }
+  .shell.nosb .titlerow { padding-left: 52px; }
+  .crumbs { display: flex; align-items: center; gap: 8px; font-weight: 600; min-width: 0; }
+  .crumbs .up { color: var(--muted); } .crumbs .up:hover { color: var(--ink); }
+  .crumbs .slash { color: var(--faint); font-weight: 400; }
+  .crumbs .leaf { animation: crumb var(--snappy) var(--ease); }
+  @keyframes crumb { from { opacity: 0; transform: translateX(-6px); } }
+  .titlerow .acts { margin-left: auto; display: flex; gap: 8px; }
+  .titlerow .acts > * { animation: crumb var(--snappy) var(--ease); }
+  .body { position: relative; min-height: 0; overflow: hidden; }
+  .view { position: absolute; inset: 0; }
+  .view[hidden] { display: none; }
+  .view.enter { animation: view-in var(--default) var(--ease); }
+  @keyframes view-in { from { opacity: 0; transform: translateY(4px); } }
+  .scroll { height: 100%; overflow: auto; }
+  .page { padding: 8px 28px 48px; }
+  .page-h { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 14px; }
+  .page-h p { margin: 6px 0 0; color: var(--muted); }
+
+  /* ---------- roster: plates in a grid ---------- */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 18px 14px; margin-top: 18px; }
+  .card { cursor: pointer; }
+  .card .plate { aspect-ratio: 4 / 5; transition: border-color var(--fade) var(--ease); }
+  .card:hover .plate { border-color: var(--line-strong); }
+  .card .nm { display: flex; justify-content: space-between; align-items: baseline; margin-top: 7px; font-weight: 600; }
+  .card .stl { font-size: 12px; color: var(--faint); display: flex; align-items: center; gap: 6px; }
+  .card .stl.mine { color: var(--muted); }
+  .card .stl.mine::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+  /* ---------- subject: the stage with a pane column ---------- */
+  .subject { background: var(--plate); }
+  .subject.opening { transition: clip-path var(--calm) var(--ease); }
+  .subject canvas.stage { position: absolute; left: 0; top: 0; bottom: 0; right: calc(var(--pw) + 32px); width: calc(100% - var(--pw) - 32px); height: 100%; }
+  .subject .ground { right: calc(var(--pw) + 32px); top: 84%; }
+  .subject .corner.tl { left: 20px; top: 14px; } .subject .corner.tr { right: calc(var(--pw) + 48px); top: 14px; }
+  .timeline { position: absolute; left: 16px; right: calc(var(--pw) + 32px); bottom: 16px; height: 44px; display: flex; align-items: center; gap: 12px; padding: 0 12px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r); }
+  .timeline .play { width: 26px; height: 26px; border-radius: var(--r); display: grid; place-items: center; background: var(--ink); color: var(--on-ink); flex: none; }
+  .timeline .play .ico { width: 11px; height: 11px; fill: currentColor; stroke: none; }
+  .track { flex: 1; height: 20px; position: relative; cursor: ew-resize; }
+  .track .rail { position: absolute; left: 0; right: 0; top: 9px; height: 2px; background: var(--line-strong); }
+  .track .act { position: absolute; top: 5px; height: 10px; background: var(--danger); opacity: 0.35; }
+  .track .head { position: absolute; top: 2px; width: 2px; height: 16px; background: var(--accent); }
+  .timeline .m { white-space: nowrap; }
+
+  .panes { position: absolute; right: 16px; top: 16px; bottom: 16px; width: var(--pw); display: flex; flex-direction: column; gap: 10px; }
+  .pane { background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--r); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22); display: grid; grid-template-rows: auto 1fr; min-height: 0; transition: grid-template-rows var(--default) var(--ease); }
+  .pane.fill { flex: 1; }
+  .pane.folded { grid-template-rows: auto 0fr; flex: none; }
+  .subject .pane { animation: pane-in var(--default) var(--ease) both; }
+  .subject .pane:nth-child(2) { animation-delay: 50ms; } .subject .pane:nth-child(3) { animation-delay: 100ms; }
+  @keyframes pane-in { from { opacity: 0; transform: translateX(14px); } }
+  .pane-h { height: 38px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px; font-weight: 700; cursor: pointer; user-select: none; }
+  .pane-h .m { color: var(--faint); font-weight: 400; font-size: 11.5px; }
+  .pane-h .chev { margin-left: auto; width: 24px; height: 24px; display: grid; place-items: center; color: var(--faint); border-radius: var(--r); }
+  .pane-h .chev:hover { color: var(--ink); background: var(--hover); }
+  .pane-h .chev .ico { width: 14px; height: 14px; transition: transform var(--default) var(--ease); }
+  .pane.folded .chev .ico { transform: rotate(-90deg); }
+  .pane-b { overflow: hidden; min-height: 0; display: flex; flex-direction: column; }
+  .pane-b > .in { border-top: 1px solid var(--line); overflow: auto; min-height: 0; flex: 1; }
+
+  .lst { position: relative; }
+  .lst .marker { left: 0; right: 0; border-radius: 0; }
+  .r { position: relative; z-index: 1; display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 12px; cursor: pointer; border-bottom: 1px solid var(--line); }
+  .r:hover { background: var(--hover); }
+  .r .m.fa { margin-left: auto; font-size: 11.5px; }
+  .r b { font-weight: 600; }
+  .slot-acts { padding: 12px; display: grid; gap: 8px; border-top: 1px solid var(--line-strong); }
+  .slot-acts .b { justify-content: space-between; }
+  .slot-acts .what { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+  .slot-acts .what b { color: var(--ink); }
+  .swapin { animation: swapin var(--snappy) var(--ease); }
+  @keyframes swapin { from { opacity: 0; transform: translateY(4px); } }
+
+  /* ---------- mods: a list with the same pane column, docked ---------- */
+  .mods .scroll { padding-right: calc(var(--pw) + 32px); }
+  .mods .panes { top: 0; }
+  .mrow { display: grid; grid-template-columns: 28px minmax(0, 1fr) 96px 64px 64px 72px 96px; align-items: center; gap: 0 10px; height: 54px; padding: 0 10px; border-bottom: 1px solid var(--line); position: relative; z-index: 1; cursor: default; }
+  .mrow:hover { background: var(--hover); }
+  .mrow.head { height: 30px; font-size: 12px; font-weight: 600; color: var(--faint); border-bottom-color: var(--line-strong); }
+  .mrow.dim .nm, .mrow.dim .cat, .mrow.dim .m { color: var(--faint); }
+  .mrow .nm { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mrow .nm span { color: var(--faint); font-weight: 400; margin-left: 6px; }
+  .mrow .ds { display: block; color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mrow .cat { color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mrow .m { text-align: right; white-space: nowrap; }
+  .collapse { display: grid; grid-template-rows: 1fr; transition: grid-template-rows var(--default) var(--ease), opacity var(--fade) var(--ease); }
+  .collapse.shut { grid-template-rows: 0fr; opacity: 0; }
+  .collapse > div { overflow: hidden; }
+  .notice { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: baseline; padding: 12px 14px; margin: 14px 0 4px; border: 1px solid var(--line-strong); border-left: 3px solid var(--danger); background: var(--surface); }
+  .notice p { margin: 0; color: var(--muted); } .notice p b { color: var(--ink); }
+  .notice code { font: 12px var(--mono); color: var(--ink); }
+  .notice .acts { grid-column: 2; display: flex; gap: 8px; margin-top: 6px; }
+  .entry { padding: 18px 18px 28px; }
+  .entry .no { font: 500 11.5px var(--mono); color: var(--faint); display: flex; justify-content: space-between; }
+  .entry h2 { margin: 10px 0 6px; font-size: 24px; }
+  .entry .lead { font-size: 14px; line-height: 1.6; margin: 12px 0 14px; }
+  .entry .acts { display: flex; gap: 8px; }
+  .entry .acts .b:first-child { flex: 1; justify-content: center; }
+  .entry .sect { margin-top: 22px; }
+  .fn { display: flex; justify-content: space-between; align-items: center; height: 30px; border-bottom: 1px solid var(--line); font-size: 12px; }
+  .fn.clash .m { color: var(--danger); }
+  .fn .why { color: var(--danger); } .fn .ok { color: var(--faint); }
+  .dl { display: grid; grid-template-columns: 90px 1fr; font-size: 12.5px; margin: 0; }
+  .dl dt { color: var(--faint); padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .dl dd { margin: 0; padding: 6px 0; border-bottom: 1px solid var(--line); text-align: right; }
+
+  .still *, .still *::before, .still *::after { animation: none !important; transition: none !important; }
+  .check::after { transition: transform var(--fade) var(--ease); }
+  .check:not(.on)::after { transform: translateY(-1px) rotate(-45deg) scale(0); }
+  .check { transition: background var(--fade) var(--ease), border-color var(--fade) var(--ease); cursor: pointer; }
+  .st { transition: color var(--fade) var(--ease); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-game" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="3"/><path d="M6 12h4M8 10v4M15 11h.01M18 13h.01"/></symbol>
+  <symbol id="i-lib" viewBox="0 0 24 24"><path d="M4 4h4v16H4zM10 4h4v16h-4zM16.5 4.5l3.8 1-3.9 15-3.8-1"/></symbol>
+  <symbol id="i-mods" viewBox="0 0 24 24"><path d="M12 2 3 7v10l9 5 9-5V7l-9-5Z"/><path d="m3 7 9 5 9-5M12 12v10"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></symbol>
+  <symbol id="i-side" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4v16l13-8Z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></symbol>
+</svg>
+
+<button class="toggle" id="toggle" title="Hide sidebar (Ctrl \)"><svg class="ico"><use href="#i-side"/></svg></button>
+
+<div class="shell" id="shell">
+  <aside class="sidebar"><div class="sb-inner">
+    <div class="sb-head"><span class="wordmark">textures<span>.gg</span></span></div>
+    <nav class="places" id="places"><div class="marker"></div>
+      <button class="place" data-place="melee"><svg class="ico"><use href="#i-game"/></svg>Melee</button>
+      <button class="place" data-place="library"><svg class="ico"><use href="#i-lib"/></svg>Library<span class="count">12</span></button>
+      <button class="place" data-place="mods"><svg class="ico"><use href="#i-mods"/></svg>Mods<span class="warn" id="mods-warn">1</span></button>
+    </nav>
+    <div class="sb-label">Recent edits</div>
+    <div class="recent" id="recent"></div>
+    <div class="sb-foot">
+      <button class="place"><svg class="ico"><use href="#i-gear"/></svg>Settings</button>
+      <div class="game-line"><b>Melee NTSC 1.02</b><br><span class="m" style="font-size:11px">tgg-melee 0.4.2</span> · <button id="theme">Paper</button></div>
+    </div>
+  </div></aside>
+
+  <section class="place-area">
+    <header class="titlerow"><div class="crumbs" id="crumbs"></div><div class="acts" id="acts"></div></header>
+    <div class="body" id="body">
+      <!-- Melee: the roster -->
+      <div class="view" id="v-melee"><div class="scroll"><div class="page">
+        <div class="page-h"><div><h1 class="t-h1">Melee</h1><p>What's in your game, and what you've changed.</p></div></div>
+        <div class="tabs"><button class="on">Fighters <span class="m">26</span></button><button>Stages <span class="m">29</span></button></div>
+        <div class="grid" id="roster"></div>
+      </div></div></div>
+
+      <!-- A fighter, opened over the roster -->
+      <div class="view subject" id="v-subject" hidden>
+        <canvas class="stage" id="stage"></canvas>
+        <div class="ground plate-ground" style="position:absolute;left:0;height:1px;background:var(--line-strong)"></div>
+        <span class="corner tl m fa" id="fig-l" style="position:absolute"></span>
+        <span class="corner tr m fa" id="fig-r" style="position:absolute"></span>
+        <div class="timeline" id="timeline"></div>
+        <div class="panes" id="subject-panes"></div>
+      </div>
+
+      <!-- Library -->
+      <div class="view" id="v-library" hidden><div class="scroll"><div class="page">
+        <div class="page-h"><div><h1 class="t-h1">Library</h1><p><span class="m">12</span> skins, <span class="m">3</span> in your game.</p></div><button class="b">Add skins</button></div>
+        <div class="tabs"><button class="on">All <span class="m">12</span></button><button>In your game <span class="m">3</span></button><button>Not installed <span class="m">9</span></button></div>
+        <div class="grid" id="library"></div>
+      </div></div></div>
+
+      <!-- Mods -->
+      <div class="view mods" id="v-mods" hidden>
+        <div class="scroll"><div class="page">
+          <div class="page-h"><div><h1 class="t-h1">Mods</h1><p>From <b style="color:var(--ink)">textures.gg</b> for tgg-melee 0.4.2.</p></div><label class="input" style="width:220px"><input placeholder="Filter"><kbd>/</kbd></label></div>
+          <div class="tabs" id="mod-tabs"></div>
+          <div class="collapse" id="notice-wrap"><div id="notice"></div></div>
+          <div class="mrow head"><span></span><span>Mod</span><span>Category</span><span class="m" style="font-family:var(--sans)">Version</span><span class="m" style="font-family:var(--sans)">Size</span><span class="m" style="font-family:var(--sans)">Saves</span><span>Status</span></div>
+          <div class="lst" id="mod-list"><div class="marker"></div><div class="items"></div></div>
+        </div></div>
+        <div class="panes"><div class="pane fill"><div class="pane-h">Details</div><div class="pane-b"><div class="in" id="entry"></div></div></div></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script src="data.js"></script>
+<script src="figure.js"></script>
+<script src="b.js"></script>
+</body>
+</html>

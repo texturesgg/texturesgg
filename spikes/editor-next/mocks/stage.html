@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>textures.gg — Stage</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="stage.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-game" viewBox="0 0 24 24"><path d="M6 11h4M8 9v4M15 12h.01M18 10h.01"/><path d="M17.3 5H6.7a4 4 0 0 0-3.96 3.43l-.9 6.32A2.8 2.8 0 0 0 4.6 18c.9 0 1.7-.45 2.2-1.2L8 15h8l1.2 1.8c.5.75 1.3 1.2 2.2 1.2a2.8 2.8 0 0 0 2.76-3.25l-.9-6.32A4 4 0 0 0 17.3 5Z"/></symbol>
+  <symbol id="i-skins" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1 0 1.5-.7 1.5-1.5 0-.4-.15-.75-.4-1.05-.25-.3-.4-.65-.4-1.05 0-.83.67-1.5 1.5-1.5H16a5 5 0 0 0 5-5c0-4.4-4-7.9-9-7.9Z"/><circle cx="7.5" cy="10.5" r="1"/><circle cx="10.5" cy="7" r="1"/><circle cx="15" cy="7.5" r="1"/></symbol>
+  <symbol id="i-mods" viewBox="0 0 24 24"><path d="M12 2 3 7v10l9 5 9-5V7l-9-5Z"/><path d="m3 7 9 5 9-5M12 12v10"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></symbol>
+  <symbol id="i-in" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4v16l13-8Z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 4h3v16H7zM14 4h3v16h-3z"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-pad" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.5"/></symbol>
+  <symbol id="i-snow" viewBox="0 0 24 24"><path d="M12 2v20M4.9 7l14.2 10M4.9 17 19.1 7"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 10 5-10 5L2 7Z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12Z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-bars" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol>
+  <symbol id="i-wide" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10v4M18 10v4"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></symbol>
+  <symbol id="i-cube" viewBox="0 0 24 24"><path d="M21 16V8l-9-5-9 5v8l9 5 9-5Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></symbol>
+  <symbol id="i-orbit" viewBox="0 0 24 24"><path d="M3 12a9 4 0 1 0 18 0 9 4 0 1 0-18 0"/><path d="m17 8 3 1-1 3"/></symbol>
+</svg>
+
+<div class="win">
+  <header class="titlebar">
+    <div class="brand"><span class="mark"></span><span>textures<span class="muted">.gg</span></span></div>
+    <button class="omni" id="omni"><svg class="ico"><use href="#i-search"/></svg><span>Search fighters, skins, mods…</span><span class="kbd">Ctrl K</span></button>
+    <div class="tb-right">
+      <div class="game-pill" title="Your game"><span class="dot ok"></span>Melee 1.02<span class="sep"></span><span class="mono muted">tgg-melee 0.4.2</span></div>
+      <div class="avatar">JS</div>
+    </div>
+  </header>
+
+  <nav class="rail">
+    <button data-view="game" class="on"><svg class="ico"><use href="#i-game"/></svg><span>Game</span></button>
+    <button data-view="skins"><svg class="ico"><use href="#i-skins"/></svg><span>Skins</span></button>
+    <button data-view="mods"><svg class="ico"><use href="#i-mods"/></svg><span>Mods</span><i class="badge">1</i></button>
+    <button data-view="editor"><svg class="ico"><use href="#i-edit"/></svg><span>Edit</span></button>
+    <div class="grow"></div>
+    <button data-view="settings"><svg class="ico"><use href="#i-gear"/></svg><span>Settings</span></button>
+  </nav>
+
+  <main>
+    <!-- GAME -->
+    <section class="view on" id="v-game">
+      <div class="stage-bg"></div>
+      <canvas class="stage-canvas" id="game-canvas"></canvas>
+      <div class="stage-hint"><svg class="ico"><use href="#i-orbit"/></svg>Drag to orbit</div>
+
+      <div class="hero">
+        <div class="kicker mono" id="g-code">PlFx · 6 costumes</div>
+        <h1 id="g-name">Fox</h1>
+      </div>
+
+      <aside class="inspector glass" id="g-inspector"></aside>
+
+      <div class="dock glass">
+        <div class="dock-tabs">
+          <button class="on">Fighters <span class="mono faint">26</span></button>
+          <button>Stages <span class="mono faint">29</span></button>
+        </div>
+        <div class="roster" id="roster"></div>
+      </div>
+    </section>
+
+    <!-- SKINS -->
+    <section class="view" id="v-skins">
+      <div class="page">
+        <div class="page-head">
+          <div>
+            <h2>Library</h2>
+            <p class="muted"><span class="mono">12</span> skins · <span class="mono">3</span> installed in your game</p>
+          </div>
+          <div class="row gap">
+            <label class="field"><svg class="ico"><use href="#i-search"/></svg><input placeholder="Filter skins"></label>
+            <button class="btn primary"><svg class="ico"><use href="#i-plus"/></svg>Add skins</button>
+          </div>
+        </div>
+        <div class="row gap wrap" id="skin-filters"></div>
+        <div class="skin-grid" id="skin-grid"></div>
+        <div class="drop-hint"><svg class="ico"><use href="#i-in"/></svg>Drop .dat files or .zip archives anywhere to add them</div>
+      </div>
+    </section>
+
+    <!-- MODS -->
+    <section class="view" id="v-mods">
+      <div class="mods-wrap">
+        <div class="page mods-page">
+          <div class="page-head">
+            <div>
+              <h2>Mods</h2>
+              <div class="row gap sm-gap">
+                <button class="pill-select"><svg class="ico"><use href="#i-globe"/></svg>textures.gg<svg class="ico"><use href="#i-down"/></svg></button>
+                <span class="muted">for</span>
+                <span class="pill-select static"><span class="dot ok"></span>tgg-melee 0.4.2 · Linux</span>
+              </div>
+            </div>
+            <div class="seg" id="mod-tabs">
+              <button data-tab="discover" class="on">Discover</button>
+              <button data-tab="installed">Installed <span class="mono">4</span></button>
+              <button data-tab="updates">Updates <span class="mono dotted">1</span></button>
+            </div>
+          </div>
+          <div id="mods-body"></div>
+        </div>
+        <aside class="drawer glass" id="mod-drawer"></aside>
+      </div>
+    </section>
+
+    <!-- EDITOR -->
+    <section class="view" id="v-editor">
+      <div class="stage-bg editor-bg"></div>
+      <canvas class="stage-canvas full" id="edit-canvas"></canvas>
+
+      <div class="toolbar glass">
+        <button class="tb-btn" data-go="game"><svg class="ico"><use href="#i-back"/></svg></button>
+        <div class="doc-title"><b>Ember Fox</b><span class="muted"> · Fox, slot 2</span><span class="edited">Edited</span></div>
+        <span class="vsep"></span>
+        <button class="tb-btn" title="Undo"><svg class="ico"><use href="#i-undo"/></svg></button>
+        <button class="tb-btn" title="Redo"><svg class="ico"><use href="#i-redo"/></svg></button>
+        <span class="vsep"></span>
+        <button class="btn ghost sm"><svg class="ico"><use href="#i-in"/></svg>Import PNG</button>
+        <button class="btn ghost sm"><svg class="ico"><use href="#i-out"/></svg>Export</button>
+        <span class="vsep"></span>
+        <button class="btn ghost sm">Save</button>
+        <button class="btn primary sm">Save and install</button>
+      </div>
+
+      <aside class="pane left glass" id="tex-pane"></aside>
+      <aside class="pane right glass" id="color-pane"></aside>
+
+      <div class="timeline glass" id="timeline"></div>
+    </section>
+
+    <section class="view" id="v-settings">
+      <div class="page"><h2>Settings</h2><p class="muted">Not mocked yet.</p></div>
+    </section>
+  </main>
+</div>
+
+<div class="palette-scrim" id="cmdk" hidden>
+  <div class="palette glass">
+    <label class="palette-input"><svg class="ico"><use href="#i-search"/></svg><input id="cmdk-input" placeholder="Type a fighter, skin, mod or action"></label>
+    <div class="palette-list" id="cmdk-list"></div>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script src="figure.js"></script>
+<script src="stage.js"></script>
+</body>
+</html>
