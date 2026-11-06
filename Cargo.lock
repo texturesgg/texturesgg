@@ -5540,6 +5540,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "tgg-app"
+version = "0.1.0"
+dependencies = [
+ "dat-parser",
+ "dirs",
+ "gc-iso",
+ "melee-dat",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 2.0.20",
+ "ureq",
+ "zip",
+]
+
+[[package]]
 name = "tgg-cli"
 version = "0.1.0"
 dependencies = [

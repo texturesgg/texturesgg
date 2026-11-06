@@ -61,26 +61,24 @@ crates/
                  and package id when it replaces it)
 ```
 
-**One renderer, two branches.** hsd-render borrows its host's device, so it
-must use its host's wgpu: 29 for gpui-ce, 30 for Rune. A feature can't pick
-between them, because Cargo unifies a crate's features across everything
-built at once, and `cargo test --workspace` would turn both on. So `main`
-keeps wgpu 29 and tgg-editor ships from it, and the studio branch carries
-hsd-render on wgpu 30 plus tgg-studio: a small, contained difference, merged
-from `main` often, that lands when tgg-studio replaces tgg-editor.
+**Everything on the studio branch.** hsd-render borrows its host's device, so
+it must use its host's wgpu: 29 for gpui-ce, 30 for Rune. `main` keeps wgpu 29
+and tgg-editor ships from it untouched. The studio branch carries hsd-render
+on wgpu 30 (three call sites, and 32-bit float depth), tgg-app and
+tgg-studio, merges `main` in often, and lands when tgg-studio replaces
+tgg-editor. tgg-editor doesn't build on the branch; it isn't meant to.
 
-**tgg-app, no UI** (on `main`). The gpui-free parts of tgg-editor move here
-unchanged, then tgg-editor depends on it: `game` (the player's disc, slots,
-installs into it), `library`, `install` (history and undo), `settings` (the
-same `editor.json`), `disk`, `ids`, `log`, `net`, `update`, `report` (what a
-report sends, not its dialog), `moves`, and the external-editor watcher's
-logic. Nothing in it touches wgpu, so both apps share it. The costume render
-worker draws with hsd-render, so each app keeps its own until the switch. This
-is a refactor that changes no behaviour; tgg-editor's tests prove it.
+**tgg-app, no UI.** The gpui-free parts of tgg-editor, copied rather than
+moved, so tgg-editor on `main` is untouched and merges stay clean: `game` (the
+player's disc, slots, installs into it), `library`, `install` (history and
+undo), `settings` (the same `editor.json`), `disk`, `ids`, `log`, `net`,
+`update`, `moves`, what a report sends, and the external-editor watcher's
+logic. A change to one of these on `main` is carried into tgg-app by hand
+until the switch, when tgg-editor and its copies go.
 
-**tgg-studio** (on the studio branch). A member of the core workspace,
-depending on tgg-app, hsd-render, melee-dat, dat-edit, gc-iso and tgg-mod,
-and on Rune at a pinned `dev` rev.
+**tgg-studio.** A member of the core workspace on the branch, depending on
+tgg-app, hsd-render, melee-dat, dat-edit, gc-iso and tgg-mod, and on Rune at a
+pinned `dev` rev.
 
 ## Inside tgg-studio
 
@@ -209,8 +207,8 @@ Each step ends working, tested and committed.
    attachments altogether, so hsd-render's pass can't run on it as is.
    Start from forcing wgpu on macOS (`App::gpu_backend(GpuBackend::Wgpu)`);
    the `RUNE_GPU_BACKEND=wgpu` run didn't open a window, cause not yet seen.
-1. **Shared foundations** (on `main`): tgg-app extracted from tgg-editor
-   with no change in behaviour.
+1. **tgg-app**: tgg-editor's UI-free modules copied into their own crate,
+   with their tests passing there.
 2. **The shell**: tgg-studio in the workspace; tokens, fonts and the core
    components; places, title row, Welcome; scenes and the first flow tests.
 3. **Melee**: background slot states and renders; the roster; a fighter

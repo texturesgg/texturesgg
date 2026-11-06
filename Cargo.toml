@@ -16,6 +16,7 @@ members = [
   "crates/tgg-cli",
   "crates/tgg-ui",
   "crates/tgg-editor",
+  "crates/tgg-app",
 ]
 resolver = "2"
 
