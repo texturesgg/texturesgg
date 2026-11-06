@@ -22,6 +22,8 @@ pub struct Dev<'a> {
     pub watch: bool,
     pub gdb: bool,
     pub version: Option<&'a str>,
+    /// A local build of the port (its build folder) to run instead
+    pub game: Option<&'a Path>,
     pub keep: bool,
     pub cc: &'a Path,
     pub args: &'a [String],
@@ -32,16 +34,41 @@ pub fn dev(dev: Dev) -> Result<()> {
         !(dev.watch && dev.gdb),
         "--watch restarts the game on each change, which gdb can't follow; use one"
     );
-    let installed = ports::resolve(dev.version)?;
-    if dev.gdb {
-        ensure!(
-            installed.has_debug_info(),
-            "gdb needs the game's debug info: tgg port install {} --debug",
-            installed.version
-        );
-    }
+    let (installed, sdk) = match dev.game {
+        // A local build carries its debug info and its SDK in the build folder
+        Some(folder) => {
+            let installed = Installed {
+                version: format!("the build in {}", folder.display()),
+                folder: folder.to_owned(),
+            };
+            ensure!(
+                installed.executable().is_file(),
+                "{} has no {}: --game wants the port's build folder",
+                folder.display(),
+                installed.executable().display()
+            );
+            let sdk = folder.join("tgg-melee-sdk");
+            ensure!(
+                sdk.join("tgg-game-sdk.json").is_file(),
+                "{} has no tgg-melee-sdk folder: build the port first",
+                folder.display()
+            );
+            (installed, sdk)
+        }
+        None => {
+            let installed = ports::resolve(dev.version)?;
+            if dev.gdb {
+                ensure!(
+                    installed.has_debug_info(),
+                    "gdb needs the game's debug info: tgg port install {} --debug",
+                    installed.version
+                );
+            }
+            let sdk = crate::sdks::for_installed(&installed)?;
+            (installed, sdk)
+        }
+    };
     let iso = crate::config::iso()?;
-    let sdk = crate::sdks::for_installed(&installed)?;
     let options = Options {
         sdk: Some(&sdk),
         cc: dev.cc,
