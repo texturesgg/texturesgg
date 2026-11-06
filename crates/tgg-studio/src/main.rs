@@ -21,6 +21,8 @@ mod window;
 
 #[cfg(test)]
 mod flows;
+#[cfg(all(test, feature = "melee-iso"))]
+mod iso_flows;
 
 use rune::{AppSpec, WindowOptions};
 use state::{App, Start};
@@ -42,6 +44,8 @@ const SCENES: &[Scene] = &[
             melee::actions::open_fighter(app, fox);
         }
     }),
+    ("fox-shine", |app| show_shared(app, "Fx", "Shine")),
+    ("fox-laser", |app| show_shared(app, "Fx", "Laser")),
     ("fox-moves", |app| {
         if let Some(fox) = melee_dat::Character::from_code("Fx") {
             melee::actions::open_fighter(app, fox);
@@ -120,4 +124,14 @@ fn iso_argument() -> Option<PathBuf> {
         }
     }
     None
+}
+
+/// For scenes: open the fighter `code` names and play the move that shows
+/// its shared model `name`.
+fn show_shared(app: &mut App, code: &str, name: &str) {
+    let Some(character) = melee_dat::Character::from_code(code) else { return };
+    melee::actions::open_fighter(app, character);
+    if let Some(model) = melee_dat::SharedModel::of(character).find(|model| model.name() == name) {
+        stage::actions::play_action(app, model.action());
+    }
 }

@@ -8,6 +8,10 @@ repository.workspace = true
 description = "The textures.gg desktop app, on Rune"
 publish = false
 
+[features]
+# Tests that read a clean Melee disc image named by TGG_MELEE_ISO.
+melee-iso = []
+
 [dependencies]
 tgg-app = { path = "../tgg-app" }
 dat-parser = { path = "../dat-parser" }

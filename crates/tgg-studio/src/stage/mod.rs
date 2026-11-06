@@ -6,12 +6,14 @@
 
 pub mod actions;
 mod copy;
+mod spawns;
 pub mod view;
 pub mod viewport;
 
 use hsd_render::Orbit;
-use melee_dat::{MeleeModel, MeleeSlot};
+use melee_dat::{MeleeModel, MeleeSlot, SharedModel};
 use rune::{Live, LiveText};
+use std::rc::Rc;
 use tgg_app::moves::MoveRow;
 
 /// The viewport's effect slot.
@@ -48,11 +50,16 @@ pub struct Shown {
     pub animation: Option<usize>,
     /// Its fighter's moves; empty for a stage.
     pub moves: Vec<MoveRow>,
+    /// The models its fighter's costumes share, with their files: what its
+    /// moves spawn on it (the shine, the blaster and its lasers).
+    pub shared: Vec<(SharedModel, Rc<Vec<u8>>)>,
     /// Its number among the models shown, so the viewport rebuilds its copy
     /// on the GPU when the model is a new one.
     pub generation: u64,
     /// The pose changed while paused (a seek, a new move): draw it again.
     pub posed: bool,
+    /// The move started over (played or sought): what it spawns starts over too.
+    pub restart: bool,
 }
 
 impl Shown {
@@ -67,5 +74,19 @@ impl Shown {
             MoveRow::Move { animation: playing, title, .. } if *playing == animation => Some(title.clone()),
             _ => None,
         })
+    }
+}
+
+impl Shown {
+    /// The animation for `action` (`SpecialLwLoop`), when its fighter has one.
+    pub fn animation_for(&self, action: &str) -> Option<usize> {
+        let playback = self.model.fighter()?;
+        playback.animations().iter().find(|animation| animation.action.as_deref() == Some(action)).map(|animation| animation.index)
+    }
+
+    /// The action playing (`SpecialLwLoop`), if a move is.
+    pub fn action(&self) -> Option<&str> {
+        let playback = self.model.fighter()?;
+        playback.animations().get(self.animation?)?.action.as_deref()
     }
 }

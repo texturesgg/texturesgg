@@ -70,17 +70,27 @@ fn shared(app: &App, p: &Palette) -> Option<El> {
     let folded = melee.panes.folded(Pane::Shared);
     let header = pane_header("Shared", Some(fighter.shared.len()), folded, p)
         .key("melee/pane/shared").on_press(|app: &mut App| actions::toggle_pane(app, Pane::Shared));
+    let playing = app.stage.shown.as_ref().and_then(|shown| shown.action());
     let body = (!folded).then(|| {
         col().children(fighter.shared.iter().map(|&file| {
             let name = match file {
                 MeleeSlot::FighterData(_) => FIGHTER_FILE,
                 _ => EFFECTS_FILE,
             };
-            let models: Vec<&str> = fighter.models(file).map(|model| model.name()).collect();
-            let left = col()
-                .child(label(name).font(text::STRONG).color(p.ink))
-                .children((!models.is_empty()).then(|| label(models.join(", ")).font(text::SMALL).color(p.muted).truncate()));
-            pane_row(left, Some(state_word(melee, file, p)), false, p).h(48.0)
+            // The file, then a row for each model in it the app can show.
+            let heading = row().h(size::ROW).px(space::SM).items_center()
+                .child(label(name).font(text::LABEL).color(p.faint))
+                .child(rune::el().grow(1.0))
+                .child(state_word(melee, file, p));
+            let models = fighter.models(file).map(|model| {
+                let action = model.action();
+                pane_row(label(model.name()).font(text::BODY).color(p.ink), None, playing == Some(action), p)
+                    .key(format!("melee/shared/{}", model.name()))
+                    .role("button").label(model.name()).focusable(true)
+                    .help(format!("Plays the move that shows it ({action})"))
+                    .on_press(move |app: &mut App| stage::play_action(app, action))
+            });
+            col().pb(space::XXS).child(heading).children(models)
         }))
     });
     Some(pane(header, body, p))

@@ -19,7 +19,7 @@ pub fn show(app: &mut App, slot: MeleeSlot) -> Result<(), String> {
     let Some(references) = &app.game else { return Err("There's no game open.".into()) };
     let bytes = references.game().read_slot(slot).map_err(|error| error.to_string())?;
     let loaded = tgg_app::load_model(&slot.file_name(), &bytes, Some(references)).map_err(|error| error.to_string())?;
-    let mut model = loaded.model;
+    let (mut model, shared) = (loaded.model, loaded.shared);
     let moves = model.fighter().map(tgg_app::moves::moves).unwrap_or_default();
     let previous = app.stage.shown.take().filter(|shown| shown.slot.character().is_some() && shown.slot.character() == slot.character());
     let (orbit, animation, playing) = match &previous {
@@ -30,7 +30,7 @@ pub fn show(app: &mut App, slot: MeleeSlot) -> Result<(), String> {
     let generation = app.stage.shown_count;
     // A move that won't play on this costume falls back to the idle.
     let animation = animation.filter(|&animation| model.fighter_mut().is_some_and(|playback| playback.play(animation).is_ok()));
-    app.stage.shown = Some(Shown { slot, model, orbit, playing, animation, moves, generation, posed: true });
+    app.stage.shown = Some(Shown { slot, model, orbit, playing, animation, moves, shared, generation, posed: true, restart: true });
     Ok(())
 }
 
@@ -47,6 +47,7 @@ pub fn play(app: &mut App, animation: usize) {
         shown.animation = Some(animation);
         shown.playing = true;
         shown.posed = true;
+        shown.restart = true;
     }
 }
 
@@ -64,6 +65,7 @@ pub fn seek(app: &mut App, fraction: f32) {
     if shown.model.seek((fraction.clamp(0.0, 1.0) * end).floor()).is_ok() {
         shown.playing = false;
         shown.posed = true;
+        shown.restart = true;
     }
 }
 
@@ -83,5 +85,15 @@ pub fn orbit(app: &mut App, drag: &mut Drag, _: &mut Tx) {
             pitch: (shown.orbit.pitch + f64::from(drag.dy) * ORBIT_PER_POINT).clamp(-PITCH_LIMIT, PITCH_LIMIT),
             ..shown.orbit
         };
+    }
+}
+
+/// Play the move for `action` (`SpecialLwLoop`), as a shared model's row
+/// does to show the model: the shine through the down special.
+pub fn play_action(app: &mut App, action: &str) {
+    let animation = app.stage.shown.as_ref().and_then(|shown| shown.animation_for(action));
+    match animation {
+        Some(animation) => play(app, animation),
+        None => tgg_app::log(&format!("no move plays {action}")),
     }
 }
