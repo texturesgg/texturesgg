@@ -419,7 +419,7 @@ fn disc_images_in(folder: &Path) -> Vec<PathBuf> {
 
 /// A disc image of game `game_id` at `revision` holding one file,
 /// `PlFcRe.dat`.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn test_disc(game_id: &[u8; 6], revision: u8, contents: &[u8]) -> Vec<u8> {
     const FST: usize = 0x500;
     const FILE: usize = 0x800;

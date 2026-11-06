@@ -1,0 +1,30 @@
+[package]
+name = "tgg-studio"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "The textures.gg desktop app, on Rune"
+publish = false
+
+[dependencies]
+tgg-app = { path = "../tgg-app" }
+
+# Pre-release: pin a `dev` rev, which is never rewritten, and move it on
+# deliberately. Off: the Metal backend (macOS gets its own pass), ogg audio
+# and SVG images, which the app doesn't use.
+[dependencies.rune]
+git = "https://github.com/anomalyco/rune"
+rev = "8ee30954add065098f043335ece9d9ea0914d21d"
+default-features = false
+# The system's file dialog (on Linux, the portal over D-Bus), accessibility,
+# and Inter as the fallback for glyphs the bundled faces lack.
+features = ["accessibility", "dbus", "embedded-fonts", "native-file-dialog"]
+
+[dev-dependencies]
+tgg-app = { path = "../tgg-app", features = ["test-support"] }
+tempfile = "3"
+
+[lints]
+workspace = true

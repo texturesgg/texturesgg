@@ -14,9 +14,8 @@ members = [
   "crates/hsd-render",
   "crates/tgg-mod",
   "crates/tgg-cli",
-  "crates/tgg-ui",
-  "crates/tgg-editor",
   "crates/tgg-app",
+  "crates/tgg-studio",
 ]
 resolver = "2"
 

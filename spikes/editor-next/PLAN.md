@@ -56,9 +56,8 @@ crates/
   hsd-render     wgpu 29 on main (tgg-editor); wgpu 30 on the studio branch
   tgg-app        new: what the app does, with no UI (moved from tgg-editor)
   tgg-ui         unchanged; tgg-editor's components on gpui-ce
-  tgg-editor     unchanged in behaviour; uses tgg-app instead of its own copies
-  tgg-studio     new: the app on Rune (working name; takes the tgg-editor name
-                 and package id when it replaces it)
+  tgg-editor     unchanged; retires when tgg-studio replaces it
+  tgg-studio     new: the app on Rune, and its name from here on
 ```
 
 **Everything on the studio branch.** hsd-render borrows its host's device, so
@@ -66,7 +65,8 @@ it must use its host's wgpu: 29 for gpui-ce, 30 for Rune. `main` keeps wgpu 29
 and tgg-editor ships from it untouched. The studio branch carries hsd-render
 on wgpu 30 (three call sites, and 32-bit float depth), tgg-app and
 tgg-studio, merges `main` in often, and lands when tgg-studio replaces
-tgg-editor. tgg-editor doesn't build on the branch; it isn't meant to.
+tgg-editor. tgg-editor and tgg-ui aren't workspace members on the branch: they
+can't build against wgpu 30, and gpui-ce and Rune can't share one lockfile.
 
 **tgg-app, no UI.** The gpui-free parts of tgg-editor, copied rather than
 moved, so tgg-editor on `main` is untouched and merges stay clean: `game` (the
@@ -87,7 +87,9 @@ src/
   main.rs        arguments, the App builder, scenes
   state.rs       App: the whole state, and how it starts
   jobs.rs        background work: workers, results into state via poll
-  nav.rs         places, the subject, overlays, Escape, "up"
+  shell.rs       the window's frame: sidebar, title row, the place (view)
+  window.rs      the window itself: closing it
+  nav/          places, the subject, overlays, Escape, "up"
   ui/            the Catalog components: tokens, fonts, sidebar, title row,
                  plate, pane, pane column, rows and tables, buttons, status
                  marks, timeline, dialog frame
@@ -96,12 +98,23 @@ src/
   library/       skins, review of new skins, installs
   editor/        the document, textures, colors, files, external edits
   mods/          browse, installed, updates, conflicts (tgg-mod)
-  settings.rs, welcome.rs, report.rs
+  welcome/, settings/, report/
 ```
 
-Each feature folder owns its slice of state, its keys and its handlers, and
-splits state (`mod.rs`) from drawing (`view.rs`), as tgg-editor does. Files
-stay under 800 lines.
+**State, controller and view stay apart.** Each feature folder owns its slice
+of the app and splits it three ways:
+
+- `mod.rs`: its state, plain data with no behaviour, and the module's spec.
+- `actions.rs`: the controller. Functions over `&mut App` (and `Tx` when they
+  open a dialog or set a timer) that change state, calling tgg-app for what
+  the app does; no elements.
+- `view.rs`: a function of `&App` returning elements. It reads, never
+  writes; a press names an action, with nothing but the wiring inline.
+
+What the app does (games, slots, the library, installs) lives below all
+three, in tgg-app, with no UI at all. `ui/` holds components that know
+nothing of the app's state or actions; views wire them. Files stay under
+800 lines.
 
 ## State
 
@@ -222,12 +235,13 @@ Each step ends working, tested and committed.
    and off, conflicts, updates.
 7. **The rest and the switch**: Settings, Report, the update check,
    packaging (`dist/`, `scripts/`), a parity checklist against tgg-editor;
-   then tgg-studio takes the name and tgg-editor and the `wgpu29` feature
-   retire.
+   then tgg-studio ships in tgg-editor's place and tgg-editor, tgg-ui and
+   their copies retire. The player's files (`editor.json`, the library,
+   install history) stay where they are, so everything carries over.
 
 ## Decided
 
-1. The app is `tgg-studio` until it replaces tgg-editor and takes its name.
+1. The app is tgg-studio, for good: the app is outgrowing "editor".
 2. Linux windows are borderless, with the app's own drag band and window
    buttons, as the design draws them.
 3. While Rune can't take file drops on Wayland, dialogs cover every drop;
