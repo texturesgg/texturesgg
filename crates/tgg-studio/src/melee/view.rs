@@ -13,6 +13,9 @@ const PLATE_WIDTH: f32 = 148.0;
 
 pub fn view(app: &App, p: &Palette) -> El {
     let melee = &app.melee;
+    if let Some(document) = &app.editor {
+        return crate::editor::view::view(app, document, p);
+    }
     if let Some(subject) = melee.subject {
         return super::subject::view(app, subject, p);
     }

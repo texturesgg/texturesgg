@@ -8,7 +8,7 @@ use crate::nav::{Place, actions as nav};
 use crate::state::App;
 use crate::ui::tokens::{Palette, motion, size, space, text};
 use crate::ui::{close_glyph, icon_button, place_row, sidebar_glyph};
-use crate::{library, melee, mods, welcome, window};
+use crate::{editor, keys, library, melee, mods, welcome, window};
 use rune::{Cx, El, col, el, row, text as label};
 
 /// Where the sidebar toggle sits, from the window's top left.
@@ -23,8 +23,10 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         return welcome::view::view(app, &p);
     }
     let shown = app.nav.sidebar;
-    let toggle = icon_button(sidebar_glyph(&p), if shown { "Hide sidebar" } else { "Show sidebar" }, &p)
+    let does = if shown { "Hide sidebar" } else { "Show sidebar" };
+    let toggle = icon_button(sidebar_glyph(&p), does, &p)
         .key("shell/toggle")
+        .help(keys::hint(does, keys::Command::ToggleSidebar))
         .on_press(nav::toggle_sidebar)
         .absolute(TOGGLE_AT.0, TOGGLE_AT.1);
     row().w_full().h_full().fill(p.bg)
@@ -33,6 +35,7 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .child(toggle)
         // Dialogs, over everything.
         .children(library::review::view(app, &p))
+        .children(editor::view::prompt(app, &p))
 }
 
 /// The places, then the player's game at the foot. Hidden, it narrows to
@@ -42,7 +45,7 @@ fn sidebar(app: &App, p: &Palette) -> El {
     let places = Place::ALL.into_iter().map(|place| {
         place_row(place.label(), None, app.nav.place == place, p)
             .key(place.key())
-            .on_press(move |app: &mut App| nav::go(app, place))
+            .on_press_tx(move |app: &mut App, tx| editor::actions::go(app, place, tx))
     });
     // One marker glides between places, so the move from one to the next shows.
     let index = Place::ALL.iter().position(|place| *place == app.nav.place).unwrap_or(0);
@@ -77,7 +80,8 @@ fn title_row(app: &App, p: &Palette) -> El {
         .items_center().motion(motion::DEFAULT).window_drag()
         .children(crumbs(app, p))
         .children(notice(app, p))
-        .child(el().grow(1.0));
+        .child(el().grow(1.0))
+        .children(title_actions(app, p));
     if let Some(controls) = window_controls(p) {
         row = row.child(controls);
     }
@@ -102,6 +106,9 @@ fn place(app: &App, p: &Palette) -> El {
 
 /// Where the player is, when it's below a top-level place.
 fn crumbs(app: &App, p: &Palette) -> Option<El> {
+    if let Some(document) = &app.editor {
+        return Some(editor::view::crumbs(document, p));
+    }
     match (app.nav.place, app.melee.subject) {
         (Place::Melee, Some(subject)) => Some(melee::subject::crumbs(subject, p)),
         _ => None,
@@ -113,4 +120,15 @@ fn notice(app: &App, p: &Palette) -> Option<El> {
     let notice = app.notice.as_ref()?;
     Some(label(notice.text.clone()).key("shell/notice").font(text::BODY).color(if notice.error { p.danger } else { p.muted })
         .truncate().min_w(0.0).shrink().ml(space::SM))
+}
+
+/// The one or few actions the place showing offers, at the title row's end.
+fn title_actions(app: &App, p: &Palette) -> Option<El> {
+    if let Some(document) = &app.editor {
+        return Some(editor::view::actions(document, p));
+    }
+    match app.nav.place {
+        Place::Melee => melee::subject::title_actions(app, p),
+        Place::Library | Place::Mods => None,
+    }
 }

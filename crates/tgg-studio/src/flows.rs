@@ -3,7 +3,7 @@
 //! disc images written by hand.
 
 use crate::melee::Subject;
-use crate::nav::{self, Place};
+use crate::nav::Place;
 use crate::shell;
 use crate::state::{App, Data, Start};
 use crate::welcome::Welcome;
@@ -24,7 +24,7 @@ fn runtime(start: Start) -> (Runtime<App>, TempDir) {
     let app = App::new(start, Settings::default(), data, false);
     let mut rt = Runtime::new(app, shell::view, WINDOW, Env::new(true, 2.0));
     // As `main` wires the window.
-    rt.on_key = Some(nav::actions::on_key);
+    rt.on_key = Some(crate::keys::on_key);
     rt.frame(0.0);
     (rt, folder)
 }
@@ -370,4 +370,134 @@ fn escape_closes_review_without_adding() {
     press_escape(&mut rt);
     assert!(rt.state.library_page.review.is_none());
     assert!(rt.state.library.skins().is_empty());
+}
+
+/// Falco open in the editor, on the test disc's costume.
+fn editing() -> (Runtime<App>, TempDir, TempDir) {
+    let (folder, iso) = melee_iso();
+    let (mut rt, data) = runtime(game_at(&iso));
+    tap(&mut rt, "melee/fighter/Falco");
+    settle(&mut rt);
+    tap(&mut rt, "melee/edit");
+    settle(&mut rt);
+    (rt, folder, data)
+}
+
+/// A one-color PNG `size` pixels square, on disk.
+fn png(folder: &Path, size: u32, rgba: [u8; 4]) -> PathBuf {
+    let path = folder.join(format!("paint-{size}.png"));
+    image::RgbaImage::from_pixel(size, size, image::Rgba(rgba)).save(&path).expect("write png");
+    path
+}
+
+fn command(rt: &mut Runtime<App>, character: char, shift: bool) {
+    rt.key(KeyEvent { key: Key::Command(character), mods: Mods { cmd: true, shift, ..Default::default() } });
+    rt.frame(FRAME);
+}
+
+#[test]
+fn edit_textures_opens_the_costume_showing_with_its_first_texture() {
+    let (rt, _disc, _data) = editing();
+    let document = rt.state.editor.as_ref().expect("the editor opens");
+    assert_eq!(document.slot.file_name(), "PlFcRe.dat");
+    assert_eq!(document.texture_count(), 1);
+    assert_eq!(document.selected, Some(0));
+    assert!(rt.find("editor/texture/0").is_some());
+    let shown = rt.state.stage.shown.as_ref().expect("on the same stage");
+    assert!(!shown.highlight.is_empty(), "the selected texture's surfaces tint");
+}
+
+#[test]
+fn done_without_edits_goes_straight_back() {
+    let (mut rt, _disc, _data) = editing();
+    tap(&mut rt, "editor/done");
+    assert!(rt.state.editor.is_none());
+    assert!(rt.state.melee.subject.is_some(), "back to Falco on the stage");
+}
+
+#[test]
+fn an_imported_png_shows_on_the_model_and_undoes() {
+    let (mut rt, _disc, _data) = editing();
+    let files = tempfile::tempdir().expect("temp dir");
+    let red = png(files.path(), 8, [255, 0, 0, 255]);
+    rt.update(|app, _| crate::editor::files::import_file(app, 0, &red));
+    rt.frame(FRAME);
+    let document = rt.state.editor.as_ref().expect("still editing");
+    assert!(document.modified());
+    assert!(rt.state.notice.as_ref().is_some_and(|notice| notice.text.contains("every texel exact")), "{:?}", rt.state.notice);
+    assert!(!rt.state.stage.shown.as_ref().expect("on stage").edited.is_empty(), "the model shows it");
+    assert!(rt.find("editor/edited").is_some(), "the title row says it's edited");
+    command(&mut rt, 'z', false);
+    assert!(!rt.state.editor.as_ref().expect("still editing").modified(), "undone back to as it opened");
+    command(&mut rt, 'z', true);
+    assert!(rt.state.editor.as_ref().expect("still editing").modified(), "and redone");
+}
+
+#[test]
+fn a_png_of_the_wrong_size_is_turned_away() {
+    let (mut rt, _disc, _data) = editing();
+    let files = tempfile::tempdir().expect("temp dir");
+    let small = png(files.path(), 4, [0, 0, 255, 255]);
+    rt.update(|app, _| crate::editor::files::import_file(app, 0, &small));
+    let notice = rt.state.notice.clone().expect("it says why");
+    assert!(notice.error && notice.text.contains("is 4×4; this texture is 8×8"), "{}", notice.text);
+    assert!(!rt.state.editor.as_ref().expect("still editing").modified());
+}
+
+#[test]
+fn leaving_with_unsaved_edits_asks_and_discarding_puts_the_costume_back() {
+    let (mut rt, _disc, _data) = editing();
+    let files = tempfile::tempdir().expect("temp dir");
+    let red = png(files.path(), 8, [255, 0, 0, 255]);
+    rt.update(|app, _| crate::editor::files::import_file(app, 0, &red));
+    press_escape(&mut rt);
+    assert_eq!(rt.state.editor.as_ref().and_then(|document| document.pending), Some(crate::editor::Pending::Leave));
+    settle(&mut rt);
+    tap(&mut rt, "prompt/discard");
+    assert!(rt.state.editor.is_none());
+    assert!(rt.state.stage.shown.as_ref().expect("Falco on the stage").edited.is_empty(), "the edit is gone");
+}
+
+#[test]
+fn save_and_install_writes_the_edited_costume_into_the_game() {
+    let (mut rt, _disc, _data) = editing();
+    let files = tempfile::tempdir().expect("temp dir");
+    let red = png(files.path(), 8, [255, 0, 0, 255]);
+    rt.update(|app, _| crate::editor::files::import_file(app, 0, &red));
+    settle(&mut rt);
+    tap(&mut rt, "editor/install");
+    let document = rt.state.editor.as_ref().expect("still editing");
+    assert!(!document.modified(), "saved");
+    let edited = document.listing.document.as_ref().expect("open").bytes().to_vec();
+    let slot = document.slot;
+    let game = rt.state.game.as_ref().expect("a game").game();
+    assert_eq!(game.read_slot(slot).expect("read back"), edited, "the disc holds the edit");
+    let skins = rt.state.library.skins();
+    assert_eq!(skins.len(), 1);
+    assert_eq!(skins[0].name, "Falco · Red (edited)");
+}
+
+#[test]
+fn the_prompt_can_save_then_go_where_the_player_was_going() {
+    let (mut rt, _disc, _data) = editing();
+    let files = tempfile::tempdir().expect("temp dir");
+    let red = png(files.path(), 8, [255, 0, 0, 255]);
+    rt.update(|app, _| crate::editor::files::import_file(app, 0, &red));
+    tap(&mut rt, Place::Library.key());
+    assert_eq!(rt.state.nav.place, Place::Melee, "it asks before going");
+    settle(&mut rt);
+    tap(&mut rt, "prompt/save");
+    assert_eq!(rt.state.nav.place, Place::Library);
+    assert!(rt.state.editor.is_none());
+    assert_eq!(rt.state.library.skins().len(), 1);
+}
+
+#[test]
+fn a_texture_exports_as_the_game_draws_it() {
+    let (mut rt, _disc, _data) = editing();
+    let files = tempfile::tempdir().expect("temp dir");
+    let out = files.path().join("out.png");
+    rt.update(|app, _| crate::editor::files::export_to(app, 0, &out));
+    let image = image::open(&out).expect("a PNG").to_rgba8();
+    assert_eq!(image.dimensions(), (8, 8));
 }

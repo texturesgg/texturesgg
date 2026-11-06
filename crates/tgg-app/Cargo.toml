@@ -13,6 +13,7 @@ publish = false
 test-support = []
 
 [dependencies]
+dat-edit = { path = "../dat-edit" }
 dat-parser = { path = "../dat-parser" }
 melee-dat = { path = "../melee-dat" }
 # Reading costumes and references from the player's ISO, and installing.

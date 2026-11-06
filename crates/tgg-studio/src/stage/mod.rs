@@ -11,8 +11,10 @@ pub mod view;
 pub mod viewport;
 
 use hsd_render::Orbit;
-use melee_dat::{MeleeModel, MeleeSlot, SharedModel};
+use dat_parser::hsd::scene::HsdTextureIndex;
+use melee_dat::{MeleeModel, MeleeReferenceStore, MeleeSlot, SharedModel};
 use rune::{Live, LiveText};
+use std::collections::BTreeMap;
 use std::rc::Rc;
 use tgg_app::moves::MoveRow;
 
@@ -23,6 +25,8 @@ pub struct Stage {
     pub shown: Option<Shown>,
     /// How many models have been put on the stage; each takes the next number.
     pub shown_count: u64,
+    /// Edits the viewport couldn't show, in the player's words, to say so.
+    pub rejected: Vec<String>,
     /// Where the timeline's playhead sits along its track, in points; the
     /// viewport writes it each frame, so the view needn't rebuild.
     pub playhead: Live<[f32; 2]>,
@@ -32,7 +36,7 @@ pub struct Stage {
 
 impl Default for Stage {
     fn default() -> Self {
-        Self { shown: None, shown_count: 0, playhead: Live::new([0.0, 0.0]), frame_count: LiveText::new(FRAME_COUNT_SPACE) }
+        Self { shown: None, shown_count: 0, rejected: Vec::new(), playhead: Live::new([0.0, 0.0]), frame_count: LiveText::new(FRAME_COUNT_SPACE) }
     }
 }
 
@@ -60,6 +64,18 @@ pub struct Shown {
     pub posed: bool,
     /// The move started over (played or sought): what it spawns starts over too.
     pub restart: bool,
+    /// The reference files a stock costume plays with: its texture names
+    /// come from them too.
+    pub store: Option<Rc<MeleeReferenceStore>>,
+    /// Edited pixels by scene texture, with their size: shown in place of the
+    /// file's, and shown again whenever the renderer is rebuilt.
+    pub edited: BTreeMap<usize, ((u32, u32), Vec<u8>)>,
+    /// Edited scene textures the viewport hasn't uploaded yet.
+    pub pending: Vec<usize>,
+    /// The scene textures tinted to show which surfaces draw the texture
+    /// selected in the editor.
+    pub highlight: Vec<HsdTextureIndex>,
+    pub highlight_changed: bool,
 }
 
 impl Shown {

@@ -11,6 +11,7 @@ use super::spawns::Spawns;
 use super::{Shown, VIEWPORT};
 use crate::state::App;
 use dat_parser::descriptor::jobj::flags::BILLBOARD_FIELD;
+use dat_parser::hsd::scene::HsdTextureIndex;
 use dat_parser::math::Mat4;
 use hsd_render::{HsdRenderer, ModelId, Orbit, PreparedGeometry, neutral_preview_lighting};
 use rune::compose::{Compositor, DeviceKey, Frame};
@@ -28,6 +29,8 @@ pub struct Viewport {
     clock: f64,
     /// The model plays, so the window keeps drawing.
     playing: bool,
+    /// Edits the renderer refused this frame, for the stage to say.
+    refused: Vec<String>,
 }
 
 /// What lives on Rune's device: the renderer with the model and what its
@@ -75,6 +78,9 @@ impl Viewport {
             let spawns = Spawns::new(shown.shared.clone());
             self.gpu = Some(Gpu { key, generation: shown.generation, renderer, model, spawns, posed_orbit: None, target, copy });
             shown.posed = true;
+            // A new renderer starts from the file's pixels and no tint: show every edit again.
+            shown.pending = shown.edited.keys().copied().collect();
+            shown.highlight_changed = true;
         }
         let gpu = self.gpu.as_mut().expect("built above");
         if gpu.target.size != size {
@@ -89,6 +95,18 @@ impl Viewport {
         let turned = gpu.posed_orbit != Some(gpu.renderer.orbit()) && faces_camera(shown, &gpu.spawns);
         if ticks > 0 || std::mem::take(&mut shown.posed) || turned {
             pose(shown, gpu, device, queue)?;
+        }
+        for index in std::mem::take(&mut shown.pending) {
+            let Some((size, pixels)) = shown.edited.get(&index) else { continue };
+            // A refused edit is that edit's problem: forget it so a rebuilt renderer
+            // never replays it, say so, and carry on with the rest.
+            if let Err(error) = gpu.renderer.update_scene_texture(queue, gpu.model, HsdTextureIndex(index), *size, pixels) {
+                shown.edited.remove(&index);
+                self.refused.push(format!("The stage couldn't show an edit: {error}"));
+            }
+        }
+        if std::mem::take(&mut shown.highlight_changed) {
+            gpu.renderer.set_highlight(queue, gpu.model, &shown.highlight)?;
         }
         gpu.renderer.encode(f.encoder, &gpu.target.view);
         Ok(())
@@ -178,6 +196,7 @@ impl Compositor<App> for Viewport {
                 self.gpu = None;
             }
             Self::report(f);
+            f.rt.state.stage.rejected.append(&mut self.refused);
         } else {
             // Off the stage, nothing draws and the clock waits.
             self.clock = 0.0;

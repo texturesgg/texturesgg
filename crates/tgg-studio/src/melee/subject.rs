@@ -181,3 +181,12 @@ fn slot_actions(app: &App, slot: MeleeSlot, p: &Palette) -> El {
         .children(empty)
         .children((undo.is_some() || restore.is_some()).then(|| row().px(space::XS).py(space::XS).gap(space::XS).children(undo).children(restore)))
 }
+
+/// What the title row offers while a fighter or stage is open: editing the
+/// costume or stage showing.
+pub fn title_actions(app: &App, p: &Palette) -> Option<El> {
+    let shown = app.stage.shown.as_ref()?;
+    matches!(shown.slot, MeleeSlot::Costume { .. } | MeleeSlot::Stage(_)).then(|| {
+        crate::ui::button("Edit textures", crate::ui::ButtonKind::Primary, p).key("melee/edit").on_press(crate::editor::actions::open)
+    })
+}

@@ -104,6 +104,10 @@ pub fn setup(app: &mut crate::state::App, waker: Waker) {
 /// True when anything that shows changed.
 pub fn poll(app: &mut crate::state::App, _: f64, _: &mut rune::Tx) -> bool {
     let mut changed = false;
+    for refused in std::mem::take(&mut app.stage.rejected) {
+        app.tell(refused, true);
+        changed = true;
+    }
     for done in app.jobs.take() {
         changed |= match done {
             Done::States { iso, states, undoable } => crate::melee::actions::states_read(app, &iso, states, undoable),

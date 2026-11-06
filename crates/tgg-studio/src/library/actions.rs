@@ -185,6 +185,13 @@ fn finish(app: &mut App, slot: MeleeSlot, result: Result<String, tgg_app::Error>
     }
 }
 
+/// What `slot` holds changed under the editor, which shows it already:
+/// draw it again and read what every slot holds again, leaving the stage.
+pub fn refresh_after_install(app: &mut App, slot: MeleeSlot) {
+    app.renders.forget(RenderKey::Slot(slot));
+    crate::melee::actions::refresh(app);
+}
+
 /// What `slots` hold changed: draw them again, read what every slot holds
 /// again, and show the new file on the stage if it's showing one of them.
 fn slots_changed(app: &mut App, slots: &[MeleeSlot]) {

@@ -7,7 +7,9 @@
 //! tgg-studio [--iso PATH] --snap out.png [--scene NAME]   headless, as Rune's tooling
 //! ```
 
+mod editor;
 mod jobs;
+mod keys;
 mod library;
 mod melee;
 mod mods;
@@ -46,6 +48,19 @@ const SCENES: &[Scene] = &[
     }),
     ("fox-shine", |app| show_shared(app, "Fx", "Shine")),
     ("fox-laser", |app| show_shared(app, "Fx", "Laser")),
+    ("fox-edit", |app| {
+        if let Some(fox) = melee_dat::Character::from_code("Fx") {
+            melee::actions::open_fighter(app, fox);
+            editor::actions::open(app);
+        }
+    }),
+    ("fox-edit-helmet", |app| {
+        if let Some(fox) = melee_dat::Character::from_code("Fx") {
+            melee::actions::open_fighter(app, fox);
+            editor::actions::open(app);
+            editor::actions::select(app, Some(1));
+        }
+    }),
     ("fox-moves", |app| {
         if let Some(fox) = melee_dat::Character::from_code("Fx") {
             melee::actions::open_fighter(app, fox);
@@ -71,7 +86,7 @@ fn main() {
         fonts: ui::fonts::FONTS,
         families: ui::fonts::FAMILIES,
         scenes: SCENES,
-        on_key: Some(nav::actions::on_key),
+        on_key: Some(keys::on_key),
         setup: Some(jobs::setup),
         poll: Some(jobs::poll),
         ..AppSpec::new("textures.gg", (1280.0, 800.0), launch, shell::view)

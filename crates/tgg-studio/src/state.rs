@@ -2,6 +2,7 @@
 //! frames. Each feature owns its slice; this module holds the root, what's
 //! shared, and how the app starts.
 
+use crate::editor::Document;
 use crate::jobs::Jobs;
 use crate::jobs::renders::Renders;
 use crate::library::Page as LibraryPage;
@@ -34,6 +35,8 @@ pub struct App {
     pub data: Data,
     /// The one model showing, for Melee and the editor.
     pub stage: Stage,
+    /// A costume open for editing, on the stage.
+    pub editor: Option<Document>,
     /// Pictures of costumes and stages, shared by every place.
     pub renders: Renders,
     /// Work off the window's thread.
@@ -72,6 +75,7 @@ impl App {
             notice: None,
             data,
             stage: Stage::default(),
+            editor: None,
             renders: Renders::default(),
             jobs: Jobs::default(),
         }

@@ -4,6 +4,7 @@
 use super::Shown;
 use crate::state::App;
 use hsd_render::{CameraView, Orbit};
+use dat_parser::hsd::scene::{HsdTextureIndex, HsdTextureSourceId};
 use melee_dat::MeleeSlot;
 use rune::{Drag, Phase, Tx};
 
@@ -19,7 +20,7 @@ pub fn show(app: &mut App, slot: MeleeSlot) -> Result<(), String> {
     let Some(references) = &app.game else { return Err("There's no game open.".into()) };
     let bytes = references.game().read_slot(slot).map_err(|error| error.to_string())?;
     let loaded = tgg_app::load_model(&slot.file_name(), &bytes, Some(references)).map_err(|error| error.to_string())?;
-    let (mut model, shared) = (loaded.model, loaded.shared);
+    let (mut model, shared, store) = (loaded.model, loaded.shared, loaded.store);
     let moves = model.fighter().map(tgg_app::moves::moves).unwrap_or_default();
     let previous = app.stage.shown.take().filter(|shown| shown.slot.character().is_some() && shown.slot.character() == slot.character());
     let (orbit, animation, playing) = match &previous {
@@ -30,7 +31,23 @@ pub fn show(app: &mut App, slot: MeleeSlot) -> Result<(), String> {
     let generation = app.stage.shown_count;
     // A move that won't play on this costume falls back to the idle.
     let animation = animation.filter(|&animation| model.fighter_mut().is_some_and(|playback| playback.play(animation).is_ok()));
-    app.stage.shown = Some(Shown { slot, model, orbit, playing, animation, moves, shared, generation, posed: true, restart: true });
+    app.stage.shown = Some(Shown {
+        slot,
+        model,
+        orbit,
+        playing,
+        animation,
+        moves,
+        shared,
+        generation,
+        posed: true,
+        restart: true,
+        store,
+        edited: Default::default(),
+        pending: Vec::new(),
+        highlight: Vec::new(),
+        highlight_changed: false,
+    });
     Ok(())
 }
 
@@ -96,4 +113,60 @@ pub fn play_action(app: &mut App, action: &str) {
         Some(animation) => play(app, animation),
         None => tgg_app::log(&format!("no move plays {action}")),
     }
+}
+
+/// Show edited pixels: each decoded use of an edited texture, with its
+/// (width, height), matched to its scene texture by image and palette
+/// descriptors.
+pub fn update_textures<'a>(app: &mut App, decoded: impl IntoIterator<Item = (HsdTextureSourceId, (u32, u32), &'a [u8])>) {
+    let Some(shown) = &mut app.stage.shown else { return };
+    for (id, size, pixels) in decoded {
+        if let Some(index) = shown.model.scene().textures.iter().position(|texture| texture.id == id) {
+            shown.edited.insert(index, (size, pixels.to_vec()));
+            shown.pending.push(index);
+        }
+    }
+}
+
+/// Tint the surfaces that draw any of `uses`; none stops.
+pub fn set_highlight(app: &mut App, uses: &[HsdTextureSourceId]) {
+    let Some(shown) = &mut app.stage.shown else { return };
+    let tinted: Vec<HsdTextureIndex> = shown
+        .model
+        .scene()
+        .textures
+        .iter()
+        .enumerate()
+        .filter(|(_, texture)| uses.contains(&texture.id))
+        .map(|(index, _)| HsdTextureIndex(index))
+        .collect();
+    if tinted != shown.highlight {
+        shown.highlight = tinted;
+        shown.highlight_changed = true;
+    }
+}
+
+/// Show `bytes` in place of the model showing, from the same camera and at
+/// the same point of the same move: the file changed in a way the renderer
+/// can't patch, such as its colors. Edits shown so far are in the bytes.
+pub fn replace(app: &mut App, bytes: &[u8]) -> Result<(), String> {
+    let Some(references) = &app.game else { return Err("There's no game open.".into()) };
+    let Some(shown) = &app.stage.shown else { return Ok(()) };
+    let loaded = tgg_app::load_model(&shown.slot.file_name(), bytes, Some(references)).map_err(|error| error.to_string())?;
+    let mut model = loaded.model;
+    let (animation, frame, playing) = (shown.animation, shown.model.frame(), shown.playing);
+    let animation = animation.filter(|&animation| model.fighter_mut().is_some_and(|playback| playback.play(animation).is_ok()));
+    let _ = model.seek(frame);
+    app.stage.shown_count += 1;
+    let generation = app.stage.shown_count;
+    let Some(shown) = &mut app.stage.shown else { return Ok(()) };
+    shown.model = model;
+    shown.animation = animation;
+    shown.playing = playing;
+    shown.generation = generation;
+    shown.edited.clear();
+    shown.pending.clear();
+    shown.posed = true;
+    shown.restart = true;
+    Ok(())
 }

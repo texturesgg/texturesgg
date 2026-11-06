@@ -19,6 +19,7 @@ pub mod net;
 pub mod settings;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_dat;
+pub mod textures;
 pub mod update;
 
 use dat_parser::hsd::draw::HsdDrawEvaluationPolicy;
