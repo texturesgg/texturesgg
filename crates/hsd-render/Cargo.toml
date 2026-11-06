@@ -30,8 +30,8 @@ gc-iso = { version = "0.2.0", path = "../gc-iso", optional = true }
 melee-dat = { version = "0.2.0", path = "../melee-dat", optional = true }
 png = { version = "0.18", optional = true }
 thiserror = "2"
-# Keep in lockstep with upstream Zed's gpui_wgpu so the editor can share the device.
-wgpu = "29.0.4"
+# Matches Rune's wgpu on the editor-next spike (tgg-editor still pins 29).
+wgpu = "30.0.1"
 serde_json = { version = "1", optional = true }
 sha2 = { version = "0.10", optional = true }
 
@@ -41,7 +41,7 @@ sha2 = { version = "0.10", optional = true }
 pollster = "1"
 
 [dev-dependencies]
-naga = { version = "29.0.4", features = ["wgsl-in"] }
+naga = { version = "30.0.0", features = ["wgsl-in"] }
 
 [lints]
 workspace = true
