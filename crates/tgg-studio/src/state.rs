@@ -6,6 +6,7 @@ use crate::jobs::Jobs;
 use crate::jobs::renders::Renders;
 use crate::melee::Melee;
 use crate::nav::Nav;
+use crate::stage::Stage;
 use crate::welcome::Welcome;
 use tgg_app::References;
 use tgg_app::settings::{self, Settings};
@@ -21,6 +22,8 @@ pub struct App {
     pub nav: Nav,
     pub welcome: Welcome,
     pub melee: Melee,
+    /// The one model showing, for Melee and the editor.
+    pub stage: Stage,
     /// Pictures of costumes and stages, shared by every place.
     pub renders: Renders,
     /// Work off the window's thread.
@@ -46,7 +49,7 @@ impl App {
             Start::Welcome(welcome) => (None, welcome),
         };
         let melee = game.as_ref().map(|references| Melee::of(references.game())).unwrap_or_default();
-        Self { settings, persist, game, nav, welcome, melee, renders: Renders::default(), jobs: Jobs::default() }
+        Self { settings, persist, game, nav, welcome, melee, stage: Stage::default(), renders: Renders::default(), jobs: Jobs::default() }
     }
 
     /// Change the settings here and, when persisting, on disk: read, change

@@ -2,6 +2,7 @@
 //! sidebar, and Welcome finding a game. No GPU and no game files; games are
 //! disc images written by hand.
 
+use crate::melee::Subject;
 use crate::nav::{self, Place};
 use crate::shell;
 use crate::state::{App, Start};
@@ -39,11 +40,17 @@ fn settle(rt: &mut Runtime<App>) {
     }
 }
 
-/// A Melee NTSC 1.02 disc image in a folder of its own.
+/// A Melee NTSC 1.02 disc image in a folder of its own, its one costume
+/// (`PlFcRe.dat`) a model written by hand.
 fn melee_iso() -> (TempDir, PathBuf) {
+    disc_holding(&tgg_app::test_dat::model())
+}
+
+/// A Melee NTSC 1.02 disc image whose `PlFcRe.dat` holds `costume`.
+fn disc_holding(costume: &[u8]) -> (TempDir, PathBuf) {
     let folder = tempfile::tempdir().expect("temp dir");
     let path = folder.path().join("melee.iso");
-    std::fs::write(&path, tgg_app::game::test_disc(b"GALE01", 2, b"file")).expect("write disc");
+    std::fs::write(&path, tgg_app::game::test_disc(b"GALE01", 2, costume)).expect("write disc");
     (folder, path)
 }
 
@@ -176,4 +183,67 @@ fn the_stages_tab_shows_the_stages() {
     tap(&mut rt, "melee/tab/stages");
     assert_eq!(rt.state.melee.tab, crate::melee::Tab::Stages);
     assert!(rt.find("melee/fighter/Falco").is_none());
+}
+
+fn press_escape(rt: &mut Runtime<App>) {
+    rt.key(KeyEvent { key: Key::Escape, mods: Mods::default() });
+    rt.frame(FRAME);
+}
+
+#[test]
+fn a_fighter_opens_onto_the_stage_and_escape_closes_it_into_its_plate() {
+    let (_folder, iso) = melee_iso();
+    let mut rt = runtime(game_at(&iso));
+    tap(&mut rt, "melee/fighter/Falco");
+    assert_eq!(rt.state.melee.subject, Some(Subject::Fighter(melee_dat::Character::from_code("Fc").expect("Falco"))));
+    let shown = rt.state.stage.shown.as_ref().expect("Falco is on the stage");
+    assert_eq!(shown.slot.file_name(), "PlFcRe.dat");
+    assert!(rt.find("stage/viewport").is_some());
+    assert!(rt.find("melee/crumb").is_some(), "the title row says where the player is");
+    assert!(rt.find("melee/fighter/Falco").is_none(), "the roster gives way to the stage");
+    press_escape(&mut rt);
+    assert_eq!(rt.state.melee.subject, None);
+    assert!(rt.state.stage.shown.is_none(), "the stage empties");
+    assert!(rt.find("melee/fighter/Falco").is_some());
+}
+
+#[test]
+fn the_breadcrumb_goes_back_to_the_roster() {
+    let (_folder, iso) = melee_iso();
+    let mut rt = runtime(game_at(&iso));
+    tap(&mut rt, "melee/fighter/Falco");
+    tap(&mut rt, "melee/crumb");
+    assert_eq!(rt.state.melee.subject, None);
+}
+
+#[test]
+fn a_costume_that_wont_load_says_why_and_stays_on_the_roster() {
+    let (_folder, iso) = disc_holding(b"not a costume");
+    let mut rt = runtime(game_at(&iso));
+    tap(&mut rt, "melee/fighter/Falco");
+    assert_eq!(rt.state.melee.subject, None);
+    let problem = rt.state.melee.problem.clone().expect("it says why");
+    assert!(problem.starts_with("Falco couldn't open"), "{problem}");
+    assert!(rt.find("melee/problem").is_some());
+}
+
+#[test]
+fn a_pane_folds_to_its_header() {
+    let (_folder, iso) = melee_iso();
+    let mut rt = runtime(game_at(&iso));
+    tap(&mut rt, "melee/fighter/Falco");
+    assert!(rt.find("melee/costume/PlFcRe.dat").is_some());
+    tap(&mut rt, "melee/pane/costumes");
+    assert!(rt.find("melee/costume/PlFcRe.dat").is_none(), "folded, the costumes hide");
+    assert!(rt.find("melee/pane/costumes").is_some(), "but the header stays");
+}
+
+#[test]
+fn going_to_another_place_takes_the_fighter_off_the_stage() {
+    let (_folder, iso) = melee_iso();
+    let mut rt = runtime(game_at(&iso));
+    tap(&mut rt, "melee/fighter/Falco");
+    tap(&mut rt, Place::Library.key());
+    assert!(rt.state.stage.shown.is_none());
+    assert_eq!(rt.state.melee.subject, None);
 }

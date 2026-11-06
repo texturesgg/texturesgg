@@ -13,6 +13,7 @@ mod melee;
 mod mods;
 mod nav;
 mod shell;
+mod stage;
 mod state;
 mod ui;
 mod welcome;
@@ -36,6 +37,22 @@ const SCENES: &[Scene] = &[
         app.welcome.games = tgg_app::discover_games();
     }),
     ("stages", |app| app.melee.tab = melee::Tab::Stages),
+    ("fox", |app| {
+        if let Some(fox) = melee_dat::Character::from_code("Fx") {
+            melee::actions::open_fighter(app, fox);
+        }
+    }),
+    ("fox-moves", |app| {
+        if let Some(fox) = melee_dat::Character::from_code("Fx") {
+            melee::actions::open_fighter(app, fox);
+            melee::actions::toggle_pane(app, melee::Pane::Moves);
+        }
+    }),
+    ("final-destination", |app| {
+        if let Some(stage) = app.melee.stages.iter().copied().find(|stage| stage.name() == "Final Destination") {
+            melee::actions::open_stage(app, stage);
+        }
+    }),
     ("library", |app| app.nav.place = nav::Place::Library),
     ("mods", |app| app.nav.place = nav::Place::Mods),
     ("no-sidebar", |app| app.nav.sidebar = false),
@@ -60,6 +77,7 @@ fn main() {
         // no system one; macOS keeps its window buttons.
         .window_options(WindowOptions { borderless: cfg!(not(target_os = "macos")), ..Default::default() })
         .init(move || App::new(start(iso.as_deref()), settings::load(), true))
+        .compositor(stage::viewport::Viewport::default())
         .run();
 }
 

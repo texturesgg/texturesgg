@@ -14,6 +14,7 @@ pub mod ids;
 pub mod install;
 pub mod library;
 pub mod log;
+pub mod moves;
 pub mod net;
 pub mod settings;
 #[cfg(any(test, feature = "test-support"))]

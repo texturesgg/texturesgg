@@ -1,12 +1,15 @@
 //! Melee: what's in the player's game. The roster of its fighters and
 //! stages as plates, each saying whether the player has changed it, from
-//! what every slot holds (read in the background). Opening one onto the
-//! stage comes next. `actions` changes it; `view` draws it.
+//! what every slot holds (read in the background). Opening one shows it on
+//! the stage, with its costumes, the files they share and its moves in the
+//! pane column beside it. `actions` changes it; `view` draws the roster and
+//! `subject` the one opened.
 
 pub mod actions;
+pub mod subject;
 pub mod view;
 
-use melee_dat::{MeleeSlot, Stage};
+use melee_dat::{Character, MeleeSlot, Stage};
 use std::collections::HashMap;
 use tgg_app::Game;
 use tgg_app::costumes::{Fighter, roster};
@@ -29,6 +32,43 @@ pub struct Melee {
     pub stages: Vec<Stage>,
     /// What each slot holds; `None` while it's being read.
     pub states: Option<HashMap<MeleeSlot, SlotState>>,
+    /// The fighter or stage opened onto the stage, if one is.
+    pub subject: Option<Subject>,
+    /// The costume last chosen for each fighter, to open it on again.
+    pub chosen: HashMap<Character, MeleeSlot>,
+    pub panes: Panes,
+    /// Why the last fighter or stage couldn't open, in the player's words.
+    pub problem: Option<String>,
+}
+
+/// What's opened onto the stage.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Subject {
+    Fighter(Character),
+    Stage(Stage),
+}
+
+/// Which of the subject's panes are folded to their headers. Moves starts
+/// folded: the list is long, and the stage matters more.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Panes {
+    pub costumes: bool,
+    pub shared: bool,
+    pub moves: bool,
+}
+
+impl Default for Panes {
+    fn default() -> Self {
+        Self { costumes: false, shared: false, moves: true }
+    }
+}
+
+/// A pane of the subject's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pane {
+    Costumes,
+    Shared,
+    Moves,
 }
 
 impl Melee {
@@ -42,7 +82,7 @@ impl Melee {
                 _ => None,
             })
             .collect();
-        Self { tab: Tab::Fighters, fighters: roster(&slots), stages, states: None }
+        Self { fighters: roster(&slots), stages, ..Self::default() }
     }
 
     /// Whether `slot` holds something other than the game's own file, once
@@ -59,5 +99,46 @@ impl Melee {
     /// The costume a fighter's plate shows: its first.
     pub fn shown_slot(fighter: &Fighter) -> Option<MeleeSlot> {
         fighter.costumes.first().map(|costume| costume.slot(fighter))
+    }
+}
+
+impl Melee {
+    /// The fighter opened, when it's a fighter.
+    pub fn fighter(&self) -> Option<&Fighter> {
+        let Some(Subject::Fighter(character)) = self.subject else { return None };
+        self.fighters.iter().find(|fighter| fighter.character == character)
+    }
+
+    /// The slot a fighter opens on: its costume last chosen, else its first.
+    pub fn opening_slot(&self, fighter: &Fighter) -> Option<MeleeSlot> {
+        self.chosen.get(&fighter.character).copied().or_else(|| Self::shown_slot(fighter))
+    }
+}
+
+impl Panes {
+    pub fn folded(&self, pane: Pane) -> bool {
+        match pane {
+            Pane::Costumes => self.costumes,
+            Pane::Shared => self.shared,
+            Pane::Moves => self.moves,
+        }
+    }
+}
+
+impl Subject {
+    /// The name the title row gives it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Subject::Fighter(character) => character.name(),
+            Subject::Stage(stage) => stage.name(),
+        }
+    }
+
+    /// The name a roster plate and the stage share, so one flies into the other.
+    pub fn plate_id(self) -> String {
+        match self {
+            Subject::Fighter(character) => format!("melee/plate/{}", character.name()),
+            Subject::Stage(stage) => format!("melee/plate/{}", stage.file_name()),
+        }
     }
 }

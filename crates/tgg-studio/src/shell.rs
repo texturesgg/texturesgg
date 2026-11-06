@@ -73,6 +73,7 @@ fn title_row(app: &App, p: &Palette) -> El {
     let start = if app.nav.sidebar { space::LG } else { TITLE_CLEARANCE };
     let mut row = row().key("shell/title").h(size::TITLE_ROW).pl(start).pr(space::XS).gap(space::XS)
         .items_center().motion(motion::DEFAULT).window_drag()
+        .children(crumbs(app, p))
         .child(el().grow(1.0));
     if let Some(controls) = window_controls(p) {
         row = row.child(controls);
@@ -94,4 +95,12 @@ fn place(app: &App, p: &Palette) -> El {
         Place::Mods => mods::view::view(app, p),
     };
     col().key("shell/place").grow(1.0).min_h(0.0).w_full().child(page)
+}
+
+/// Where the player is, when it's below a top-level place.
+fn crumbs(app: &App, p: &Palette) -> Option<El> {
+    match (app.nav.place, app.melee.subject) {
+        (Place::Melee, Some(subject)) => Some(melee::subject::crumbs(subject, p)),
+        _ => None,
+    }
 }
