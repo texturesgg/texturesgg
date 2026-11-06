@@ -9,17 +9,20 @@ pub mod tokens;
 use rune::{El, col, el, row, text};
 use tokens::{Palette, radius, size, space, text as type_};
 
-/// What a button is for. Outlined and quiet kinds join as screens need them.
+/// What a button is for. A quiet kind joins when a screen needs it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ButtonKind {
     /// The one action a place is for: an ink fill.
     Primary,
+    /// Any other action: outlined.
+    Secondary,
 }
 
 /// A button reading `label`.
 pub fn button(label: &str, kind: ButtonKind, p: &Palette) -> El {
     let (fill, ink, border) = match kind {
         ButtonKind::Primary => (p.ink, p.on_ink, p.ink),
+        ButtonKind::Secondary => (p.raise, p.ink, p.line_strong),
     };
     row().h(size::CONTROL).px(space::SM).items_center().radius(radius::CONTROL)
         .fill(fill).border(1.0, border).hover(p.hover).press(p.hover)
@@ -121,9 +124,16 @@ pub fn pane(header: El, body: Option<El>, p: &Palette) -> El {
 /// A row in a pane: what's on its left, what's on its right, highlighted
 /// while it's the chosen one. The caller keys it and makes pressing choose it.
 pub fn pane_row(left: El, right: Option<El>, chosen: bool, p: &Palette) -> El {
-    row().h(size::ROW + 2.0).px(space::SM).gap(space::SM).items_center()
+    row().min_h(size::ROW + 2.0).px(space::SM).py(space::XXS).gap(space::SM).items_center()
         .fill(if chosen { p.selected } else { rune::Color::TRANSPARENT }).hover(p.hover)
-        .child(el().w(2.0).h(size::ROW + 2.0).fill(if chosen { p.accent } else { rune::Color::TRANSPARENT }).absolute(0.0, 0.0))
+        .child(el().w(2.0).h_full().fill(if chosen { p.accent } else { rune::Color::TRANSPARENT }).absolute(0.0, 0.0))
         .child(col().grow(1.0).min_w(0.0).child(left))
         .children(right)
+}
+
+/// A small text action under a card or beside a row ("Install", "Remove"):
+/// quiet until hovered.
+pub fn text_action(label: &str, danger: bool, p: &Palette) -> El {
+    text(label).font(type_::LABEL).color(if danger { p.danger } else { p.muted })
+        .role("button").label(label).focusable(true).hover(p.hover).px(4.0).py(2.0).radius(radius::CONTROL)
 }

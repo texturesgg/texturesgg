@@ -31,6 +31,8 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .child(sidebar(app, &p))
         .child(col().grow(1.0).min_w(0.0).h_full().child(title_row(app, &p)).child(place(app, &p)))
         .child(toggle)
+        // Dialogs, over everything.
+        .children(library::review::view(app, &p))
 }
 
 /// The places, then the player's game at the foot. Hidden, it narrows to
@@ -74,6 +76,7 @@ fn title_row(app: &App, p: &Palette) -> El {
     let mut row = row().key("shell/title").h(size::TITLE_ROW).pl(start).pr(space::XS).gap(space::XS)
         .items_center().motion(motion::DEFAULT).window_drag()
         .children(crumbs(app, p))
+        .children(notice(app, p))
         .child(el().grow(1.0));
     if let Some(controls) = window_controls(p) {
         row = row.child(controls);
@@ -103,4 +106,11 @@ fn crumbs(app: &App, p: &Palette) -> Option<El> {
         (Place::Melee, Some(subject)) => Some(melee::subject::crumbs(subject, p)),
         _ => None,
     }
+}
+
+/// What just happened, said in the title row.
+fn notice(app: &App, p: &Palette) -> Option<El> {
+    let notice = app.notice.as_ref()?;
+    Some(label(notice.text.clone()).key("shell/notice").font(text::BODY).color(if notice.error { p.danger } else { p.muted })
+        .truncate().min_w(0.0).shrink().ml(space::SM))
 }

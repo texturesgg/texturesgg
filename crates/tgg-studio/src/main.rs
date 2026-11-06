@@ -25,7 +25,7 @@ mod flows;
 mod iso_flows;
 
 use rune::{AppSpec, WindowOptions};
-use state::{App, Start};
+use state::{App, Data, Start};
 use std::path::{Path, PathBuf};
 use tgg_app::settings;
 use welcome::Welcome;
@@ -57,8 +57,8 @@ const SCENES: &[Scene] = &[
             melee::actions::open_stage(app, stage);
         }
     }),
-    ("library", |app| app.nav.place = nav::Place::Library),
-    ("mods", |app| app.nav.place = nav::Place::Mods),
+    ("library", |app| nav::actions::go(app, nav::Place::Library)),
+    ("mods", |app| nav::actions::go(app, nav::Place::Mods)),
     ("no-sidebar", |app| app.nav.sidebar = false),
     ("paper", |app| app.settings.set_appearance(settings::Appearance::Paper)),
 ];
@@ -80,14 +80,14 @@ fn main() {
         // The app draws its own title row, so Linux and Windows windows have
         // no system one; macOS keeps its window buttons.
         .window_options(WindowOptions { borderless: cfg!(not(target_os = "macos")), ..Default::default() })
-        .init(move || App::new(start(iso.as_deref()), settings::load(), true))
+        .init(move || App::new(start(iso.as_deref()), settings::load(), Data::of_player(), true))
         .compositor(stage::viewport::Viewport::default())
         .run();
 }
 
 /// The app as a plain launch finds it, for Rune's tooling.
 fn launch() -> App {
-    App::new(start(None), settings::load(), true)
+    App::new(start(None), settings::load(), Data::of_player(), true)
 }
 
 /// The game given, else the one chosen before; Welcome finds one otherwise,

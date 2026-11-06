@@ -7,19 +7,21 @@
 
 use crate::melee::actions as melee;
 use crate::shell;
-use crate::state::{App, Start};
+use crate::state::{App, Data, Start};
 use melee_dat::Character;
 use rune::{Env, Runtime};
 use std::path::PathBuf;
 use tgg_app::settings::Settings;
 
-fn runtime() -> Runtime<App> {
+fn runtime() -> (Runtime<App>, tempfile::TempDir) {
     let iso = PathBuf::from(std::env::var_os("TGG_MELEE_ISO").expect("TGG_MELEE_ISO names a clean Melee disc image"));
     let game = tgg_app::Game::open(&iso).expect("a clean Melee NTSC 1.02 disc");
     let start = Start::Game(tgg_app::game_references(game).expect("references"));
-    let mut rt = Runtime::new(App::new(start, Settings::default(), false), shell::view, (1280.0, 800.0), Env::new(true, 2.0));
+    let folder = tempfile::tempdir().expect("temp dir");
+    let data = Data { library: folder.path().join("library"), history: folder.path().join("games") };
+    let mut rt = Runtime::new(App::new(start, Settings::default(), data, false), shell::view, (1280.0, 800.0), Env::new(true, 2.0));
     rt.frame(0.0);
-    rt
+    (rt, folder)
 }
 
 /// Let the opening's motion come to rest: presses land where things are drawn.
@@ -38,7 +40,7 @@ fn tap(rt: &mut Runtime<App>, key: &str) {
 
 #[test]
 fn foxs_shine_row_plays_the_move_that_shows_it() {
-    let mut rt = runtime();
+    let (mut rt, _data) = runtime();
     let fox = Character::from_code("Fx").expect("Fox");
     rt.update(|app, _| melee::open_fighter(app, fox));
     settle(&mut rt);
@@ -54,7 +56,7 @@ fn foxs_shine_row_plays_the_move_that_shows_it() {
 
 #[test]
 fn a_new_costume_keeps_the_move_and_the_camera() {
-    let mut rt = runtime();
+    let (mut rt, _data) = runtime();
     let fox = Character::from_code("Fx").expect("Fox");
     rt.update(|app, _| melee::open_fighter(app, fox));
     let laser = melee_dat::SharedModel::of(fox).find(|model| model.name() == "Laser").expect("Fox has a Laser");

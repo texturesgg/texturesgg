@@ -4,11 +4,14 @@
 
 use crate::jobs::Jobs;
 use crate::jobs::renders::Renders;
+use crate::library::Page as LibraryPage;
 use crate::melee::Melee;
 use crate::nav::Nav;
 use crate::stage::Stage;
 use crate::welcome::Welcome;
+use std::path::PathBuf;
 use tgg_app::References;
+use tgg_app::library::Library;
 use tgg_app::settings::{self, Settings};
 
 pub struct App {
@@ -22,6 +25,13 @@ pub struct App {
     pub nav: Nav,
     pub welcome: Welcome,
     pub melee: Melee,
+    /// The player's skins, kept by content hash: shared by every place.
+    pub library: Library,
+    pub library_page: LibraryPage,
+    /// What just happened, said once in the title row.
+    pub notice: Option<Notice>,
+    /// Where the library and install history are kept.
+    pub data: Data,
     /// The one model showing, for Melee and the editor.
     pub stage: Stage,
     /// Pictures of costumes and stages, shared by every place.
@@ -40,16 +50,31 @@ pub enum Start {
 }
 
 impl App {
-    /// The app at `start`, with `settings` as read from disk (or the defaults,
-    /// in tests). Nothing is read in the background until it runs.
-    pub fn new(start: Start, settings: Settings, persist: bool) -> Self {
+    /// The app at `start`, with `settings` as read from disk and its `data`
+    /// where the player keeps it (or the defaults and a temporary folder, in
+    /// tests). Nothing is read in the background until it runs.
+    pub fn new(start: Start, settings: Settings, data: Data, persist: bool) -> Self {
         let nav = Nav::from_settings(&settings);
         let (game, welcome) = match start {
             Start::Game(references) => (Some(references), Welcome::default()),
             Start::Welcome(welcome) => (None, welcome),
         };
         let melee = game.as_ref().map(|references| Melee::of(references.game())).unwrap_or_default();
-        Self { settings, persist, game, nav, welcome, melee, stage: Stage::default(), renders: Renders::default(), jobs: Jobs::default() }
+        Self {
+            settings,
+            persist,
+            game,
+            nav,
+            welcome,
+            melee,
+            library: Library::open_at(data.library.clone()),
+            library_page: LibraryPage::default(),
+            notice: None,
+            data,
+            stage: Stage::default(),
+            renders: Renders::default(),
+            jobs: Jobs::default(),
+        }
     }
 
     /// Change the settings here and, when persisting, on disk: read, change
@@ -59,5 +84,41 @@ impl App {
         if self.persist {
             settings::update(change);
         }
+    }
+}
+
+/// Where the player's library and install history are kept.
+#[derive(Clone, Debug)]
+pub struct Data {
+    pub library: PathBuf,
+    pub history: PathBuf,
+}
+
+impl Data {
+    /// The app's data folder, where tgg-editor keeps them too.
+    pub fn of_player() -> Self {
+        let root = tgg_app::library::Library::default_root();
+        let history = root.parent().map_or_else(|| root.join("games"), |data| data.join("games"));
+        Self { library: root, history }
+    }
+
+    /// The install history kept here.
+    pub fn history(&self) -> tgg_app::install::History {
+        tgg_app::install::History::open_at(self.history.clone())
+    }
+}
+
+/// A line saying what just happened: an install, a skin added, why
+/// something couldn't be done.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Notice {
+    pub text: String,
+    pub error: bool,
+}
+
+impl App {
+    /// Say `text` in the title row until the next thing happens.
+    pub fn tell(&mut self, text: impl Into<String>, error: bool) {
+        self.notice = Some(Notice { text: text.into(), error });
     }
 }

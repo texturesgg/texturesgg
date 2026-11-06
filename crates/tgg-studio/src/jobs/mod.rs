@@ -8,16 +8,17 @@ pub mod renders;
 
 use melee_dat::MeleeSlot;
 use rune::Waker;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use tgg_app::install::SlotState;
+use tgg_app::install::{History, SlotState};
 use tgg_app::library::Library;
 
 /// What a finished job found.
 pub enum Done {
-    /// What each slot of the game at `iso` holds.
-    States { iso: PathBuf, states: HashMap<MeleeSlot, SlotState> },
+    /// What each slot of the game at `iso` holds, and which have an install
+    /// to undo.
+    States { iso: PathBuf, states: HashMap<MeleeSlot, SlotState>, undoable: HashSet<MeleeSlot> },
 }
 
 pub struct Jobs {
@@ -42,21 +43,26 @@ impl Jobs {
 
     /// Read what every slot of the game at `iso` holds, against the
     /// library at `library`: each slot's file, compared with vanilla and the
-    /// library's skins.
-    pub fn read_states(&self, iso: &Path, library: &Path) {
-        let (iso, library) = (iso.to_owned(), library.to_owned());
+    /// library's skins; and which slots the install history at `history` can
+    /// undo.
+    pub fn read_states(&self, iso: &Path, library: &Path, history: &Path) {
+        let (iso, library, history) = (iso.to_owned(), library.to_owned(), history.to_owned());
         let (done, waker) = (self.done.clone(), self.waker.clone());
         std::thread::Builder::new()
             .name("slot states".into())
             .spawn(move || {
-                let states = match tgg_app::Game::open(&iso) {
-                    Ok(game) => states_of(&game, &Library::open_at(library)),
+                let (states, undoable) = match tgg_app::Game::open(&iso) {
+                    Ok(game) => {
+                        let history = History::open_at(history);
+                        let undoable = game.slots().into_iter().filter(|slot| history.can_undo(&game, *slot)).collect();
+                        (states_of(&game, &Library::open_at(library)), undoable)
+                    }
                     Err(error) => {
                         tgg_app::log(&format!("reading slot states: {error}"));
                         return;
                     }
                 };
-                if done.send(Done::States { iso, states }).is_ok()
+                if done.send(Done::States { iso, states, undoable }).is_ok()
                     && let Some(waker) = waker
                 {
                     waker();
@@ -100,7 +106,7 @@ pub fn poll(app: &mut crate::state::App, _: f64, _: &mut rune::Tx) -> bool {
     let mut changed = false;
     for done in app.jobs.take() {
         changed |= match done {
-            Done::States { iso, states } => crate::melee::actions::states_read(app, &iso, states),
+            Done::States { iso, states, undoable } => crate::melee::actions::states_read(app, &iso, states, undoable),
         };
     }
     changed

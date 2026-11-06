@@ -10,7 +10,7 @@ pub mod subject;
 pub mod view;
 
 use melee_dat::{Character, MeleeSlot, Stage};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tgg_app::Game;
 use tgg_app::costumes::{Fighter, roster};
 use tgg_app::install::SlotState;
@@ -32,6 +32,8 @@ pub struct Melee {
     pub stages: Vec<Stage>,
     /// What each slot holds; `None` while it's being read.
     pub states: Option<HashMap<MeleeSlot, SlotState>>,
+    /// The slots with an install to undo, as last read.
+    pub undoable: HashSet<MeleeSlot>,
     /// The fighter or stage opened onto the stage, if one is.
     pub subject: Option<Subject>,
     /// The costume last chosen for each fighter, to open it on again.

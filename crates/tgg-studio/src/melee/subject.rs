@@ -6,7 +6,8 @@ use super::{Melee, Pane, Subject, actions};
 use crate::stage::{actions as stage, view as stage_view};
 use crate::state::App;
 use crate::ui::tokens::{Palette, size, space, text};
-use crate::ui::{pane, pane_header, pane_row};
+use crate::library::actions as library;
+use crate::ui::{pane, pane_header, pane_row, rule, text_action};
 use melee_dat::MeleeSlot;
 use rune::{El, ScrollSpec, col, row, text as label};
 use tgg_app::costumes::{EFFECTS_FILE, FIGHTER_FILE};
@@ -49,13 +50,15 @@ fn costumes(app: &App, p: &Palette) -> El {
         .key("melee/pane/costumes").on_press(|app: &mut App| actions::toggle_pane(app, Pane::Costumes));
     let showing = app.stage.shown.as_ref().map(|shown| shown.slot);
     let body = (!folded).then(|| {
-        col().children(fighter.costumes.iter().map(|costume| {
-            let slot = costume.slot(fighter);
-            pane_row(label(costume.color.name()).font(text::STRONG).color(p.ink), Some(state_word(melee, slot, p)), showing == Some(slot), p)
-                .key(format!("melee/costume/{}", slot.file_name()))
-                .role("button").label(costume.color.name()).focusable(true)
-                .on_press(move |app: &mut App| actions::choose_costume(app, slot))
-        }))
+        col()
+            .children(fighter.costumes.iter().map(|costume| {
+                let slot = costume.slot(fighter);
+                pane_row(label(costume.color.name()).font(text::STRONG).color(p.ink), Some(state_word(melee, slot, p)), showing == Some(slot), p)
+                    .key(format!("melee/costume/{}", slot.file_name()))
+                    .role("button").label(costume.color.name()).focusable(true)
+                    .on_press(move |app: &mut App| actions::choose_costume(app, slot))
+            }))
+            .children(showing.map(|slot| slot_actions(app, slot, p)))
     });
     pane(header, body, p)
 }
@@ -138,4 +141,43 @@ fn state_word(melee: &Melee, slot: MeleeSlot, p: &Palette) -> El {
         None => ("", false),
     };
     label(word).font(text::SMALL).color(if mine { p.accent_text } else { p.faint })
+}
+
+/// What the costume showing can become: the player's skins for its
+/// fighter, to install into it; and undoing its last install, or putting
+/// the game's own file back.
+fn slot_actions(app: &App, slot: MeleeSlot, p: &Palette) -> El {
+    let melee = &app.melee;
+    let in_slot = |id| matches!(melee.states.as_ref().and_then(|states| states.get(&slot)), Some(SlotState::Skin(there)) if there.id == id);
+    let skins = app.library.skins().iter().rev().filter(|skin| skin.slot.is_some_and(|made_for| made_for.fits(slot))).map(|skin| {
+        let id = skin.id;
+        // Made for another color, it says which.
+        let made_for = skin.slot.filter(|made_for| *made_for != slot).and_then(MeleeSlot::color);
+        let left = col()
+            .child(label(skin.name.clone()).font(text::BODY).color(p.ink).truncate())
+            .children(made_for.map(|color| label(format!("Made for {}", color.name())).font(text::SMALL).color(p.faint)));
+        let right = in_slot(id).then(|| label("In this slot").font(text::SMALL).color(p.accent_text));
+        let row = pane_row(left, right, false, p).key(format!("melee/skin/{id}"));
+        if in_slot(id) {
+            row
+        } else {
+            row.role("button").label(format!("Install {}", skin.name)).focusable(true).help("Install it into this slot")
+                .on_press(move |app: &mut App| library::install(app, id, slot))
+        }
+    }).collect::<Vec<_>>();
+    let undo = melee.undoable.contains(&slot).then(|| {
+        text_action("Undo the last install", false, p).key("melee/undo").on_press(move |app: &mut App| library::undo(app, slot))
+    });
+    let restore = melee.changed(slot).then(|| {
+        text_action("Restore the original", false, p).key("melee/restore").on_press(move |app: &mut App| library::restore(app, slot))
+    });
+    let empty = skins.is_empty().then(|| {
+        let fighter = slot.character().map_or("it", |character| character.name());
+        label(format!("Skins you add for {fighter} show up here.")).font(text::SMALL).color(p.faint).px(space::SM).py(space::XS)
+    });
+    col().child(rule(p))
+        .child(label("Your skins").font(text::LABEL).color(p.faint).px(space::SM).pt(space::SM).pb(space::XXS))
+        .children(skins)
+        .children(empty)
+        .children((undo.is_some() || restore.is_some()).then(|| row().px(space::XS).py(space::XS).gap(space::XS).children(undo).children(restore)))
 }

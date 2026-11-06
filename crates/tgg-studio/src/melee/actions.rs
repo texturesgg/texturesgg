@@ -4,11 +4,10 @@ use super::{Melee, Pane, Subject, Tab};
 use crate::stage::actions as stage;
 use crate::state::App;
 use melee_dat::{Character, MeleeSlot, Stage};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use tgg_app::References;
 use tgg_app::install::SlotState;
-use tgg_app::library::Library;
 
 /// Make `references`' game the player's: its roster shows, and what its
 /// slots hold and their pictures are read in the background.
@@ -24,7 +23,7 @@ pub fn open_game(app: &mut App, references: References) {
 pub fn refresh(app: &mut App) {
     let Some(references) = &app.game else { return };
     let iso = references.game().path().to_owned();
-    app.jobs.read_states(&iso, &Library::default_root());
+    app.jobs.read_states(&iso, &app.data.library, &app.data.history);
     let fighters = app.melee.fighters.iter().filter_map(Melee::shown_slot);
     let stages = app.melee.stages.iter().map(|stage| MeleeSlot::Stage(*stage));
     for slot in fighters.chain(stages) {
@@ -32,12 +31,13 @@ pub fn refresh(app: &mut App) {
     }
 }
 
-/// What each slot of the game at `iso` holds has been read; it counts if
-/// that's still the player's game.
-pub fn states_read(app: &mut App, iso: &Path, states: HashMap<MeleeSlot, SlotState>) -> bool {
+/// What each slot of the game at `iso` holds, and which can be undone, have
+/// been read; they count if that's still the player's game.
+pub fn states_read(app: &mut App, iso: &Path, states: HashMap<MeleeSlot, SlotState>, undoable: HashSet<MeleeSlot>) -> bool {
     let current = app.game.as_ref().is_some_and(|references| references.game().path() == iso);
     if current {
         app.melee.states = Some(states);
+        app.melee.undoable = undoable;
     }
     current
 }

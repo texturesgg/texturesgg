@@ -91,6 +91,21 @@ pub fn has_model(slot: MeleeSlot) -> bool {
     matches!(slot, MeleeSlot::Costume { .. } | MeleeSlot::Stage(_))
 }
 
+/// The shared models `bytes`, a file for the shared `slot`, draws differently
+/// from vanilla, one of each name: Blue Lasers changes Fox's Laser. A model
+/// that can't be read counts as changed; a file the app can't name changes
+/// none it knows of.
+pub fn changed_models(slot: MeleeSlot, bytes: &[u8]) -> Vec<SharedModel> {
+    let mut changed: Vec<SharedModel> = Vec::new();
+    for model in SharedModel::in_file(slot) {
+        let named = changed.iter().any(|seen| seen.name() == model.name());
+        if !named && !model.is_vanilla(bytes).unwrap_or(false) {
+            changed.push(model);
+        }
+    }
+    changed
+}
+
 /// Where a skin goes, in the player's words: "Falco · Red", "Falco · Fighter
 /// file", "Falco & Fox · Effects", "Final Destination", or "no slot" when
 /// its file doesn't say.

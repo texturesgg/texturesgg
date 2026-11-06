@@ -8,8 +8,12 @@ use rune::{Key, KeyEvent, Tx};
 pub fn go(app: &mut App, place: Place) {
     if place != app.nav.place {
         crate::melee::actions::back(app);
+        app.notice = None;
     }
     app.nav.place = place;
+    if place == Place::Library {
+        crate::library::actions::request_renders(app);
+    }
 }
 
 /// Show or hide the sidebar, and remember which.
