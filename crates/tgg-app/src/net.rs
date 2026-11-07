@@ -4,9 +4,10 @@
 
 use std::time::Duration;
 
-/// textures.gg's API, or the one `TGG_API_URL` names (a local one).
+/// textures.gg's API, or the one `TGG_API` names (a local one), as the
+/// `tgg` CLI and tgg-mod read it.
 pub fn api_url() -> String {
-    std::env::var("TGG_API_URL").unwrap_or_else(|_| "https://api.textures.gg".into())
+    std::env::var("TGG_API").unwrap_or_else(|_| "https://api.textures.gg".into())
 }
 
 /// Why a call got no answer the app could use.
