@@ -364,7 +364,7 @@ fn check_mac(report: &mut Report) {
         .find(|dir| Path::new(dir).join("brew").is_file())
         && find_program("brew").is_none()
     {
-        report.problem(
+        report.note(
             "Homebrew",
             &format!(
                 "{dir} isn't on PATH: add eval \"$({dir}/brew shellenv)\" to your shell's profile"

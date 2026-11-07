@@ -173,7 +173,10 @@ pub fn build(dir: &Path, options: &Options) -> Result<Built> {
     if toolchain.is_file() {
         configure
             .arg(format!("-DCMAKE_TOOLCHAIN_FILE={}", toolchain.display()))
-            .arg(format!("-DTGG_MACOS_GCC={}", options.cc.display()));
+            .arg(format!("-DTGG_MACOS_GCC={}", options.cc.display()))
+            // CMake's compiler checks read the toolchain file again in projects
+            // of their own, which see the environment but not this cache.
+            .env("TGG_MACOS_GCC", options.cc);
     }
     run(configure.arg("--log-level=WARNING"), "cmake")?;
     run(
