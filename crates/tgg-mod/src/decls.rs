@@ -38,6 +38,10 @@ const KIND_STATE: u32 = 9;
 const STATE_NAME_SIZE: usize = 112;
 /// An event subscription: the event's name, from `tgg/events.h`.
 const KIND_EVENT: u32 = 10;
+/// Content the mod adds: `<kind>:<id>`, such as `screen:browser`.
+const KIND_CONTENT: u32 = 11;
+/// A setting the mod declares: its key.
+const KIND_SETTING: u32 = 12;
 /// The mod's `TGG_INIT` function; a library has at most one.
 const KIND_INIT: u32 = 13;
 /// The mod API `major.minor` the library was built against.
@@ -81,6 +85,10 @@ pub struct Declarations {
     pub hooks: Hooks,
     /// The events it subscribes to, sorted.
     pub events: Vec<String>,
+    /// The content it adds, as `<kind>:<id>` (`screen:browser`), sorted.
+    pub content: Vec<String>,
+    /// The keys of its settings, sorted.
+    pub settings: Vec<String>,
     /// The game symbols whose addresses it takes, sorted. They change nothing
     /// about the game, so they never reach the manifest or a conflict; a
     /// build checks them against the game's symbols.
@@ -96,7 +104,7 @@ pub struct Declarations {
 pub enum DeclError {
     #[error("not a library the game loads: {0}")]
     Object(#[from] object::Error),
-    #[error("the library is not 64-bit little-endian x86-64 ELF")]
+    #[error("the library is not a 64-bit x86-64 or arm64 ELF, PE or Mach-O library")]
     Architecture,
     #[error("the library's {SECTION} section is not whole records")]
     Truncated,
@@ -114,12 +122,18 @@ pub enum DeclError {
     TwoInits,
 }
 
-/// Read the declarations of `library`, an ELF shared object.
+/// Read the declarations of `library`: a shared object on Linux, a DLL on
+/// Windows, a Mach-O bundle on macOS.
 pub fn read(library: &[u8]) -> Result<Declarations, DeclError> {
+    use object::{Architecture, BinaryFormat};
     let file = object::File::parse(library)?;
-    if file.format() != object::BinaryFormat::Elf
-        || file.architecture() != object::Architecture::X86_64
-        || !file.is_little_endian()
+    if !matches!(
+        file.format(),
+        BinaryFormat::Elf | BinaryFormat::Pe | BinaryFormat::MachO
+    ) || !matches!(
+        file.architecture(),
+        Architecture::X86_64 | Architecture::Aarch64
+    ) || !file.is_little_endian()
         || !file.is_64()
     {
         return Err(DeclError::Architecture);
@@ -173,6 +187,8 @@ pub fn read(library: &[u8]) -> Result<Declarations, DeclError> {
             KIND_IMPORT if import_is_valid(&symbol) => declarations.imports.push(symbol),
             KIND_SYMBOL if !symbol.is_empty() => declarations.symbols.push(symbol),
             KIND_EVENT if !symbol.is_empty() => declarations.events.push(symbol),
+            KIND_CONTENT if symbol.contains(':') => declarations.content.push(symbol),
+            KIND_SETTING if !symbol.is_empty() => declarations.settings.push(symbol),
             KIND_INIT if declarations.init => return Err(DeclError::TwoInits),
             KIND_INIT => declarations.init = true,
             KIND_TARGET => match &declarations.target {
@@ -193,7 +209,8 @@ pub fn read(library: &[u8]) -> Result<Declarations, DeclError> {
                 }
                 _ => declarations.api_version = Some(symbol),
             },
-            KIND_EXPORT | KIND_IMPORT | KIND_SYMBOL | KIND_EVENT | KIND_API_VERSION => {
+            KIND_EXPORT | KIND_IMPORT | KIND_SYMBOL | KIND_EVENT | KIND_CONTENT | KIND_SETTING
+            | KIND_API_VERSION => {
                 return Err(DeclError::Malformed(index));
             }
             kind => return Err(DeclError::UnknownKind(index, kind)),
@@ -204,6 +221,8 @@ pub fn read(library: &[u8]) -> Result<Declarations, DeclError> {
         &mut declarations.hooks.after,
         &mut declarations.hooks.replaces,
         &mut declarations.events,
+        &mut declarations.content,
+        &mut declarations.settings,
         &mut declarations.symbols,
         &mut declarations.exports,
         &mut declarations.imports,
@@ -282,13 +301,23 @@ pub(crate) mod tests {
 
     #[test]
     fn a_record_kind_the_game_doesnt_have_is_refused_as_the_loader_refuses_it() {
-        // Kinds 11 and 12 (content, settings) are reserved; this game has
-        // neither.
         let mut records = built_with_sdk();
-        records.push(record(11, "menu"));
+        records.push(record(15, "menu"));
         assert!(matches!(
             read(&library(&records)),
-            Err(DeclError::UnknownKind(3, 11))
+            Err(DeclError::UnknownKind(3, 15))
+        ));
+        // Content is `<kind>:<id>`, and settings have keys.
+        let mut records = built_with_sdk();
+        records.extend([record(11, "screen:browser"), record(12, "speed")]);
+        let declared = read(&library(&records)).expect("read");
+        assert_eq!(declared.content, ["screen:browser"]);
+        assert_eq!(declared.settings, ["speed"]);
+        let mut records = built_with_sdk();
+        records.push(record(11, "browser"));
+        assert!(matches!(
+            read(&library(&records)),
+            Err(DeclError::Malformed(3))
         ));
         let mut records = built_with_sdk();
         records.extend([record(INIT, ""), record(INIT, "")]);

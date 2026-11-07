@@ -41,7 +41,9 @@ pub use catalog::{Catalog, CatalogEntry, PackageRef};
 pub use decls::{Declarations, Hooks};
 pub use depends::Range;
 pub use files::{Files, ModFile};
-pub use install::{Conflict, Installed, ModsDir, Overlap, conflicts, load_order, overlaps, unmet};
+pub use install::{
+    Conflict, Installed, ModsDir, Overlap, conflicts, game_data_dir, load_order, overlaps, unmet,
+};
 pub use manifest::{Manifest, ModId};
 pub use netplay::Netplay;
 pub use package::Package;
