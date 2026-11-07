@@ -78,6 +78,7 @@ pub fn iso_or_ask() -> Result<PathBuf> {
         std::io::stdout().flush()?;
         let mut line = String::new();
         if std::io::stdin().read_line(&mut line)? == 0 {
+            println!("\nLater: tgg config set iso <path>");
             return Err(error);
         }
         // Pasted paths come quoted ("Copy as path" on Windows) or escaped

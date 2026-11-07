@@ -150,6 +150,21 @@ fn install(tool: Tool, nixpkgs: Option<&str>) -> String {
         if matches!(tool, Tool::Git) {
             return "xcode-select --install".into();
         }
+        let program = match tool {
+            Tool::Cmake => Some("cmake"),
+            Tool::Ninja => Some("ninja"),
+            Tool::Gcc | Tool::Git => None,
+        };
+        if let Some(dir) = program.and_then(|program| {
+            HOMEBREW_BIN
+                .iter()
+                .find(|dir| Path::new(dir).join(program).is_file())
+        }) {
+            return format!(
+                "Homebrew installed it in {dir}, which isn't on PATH: add eval \
+                 \"$({dir}/brew shellenv)\" to your shell's profile"
+            );
+        }
         return if has_homebrew() {
             format!("brew install {}", tool.brew())
         } else {
