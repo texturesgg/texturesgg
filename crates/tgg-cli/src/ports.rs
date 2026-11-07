@@ -221,8 +221,11 @@ pub fn run(command: PortCommand) -> Result<()> {
                 return Ok(());
             }
             crate::defaults::install(&installed)?;
-            check_runtime(&installed)?;
-            if crate::config::iso_or_ask().is_ok() {
+            let runtime = check_runtime(&installed);
+            if let Err(error) = &runtime {
+                println!("{error:#}");
+            }
+            if crate::config::iso_or_ask().is_ok() && runtime.is_ok() {
                 println!("Ready: tgg port run");
             }
             Ok(())
@@ -302,7 +305,7 @@ pub const VC_RUNTIME_FIX: &str = "winget install Microsoft.VCRedist.2015+.x64";
 
 /// The C++ runtime DLLs missing from both the game's folder and Windows'
 /// own; none anywhere else.
-pub fn missing_runtime(installed: &Installed) -> Vec<&'static str> {
+pub fn missing_runtime(folder: Option<&std::path::Path>) -> Vec<&'static str> {
     if !cfg!(windows) {
         return Vec::new();
     }
@@ -313,13 +316,15 @@ pub fn missing_runtime(installed: &Installed) -> Vec<&'static str> {
     VC_RUNTIME
         .iter()
         .copied()
-        .filter(|dll| !installed.folder.join(dll).is_file() && !system.join(dll).is_file())
+        .filter(|dll| {
+            !system.join(dll).is_file() && !folder.is_some_and(|folder| folder.join(dll).is_file())
+        })
         .collect()
 }
 
 /// Fail with the fix when the game can't start for want of a runtime.
 pub fn check_runtime(installed: &Installed) -> Result<()> {
-    let missing = missing_runtime(installed);
+    let missing = missing_runtime(Some(&installed.folder));
     ensure!(
         missing.is_empty(),
         "tgg-melee needs the Microsoft Visual C++ runtime ({} missing): {VC_RUNTIME_FIX}",

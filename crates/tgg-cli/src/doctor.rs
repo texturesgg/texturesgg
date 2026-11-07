@@ -293,13 +293,6 @@ fn newer_gcc() -> Option<String> {
 
 fn check_compiler(report: &mut Report, cc: &Path, nixpkgs: Option<&str>) {
     let name = cc.display().to_string();
-    let Some(version) = output(cc, &["-dumpfullversion"]) else {
-        report.problem(
-            "C compiler",
-            &format!("{name} isn't there; {}", install(Tool::Gcc, nixpkgs)),
-        );
-        return;
-    };
     let banner = output(cc, &["--version"]).unwrap_or_default();
     if banner.contains("clang") {
         let what = if cfg!(target_os = "macos") && name == "gcc" {
@@ -316,6 +309,13 @@ fn check_compiler(report: &mut Report, cc: &Path, nixpkgs: Option<&str>) {
         );
         return;
     }
+    let Some(version) = output(cc, &["-dumpfullversion"]) else {
+        report.problem(
+            "C compiler",
+            &format!("{name} isn't there; {}", install(Tool::Gcc, nixpkgs)),
+        );
+        return;
+    };
     // A MinGW GCC for the UCRT builds mods that link another C runtime than
     // the game's msvcrt.
     if cfg!(windows)
@@ -438,12 +438,11 @@ pub fn run(cc: &Path) -> Result<()> {
             }
         }
     }
-    if let Some((port, _)) = &installed {
-        let missing = crate::ports::missing_runtime(port);
+    if cfg!(windows) {
+        let folder = installed.as_ref().map(|(port, _)| port.folder.as_path());
+        let missing = crate::ports::missing_runtime(folder);
         if missing.is_empty() {
-            if cfg!(windows) {
-                report.ok("C++ runtime", "installed");
-            }
+            report.ok("C++ runtime", "installed");
         } else {
             report.problem(
                 "C++ runtime",
