@@ -5,8 +5,9 @@
 //! `release-<target>.json` for each system it was built for and the archives
 //! they name; `latest.json` names the newest release, and
 //! `latest-prerelease.json` the newest prerelease. A release from before
-//! Windows and macOS builds has only `release.json`, its Linux build. Every archive is checked against the size and SHA-256 its
-//! `release.json` gives before it is unpacked.
+//! Windows and macOS builds has only `release.json`, its Linux build. Every
+//! archive is checked against the size and SHA-256 its release JSON gives
+//! before it is unpacked.
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use serde::{Deserialize, Serialize};

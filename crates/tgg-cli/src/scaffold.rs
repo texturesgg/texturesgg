@@ -90,7 +90,11 @@ pub fn new(new: New) -> Result<()> {
     }
     build::read_manifest(dir)?;
 
-    println!("Created {id} in {} from the SDK's {example}", dir.display());
+    if dir.file_name().is_some_and(|folder| folder == id.as_str()) {
+        println!("Created {id} from the SDK's {example}");
+    } else {
+        println!("Created {id} in {} from the SDK's {example}", dir.display());
+    }
     start_repository(dir, &format!("Start {id} from the SDK's {example}"));
 
     // A first build writes build/compile_commands.json, so an editor finds
@@ -101,7 +105,11 @@ pub fn new(new: New) -> Result<()> {
         debug: false,
     };
     match build::build(dir, &options) {
-        Ok(_) => println!("Built it; tgg mod dev runs it in the game"),
+        Ok(_) if dir == Path::new(".") => println!("Built it; tgg mod dev runs it in the game"),
+        Ok(_) => println!(
+            "Built it. To run it in the game: cd {}, then tgg mod dev",
+            dir.display()
+        ),
         Err(error) => eprintln!("It doesn't build yet: {error:#}"),
     }
     Ok(())

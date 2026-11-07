@@ -225,8 +225,14 @@ pub fn run(command: PortCommand) -> Result<()> {
             if let Err(error) = &runtime {
                 println!("{error:#}");
             }
-            if crate::config::iso_or_ask().is_ok() && runtime.is_ok() {
-                println!("Ready: tgg port run");
+            match crate::config::iso_or_ask() {
+                Ok(_) if runtime.is_ok() => println!("Ready: tgg port run"),
+                Ok(_) => {}
+                // In a terminal the question already said how to set it later.
+                Err(error) if !std::io::IsTerminal::is_terminal(&std::io::stdin()) => {
+                    println!("{error:#}")
+                }
+                Err(_) => {}
             }
             Ok(())
         }

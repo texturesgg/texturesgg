@@ -93,7 +93,7 @@ On Windows the game needs Microsoft's Visual C++ runtime (`msvcp140.dll`,
 `port run` check for it and name the fix, `winget install Microsoft.VCRedist.2015+.x64`.
 
 An SDK is the headers, symbol list and examples mods build against. It installs to
-`~/.local/share/tgg/sdks/<game layout>/`, so releases that share a game layout share one
+`<data>/tgg/sdks/<game layout>/`, so releases that share a game layout share one
 (a patch release keeps its layout, and a mod built for 0.3.0 loads on 0.3.2). With no
 version, `sdk` commands use the game in use; `--port` reads an executable's version and
 layout. Commands that build a mod install the SDK they need.
@@ -221,11 +221,11 @@ tgg mod dev [DIR] [--watch] [--gdb] [--port VERSION] [--keep] [-- GAME ARGS]
 ```
 
 `dev` builds the mod with `-O0 -g` into `DIR/build/dev/<id>/`, links the game's mods
-folder's `<id>` to it (a directory junction on Windows), and runs the game (the one in
-use, `--port`'s version, or `--game`'s build folder) with your disc image, its output
-passed through with this mod's refusals in red. An installed copy of the same mod is
-moved aside to `.~dev-<id>` for the session and put back after; so is the link, unless
-`--keep`. Before the game starts it warns about installed mods that
+folder's `<id>` to it (on Windows, which won't follow a junction a standard user made,
+copies it there instead), and runs the game (the one in use, `--port`'s version, or
+`--game`'s build folder) with your disc image, its output passed through with this mod's
+refusals in red. An installed copy of the same mod is moved aside to `.~dev-<id>` for the
+session and put back after; the link or copy is removed, unless `--keep`. Before the game starts it warns about installed mods that
 replace the same function or that the mod needs and are missing. `--watch` rebuilds on
 each change to `manifest.json`, `src/`, `include/`, `files/` or `assets/` and restarts
 the game when it builds; Ctrl-C ends the session. Ctrl-C or SIGTERM to `tgg` (from
