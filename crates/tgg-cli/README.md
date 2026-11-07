@@ -25,6 +25,17 @@ and a build provenance attestation for each: `gh attestation verify <archive>
 Rust toolchain, `cargo install --git https://github.com/texturesgg/texturesgg tgg-cli`
 builds it instead.
 
+## Playing
+
+```text
+tgg port install    the game, and the mods it comes with
+tgg port run        play
+```
+
+`port install` asks once for your Melee disc image (NTSC 1.02) and remembers it. The
+game runs on Linux (x86-64), Windows (x86-64) and macOS (Apple silicon). `tgg doctor`
+checks everything the game and mod making need, and says how to fix what's missing.
+
 ## Signing in
 
 ```text
@@ -56,14 +67,30 @@ tgg sdk path [VERSION | --port EXE]           its folder, for cmake -DTGG_SDK=$(
 tgg config set|get|unset iso [PATH]           your Melee disc image (NTSC 1.02)
 ```
 
-Releases of tgg-melee are for Linux x86-64 and run on glibc 2.34 or later. `port
-install` downloads a release's `release.json` from `https://dl.textures.gg/tgg-melee`
-(`TGG_RELEASES` names another mirror: a URL, or a folder laid out the same way), checks
-the game's archive against the SHA-256 it gives, and unpacks it to
-`~/.local/share/tgg/ports/<version>/`; the first version installed becomes the one in
-use (`ports/current`). `--debug` adds the debug info gdb reads. Downloads are cached in
-`~/.cache/tgg/downloads/`. Every installed version shares the game's own data: its mods
-folder, pack and saves.
+tgg-melee is built for Linux on x86-64 (glibc 2.34 or later), Windows on x86-64 and
+macOS on Apple silicon. `port install` downloads the release's
+`<version>/release-<target>.json` for this system (`x86_64-linux-gnu`,
+`x86_64-windows-gnu` or `aarch64-apple-darwin`; a Linux release from before the others
+has only `release.json`) from `https://dl.textures.gg/tgg-melee` (`TGG_RELEASES` names
+another mirror: a URL, or a folder laid out the same way), checks the game's archive
+against the SHA-256 it gives, and unpacks it to `<data>/tgg/ports/<version>/`. `latest`
+is the version `latest.json` names, or before the first release `latest-prerelease.json`.
+The first version installed becomes the one in use (`ports/current` names it).
+`--debug` adds the debug info gdb reads (Linux). Downloads are cached in
+`<cache>/tgg/downloads/`. `<data>` and `<cache>` are `~/.local/share` and `~/.cache`
+on Linux, `~/Library/Application Support` and `~/Library/Caches` on macOS, and
+`%LOCALAPPDATA%` on Windows. Every installed version shares the game's own data: its
+mods folder, pack and saves.
+
+A release comes with mods for players, built mod folders in the game's
+`default-mods/`. Installing or switching to a version installs those the mods folder
+lacks, and replaces older builds of them, keeping each one on or off. A mod tgg
+installed this way once and you removed stays removed (`<data>/tgg/default-mods.json`
+lists them). `tgg mod disable <id>` turns one off.
+
+On Windows the game needs Microsoft's Visual C++ runtime (`msvcp140.dll`,
+`vcruntime140.dll`, `vcruntime140_1.dll`); `port install` and `port run` check for it
+and name the fix, `winget install Microsoft.VCRedist.2015+.x64`.
 
 An SDK is the headers, symbol list and examples mods build against. It installs to
 `~/.local/share/tgg/sdks/<game layout>/`, so releases that share a game layout share one
@@ -72,7 +99,10 @@ version, `sdk` commands use the game in use; `--port` reads an executable's vers
 layout. Commands that build a mod install the SDK they need.
 
 `port run` and `mod dev` start the game with `TGG_MELEE_ISO`, else the disc image set
-with `tgg config set iso` (kept in `~/.config/tgg/config.json`).
+with `tgg config set iso` (kept in `tgg/config.json` in your config folder: `~/.config`
+on Linux, `~/Library/Application Support` on macOS, `%APPDATA%` on Windows). With
+neither, they ask for it in the terminal and remember it. A plain image (`.iso`,
+`.gcm`) must be Melee NTSC 1.02 (`GALE01`, revision 2).
 
 ## `tgg docs`
 
@@ -84,18 +114,25 @@ same links in a new mod's README and `src/mod.c`.
 
 ## `tgg doctor`
 
-`tgg doctor` checks what building and running mods needs, and prints the command that
-fixes each problem: glibc 2.34 or later, an installed game and its SDK, a C compiler
-(`--cc` or `CC`) that is GCC 12 or later (clang lacks the `scalar_storage_order` the
-game's headers use), CMake 3.25 or later (Ninja too, for faster builds), the libraries
-the game opens at runtime (libvulkan and a Vulkan driver, and X11's or Wayland's client
-libraries; with no GPU driver, `TGG_CPU_GPU=1` runs it on Mesa's lavapipe), and a disc
-image.
-For a missing or old tool it names the install command for the system (`apt`, `dnf`,
-`pacman`, `zypper`), a newer `gcc-<n>` already on `PATH`, or on NixOS `nix shell` with the
-tool from the nixpkgs revision the game was built with. The system's GCC is enough: the
-x86-64 ABI fixes the layout, and the SDK's checks keep a mod loadable on the oldest glibc
-the game runs on.
+`tgg doctor` checks what playing and making mods need, and prints the command that
+fixes each problem.
+
+Playing: an installed game, a disc image, and what the game opens at runtime. On Linux
+that is glibc 2.34 or later, libvulkan and a Vulkan driver, and X11's or Wayland's
+client libraries (with no GPU driver, `TGG_CPU_GPU=1` runs it on Mesa's lavapipe); on
+Windows, the Visual C++ runtime.
+
+Making mods: the SDK, a C compiler (`--cc` or `CC`) that is GCC 12 or later (clang lacks
+the `scalar_storage_order` the game's headers use), CMake 3.25 or later, Ninja (needed on
+Windows, faster elsewhere) and git. On Windows the GCC must link msvcrt, as the game does:
+WinLibs' MSVCRT build (`winget install BrechtSanders.WinLibs.POSIX.MSVCRT`); a UCRT GCC
+is a problem. On macOS, `gcc` is Apple's clang, so tgg uses Homebrew's `gcc-15` (or
+`gcc-16`, `gcc-14`) by default, and needs Xcode's command line tools.
+For a missing or old tool it names the install command for the system (`winget`, `brew`,
+`apt`, `dnf`, `pacman`, `zypper`), a newer `gcc-<n>` already on `PATH`, or on NixOS
+`nix shell` with the tool from the nixpkgs revision the game was built with. The
+system's GCC is enough: the ABI fixes the layout, and the SDK's checks keep a mod
+loadable on the oldest glibc the game runs on.
 
 ## `tgg mod`
 
@@ -120,8 +157,9 @@ tgg mod enable|disable|remove ID...
 already hold dotfiles, a README, a license and a Nix flake (it keeps those, and adds the
 template's `.gitignore` lines to an existing one), sets the manifest's `id` (`DIR`'s name
 unless `--id`) and `name`, and the template README's title and log lines to them,
-runs `git init`, and builds once so `build/compile_commands.json` is there for the
-editor: the template's `.clangd` points clangd at it, so completion and go-to-definition
+runs `git init` and commits the template (without git, or before git knows your name
+and email, it says what to do and goes on), and builds once so
+`build/compile_commands.json` is there for the editor: the template's `.clangd` points clangd at it, so completion and go-to-definition
 reach the game's headers. On NixOS, an editor's own clangd may not find the C library's
 headers; run the clangd of the project's dev shell (`direnv exec . clangd`) with
 `--query-driver=/nix/store/*/bin/gcc`.
@@ -132,8 +170,12 @@ replaces `/PlMrNr.dat`), and new files under `assets/`; names starting with `.` 
 out. A mod needs sources, files or assets. `build` builds the sources with the SDK's own
 CMake files (`TggMod.cmake`): it writes a small CMake project in `DIR/build/tgg-project/`
 naming `DIR`'s manifest and `src/**/*.c`, whatever `CMakeLists.txt` the mod has, and runs
-CMake (with Ninja when it's installed) in `DIR/build/tgg/`, with GCC (`--cc` or `CC`,
-version 12 or later). So a mod builds the same way here and on textures.gg, the same
+CMake (with Ninja when it's installed, and always on Windows) in `DIR/build/tgg/`, with GCC
+(`--cc` or `CC`, version 12 or later). An SDK that ships `toolchain.cmake` (macOS's) builds
+with it as CMake's toolchain file, and gets the GCC as `TGG_MACOS_GCC`. Sources see `DIR`'s
+`include/` and the `include/` of each mod `depends` names, from the game's mods folder, so a
+mod uses a provider's header as the provider ships it; a dependency that isn't installed is
+named. So a mod builds the same way here and on textures.gg, the same
 source and SDK give the same package from any folder, and each SDK compiles, links and
 checks mods its own way: what a mod takes from the game, the warning for a game function
 used as a value, and the link and glibc check are the SDK's. `--debug` builds with
@@ -163,11 +205,14 @@ textures.gg from the manifest's id, name and description (an id is unique there)
 gets a short-lived push token for the mod's repository, and pushes HEAD to `main` with
 the tag; textures.gg builds every tag pushed to it.
 
-Installed mods live in the folder the game loads: `TGG_MODS_DIR`, else
-`$XDG_DATA_HOME/tgg-melee/mods`, else `~/.local/share/tgg-melee/mods`. A turned-off mod's
-folder is `.<id>`. `install` refuses packages built for another game layout than the game
-in use (or the executable `--port` or `TGG_PORT` names); a file two mods ship is a
-warning that names the mod whose copy the game uses (the one that loads later).
+Installed mods live in the folder the game loads: `TGG_MODS_DIR`, else `mods` in the
+game's data folder, which is `$XDG_DATA_HOME/tgg-melee` when that is set, else
+`~/.local/share/tgg-melee` on Linux, `~/Library/Application Support/tgg-melee` on macOS
+and `%LOCALAPPDATA%\tgg-melee` on Windows. A mod's library is `mod.so` (a shared object on
+Linux, a bundle on macOS) or `mod.dll` on Windows. A turned-off mod's folder is `.<id>`.
+`install` refuses packages built for another game layout than the game in use (or the
+executable `--port` or `TGG_PORT` names); a file two mods ship is a warning that names
+the mod whose copy the game uses (the one that loads later).
 
 ## `tgg mod dev`
 
@@ -176,10 +221,11 @@ tgg mod dev [DIR] [--watch] [--gdb] [--port VERSION] [--keep] [-- GAME ARGS]
 ```
 
 `dev` builds the mod with `-O0 -g` into `DIR/build/dev/<id>/`, links the game's mods
-folder's `<id>` to it, and runs the game (the one in use, or `--port`'s version) with your
-disc image, its output passed through with this mod's refusals in red. An installed copy
-of the same mod is moved aside to `.~dev-<id>` for the session and put back after; so is
-the link, unless `--keep`. Before the game starts it warns about installed mods that
+folder's `<id>` to it (a directory junction on Windows), and runs the game (the one in
+use, `--port`'s version, or `--game`'s build folder) with your disc image, its output
+passed through with this mod's refusals in red. An installed copy of the same mod is
+moved aside to `.~dev-<id>` for the session and put back after; so is the link, unless
+`--keep`. Before the game starts it warns about installed mods that
 replace the same function or that the mod needs and are missing. `--watch` rebuilds on
 each change to `manifest.json`, `src/`, `include/`, `files/` or `assets/` and restarts
 the game when it builds; Ctrl-C ends the session. Ctrl-C or SIGTERM to `tgg` (from

@@ -1,9 +1,11 @@
 //! tgg-melee's releases: where they are published, what each holds, and
 //! downloading and unpacking their archives.
 //!
-//! Each release is a folder of the mirror, `<version>/`, holding
-//! `release.json` and the archives it names; `latest.json` names the newest
-//! release. Every archive is checked against the size and SHA-256 its
+//! Each release is a folder of the mirror, `<version>/`, holding a
+//! `release-<target>.json` for each system it was built for and the archives
+//! they name; `latest.json` names the newest release, and
+//! `latest-prerelease.json` the newest prerelease. A release from before
+//! Windows and macOS builds has only `release.json`, its Linux build. Every archive is checked against the size and SHA-256 its
 //! `release.json` gives before it is unpacked.
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
@@ -17,8 +19,47 @@ use std::time::Duration;
 /// (a URL, or a folder laid out the same way).
 pub const DEFAULT_MIRROR: &str = "https://dl.textures.gg/tgg-melee";
 
-/// The only build tgg-melee releases so far.
-pub const TARGET: &str = "x86_64-linux-gnu";
+/// The build of tgg-melee for this system, if there is one: the target
+/// triple its SDK and mods name.
+pub fn target() -> Option<&'static str> {
+    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        Some("x86_64-linux-gnu")
+    } else if cfg!(all(windows, target_arch = "x86_64")) {
+        Some("x86_64-windows-gnu")
+    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        Some("aarch64-apple-darwin")
+    } else {
+        None
+    }
+}
+
+/// This system, as people name it.
+pub fn system() -> String {
+    let os = match std::env::consts::OS {
+        "linux" => "Linux",
+        "windows" => "Windows",
+        "macos" => "macOS",
+        other => other,
+    };
+    let arch = match std::env::consts::ARCH {
+        "x86_64" => "x86-64",
+        "aarch64" if cfg!(target_os = "macos") => "Apple silicon",
+        "aarch64" => "arm64",
+        other => other,
+    };
+    format!("{os} on {arch}")
+}
+
+/// The build for this system, or an error saying there is none.
+pub fn this_target() -> Result<&'static str> {
+    target().ok_or_else(|| {
+        anyhow!(
+            "tgg-melee is built for Linux on x86-64, Windows on x86-64 and macOS on Apple \
+             silicon; this is {}",
+            system()
+        )
+    })
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Release {
@@ -44,7 +85,9 @@ pub struct Toolchain {
 pub struct ReleaseFiles {
     pub game: ReleaseFile,
     pub sdk: ReleaseFile,
-    pub debug: ReleaseFile,
+    /// The debug info gdb reads; Linux builds only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub debug: Option<ReleaseFile>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -99,63 +142,83 @@ impl Mirror {
         self.base.starts_with("https://") || self.base.starts_with("http://")
     }
 
-    /// Open `path` of the mirror for reading.
-    fn open(&self, path: &str) -> Result<Box<dyn Read>> {
+    /// Open `path` of the mirror for reading; `None` if it isn't there.
+    fn open(&self, path: &str) -> Result<Option<Box<dyn Read>>> {
         let location = format!("{}/{path}", self.base);
         if !self.is_remote() {
-            let file = std::fs::File::open(&location).with_context(|| location.clone())?;
-            return Ok(Box::new(file));
+            return match std::fs::File::open(&location) {
+                Ok(file) => Ok(Some(Box::new(file))),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                Err(error) => Err(error).with_context(|| location.clone()),
+            };
         }
-        let response = self
-            .agent
-            .get(&location)
-            .call()
-            .map_err(|error| match error {
-                ureq::Error::StatusCode(404) => anyhow!("{location} doesn't exist"),
-                error => anyhow!("downloading {location}: {error}"),
-            })?;
-        Ok(Box::new(response.into_body().into_reader()))
+        match self.agent.get(&location).call() {
+            Ok(response) => Ok(Some(Box::new(response.into_body().into_reader()))),
+            Err(ureq::Error::StatusCode(404 | 403)) => Ok(None),
+            Err(error) => bail!("downloading {location}: {error}"),
+        }
     }
 
-    fn json<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
+    /// `path` of the mirror as JSON; `None` if it isn't there.
+    fn json<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<Option<T>> {
+        let Some(reader) = self.open(path)? else {
+            return Ok(None);
+        };
         let mut text = String::new();
-        self.open(path)?
+        reader
             .take(1024 * 1024)
             .read_to_string(&mut text)
             .with_context(|| format!("reading {path}"))?;
-        serde_json::from_str(&text).with_context(|| format!("reading {path}"))
+        let value = serde_json::from_str(&text).with_context(|| format!("reading {path}"))?;
+        Ok(Some(value))
     }
 
-    /// The newest release's version. Before the first release, the error
-    /// names the newest prerelease (`latest-prerelease.json`), which
-    /// installs by its version.
+    /// The newest release's version, or before the first release the newest
+    /// prerelease's.
     pub fn latest(&self) -> Result<String> {
-        match self.json::<Latest>("latest.json") {
-            Ok(latest) => Ok(latest.version),
-            Err(error) => match self.json::<Latest>("latest-prerelease.json") {
-                Ok(pre) => bail!(
-                    "tgg-melee has no release yet, only prereleases; the newest is {0}: tgg port install {0}",
+        if let Some(latest) = self.json::<Latest>("latest.json")? {
+            return Ok(latest.version);
+        }
+        match self.json::<Latest>("latest-prerelease.json")? {
+            Some(pre) => {
+                eprintln!(
+                    "tgg-melee has no release yet; using the newest prerelease, {}",
                     pre.version
-                ),
-                Err(_) => Err(error),
-            },
+                );
+                Ok(pre.version)
+            }
+            None => bail!("{} has no tgg-melee releases", self.base),
         }
     }
 
-    /// `version`'s release, or the newest for `latest`.
+    /// `version`'s release for this system, or the newest for `latest`.
     pub fn release(&self, version: &str) -> Result<Release> {
+        let target = this_target()?;
         let version = if version == "latest" {
             self.latest()?
         } else {
             version.trim_start_matches('v').to_owned()
         };
-        let release: Release = self
-            .json(&format!("{version}/release.json"))
-            .with_context(|| format!("no tgg-melee {version} in {}", self.base))?;
+        let mut release = self.json::<Release>(&format!("{version}/release-{target}.json"))?;
+        // Releases from before the Windows and macOS builds name only Linux's.
+        if release.is_none() && target == "x86_64-linux-gnu" {
+            release = self.json(&format!("{version}/release.json"))?;
+        }
+        let release = match release {
+            Some(release) => release,
+            None if self
+                .json::<Release>(&format!("{version}/release.json"))?
+                .is_some() =>
+            {
+                bail!("tgg-melee {version} has no build for {}", system())
+            }
+            None => bail!("no tgg-melee {version} in {}", self.base),
+        };
         ensure!(
-            release.version == version,
-            "{version}/release.json is for version {}",
-            release.version
+            release.version == version && release.target == target,
+            "{version}/release-{target}.json is for version {} on {}",
+            release.version,
+            release.target
         );
         ensure!(
             release.api == tgg_mod::API,
@@ -181,8 +244,10 @@ impl Mirror {
             file.size as f64 / 1_000_000.0
         );
         let partial = folder.join(format!("{}.partial", file.name));
+        let remote = format!("{}/{}", release.version, file.name);
         let mut reader = self
-            .open(&format!("{}/{}", release.version, file.name))?
+            .open(&remote)?
+            .ok_or_else(|| anyhow!("{}/{remote} doesn't exist", self.base))?
             .take(file.size + 1);
         let mut out =
             std::fs::File::create(&partial).with_context(|| partial.display().to_string())?;

@@ -3,7 +3,7 @@
 //! installed in the game's mods folder.
 
 use crate::account::Site;
-use crate::build::{self, Folders, Options, read, read_manifest};
+use crate::build::{self, Options, read};
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Args, Subcommand};
 use serde_json::json;
@@ -158,9 +158,19 @@ pub enum ModCommand {
 
 #[derive(Args)]
 pub struct Cc {
-    /// The C compiler: GCC 12 or later.
-    #[arg(long, env = "CC", default_value = "gcc")]
-    pub cc: PathBuf,
+    /// The C compiler: GCC 12 or later [default: gcc; on macOS Homebrew's
+    /// gcc-15]
+    #[arg(long, env = "CC")]
+    pub cc: Option<PathBuf>,
+}
+
+impl Cc {
+    pub fn resolve(&self) -> PathBuf {
+        self.cc
+            .clone()
+            .filter(|cc| !cc.as_os_str().is_empty())
+            .unwrap_or_else(crate::toolchain::default_cc)
+    }
 }
 
 #[derive(Args)]
@@ -200,7 +210,7 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
             name,
             example,
             sdk: sdk.as_deref(),
-            cc: &cc.cc,
+            cc: &cc.resolve(),
         }),
         ModCommand::Build {
             dir,
@@ -216,7 +226,7 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
             }
             let options = Options {
                 sdk: sdk.as_deref(),
-                cc: &cc.cc,
+                cc: &cc.resolve(),
                 debug,
             };
             let built = build::build(&dir, &options)?;
@@ -244,7 +254,7 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
             version: port.as_deref(),
             game: game.as_deref(),
             keep,
-            cc: &cc.cc,
+            cc: &cc.resolve(),
             args: &args,
         }),
         ModCommand::Register { dir } => {
@@ -281,16 +291,7 @@ fn print_json(value: &serde_json::Value) {
 }
 
 fn pack(dir: &Path, output: Option<PathBuf>, json: bool) -> Result<()> {
-    let manifest = read_manifest(dir)?;
-    let library_path = dir.join(manifest.library_name());
-    // Without a named entry, a folder with no library is a mod of files only.
-    let library = if manifest.entry.is_none() && !library_path.exists() {
-        None
-    } else {
-        Some(read(&library_path)?)
-    };
-    let package = Folders::read(dir)?.pack(manifest, library)?;
-    write_package(package, None, output, Path::new(""), json)
+    write_package(build::pack_folder(dir)?, None, output, Path::new(""), json)
 }
 
 /// Write `package` to `output`, or `<id>-<version>.zip` in `folder`, and
@@ -377,6 +378,8 @@ fn inspect(path: &Path) -> Result<()> {
         "init": declared.init,
         "hooks": declared.hooks,
         "events": declared.events,
+        "content": declared.content,
+        "settings": declared.settings,
         "symbols": declared.symbols,
         "exports": declared.exports,
         "imports": declared.imports,

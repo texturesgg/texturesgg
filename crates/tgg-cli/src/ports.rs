@@ -9,11 +9,19 @@
 use crate::releases::{self, Mirror, Release};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use clap::Subcommand;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tgg_mod::Port;
 
 /// The game's executable in its folder.
-pub const EXECUTABLE: &str = "tgg-melee";
+pub const EXECUTABLE: &str = if cfg!(windows) {
+    "tgg-melee.exe"
+} else {
+    "tgg-melee"
+};
+/// Its debug info, beside it (Linux).
+const DEBUG_INFO: &str = "tgg-melee.debug";
+/// The mods a release ships for players, in the game's folder.
+const DEFAULT_MODS: &str = "default-mods";
 const CURRENT: &str = "current";
 const RELEASE: &str = "release.json";
 
@@ -73,7 +81,12 @@ impl Installed {
     }
 
     pub fn has_debug_info(&self) -> bool {
-        self.folder.join(format!("{EXECUTABLE}.debug")).is_file()
+        self.folder.join(DEBUG_INFO).is_file()
+    }
+
+    /// The folder of the mods the release ships for players.
+    pub fn default_mods(&self) -> PathBuf {
+        self.folder.join(DEFAULT_MODS)
     }
 }
 
@@ -105,13 +118,18 @@ fn sort_key(version: &str) -> (Option<semver::Version>, String) {
     (semver::Version::parse(version).ok(), version.to_owned())
 }
 
-/// The version `current` names, if any.
+/// The version `current` names, if any: a file holding the version (a link
+/// to its folder from older tgg).
 pub fn current_version() -> Result<Option<String>> {
-    let link = crate::paths::ports()?.join(CURRENT);
-    match std::fs::read_link(&link) {
-        Ok(target) => Ok(Some(target.to_string_lossy().into_owned())),
+    let path = crate::paths::ports()?.join(CURRENT);
+    if let Ok(target) = std::fs::read_link(&path) {
+        return Ok(Some(target.to_string_lossy().into_owned()));
+    }
+    match std::fs::read_to_string(&path) {
+        Ok(text) if !text.trim().is_empty() => Ok(Some(text.trim().to_owned())),
+        Ok(_) => Ok(None),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error).with_context(|| link.display().to_string()),
+        Err(error) => Err(error).with_context(|| path.display().to_string()),
     }
 }
 
@@ -130,45 +148,25 @@ pub fn resolve(version: Option<&str>) -> Result<Installed> {
     Ok(Installed { version, folder })
 }
 
-/// Point `current` at `version`, replacing the link in one step.
+/// Make `version` the one in use, replacing `current` in one step.
 fn set_current(version: &str) -> Result<()> {
     let root = crate::paths::ports()?;
     let staging = root.join(".current.new");
-    let _ = std::fs::remove_file(&staging);
-    symlink(version, &staging)?;
-    std::fs::rename(&staging, root.join(CURRENT)).context("setting the version in use")?;
-    Ok(())
-}
-
-#[cfg(unix)]
-fn symlink(target: &str, link: &Path) -> Result<()> {
-    std::os::unix::fs::symlink(target, link).with_context(|| link.display().to_string())
-}
-
-#[cfg(not(unix))]
-fn symlink(_: &str, _: &Path) -> Result<()> {
-    bail!("tgg-melee releases are for Linux")
-}
-
-fn check_host() -> Result<()> {
-    ensure!(
-        cfg!(all(target_os = "linux", target_arch = "x86_64")),
-        "tgg-melee releases are for Linux x86-64 so far"
-    );
+    std::fs::write(&staging, format!("{version}\n"))
+        .with_context(|| staging.display().to_string())?;
+    let current = root.join(CURRENT);
+    // A link from an older tgg
+    if std::fs::symlink_metadata(&current).is_ok_and(|meta| meta.file_type().is_symlink()) {
+        std::fs::remove_file(&current).with_context(|| current.display().to_string())?;
+    }
+    std::fs::rename(&staging, current).context("setting the version in use")?;
     Ok(())
 }
 
 /// Install `version` (and its debug info), unless it is installed.
 pub fn install(version: &str, debug: bool) -> Result<Installed> {
-    check_host()?;
     let mirror = Mirror::new();
     let release = mirror.release(version)?;
-    ensure!(
-        release.target == releases::TARGET,
-        "tgg-melee {} is built for {}",
-        release.version,
-        release.target
-    );
     let root = crate::paths::ports()?;
     std::fs::create_dir_all(&root).with_context(|| root.display().to_string())?;
     let folder = root.join(&release.version);
@@ -193,8 +191,15 @@ pub fn install(version: &str, debug: bool) -> Result<Installed> {
         folder,
     };
     if debug && !installed.has_debug_info() {
-        let archive = mirror.download(&release, &release.files.debug)?;
-        releases::unpack(&archive, &release.files.debug, &installed.folder)?;
+        let Some(file) = &release.files.debug else {
+            bail!(
+                "tgg-melee {} has no debug info for {}",
+                release.version,
+                releases::system()
+            );
+        };
+        let archive = mirror.download(&release, file)?;
+        releases::unpack(&archive, file, &installed.folder)?;
         println!("Installed tgg-melee {}'s debug info", release.version);
     }
     if current_version()?.is_none() {
@@ -213,6 +218,12 @@ pub fn run(command: PortCommand) -> Result<()> {
                     current_version()?.unwrap_or_default(),
                     installed.version
                 );
+                return Ok(());
+            }
+            crate::defaults::install(&installed)?;
+            check_runtime(&installed)?;
+            if crate::config::iso_or_ask().is_ok() {
+                println!("Ready: tgg port run");
             }
             Ok(())
         }
@@ -247,7 +258,7 @@ pub fn run(command: PortCommand) -> Result<()> {
             let installed = resolve(Some(&version))?;
             set_current(&installed.version)?;
             println!("Using tgg-melee {}", installed.version);
-            Ok(())
+            crate::defaults::install(&installed)
         }
         PortCommand::Remove { version } => {
             let installed = resolve(Some(&version))?;
@@ -270,16 +281,66 @@ pub fn run(command: PortCommand) -> Result<()> {
         }
         PortCommand::Run { version, args } => {
             let installed = resolve(version.as_deref())?;
+            check_runtime(&installed)?;
+            let iso = crate::config::iso_or_ask()?;
             let status = crate::signals::run(
                 std::process::Command::new(installed.executable())
-                    .arg(crate::config::iso()?)
+                    .arg(iso)
                     .args(&args),
             )
             .with_context(|| format!("running {}", installed.executable().display()))?;
-            if !status.success() {
-                bail!("tgg-melee exited with {status}");
-            }
-            Ok(())
+            check_exit(status)
         }
     }
+}
+
+/// The Microsoft C++ runtime DLLs the Windows build's libraries (Dawn, the
+/// shader compiler, nod) link, which Windows doesn't always have.
+const VC_RUNTIME: &[&str] = &["msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"];
+/// How to get them.
+pub const VC_RUNTIME_FIX: &str = "winget install Microsoft.VCRedist.2015+.x64";
+
+/// The C++ runtime DLLs missing from both the game's folder and Windows'
+/// own; none anywhere else.
+pub fn missing_runtime(installed: &Installed) -> Vec<&'static str> {
+    if !cfg!(windows) {
+        return Vec::new();
+    }
+    let system = std::env::var_os("SystemRoot")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
+        .join("System32");
+    VC_RUNTIME
+        .iter()
+        .copied()
+        .filter(|dll| !installed.folder.join(dll).is_file() && !system.join(dll).is_file())
+        .collect()
+}
+
+/// Fail with the fix when the game can't start for want of a runtime.
+pub fn check_runtime(installed: &Installed) -> Result<()> {
+    let missing = missing_runtime(installed);
+    ensure!(
+        missing.is_empty(),
+        "tgg-melee needs the Microsoft Visual C++ runtime ({} missing): {VC_RUNTIME_FIX}",
+        missing.join(", ")
+    );
+    Ok(())
+}
+
+/// Windows' "a DLL was not found" status, which a game missing a library
+/// exits with before it prints anything.
+const STATUS_DLL_NOT_FOUND: i32 = 0xC000_0135_u32 as i32;
+
+/// Fail when the game didn't exit cleanly, saying why if tgg can tell.
+pub fn check_exit(status: std::process::ExitStatus) -> Result<()> {
+    if status.success() {
+        return Ok(());
+    }
+    if cfg!(windows) && status.code() == Some(STATUS_DLL_NOT_FOUND) {
+        bail!(
+            "tgg-melee couldn't start: a DLL it needs is missing. {VC_RUNTIME_FIX} installs the usual one"
+        );
+    }
+    bail!("tgg-melee exited with {status}")
 }

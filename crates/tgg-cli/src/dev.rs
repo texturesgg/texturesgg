@@ -10,7 +10,7 @@
 use crate::build::{self, Options};
 use crate::ports::{self, Installed};
 use crate::signals::Signals;
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use std::io::{BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -45,7 +45,7 @@ pub fn dev(dev: Dev) -> Result<()> {
                 installed.executable().is_file(),
                 "{} has no {}: --game wants the port's build folder",
                 folder.display(),
-                installed.executable().display()
+                crate::ports::EXECUTABLE
             );
             let sdk = folder.join("tgg-melee-sdk");
             ensure!(
@@ -68,7 +68,8 @@ pub fn dev(dev: Dev) -> Result<()> {
             (installed, sdk)
         }
     };
-    let iso = crate::config::iso()?;
+    crate::ports::check_runtime(&installed)?;
+    let iso = crate::config::iso_or_ask()?;
     let options = Options {
         sdk: Some(&sdk),
         cc: dev.cc,
@@ -168,7 +169,7 @@ impl Link {
         let aside = root.join(format!(".~dev-{id}"));
         match std::fs::symlink_metadata(&link) {
             // A link left by a session that didn't end cleanly.
-            Ok(meta) if meta.file_type().is_symlink() => std::fs::remove_file(&link)?,
+            Ok(meta) if meta.file_type().is_symlink() => remove_link(&link)?,
             Ok(_) => {
                 ensure!(
                     !aside.exists(),
@@ -195,7 +196,7 @@ impl Link {
     /// Remove the link and put back what it replaced.
     fn restore(self) -> Result<()> {
         if std::fs::symlink_metadata(&self.link).is_ok_and(|meta| meta.file_type().is_symlink()) {
-            std::fs::remove_file(&self.link).with_context(|| self.link.display().to_string())?;
+            remove_link(&self.link)?;
         }
         if self.aside.exists() && !self.link.exists() {
             std::fs::rename(&self.aside, &self.link)
@@ -205,14 +206,39 @@ impl Link {
     }
 }
 
+/// Link `link` to the folder `target`: a symbolic link, or on Windows a
+/// directory junction, which needs no special rights.
 #[cfg(unix)]
 fn symlink(target: &Path, link: &Path) -> Result<()> {
     std::os::unix::fs::symlink(target, link).with_context(|| link.display().to_string())
 }
 
-#[cfg(not(unix))]
-fn symlink(_: &Path, _: &Path) -> Result<()> {
-    bail!("tgg mod dev runs tgg-melee, which is for Linux")
+#[cfg(windows)]
+fn symlink(target: &Path, link: &Path) -> Result<()> {
+    let output = Command::new("cmd")
+        .arg("/C")
+        .arg("mklink")
+        .arg("/J")
+        .arg(link)
+        .arg(target)
+        .output()
+        .context("running mklink")?;
+    ensure!(
+        output.status.success(),
+        "linking {} to {}: {}",
+        link.display(),
+        target.display(),
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    Ok(())
+}
+
+/// Remove the link at `link`, not what it points to.
+fn remove_link(link: &Path) -> Result<()> {
+    // A junction or a link to a folder is a folder to Windows.
+    std::fs::remove_file(link)
+        .or_else(|_| std::fs::remove_dir(link))
+        .with_context(|| link.display().to_string())
 }
 
 /// A running game, its output passed through with this mod's refusals in
@@ -254,10 +280,7 @@ impl Game {
     fn wait(&mut self) -> Result<()> {
         let status = self.child.wait()?;
         self.finish();
-        if !status.success() {
-            bail!("tgg-melee exited with {status}");
-        }
-        Ok(())
+        crate::ports::check_exit(status)
     }
 
     fn running(&mut self) -> bool {

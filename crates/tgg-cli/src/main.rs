@@ -3,6 +3,7 @@
 mod account;
 mod build;
 mod config;
+mod defaults;
 mod dev;
 mod docs;
 mod doctor;
@@ -14,6 +15,7 @@ mod releases;
 mod scaffold;
 mod sdks;
 mod signals;
+mod toolchain;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -77,7 +79,7 @@ fn main() -> Result<()> {
         Command::Sdk(command) => sdks::run(command),
         Command::Mod(command) => mods::run(command, &cli.api),
         Command::Config(command) => config::run(command),
-        Command::Doctor { cc } => doctor::run(&cc.cc),
+        Command::Doctor { cc } => doctor::run(&cc.resolve()),
         Command::Docs { page } => docs::run(page.as_deref()),
     }
 }

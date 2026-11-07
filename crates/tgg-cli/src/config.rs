@@ -3,7 +3,8 @@
 use anyhow::{Context, Result, anyhow, ensure};
 use clap::{Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::io::{IsTerminal, Read, Write};
+use std::path::{Path, PathBuf};
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct Config {
@@ -62,6 +63,81 @@ pub fn iso() -> Result<PathBuf> {
     Ok(iso)
 }
 
+/// The disc image, as [`iso`] finds it, or else asked for in the terminal
+/// and remembered.
+pub fn iso_or_ask() -> Result<PathBuf> {
+    let error = match iso() {
+        Ok(iso) => return Ok(iso),
+        Err(error) => error,
+    };
+    if !std::io::stdin().is_terminal() || std::env::var_os("TGG_MELEE_ISO").is_some() {
+        return Err(error);
+    }
+    loop {
+        print!("Your Melee disc image (NTSC 1.02, .iso), or Enter to skip: ");
+        std::io::stdout().flush()?;
+        let mut line = String::new();
+        if std::io::stdin().read_line(&mut line)? == 0 {
+            return Err(error);
+        }
+        // Pasted paths come quoted ("Copy as path" on Windows) or escaped
+        // (dragged into a macOS terminal).
+        let line = line.trim().trim_matches(['"', '\'']).replace("\\ ", " ");
+        if line.is_empty() {
+            println!("Later: tgg config set iso <path>");
+            return Err(error);
+        }
+        let path = expand_home(&line);
+        match check_disc(&path) {
+            Ok(()) => {
+                let path = std::path::absolute(&path)?;
+                let mut config = Config::read()?;
+                config.iso = Some(path.clone());
+                config.write()?;
+                println!("Saved; tgg uses it from now on");
+                return Ok(path);
+            }
+            Err(problem) => println!("{problem:#}"),
+        }
+    }
+}
+
+fn expand_home(path: &str) -> PathBuf {
+    match (path.strip_prefix("~/"), dirs::home_dir()) {
+        (Some(rest), Some(home)) => home.join(rest),
+        _ => PathBuf::from(path),
+    }
+}
+
+/// Check `path` is Melee NTSC 1.02. Only a plain disc image (`.iso`, `.gcm`)
+/// is read; the game also opens compressed ones (`.rvz`, `.ciso`, ...).
+fn check_disc(path: &Path) -> Result<()> {
+    ensure!(path.is_file(), "{} isn't a file", path.display());
+    let plain = path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("iso") || ext.eq_ignore_ascii_case("gcm"));
+    if !plain {
+        return Ok(());
+    }
+    let mut header = [0u8; 8];
+    std::fs::File::open(path)
+        .and_then(|mut file| file.read_exact(&mut header))
+        .with_context(|| path.display().to_string())?;
+    ensure!(
+        &header[..6] == b"GALE01",
+        "{} isn't Melee NTSC (its game id is {})",
+        path.display(),
+        String::from_utf8_lossy(&header[..6])
+    );
+    ensure!(
+        header[7] == 2,
+        "{} is Melee NTSC 1.0{}; tgg-melee needs 1.02",
+        path.display(),
+        header[7]
+    );
+    Ok(())
+}
+
 pub fn run(command: ConfigCommand) -> Result<()> {
     let mut config = Config::read()?;
     match command {
@@ -69,7 +145,7 @@ pub fn run(command: ConfigCommand) -> Result<()> {
             key: Key::Iso,
             value,
         } => {
-            ensure!(value.is_file(), "{} isn't a file", value.display());
+            check_disc(&value)?;
             let value = std::path::absolute(&value)?;
             println!("iso = {}", value.display());
             config.iso = Some(value);
