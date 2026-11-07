@@ -1,28 +1,24 @@
 //! `tgg port`: install released builds of tgg-melee, pick the one to use,
-//! and run it.
+//! and run it, through [`tgg_mod::ports`].
 //!
 //! Each installed version is the release's game folder, unpacked to
 //! `ports/<version>/` with its `release.json` beside it; `ports/current`
-//! links to the version commands use by default. Every version shares the
+//! names the version commands use by default. Every version shares the
 //! game's own data: its mods folder, pack and saves.
 
 use crate::releases::{self, Mirror, Release};
 use anyhow::{Context, Result, anyhow, bail, ensure};
 use clap::Subcommand;
 use std::path::PathBuf;
-use tgg_mod::Port;
+use std::sync::atomic::{AtomicBool, Ordering};
+use tgg_mod::{Port, ports};
 
 /// The game's executable in its folder.
-pub const EXECUTABLE: &str = if cfg!(windows) {
-    "tgg-melee.exe"
-} else {
-    "tgg-melee"
-};
+pub use tgg_mod::ports::EXECUTABLE;
 /// Its debug info, beside it (Linux).
 const DEBUG_INFO: &str = "tgg-melee.debug";
 /// The mods a release ships for players, in the game's folder.
 const DEFAULT_MODS: &str = "default-mods";
-const CURRENT: &str = "current";
 const RELEASE: &str = "release.json";
 
 #[derive(Subcommand)]
@@ -92,45 +88,18 @@ impl Installed {
 
 /// Every installed version, oldest first.
 pub fn installed() -> Result<Vec<Installed>> {
-    let root = crate::paths::ports()?;
-    let entries = match std::fs::read_dir(&root) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(error).with_context(|| root.display().to_string()),
-    };
-    let mut versions = Vec::new();
-    for entry in entries {
-        let entry = entry?;
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') || name == CURRENT || !entry.path().join(RELEASE).is_file() {
-            continue;
-        }
-        versions.push(Installed {
-            folder: entry.path(),
-            version: name,
-        });
-    }
-    versions.sort_by_key(|installed| sort_key(&installed.version));
-    Ok(versions)
+    Ok(ports::installed_ports(&crate::paths::ports()?)?
+        .into_iter()
+        .map(|install| Installed {
+            version: install.version,
+            folder: install.folder,
+        })
+        .collect())
 }
 
-fn sort_key(version: &str) -> (Option<semver::Version>, String) {
-    (semver::Version::parse(version).ok(), version.to_owned())
-}
-
-/// The version `current` names, if any: a file holding the version (a link
-/// to its folder from older tgg).
+/// The version `current` names, if any.
 pub fn current_version() -> Result<Option<String>> {
-    let path = crate::paths::ports()?.join(CURRENT);
-    if let Ok(target) = std::fs::read_link(&path) {
-        return Ok(Some(target.to_string_lossy().into_owned()));
-    }
-    match std::fs::read_to_string(&path) {
-        Ok(text) if !text.trim().is_empty() => Ok(Some(text.trim().to_owned())),
-        Ok(_) => Ok(None),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error).with_context(|| path.display().to_string()),
-    }
+    Ok(ports::current_port(&crate::paths::ports()?)?)
 }
 
 /// The installed `version`, or the one in use.
@@ -140,26 +109,21 @@ pub fn resolve(version: Option<&str>) -> Result<Installed> {
         None => current_version()?
             .ok_or_else(|| anyhow!("tgg-melee isn't installed; run tgg port install"))?,
     };
-    let folder = crate::paths::ports()?.join(&version);
-    ensure!(
-        folder.join(RELEASE).is_file(),
-        "tgg-melee {version} isn't installed; run tgg port install {version}"
-    );
-    Ok(Installed { version, folder })
+    match ports::installed_port(&crate::paths::ports()?, &version) {
+        Ok(install) => Ok(Installed {
+            version: install.version,
+            folder: install.folder,
+        }),
+        Err(tgg_mod::Error::PortNotInstalled(_)) => {
+            bail!("tgg-melee {version} isn't installed; run tgg port install {version}")
+        }
+        Err(error) => Err(error.into()),
+    }
 }
 
-/// Make `version` the one in use, replacing `current` in one step.
+/// Make `version` the one in use.
 fn set_current(version: &str) -> Result<()> {
-    let root = crate::paths::ports()?;
-    let staging = root.join(".current.new");
-    std::fs::write(&staging, format!("{version}\n"))
-        .with_context(|| staging.display().to_string())?;
-    let current = root.join(CURRENT);
-    // A link from an older tgg
-    if std::fs::symlink_metadata(&current).is_ok_and(|meta| meta.file_type().is_symlink()) {
-        std::fs::remove_file(&current).with_context(|| current.display().to_string())?;
-    }
-    std::fs::rename(&staging, current).context("setting the version in use")?;
+    ports::use_port(&crate::paths::ports()?, version).context("setting the version in use")?;
     Ok(())
 }
 
@@ -168,19 +132,23 @@ pub fn install(version: &str, debug: bool) -> Result<Installed> {
     let mirror = Mirror::new();
     let release = mirror.release(version)?;
     let root = crate::paths::ports()?;
-    std::fs::create_dir_all(&root).with_context(|| root.display().to_string())?;
-    let folder = root.join(&release.version);
-    // release.json is written last, so a folder without it is an install
-    // that didn't finish.
-    if folder.join(RELEASE).is_file() {
+    if ports::installed_port(&root, &release.version).is_ok() {
         println!("tgg-melee {} is installed", release.version);
     } else {
-        if folder.exists() {
-            std::fs::remove_dir_all(&folder).with_context(|| folder.display().to_string())?;
-        }
-        releases::install(&mirror, &release, &release.files.game, &folder)?;
-        let json = serde_json::to_string_pretty(&release).expect("json");
-        std::fs::write(folder.join(RELEASE), json + "\n")?;
+        let told = AtomicBool::new(false);
+        let progress = |progress: tgg_mod::Progress| {
+            if progress.step == 0 && progress.bytes > 0 && !told.swap(true, Ordering::Relaxed) {
+                eprintln!("{}", releases::downloading(&release.files.game));
+            }
+        };
+        ports::add_port(
+            mirror.net(),
+            &release,
+            &root,
+            Some(&crate::paths::cache()?),
+            &progress,
+            &AtomicBool::new(false),
+        )?;
         println!(
             "Installed tgg-melee {} (game layout {})",
             release.version, release.game_abi
@@ -188,7 +156,7 @@ pub fn install(version: &str, debug: bool) -> Result<Installed> {
     }
     let installed = Installed {
         version: release.version.clone(),
-        folder,
+        folder: root.join(&release.version),
     };
     if debug && !installed.has_debug_info() {
         let Some(file) = &release.files.debug else {
@@ -199,7 +167,7 @@ pub fn install(version: &str, debug: bool) -> Result<Installed> {
             );
         };
         let archive = mirror.download(&release, file)?;
-        releases::unpack(&archive, file, &installed.folder)?;
+        ports::unpack(&archive, file, &installed.folder)?;
         println!("Installed tgg-melee {}'s debug info", release.version);
     }
     if current_version()?.is_none() {
@@ -272,15 +240,11 @@ pub fn run(command: PortCommand) -> Result<()> {
         PortCommand::Remove { version } => {
             let installed = resolve(Some(&version))?;
             let current = current_version()?;
-            std::fs::remove_dir_all(&installed.folder)
-                .with_context(|| installed.folder.display().to_string())?;
-            if current.as_deref() == Some(installed.version.as_str()) {
-                let link = crate::paths::ports()?.join(CURRENT);
-                std::fs::remove_file(&link).with_context(|| link.display().to_string())?;
-                if let Some(newest) = self::installed()?.last() {
-                    set_current(&newest.version)?;
-                    println!("Using tgg-melee {}", newest.version);
-                }
+            ports::remove_port(&crate::paths::ports()?, &installed.version)?;
+            if current.as_deref() == Some(installed.version.as_str())
+                && let Some(newest) = current_version()?
+            {
+                println!("Using tgg-melee {newest}");
             }
             Ok(())
         }
@@ -292,12 +256,15 @@ pub fn run(command: PortCommand) -> Result<()> {
             let installed = resolve(version.as_deref())?;
             check_runtime(&installed)?;
             let iso = crate::config::iso_or_ask()?;
-            let status = crate::signals::run(
-                std::process::Command::new(installed.executable())
-                    .arg(iso)
-                    .args(&args),
-            )
-            .with_context(|| format!("running {}", installed.executable().display()))?;
+            let install = ports::installed_port(&crate::paths::ports()?, &installed.version)?;
+            let signals = crate::signals::handle()?;
+            let mut running =
+                ports::launch_with_args(&install, &iso, &tgg_mod::default_mods_dir(), &args)?;
+            signals.set_game(Some(running.id()));
+            let status = running.wait();
+            signals.set_game(None);
+            let status =
+                status.with_context(|| format!("running {}", installed.executable().display()))?;
             check_exit(status)
         }
     }

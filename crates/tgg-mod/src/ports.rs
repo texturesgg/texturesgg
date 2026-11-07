@@ -464,11 +464,13 @@ pub fn port_update(installed: &[PortInstall], releases: &[PortRelease]) -> Optio
 }
 
 /// Install `release` into `ports` without changing the version in use;
-/// nothing to do when it is installed.
+/// nothing to do when it is installed. With a `cache` folder, the archive is
+/// taken from or kept there as [`fetch_release_file`] does.
 pub fn add_port(
     net: &dyn Net,
     release: &PortRelease,
     ports: &Path,
+    cache: Option<&Path>,
     progress: OnProgress,
     cancel: &AtomicBool,
 ) -> Result<PortInstall, Error> {
@@ -490,7 +492,7 @@ pub fn add_port(
         net,
         release,
         game,
-        None,
+        cache,
         &mut |bytes, _| {
             progress(Progress {
                 step: 0,
@@ -533,7 +535,7 @@ pub fn install_port(
     progress: OnProgress,
     cancel: &AtomicBool,
 ) -> Result<PortInstall, Error> {
-    add_port(net, release, ports, progress, cancel)?;
+    add_port(net, release, ports, None, progress, cancel)?;
     use_port(ports, &release.version)
 }
 
@@ -617,4 +619,67 @@ where
         .map_err(Error::io(&executable))?;
     let pid_file = lock::write_pid_file(mods, child.id(), &executable)?;
     Ok(Running { child, pid_file })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A release archive of `entries`, each a path and an entry type.
+    fn archive(entries: &[(&str, tar::EntryType)]) -> Vec<u8> {
+        let mut builder = tar::Builder::new(flate2::write::GzEncoder::new(
+            Vec::new(),
+            flate2::Compression::fast(),
+        ));
+        for (name, kind) in entries {
+            let mut header = tar::Header::new_gnu();
+            // Written raw, so a hostile path reaches the reader as it would.
+            header.as_gnu_mut().expect("gnu").name[..name.len()].copy_from_slice(name.as_bytes());
+            header.set_entry_type(*kind);
+            let data: &[u8] = if *kind == tar::EntryType::Regular {
+                b"hi"
+            } else {
+                b""
+            };
+            header.set_size(data.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder.append(&header, data).expect("append");
+        }
+        builder
+            .into_inner()
+            .expect("finish")
+            .finish()
+            .expect("gzip")
+    }
+
+    #[test]
+    fn unpacking_takes_only_files_and_folders_inside_the_release_folder() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let file = ReleaseFile {
+            name: "tgg-melee-0.1.0-x86_64-linux.tar.gz".into(),
+            size: 0,
+            sha256: String::new(),
+        };
+        let top = "tgg-melee-0.1.0-x86_64-linux";
+        let good = archive(&[
+            (top, tar::EntryType::Directory),
+            (&format!("{top}/lib/libz.so.1"), tar::EntryType::Regular),
+        ]);
+        unpack(&good, &file, &dir.path().join("ok")).expect("unpack");
+        assert!(dir.path().join("ok/lib/libz.so.1").is_file());
+
+        for (name, kind) in [
+            (format!("{top}/../escape"), tar::EntryType::Regular),
+            ("elsewhere/x".to_owned(), tar::EntryType::Regular),
+            (format!("{top}/link"), tar::EntryType::Symlink),
+        ] {
+            let bad = archive(&[(&name, kind)]);
+            assert!(
+                unpack(&bad, &file, &dir.path().join("bad")).is_err(),
+                "{name}"
+            );
+        }
+        assert!(!dir.path().join("escape").exists());
+    }
 }
