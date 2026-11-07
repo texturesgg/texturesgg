@@ -25,7 +25,7 @@ pub fn button(label: &str, kind: ButtonKind, p: &Palette) -> El {
         ButtonKind::Secondary => (p.raise, p.ink, p.line_strong),
     };
     row().h(size::CONTROL).px(space::SM).items_center().radius(radius::CONTROL)
-        .fill(fill).border(1.0, border).hover(p.hover).press(p.hover)
+        .fill(fill).border(1.0, border).hover(p.hover).press(p.hover).cursor(rune::Cursor::Pointer)
         .role("button").label(label).focusable(true)
         .child(text(label).font(type_::STRONG).color(ink))
 }
@@ -33,7 +33,7 @@ pub fn button(label: &str, kind: ButtonKind, p: &Palette) -> El {
 /// A row in the sidebar: a place, highlighted while it shows.
 pub fn place_row(label: &str, count: Option<usize>, current: bool, p: &Palette) -> El {
     let mut row = row().h(size::ROW).px(10.0).items_center().radius(radius::CONTROL)
-        .hover(p.hover).role("button").label(label).focusable(true)
+        .hover(p.hover).cursor(rune::Cursor::Pointer).role("button").label(label).focusable(true)
         .child(text(label).font(type_::STRONG).color(if current { p.ink } else { p.muted }))
         .child(el().grow(1.0));
     if let Some(count) = count {
@@ -57,7 +57,7 @@ pub fn close_glyph(p: &Palette) -> El {
 /// A square button holding a glyph, as the title row's controls are.
 pub fn icon_button(glyph: El, label: &str, p: &Palette) -> El {
     el().size(size::CONTROL, size::CONTROL).radius(radius::CONTROL).center()
-        .hover(p.hover).press(p.hover).role("button").label(label).help(label).focusable(true)
+        .hover(p.hover).press(p.hover).cursor(rune::Cursor::Pointer).role("button").label(label).help(label).focusable(true)
         .child(glyph)
 }
 
@@ -71,7 +71,7 @@ pub fn page_head(title: &str, line: &str, p: &Palette) -> El {
 /// A text tab: its label and count, underlined in ink while it's chosen.
 pub fn tab(label: &str, count: usize, chosen: bool, p: &Palette) -> El {
     let ink = if chosen { p.ink } else { p.muted };
-    col().role("tab").label(label).focusable(true)
+    col().cursor(rune::Cursor::Pointer).role("tab").label(label).focusable(true)
         .child(row().h(34.0).gap(6.0).items_center()
             .child(text(label).font(type_::STRONG).color(ink))
             .child(text(count.to_string()).font(type_::MONO_SMALL).color(p.faint)))
@@ -105,7 +105,7 @@ pub fn pane_header(title: &str, count: Option<usize>, folded: bool, p: &Palette)
     let chevron = rune::canvas(rune::Shape::new().view_box(10.0, 10.0)
         .stroke(if folded { [[3.5, 1.5], [7.0, 5.0], [3.5, 8.5]] } else { [[1.5, 3.5], [5.0, 7.0], [8.5, 3.5]] }, 1.5, p.faint))
         .size(10.0, 10.0);
-    row().h(38.0).pl(space::SM).pr(space::SM).gap(space::XS).items_center().hover(p.hover)
+    row().h(38.0).pl(space::SM).pr(space::SM).gap(space::XS).items_center().hover(p.hover).cursor(rune::Cursor::Pointer)
         .role("button").label(title).focusable(true)
         .child(text(title).font(type_::TITLE).color(p.ink))
         .children(count.map(|count| text(count.to_string()).font(type_::MONO_SMALL).color(p.faint)))
@@ -135,5 +135,5 @@ pub fn pane_row(left: El, right: Option<El>, chosen: bool, p: &Palette) -> El {
 /// quiet until hovered.
 pub fn text_action(label: &str, danger: bool, p: &Palette) -> El {
     text(label).font(type_::LABEL).color(if danger { p.danger } else { p.muted })
-        .role("button").label(label).focusable(true).hover(p.hover).px(4.0).py(2.0).radius(radius::CONTROL)
+        .role("button").label(label).focusable(true).hover(p.hover).cursor(rune::Cursor::Pointer).px(4.0).py(2.0).radius(radius::CONTROL)
 }

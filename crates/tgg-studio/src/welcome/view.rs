@@ -37,7 +37,7 @@ fn games(games: &[GameChoice], p: &Palette) -> El {
         let folder = game.path.parent().map_or_else(String::new, |folder| folder.display().to_string());
         let note = if game.slippi_plays { "Slippi plays this one" } else { "" };
         row().key(format!("welcome/game/{index}")).h(48.0).px(space::SM).gap(space::SM).items_center()
-            .fill(p.surface).hover(p.hover).role("button").label(name.clone()).focusable(true)
+            .fill(p.surface).hover(p.hover).cursor(rune::Cursor::Pointer).role("button").label(name.clone()).focusable(true)
             .child(col().grow(1.0).min_w(0.0)
                 .child(label(name).font(text::STRONG).color(p.ink).truncate())
                 .child(label(folder).font(text::MONO_SMALL).color(p.faint).truncate_middle()))

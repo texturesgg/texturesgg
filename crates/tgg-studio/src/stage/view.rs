@@ -8,12 +8,14 @@ use crate::ui::{pause_glyph, plate as plate_frame, play_glyph};
 use rune::{El, effect, el, row, text as label};
 
 /// The plate with the model drawn on it. Dragging across it turns the
-/// camera. `matched` names it to the roster's plate it opens from.
+/// camera (with Shift, moves it), and the wheel moves it in and out. `matched` names it to the roster's plate it opens from.
 pub fn plate(app: &App, matched: &str, p: &Palette) -> El {
     let caption = app.stage.shown.as_ref().map(|shown| shown.slot.file_name()).unwrap_or_default();
+    let dragging = app.stage.shown.as_ref().is_some_and(|shown| shown.gesture.is_some());
     plate_frame(p).key("stage/plate").matched(matched).grow(1.0).min_h(0.0).w_full()
         .child(effect(VIEWPORT).key("stage/viewport").w_full().h_full()
-            .cursor(rune::Cursor::Grab).on_drag(actions::orbit))
+            .cursor(if dragging { rune::Cursor::Grabbing } else { rune::Cursor::Grab })
+            .on_drag(actions::orbit).on_wheel(actions::zoom))
         .child(label(caption).font(text::MONO_SMALL).color(p.faint).absolute(space::SM, space::XS + 2.0))
 }
 
@@ -24,7 +26,7 @@ pub fn timeline(app: &App, p: &Palette) -> El {
         return el();
     }
     let toggle = el().key("stage/play").size(26.0, 26.0).radius(radius::CONTROL).fill(p.ink).center()
-        .role("button").label(if shown.playing { "Pause" } else { "Play" }).focusable(true)
+        .role("button").label(if shown.playing { "Pause" } else { "Play" }).focusable(true).cursor(rune::Cursor::Pointer)
         .child(if shown.playing { pause_glyph(p.on_ink) } else { play_glyph(p.on_ink) })
         .on_press(actions::toggle_playback);
     let move_label = shown.move_label().unwrap_or_default();

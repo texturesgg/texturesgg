@@ -244,6 +244,37 @@ fn a_pane_folds_to_its_header() {
 }
 
 #[test]
+fn dragging_across_the_stage_turns_the_camera_by_how_far_it_went() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    tap(&mut rt, "melee/fighter/Falco");
+    settle(&mut rt);
+    let before = rt.state.stage.shown.as_ref().expect("Falco is on the stage").orbit;
+    let (x, y) = rt.find("stage/viewport").expect("the stage shows");
+    rt.pointer_down(x, y);
+    rt.frame(FRAME);
+    assert_eq!(rt.cursor(), rune::Cursor::Grabbing, "a held drag grabs");
+    // Several moves to the same end turn it once: travel is from the press.
+    for step in [25.0, 50.0, 75.0, 100.0] {
+        rt.pointer_move(x + step, y);
+        rt.frame(FRAME);
+    }
+    rt.pointer_up(x + 100.0, y);
+    rt.frame(FRAME);
+    let after = rt.state.stage.shown.as_ref().expect("still on the stage").orbit;
+    assert!((after.yaw - (before.yaw - 1.0)).abs() < 1e-6, "100 points turn it a radian: {} → {}", before.yaw, after.yaw);
+    assert_eq!(after.pitch, before.pitch);
+    assert_eq!(rt.cursor(), rune::Cursor::Grab, "let go, it's ready to grab again");
+
+    let mut wheel = rune::WheelEvent::default();
+    (wheel.x, wheel.y, wheel.dy) = (x, y, 100.0);
+    rt.wheel_event(wheel);
+    rt.frame(FRAME);
+    let zoomed = rt.state.stage.shown.as_ref().expect("still on the stage").orbit;
+    assert!(zoomed.zoom < after.zoom, "the wheel brings the camera in: {} → {}", after.zoom, zoomed.zoom);
+}
+
+#[test]
 fn going_to_another_place_takes_the_fighter_off_the_stage() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));

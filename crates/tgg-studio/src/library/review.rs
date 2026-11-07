@@ -67,7 +67,7 @@ fn colors(app: &App, index: usize, slot: Option<MeleeSlot>, p: &Palette) -> Opti
             .font(text::LABEL).color(if chosen { p.ink } else { p.muted })
             .px(8.0).py(3.0).radius(radius::CONTROL)
             .fill(if chosen { p.selected } else { rune::Color::TRANSPARENT }).border(1.0, if chosen { p.accent_text } else { p.line })
-            .hover(p.hover).role("radio").label(costume.color.name()).checked(chosen).focusable(true)
+            .hover(p.hover).cursor(rune::Cursor::Pointer).role("radio").label(costume.color.name()).checked(chosen).focusable(true)
             .on_press(move |app: &mut App| actions::set_review_slot(app, index, to))
     });
     Some(row().flex_wrap().gap(6.0).children(chips))

@@ -76,7 +76,7 @@ fn card(app: &App, subject: Subject, picture: Option<MeleeSlot>, status: Option<
             .child(label(words).font(text::SMALL).color(if mine { p.muted } else { p.faint })),
         None => row().child(label(" ").font(text::SMALL)),
     };
-    col().w(PLATE_WIDTH).gap(6.0).role("button").label(name).focusable(true)
+    col().w(PLATE_WIDTH).gap(6.0).cursor(rune::Cursor::Pointer).role("button").label(name).focusable(true)
         .child(plate)
         .child(col().gap(1.0).child(label(name).font(text::STRONG).color(p.ink).truncate()).child(line))
 }

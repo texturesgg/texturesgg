@@ -34,7 +34,7 @@ pub fn view(app: &App, subject: Subject, p: &Palette) -> El {
 /// "Melee" goes back.
 pub fn crumbs(subject: Subject, p: &Palette) -> El {
     row().gap(space::XS).items_center()
-        .child(label("Melee").key("melee/crumb").font(text::STRONG).color(p.muted).role("button").focusable(true)
+        .child(label("Melee").key("melee/crumb").font(text::STRONG).color(p.muted).role("button").focusable(true).cursor(rune::Cursor::Pointer)
             .on_press(|app: &mut App| {
                 actions::back(app);
             }))
@@ -55,7 +55,7 @@ fn costumes(app: &App, p: &Palette) -> El {
                 let slot = costume.slot(fighter);
                 pane_row(label(costume.color.name()).font(text::STRONG).color(p.ink), Some(state_word(melee, slot, p)), showing == Some(slot), p)
                     .key(format!("melee/costume/{}", slot.file_name()))
-                    .role("button").label(costume.color.name()).focusable(true)
+                    .role("button").label(costume.color.name()).focusable(true).cursor(rune::Cursor::Pointer)
                     .on_press(move |app: &mut App| actions::choose_costume(app, slot))
             }))
             .children(showing.map(|slot| slot_actions(app, slot, p)))
@@ -89,7 +89,7 @@ fn shared(app: &App, p: &Palette) -> Option<El> {
                 let action = model.action();
                 pane_row(label(model.name()).font(text::BODY).color(p.ink), None, playing == Some(action), p)
                     .key(format!("melee/shared/{}", model.name()))
-                    .role("button").label(model.name()).focusable(true)
+                    .role("button").label(model.name()).focusable(true).cursor(rune::Cursor::Pointer)
                     .help(format!("Plays the move that shows it ({action})"))
                     .on_press(move |app: &mut App| stage::play_action(app, action))
             });
@@ -121,7 +121,7 @@ fn moves(app: &App, p: &Palette) -> Option<El> {
                 if let Some(reason) = refused {
                     entry = entry.help(reason.clone());
                 } else {
-                    entry = entry.role("button").label(title.clone()).focusable(true)
+                    entry = entry.role("button").label(title.clone()).focusable(true).cursor(rune::Cursor::Pointer)
                         .on_press(move |app: &mut App| stage::play(app, animation));
                 }
                 entry
@@ -161,7 +161,7 @@ fn slot_actions(app: &App, slot: MeleeSlot, p: &Palette) -> El {
         if in_slot(id) {
             row
         } else {
-            row.role("button").label(format!("Install {}", skin.name)).focusable(true).help("Install it into this slot")
+            row.role("button").label(format!("Install {}", skin.name)).focusable(true).cursor(rune::Cursor::Pointer).help("Install it into this slot")
                 .on_press(move |app: &mut App| library::install(app, id, slot))
         }
     }).collect::<Vec<_>>();

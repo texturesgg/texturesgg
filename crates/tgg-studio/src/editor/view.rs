@@ -76,7 +76,7 @@ fn textures(document: &Document, p: &Palette) -> El {
                 .child(label(texture_detail(texture)).font(text::MONO_SMALL).color(p.faint).truncate()));
         pane_row(left, None, document.selected == Some(index), p)
             .key(format!("editor/texture/{index}"))
-            .role("button").label(document.listing.name(index)).focusable(true)
+            .role("button").label(document.listing.name(index)).focusable(true).cursor(rune::Cursor::Pointer)
             .on_press(move |app: &mut App| actions::select(app, Some(index)))
     });
     let header = pane_header("Textures", Some(open.textures().len()), false, p).key("editor/pane/textures");
