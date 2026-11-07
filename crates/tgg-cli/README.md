@@ -89,8 +89,8 @@ installed this way once and you removed stays removed (`<data>/tgg/default-mods.
 lists them). `tgg mod disable <id>` turns one off.
 
 On Windows the game needs Microsoft's Visual C++ runtime (`msvcp140.dll`,
-`vcruntime140.dll`, `vcruntime140_1.dll`); `port install` and `port run` check for it
-and name the fix, `winget install Microsoft.VCRedist.2015+.x64`.
+`msvcp140_atomic_wait.dll`, `vcruntime140.dll`, `vcruntime140_1.dll`); `port install` and
+`port run` check for it and name the fix, `winget install Microsoft.VCRedist.2015+.x64`.
 
 An SDK is the headers, symbol list and examples mods build against. It installs to
 `~/.local/share/tgg/sdks/<game layout>/`, so releases that share a game layout share one

@@ -299,7 +299,12 @@ pub fn run(command: PortCommand) -> Result<()> {
 
 /// The Microsoft C++ runtime DLLs the Windows build's libraries (Dawn, the
 /// shader compiler, nod) link, which Windows doesn't always have.
-const VC_RUNTIME: &[&str] = &["msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"];
+const VC_RUNTIME: &[&str] = &[
+    "msvcp140.dll",
+    "msvcp140_atomic_wait.dll",
+    "vcruntime140.dll",
+    "vcruntime140_1.dll",
+];
 /// How to get them.
 pub const VC_RUNTIME_FIX: &str = "winget install Microsoft.VCRedist.2015+.x64";
 
