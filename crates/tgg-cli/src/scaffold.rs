@@ -90,18 +90,12 @@ pub fn new(new: New) -> Result<()> {
     }
     build::read_manifest(dir)?;
 
-    // A repository tgg starts gets a first commit, so the mod's history
-    // starts from the template; one that was already there is left alone
-    if git(dir, &["rev-parse", "--git-dir"]).is_err() {
-        git(dir, &["init", "--quiet", "--initial-branch=main"])?;
-        let message = format!("Start {id} from the SDK's {example}");
-        if let Err(error) = git(dir, &["add", "--all"])
-            .and_then(|_| git(dir, &["commit", "--quiet", "--message", &message]))
-        {
-            eprintln!("Made a git repository but not its first commit: {error:#}");
-        }
+    if dir.file_name().is_some_and(|folder| folder == id.as_str()) {
+        println!("Created {id} from the SDK's {example}");
+    } else {
+        println!("Created {id} in {} from the SDK's {example}", dir.display());
     }
-    println!("Created {id} in {} from the SDK's {example}", dir.display());
+    start_repository(dir, &format!("Start {id} from the SDK's {example}"));
 
     // A first build writes build/compile_commands.json, so an editor finds
     // the game's headers right away.
@@ -111,10 +105,50 @@ pub fn new(new: New) -> Result<()> {
         debug: false,
     };
     match build::build(dir, &options) {
-        Ok(_) => println!("Built it; tgg mod dev runs it in the game"),
+        Ok(_) if dir == Path::new(".") => println!("Built it; tgg mod dev runs it in the game"),
+        Ok(_) => println!(
+            "Built it. To run it in the game: cd {}, then tgg mod dev",
+            dir.display()
+        ),
         Err(error) => eprintln!("It doesn't build yet: {error:#}"),
     }
     Ok(())
+}
+
+/// Make `dir` a git repository whose first commit is the template, so the
+/// mod's history starts from it. A repository that was already there is left
+/// alone. Without git, or without a name and email for git to commit with,
+/// it says what to do and goes on: a mod builds without a repository.
+fn start_repository(dir: &Path, message: &str) {
+    if git(dir, &["--version"]).is_err() {
+        println!(
+            "git isn't installed, so there's no repository yet (tgg doctor says how to get it)"
+        );
+        return;
+    }
+    if git(dir, &["rev-parse", "--git-dir"]).is_ok() {
+        return;
+    }
+    if let Err(error) = git(dir, &["init", "--quiet", "--initial-branch=main"]) {
+        eprintln!("Couldn't make a git repository: {error:#}");
+        return;
+    }
+    let who = ["user.name", "user.email"]
+        .iter()
+        .all(|key| git(dir, &["config", key]).is_ok_and(|value| !value.is_empty()));
+    if !who {
+        println!(
+            "Made a git repository. To commit, tell git who you are:\n  \
+             git config --global user.name \"Your Name\"\n  \
+             git config --global user.email you@example.com"
+        );
+        return;
+    }
+    if let Err(error) = git(dir, &["add", "--all"])
+        .and_then(|_| git(dir, &["commit", "--quiet", "--message", message]))
+    {
+        eprintln!("Made a git repository but not its first commit: {error:#}");
+    }
 }
 
 /// A new mod's README: its name and id, and how to build and run it.

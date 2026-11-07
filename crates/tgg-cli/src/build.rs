@@ -5,7 +5,7 @@ use anyhow::{Context, Result, anyhow, bail, ensure};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tgg_mod::sdk::SdkError;
-use tgg_mod::{Files, Hooks, Manifest, Package, Sdk, Symbols, decls, files, sdk};
+use tgg_mod::{Files, Hooks, Manifest, Package, Sdk, Symbols, decls, files, manifest, sdk};
 
 /// The parts of a mod's folder that are its source, beside `manifest.json`.
 pub const SOURCE: &[&str] = &["src", "include", "files", "assets"];
@@ -47,6 +47,23 @@ impl Folders {
             self.include,
         )?)
     }
+}
+
+/// Pack a built mod's folder, as the SDK's `tgg_add_mod` writes it: its
+/// manifest, its library (the manifest's entry, else `mod.so` or `mod.dll`)
+/// and its folders. A folder without a library is a mod of files only.
+pub fn pack_folder(dir: &Path) -> Result<Package> {
+    let manifest = read_manifest(dir)?;
+    let library = match &manifest.entry {
+        Some(entry) => Some(read(&dir.join(entry))?),
+        None => [manifest::DEFAULT_ENTRY, manifest::WINDOWS_ENTRY]
+            .iter()
+            .map(|name| dir.join(name))
+            .find(|path| path.is_file())
+            .map(|path| read(&path))
+            .transpose()?,
+    };
+    Folders::read(dir)?.pack(manifest, library)
 }
 
 /// The C sources under `dir`'s src/ and its other folders; a mod needs
@@ -121,8 +138,21 @@ pub fn build(dir: &Path, options: &Options) -> Result<Built> {
     let build = root.join(BUILD);
     let project = build.join("tgg-project");
     let binary = build.join("tgg");
-    write_project(&project, &sdk, &root, &sources)?;
+    let includes = include_dirs(&root, &manifest);
+    write_project(&project, &sdk, &root, &sources, &includes)?;
 
+    // CMake keeps the generator a build folder started with, so a folder
+    // made with another one starts over.
+    let generator = crate::toolchain::generator()?;
+    let cache = binary.join("CMakeCache.txt");
+    if let Ok(text) = std::fs::read_to_string(&cache) {
+        let used = text
+            .lines()
+            .find_map(|line| line.strip_prefix("CMAKE_GENERATOR:INTERNAL="));
+        if used != Some(generator.unwrap_or("Unix Makefiles")) {
+            std::fs::remove_dir_all(&binary).with_context(|| binary.display().to_string())?;
+        }
+    }
     let mut configure = Command::new("cmake");
     configure
         .arg("-S")
@@ -134,10 +164,26 @@ pub fn build(dir: &Path, options: &Options) -> Result<Built> {
             "-DTGG_MOD_DEBUG={}",
             if options.debug { "ON" } else { "OFF" }
         ));
-    // Ninja when it's there; a new build folder only, since CMake keeps the
-    // generator it started with.
-    if !binary.join("CMakeCache.txt").exists() && on_path("ninja") {
-        configure.args(["-G", "Ninja"]);
+    if let Some(generator) = generator {
+        configure.args(["-G", generator]);
+    }
+    // An SDK that needs one (macOS's) ships the toolchain file mods build
+    // with, which picks the GCC by TGG_MACOS_GCC.
+    let toolchain = sdk.root.join(TOOLCHAIN);
+    if toolchain.is_file() {
+        // A path, which the toolchain file takes it as: `gcc` is looked up.
+        let gcc = match options.cc.to_str() {
+            Some(name) if !name.contains(std::path::is_separator) => {
+                crate::paths::find_program(name).unwrap_or_else(|| options.cc.to_owned())
+            }
+            _ => options.cc.to_owned(),
+        };
+        configure
+            .arg(format!("-DCMAKE_TOOLCHAIN_FILE={}", toolchain.display()))
+            .arg(format!("-DTGG_MACOS_GCC={}", gcc.display()))
+            // CMake's compiler checks read the toolchain file again in projects
+            // of their own, which see the environment but not this cache.
+            .env("TGG_MACOS_GCC", &gcc);
     }
     run(configure.arg("--log-level=WARNING"), "cmake")?;
     run(
@@ -149,10 +195,11 @@ pub fn build(dir: &Path, options: &Options) -> Result<Built> {
     if commands.is_file() {
         std::fs::copy(&commands, build.join("compile_commands.json"))?;
     }
-    let library = binary
-        .join("mods")
-        .join(manifest.id.as_str())
-        .join(manifest.library_name());
+    let name = manifest
+        .entry
+        .clone()
+        .unwrap_or_else(|| manifest::default_entry(Some(&sdk.target)).to_owned());
+    let library = binary.join("mods").join(manifest.id.as_str()).join(name);
     let bytes = read(&library)?;
     let symbols = Symbols::open(&sdk.symbols)?;
     let canonical = check_library(&bytes, &sdk, &symbols)?;
@@ -162,9 +209,29 @@ pub fn build(dir: &Path, options: &Options) -> Result<Built> {
     })
 }
 
-fn on_path(program: &str) -> bool {
-    std::env::var_os("PATH")
-        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(program).is_file()))
+/// The toolchain file an SDK ships when mods need one on its system.
+const TOOLCHAIN: &str = "toolchain.cmake";
+
+/// Header folders a mod's sources see besides the SDK's: its own include/
+/// (the API it offers other mods), and the include/ of each mod it depends on,
+/// from the game's mods folder.
+fn include_dirs(root: &Path, manifest: &Manifest) -> Vec<PathBuf> {
+    let mut dirs = vec![root.join("include")];
+    let mods = tgg_mod::ModsDir::game();
+    for id in manifest.depends.keys() {
+        let installed = [true, false]
+            .into_iter()
+            .map(|enabled| mods.folder(id, enabled))
+            .find(|folder| folder.join("manifest.json").is_file());
+        match installed {
+            Some(folder) => dirs.push(folder.join("include")),
+            None => eprintln!(
+                "{id} isn't installed, so this build can't use its headers; tgg mod install it first"
+            ),
+        }
+    }
+    dirs.retain(|dir| dir.is_dir());
+    dirs
 }
 
 /// Run `command`, failing with `what` if it can't start or doesn't succeed.
@@ -180,10 +247,23 @@ fn run(command: &mut Command, what: &str) -> Result<()> {
 
 /// The CMake project that builds the mod at `root` with the SDK: its sources
 /// and manifest by absolute path, so the project lives apart from the mod.
-fn write_project(project: &Path, sdk: &Sdk, root: &Path, sources: &[PathBuf]) -> Result<()> {
+fn write_project(
+    project: &Path,
+    sdk: &Sdk,
+    root: &Path,
+    sources: &[PathBuf],
+    includes: &[PathBuf],
+) -> Result<()> {
     // CMake reads `\` as an escape, and quotes end a string.
     let quote = |path: &Path| format!("\"{}\"", path.display().to_string().replace('\\', "/"));
     let sources: Vec<String> = sources.iter().map(|s| quote(&root.join(s))).collect();
+    // A folder's include directories reach every target made in it after.
+    let includes = if includes.is_empty() {
+        String::new()
+    } else {
+        let dirs: Vec<String> = includes.iter().map(|dir| quote(dir)).collect();
+        format!("include_directories(\n    {})\n", dirs.join("\n    "))
+    };
     let text = format!(
         "# Written by tgg mod build: the mod in {root}, built with the SDK's TggMod.cmake.\n\
          cmake_minimum_required(VERSION 3.25)\n\
@@ -192,6 +272,7 @@ fn write_project(project: &Path, sdk: &Sdk, root: &Path, sources: &[PathBuf]) ->
          set(TGG_MODS_DIR \"${{CMAKE_BINARY_DIR}}/mods\")\n\
          include(\"${{TGG_SDK}}/TggMod.cmake\")\n\
          tgg_use_sdk(\"${{TGG_SDK}}\")\n\
+         {includes}\
          tgg_add_mod(mod\n    MANIFEST {manifest}\n    SOURCES\n        {sources})\n",
         root = root.display(),
         sdk = quote(&sdk.root),

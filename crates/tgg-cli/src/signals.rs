@@ -70,11 +70,17 @@ fn kill(pid: u32) {
     let _ = kill(nix::unistd::Pid::from_raw(pid as i32), Signal::SIGKILL);
 }
 
+// Ctrl-C reaches a console program on Windows through the console it shares
+// with tgg.
 #[cfg(not(unix))]
 fn terminate(_: u32) {}
 
 #[cfg(not(unix))]
-fn kill(_: u32) {}
+fn kill(pid: u32) {
+    let _ = std::process::Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .output();
+}
 
 /// Run `command` to the end with its output inherited, passing Ctrl-C and
 /// SIGTERM on to it.

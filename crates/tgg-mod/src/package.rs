@@ -11,7 +11,7 @@
 
 use crate::decls::{self, DeclError};
 use crate::files::{self, FileError, Files};
-use crate::manifest::{DEFAULT_ENTRY, Manifest, ManifestError};
+use crate::manifest::{self, DEFAULT_ENTRY, Manifest, ManifestError, WINDOWS_ENTRY};
 use sha2::{Digest, Sha256};
 use std::io::{Cursor, Read, Write};
 
@@ -90,7 +90,10 @@ impl Package {
         match &library {
             Some(library) => {
                 let declared = decls::read(library)?;
-                manifest.entry = Some(manifest.library_name().to_owned());
+                if manifest.entry.is_none() {
+                    manifest.entry =
+                        Some(manifest::default_entry(declared.target.as_deref()).to_owned());
+                }
                 manifest.game_abi = Some(declared.game_abi.ok_or(PackageError::NoGameLayout)?);
                 manifest.target = Some(declared.target.ok_or(PackageError::NoTarget)?);
                 manifest.api_version =
@@ -133,14 +136,15 @@ impl Package {
         let mut archive = zip::ZipArchive::new(Cursor::new(bytes))?;
         let manifest =
             Manifest::parse(&read_entry(&mut archive, "manifest.json", MANIFEST_LIMIT)?)?;
-        // With no entry named, a package still has a library if it holds the
-        // default one.
-        let library = match &manifest.entry {
-            Some(entry) => Some(read_entry(&mut archive, entry, LIBRARY_LIMIT)?),
-            None if archive.index_for_name(DEFAULT_ENTRY).is_some() => {
-                Some(read_entry(&mut archive, DEFAULT_ENTRY, LIBRARY_LIMIT)?)
-            }
-            None => None,
+        // With no entry named, a package still has a library if it holds
+        // one of the default names.
+        let default = [DEFAULT_ENTRY, WINDOWS_ENTRY]
+            .into_iter()
+            .find(|name| archive.index_for_name(name).is_some());
+        let library = match (&manifest.entry, default) {
+            (Some(entry), _) => Some(read_entry(&mut archive, entry, LIBRARY_LIMIT)?),
+            (None, Some(name)) => Some(read_entry(&mut archive, name, LIBRARY_LIMIT)?),
+            (None, None) => None,
         };
         match &library {
             Some(library) => {

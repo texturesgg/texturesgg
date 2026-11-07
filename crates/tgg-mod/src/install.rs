@@ -55,17 +55,13 @@ impl ModsDir {
         Self { root }
     }
 
-    /// The folder the game loads mods from: `$TGG_MODS_DIR`, else
-    /// `$XDG_DATA_HOME/tgg-melee/mods`, else `~/.local/share/tgg-melee/mods`,
-    /// in that order, as the game resolves it. Every installed version of the
-    /// game shares it.
+    /// The folder the game loads mods from: `$TGG_MODS_DIR`, else `mods` in
+    /// the game's data folder ([`game_data_dir`]). Every installed version of
+    /// the game shares it.
     pub fn game() -> Self {
-        let env = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty());
-        let root = match (env("TGG_MODS_DIR"), env("XDG_DATA_HOME")) {
-            (Some(dir), _) => PathBuf::from(dir),
-            (None, Some(data)) => PathBuf::from(data).join("tgg-melee/mods"),
-            (None, None) => PathBuf::from(env("HOME").unwrap_or_else(|| ".".into()))
-                .join(".local/share/tgg-melee/mods"),
+        let root = match env("TGG_MODS_DIR") {
+            Some(dir) => PathBuf::from(dir),
+            None => game_data_dir().join("mods"),
         };
         Self { root }
     }
@@ -214,6 +210,36 @@ impl ModsDir {
             return Ok(());
         }
         std::fs::rename(from, self.folder(id, enabled))
+    }
+}
+
+fn env(name: &str) -> Option<std::ffi::OsString> {
+    std::env::var_os(name).filter(|value| !value.is_empty())
+}
+
+/// The folder the game keeps its pack, saves and mods in, as it resolves it:
+/// `$XDG_DATA_HOME/tgg-melee` when that is set, else
+/// `%LOCALAPPDATA%\tgg-melee` on Windows,
+/// `~/Library/Application Support/tgg-melee` on macOS and
+/// `~/.local/share/tgg-melee` elsewhere.
+pub fn game_data_dir() -> PathBuf {
+    if let Some(data) = env("XDG_DATA_HOME") {
+        return PathBuf::from(data).join("tgg-melee");
+    }
+    if cfg!(windows)
+        && let Some(local) = env("LOCALAPPDATA")
+    {
+        return PathBuf::from(local).join("tgg-melee");
+    }
+    let home = PathBuf::from(
+        env("HOME")
+            .or_else(|| env("USERPROFILE"))
+            .unwrap_or_else(|| ".".into()),
+    );
+    if cfg!(target_os = "macos") {
+        home.join("Library/Application Support/tgg-melee")
+    } else {
+        home.join(".local/share/tgg-melee")
     }
 }
 

@@ -130,8 +130,20 @@ pub struct Manifest {
     pub assets: Vec<ModFile>,
 }
 
-/// The library's name when the manifest names none.
+/// The library's name when the manifest names none: `mod.so`, or
+/// [`WINDOWS_ENTRY`] for a Windows build.
 pub const DEFAULT_ENTRY: &str = "mod.so";
+/// A Windows mod's library when the manifest names none.
+pub const WINDOWS_ENTRY: &str = "mod.dll";
+
+/// The library's name for a mod built for `target` that names no entry.
+pub fn default_entry(target: Option<&str>) -> &'static str {
+    if target.is_some_and(|target| target.contains("-windows")) {
+        WINDOWS_ENTRY
+    } else {
+        DEFAULT_ENTRY
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum ManifestError {
@@ -175,7 +187,9 @@ impl Manifest {
 
     /// The library's file name in a package or a mod's folder.
     pub fn library_name(&self) -> &str {
-        self.entry.as_deref().unwrap_or(DEFAULT_ENTRY)
+        self.entry
+            .as_deref()
+            .unwrap_or_else(|| default_entry(self.target.as_deref()))
     }
 
     pub fn to_json(&self) -> String {
