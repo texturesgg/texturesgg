@@ -2,7 +2,8 @@
 //! folder, and run the game, again on every change with `--watch`.
 //!
 //! The build is installed to `build/dev/<id>/` in the mod's folder, and the
-//! mods folder gets a link `<id>` to it. A registry install of the same mod
+//! mods folder gets a link `<id>` to it, or on Windows a copy of it (Windows
+//! won't follow a junction a standard user made). A registry install of the same mod
 //! there is moved aside to `.~dev-<id>` (the game skips dot folders) and put
 //! back when the session ends. A dev build never matches a registry build's
 //! hash, so it never matches a netplay peer's.
@@ -92,7 +93,7 @@ pub fn dev(dev: Dev) -> Result<()> {
     let result = if dev.gdb {
         run_gdb(&installed, &iso, dev.args)
     } else if dev.watch {
-        watch(&dev, &installed, &iso, &id, &options, &signals)
+        watch(&dev, &installed, &iso, &id, &options, &signals, &link)
     } else {
         let mut game = Game::start(&installed, &iso, dev.args, &id)?;
         game.wait()
@@ -153,11 +154,21 @@ fn red(text: &str) -> String {
     }
 }
 
-/// The link from the mods folder to the dev build, and the registry install
-/// it moved aside.
+/// The mods folder's `<id>`, a link to the dev build (on Windows a copy of
+/// it), and the registry install it moved aside.
 struct Link {
     link: PathBuf,
+    build: PathBuf,
     aside: PathBuf,
+}
+
+/// The file that marks a mods folder's `<id>` as a copy of a dev build.
+const DEV_COPY: &str = ".tgg-dev";
+
+/// Whether `link` is what a dev session put there: a link, or a marked copy.
+fn is_dev(link: &Path) -> bool {
+    std::fs::symlink_metadata(link).is_ok_and(|meta| meta.file_type().is_symlink())
+        || link.join(DEV_COPY).is_file()
 }
 
 impl Link {
@@ -167,36 +178,65 @@ impl Link {
         let link = mods.folder(id, true);
         // `~` can't appear in an id, so this never names another mod.
         let aside = root.join(format!(".~dev-{id}"));
-        match std::fs::symlink_metadata(&link) {
-            // A link left by a session that didn't end cleanly.
-            Ok(meta) if meta.file_type().is_symlink() => remove_link(&link)?,
-            Ok(_) => {
-                ensure!(
-                    !aside.exists(),
-                    "{} and {} both exist; keep the one you want as {}",
-                    link.display(),
-                    aside.display(),
-                    link.display()
-                );
-                std::fs::rename(&link, &aside)
-                    .with_context(|| format!("moving {} aside", link.display()))?;
-                eprintln!("Moved the installed {id} aside for this session");
-            }
-            Err(_) => {}
+        if is_dev(&link) {
+            // Left by a session that didn't end cleanly.
+            remove_dev(&link)?;
+        } else if std::fs::symlink_metadata(&link).is_ok() {
+            ensure!(
+                !aside.exists(),
+                "{} and {} both exist; keep the one you want as {}",
+                link.display(),
+                aside.display(),
+                link.display()
+            );
+            std::fs::rename(&link, &aside)
+                .with_context(|| format!("moving {} aside", link.display()))?;
+            eprintln!("Moved the installed {id} aside for this session");
         }
-        symlink(&std::path::absolute(build)?, &link)?;
-        Ok(Self { link, aside })
+        let made = Self {
+            link,
+            build: std::path::absolute(build)?,
+            aside,
+        };
+        made.place()?;
+        Ok(made)
+    }
+
+    #[cfg(unix)]
+    fn place(&self) -> Result<()> {
+        std::os::unix::fs::symlink(&self.build, &self.link)
+            .with_context(|| self.link.display().to_string())
+    }
+
+    #[cfg(windows)]
+    fn place(&self) -> Result<()> {
+        copy_dir(&self.build, &self.link)?;
+        let marker = self.link.join(DEV_COPY);
+        std::fs::write(&marker, b"").with_context(|| marker.display().to_string())
+    }
+
+    /// After a rebuild: a copy is made again; a link already shows it.
+    fn refresh(&self) -> Result<()> {
+        if cfg!(windows) {
+            remove_dev(&self.link)?;
+            self.place()?;
+        }
+        Ok(())
     }
 
     /// Leave the link in place.
     fn keep(self) {
-        eprintln!("Left {} linked to the dev build", self.link.display());
+        if cfg!(windows) {
+            eprintln!("Left a copy of the dev build in {}", self.link.display());
+        } else {
+            eprintln!("Left {} linked to the dev build", self.link.display());
+        }
     }
 
     /// Remove the link and put back what it replaced.
     fn restore(self) -> Result<()> {
-        if std::fs::symlink_metadata(&self.link).is_ok_and(|meta| meta.file_type().is_symlink()) {
-            remove_link(&self.link)?;
+        if is_dev(&self.link) {
+            remove_dev(&self.link)?;
         }
         if self.aside.exists() && !self.link.exists() {
             std::fs::rename(&self.aside, &self.link)
@@ -206,39 +246,33 @@ impl Link {
     }
 }
 
-/// Link `link` to the folder `target`: a symbolic link, or on Windows a
-/// directory junction, which needs no special rights.
-#[cfg(unix)]
-fn symlink(target: &Path, link: &Path) -> Result<()> {
-    std::os::unix::fs::symlink(target, link).with_context(|| link.display().to_string())
-}
-
+/// Copy the folder `from` to `to`, which doesn't exist yet.
 #[cfg(windows)]
-fn symlink(target: &Path, link: &Path) -> Result<()> {
-    let output = Command::new("cmd")
-        .arg("/C")
-        .arg("mklink")
-        .arg("/J")
-        .arg(link)
-        .arg(target)
-        .output()
-        .context("running mklink")?;
-    ensure!(
-        output.status.success(),
-        "linking {} to {}: {}",
-        link.display(),
-        target.display(),
-        String::from_utf8_lossy(&output.stderr).trim()
-    );
+fn copy_dir(from: &Path, to: &Path) -> Result<()> {
+    std::fs::create_dir(to).with_context(|| to.display().to_string())?;
+    for entry in std::fs::read_dir(from).with_context(|| from.display().to_string())? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), &target).with_context(|| target.display().to_string())?;
+        }
+    }
     Ok(())
 }
 
-/// Remove the link at `link`, not what it points to.
-fn remove_link(link: &Path) -> Result<()> {
-    // A junction or a link to a folder is a folder to Windows.
-    std::fs::remove_file(link)
-        .or_else(|_| std::fs::remove_dir(link))
-        .with_context(|| link.display().to_string())
+/// Remove a dev session's link, not what it points to, or its copy.
+fn remove_dev(link: &Path) -> Result<()> {
+    let removed = if link.join(DEV_COPY).is_file()
+        && !std::fs::symlink_metadata(link).is_ok_and(|meta| meta.file_type().is_symlink())
+    {
+        std::fs::remove_dir_all(link)
+    } else {
+        // A link to a folder is a folder to Windows.
+        std::fs::remove_file(link).or_else(|_| std::fs::remove_dir(link))
+    };
+    removed.with_context(|| link.display().to_string())
 }
 
 /// A running game, its output passed through with this mod's refusals in
@@ -371,6 +405,7 @@ fn watch(
     id: &ModId,
     options: &Options,
     signals: &Signals,
+    link: &Link,
 ) -> Result<()> {
     let mut seen = snapshot(dev.dir);
     let mut game = Some(Game::start(installed, iso, dev.args, id)?);
@@ -397,6 +432,7 @@ fn watch(
                 if let Some(mut running) = game.take() {
                     running.stop();
                 }
+                link.refresh()?;
                 game = Some(Game::start(installed, iso, dev.args, id)?);
             }
             Err(error) => eprintln!("{}", red(&format!("{error:#}"))),
