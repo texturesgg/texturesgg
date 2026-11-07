@@ -41,7 +41,26 @@ it has no library and no game layout, so one package fits every build of the gam
   function), shared files (the mod that loads later wins), and unmet dependencies and
   imports.
 
-It leaves downloading, signing, and any user interface to its callers.
+## Distribution
+
+How a player gets the game and its mods, for the app and the `tgg` command to build on
+(`docs/mod-distribution.md` is the contract). Blocking, with typed errors that read well to
+a player; long work takes a progress callback and a cancel flag.
+
+- **Fetching.** The `Net` trait: `HttpNet` over HTTPS (or a mirror folder), and `FakeNet`, a
+  registry and release mirror in memory for tests.
+- **Ports.** tgg-melee releases from the mirror, installed ports (one current), launching the
+  game, and the pid file that tells every tgg the game is running.
+- **Registry.** The textures.gg registry's sets and its catalog for one game layout.
+- **Plans.** What installing a set, some mods, or the updates will do, resolved against one
+  catalog snapshot with no network; applying one downloads each package, checks its SHA-256
+  and installs it atomically.
+- **Local state.** What a mods folder holds, with no network: each mod on or off, where it
+  came from and whether it fits the game; each installed set's status; conflicts, overlaps and
+  unmet dependencies. `mods.lock.json` records what tgg installed (its format is in the
+  `lock` module's docs).
+
+It leaves signing and any user interface to its callers.
 
 The `tgg` command ([`tgg-cli`](../tgg-cli)) builds, publishes and installs mods with it.
 

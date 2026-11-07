@@ -411,6 +411,7 @@ fn write_catalog(output: &Path, packages: &[PathBuf]) -> Result<()> {
     mods.sort_by(|a, b| a.manifest.id.cmp(&b.manifest.id));
     let catalog = Catalog {
         schema: catalog::SCHEMA,
+        snapshot: None,
         mods,
     };
     std::fs::write(output, catalog.to_json()).with_context(|| output.display().to_string())?;
