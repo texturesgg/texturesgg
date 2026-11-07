@@ -171,12 +171,19 @@ pub fn build(dir: &Path, options: &Options) -> Result<Built> {
     // with, which picks the GCC by TGG_MACOS_GCC.
     let toolchain = sdk.root.join(TOOLCHAIN);
     if toolchain.is_file() {
+        // A path, which the toolchain file takes it as: `gcc` is looked up.
+        let gcc = match options.cc.to_str() {
+            Some(name) if !name.contains(std::path::is_separator) => {
+                crate::paths::find_program(name).unwrap_or_else(|| options.cc.to_owned())
+            }
+            _ => options.cc.to_owned(),
+        };
         configure
             .arg(format!("-DCMAKE_TOOLCHAIN_FILE={}", toolchain.display()))
-            .arg(format!("-DTGG_MACOS_GCC={}", options.cc.display()))
+            .arg(format!("-DTGG_MACOS_GCC={}", gcc.display()))
             // CMake's compiler checks read the toolchain file again in projects
             // of their own, which see the environment but not this cache.
-            .env("TGG_MACOS_GCC", options.cc);
+            .env("TGG_MACOS_GCC", &gcc);
     }
     run(configure.arg("--log-level=WARNING"), "cmake")?;
     run(
