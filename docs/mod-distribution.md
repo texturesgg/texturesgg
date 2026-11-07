@@ -71,10 +71,16 @@ The port converts the disc it's given into its own copies of the game's files,
 keyed by each file's contents, and reads mods' files first. A disc with edited
 files works, but netplay and replays assume every player has the same game
 files, and the disc isn't part of the netplay identity. So the port wants a
-clean NTSC 1.02 disc. Skins for the port come as mods with game files
-(`files/`), which a texture-only costume is free to use in netplay. The app
-keeps the player's clean disc for the port; a disc it has written skins into
-is for Dolphin. `launch` takes the clean one.
+clean NTSC 1.02 disc, and `launch` takes the clean one. A disc the app has
+written skins into is for Dolphin.
+
+## Open questions
+
+- **Skins in the port.** A mod can carry game files (`files/`), and a
+  texture-only costume is free to use in netplay, so a skin from the player's
+  library could be installed into the port as a generated files mod instead of
+  only into a disc. Whether the app does that, and who builds it, is for the
+  owner to decide.
 
 ## Registry (HTTP, site)
 
@@ -217,10 +223,12 @@ app's flow tests drive the whole Mods place with no network.
   holds it.
 - **While the game runs**: the game reads its mods once, at start, so changes
   made while it runs apply next start. On Windows a running game's mod
-  libraries can't be replaced, so `launch` returns a `Running` handle the app
-  keeps, and while it's alive `apply`, `set_enabled` and `uninstall` refuse
-  with `GameRunning` (on every system, for one behavior). The CLI checks for a
-  running game the same way through a pid file in the mods folder.
+  libraries can't be replaced, so while the game runs `apply`, `set_enabled`,
+  `uninstall` and `uninstall_set` refuse with `GameRunning`, on every system,
+  for one behavior. `launch` writes a pid file in the mods folder and returns
+  a `Running` handle; the crate's check reads the pid file, so it holds
+  whichever front end launched the game, and after the app is closed and
+  reopened.
 
 ## Netplay
 
