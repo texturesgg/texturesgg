@@ -91,6 +91,10 @@ impl Viewport {
             gpu.spawns.reset();
         }
         gpu.renderer.set_orbit(queue, shown.orbit)?;
+        // The camera as the model allows it (pitch short of the poles, the pan
+        // within its bounds, the zoom in range), so a drag past a limit turns
+        // back from the limit, not from somewhere past it.
+        shown.orbit = gpu.renderer.orbit();
         let ticks = advance(&mut self.clock, shown, gpu, f.dt)?;
         let turned = gpu.posed_orbit != Some(gpu.renderer.orbit()) && faces_camera(shown, &gpu.spawns);
         if ticks > 0 || std::mem::take(&mut shown.posed) || turned {

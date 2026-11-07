@@ -9,14 +9,11 @@ use melee_dat::MeleeSlot;
 use rune::{Drag, Phase, Tx, WheelEvent};
 
 /// How far a drag across the stage turns the camera, in radians per point.
+/// tgg-editor's camera, as are the rates below; the renderer keeps it within
+/// what the model allows (`viewport` writes that back).
 const ORBIT_PER_POINT: f64 = 0.01;
-/// How far the camera may look up or down, in radians.
-const PITCH_LIMIT: f64 = 1.4;
-/// How far the wheel moves the camera, per point scrolled (tgg-editor's rate).
+/// How far the wheel moves the camera, per point scrolled.
 const ZOOM_PER_POINT: f64 = 0.002;
-/// How close and how far the camera may go, as a multiple of the distance
-/// that fits the whole model.
-const ZOOM_LIMITS: (f64, f64) = (0.1, 4.0);
 
 /// Show what `slot` of the player's game holds. A costume of the fighter
 /// already showing keeps the camera and the move; anything else starts
@@ -100,23 +97,21 @@ pub fn scrub(app: &mut App, drag: &mut Drag, _: &mut Tx) {
 }
 
 /// A drag across the stage turns the camera around the model, or with Shift
-/// held moves it across. A drag reports its travel since the press, so the
-/// camera is the one it began with, moved by that.
+/// held moves it across. Each move turns it by that move alone: Rune reports
+/// travel since the press, so the stage keeps the travel it last heard.
 pub fn orbit(app: &mut App, drag: &mut Drag, tx: &mut Tx) {
     let Some(shown) = &mut app.stage.shown else { return };
     match drag.phase {
-        Phase::Down => shown.gesture = Some(shown.orbit),
+        Phase::Down => shown.gesture = Some([0.0, 0.0]),
         Phase::Move => {
-            let Some(from) = shown.gesture else { return };
-            let (dx, dy) = (f64::from(drag.dx), f64::from(drag.dy));
+            let Some([heard_x, heard_y]) = shown.gesture else { return };
+            shown.gesture = Some([drag.dx, drag.dy]);
+            let (dx, dy) = (f64::from(drag.dx - heard_x), f64::from(drag.dy - heard_y));
+            let orbit = shown.orbit;
             shown.orbit = if tx.mods().shift {
-                from.panned(dx, dy, drag.w.max(1.0) as u32, drag.h.max(1.0) as u32)
+                orbit.panned(dx, dy, drag.w.max(1.0) as u32, drag.h.max(1.0) as u32)
             } else {
-                Orbit {
-                    yaw: from.yaw - dx * ORBIT_PER_POINT,
-                    pitch: (from.pitch + dy * ORBIT_PER_POINT).clamp(-PITCH_LIMIT, PITCH_LIMIT),
-                    ..from
-                }
+                Orbit { yaw: orbit.yaw - dx * ORBIT_PER_POINT, pitch: orbit.pitch + dy * ORBIT_PER_POINT, ..orbit }
             };
         }
         Phase::Up => shown.gesture = None,
@@ -126,8 +121,7 @@ pub fn orbit(app: &mut App, drag: &mut Drag, tx: &mut Tx) {
 /// The wheel over the stage moves the camera in and out.
 pub fn zoom(app: &mut App, wheel: WheelEvent, _: &mut Tx) -> bool {
     let Some(shown) = &mut app.stage.shown else { return false };
-    let zoom = shown.orbit.zoom * (-f64::from(wheel.dy) * ZOOM_PER_POINT).exp();
-    shown.orbit.zoom = zoom.clamp(ZOOM_LIMITS.0, ZOOM_LIMITS.1);
+    shown.orbit.zoom *= (-f64::from(wheel.dy) * ZOOM_PER_POINT).exp();
     true
 }
 

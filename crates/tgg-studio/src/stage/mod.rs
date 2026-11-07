@@ -49,8 +49,9 @@ pub struct Shown {
     pub slot: MeleeSlot,
     pub model: MeleeModel,
     pub orbit: Orbit,
-    /// The camera when a drag across the stage began; `None` between drags.
-    pub gesture: Option<Orbit>,
+    /// A drag across the stage's travel since its press, as last heard;
+    /// `None` between drags.
+    pub gesture: Option<[f32; 2]>,
     pub playing: bool,
     /// The move playing, if one was chosen; the idle otherwise.
     pub animation: Option<usize>,

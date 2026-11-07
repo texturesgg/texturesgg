@@ -254,9 +254,10 @@ fn dragging_across_the_stage_turns_the_camera_by_how_far_it_went() {
     rt.pointer_down(x, y);
     rt.frame(FRAME);
     assert_eq!(rt.cursor(), rune::Cursor::Grabbing, "a held drag grabs");
-    // Several moves to the same end turn it once: travel is from the press.
-    for step in [25.0, 50.0, 75.0, 100.0] {
-        rt.pointer_move(x + step, y);
+    // Each move turns it by that move: four of 25 points turn it as one of 100,
+    // and a wobble down and back up leaves the pitch where it was.
+    for (step, wobble) in [(25.0, 0.0), (50.0, 30.0), (75.0, 0.0), (100.0, 0.0)] {
+        rt.pointer_move(x + step, y + wobble);
         rt.frame(FRAME);
     }
     rt.pointer_up(x + 100.0, y);
@@ -265,6 +266,20 @@ fn dragging_across_the_stage_turns_the_camera_by_how_far_it_went() {
     assert!((after.yaw - (before.yaw - 1.0)).abs() < 1e-6, "100 points turn it a radian: {} → {}", before.yaw, after.yaw);
     assert_eq!(after.pitch, before.pitch);
     assert_eq!(rt.cursor(), rune::Cursor::Grab, "let go, it's ready to grab again");
+
+    // Down turns it to look from above.
+    rt.pointer_down(x, y);
+    rt.frame(FRAME);
+    for step in [10.0, 20.0, 30.0] {
+        rt.pointer_move(x, y + step);
+        rt.frame(FRAME);
+    }
+    rt.pointer_up(x, y + 30.0);
+    rt.frame(FRAME);
+    let above = rt.state.stage.shown.as_ref().expect("still on the stage").orbit;
+    assert!((above.pitch - (after.pitch + 0.3)).abs() < 1e-6, "30 points down tip it 0.3: {} → {}", after.pitch, above.pitch);
+    assert_eq!(above.yaw, after.yaw);
+    let after = above;
 
     let mut wheel = rune::WheelEvent::default();
     (wheel.x, wheel.y, wheel.dy) = (x, y, 100.0);
