@@ -99,10 +99,7 @@ pub mod optional_slot {
 pub mod slot_list {
     use super::*;
 
-    pub fn serialize<S: Serializer>(
-        slots: &[MeleeSlot],
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
+    pub fn serialize<S: Serializer>(slots: &[MeleeSlot], serializer: S) -> Result<S::Ok, S::Error> {
         serializer.collect_seq(slots.iter().map(|slot| slot.file_name()))
     }
 

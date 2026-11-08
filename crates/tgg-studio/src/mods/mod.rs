@@ -23,7 +23,8 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use tgg_mod::{
-    Applied, Catalog, CatalogEntry, Error, Local, ModDetails, ModId, ModSummary, Net, Plan, PortInstall, PortRelease, Progress, Set,
+    Applied, Catalog, CatalogEntry, Error, Local, ModDetails, ModId, ModSummary, Net, Plan,
+    PortInstall, PortRelease, Progress, Set,
 };
 
 /// The name tgg-studio gives textures.gg when it asks.
@@ -137,32 +138,51 @@ impl Mods {
     pub fn offered(&self) -> Vec<&CatalogEntry> {
         let mut newest: Vec<&CatalogEntry> = Vec::new();
         for entry in self.catalog.iter().flat_map(|catalog| &catalog.mods) {
-            match newest.iter_mut().find(|known| known.manifest.id == entry.manifest.id) {
+            match newest
+                .iter_mut()
+                .find(|known| known.manifest.id == entry.manifest.id)
+            {
                 Some(known) if known.manifest.version < entry.manifest.version => *known = entry,
                 Some(_) => {}
                 None => newest.push(entry),
             }
         }
         // Official mods first, then by name.
-        newest.sort_by_key(|entry| (!self.official(&entry.manifest.id), entry.manifest.name.to_lowercase()));
+        newest.sort_by_key(|entry| {
+            (
+                !self.official(&entry.manifest.id),
+                entry.manifest.name.to_lowercase(),
+            )
+        });
         newest
     }
 
     /// The mods offered that the search matches.
     pub fn found(&self) -> Vec<&CatalogEntry> {
-        self.offered().into_iter().filter(|entry| {
-            let manifest = &entry.manifest;
-            self.matches(&manifest.id, &manifest.name, manifest.description.as_deref())
-        }).collect()
+        self.offered()
+            .into_iter()
+            .filter(|entry| {
+                let manifest = &entry.manifest;
+                self.matches(
+                    &manifest.id,
+                    &manifest.name,
+                    manifest.description.as_deref(),
+                )
+            })
+            .collect()
     }
 
     /// The mods the registry lists that aren't built for this tgg-melee yet,
     /// by name, that the search matches.
     pub fn found_unbuilt(&self) -> Vec<&ModSummary> {
         let offered = self.offered();
-        let mut unbuilt: Vec<&ModSummary> = self.listings.values()
+        let mut unbuilt: Vec<&ModSummary> = self
+            .listings
+            .values()
             .filter(|summary| !offered.iter().any(|entry| entry.manifest.id == summary.id))
-            .filter(|summary| self.matches(&summary.id, &summary.name, summary.description.as_deref()))
+            .filter(|summary| {
+                self.matches(&summary.id, &summary.name, summary.description.as_deref())
+            })
             .collect();
         unbuilt.sort_by_key(|summary| (!summary.publisher.official, summary.name.to_lowercase()));
         unbuilt
@@ -173,16 +193,26 @@ impl Mods {
     fn matches(&self, id: &ModId, name: &str, description: Option<&str>) -> bool {
         let query = self.search.text.to_lowercase();
         let listed = self.listings.get(id);
-        let author = listed.map(|summary| format!("{} {}", summary.publisher.name, summary.author)).unwrap_or_default();
-        let tags = listed.map(|summary| summary.tags.join(" ")).unwrap_or_default();
-        let haystack = format!("{name} {id} {} {author} {tags}", description.unwrap_or_default()).to_lowercase();
+        let author = listed
+            .map(|summary| format!("{} {}", summary.publisher.name, summary.author))
+            .unwrap_or_default();
+        let tags = listed
+            .map(|summary| summary.tags.join(" "))
+            .unwrap_or_default();
+        let haystack = format!(
+            "{name} {id} {} {author} {tags}",
+            description.unwrap_or_default()
+        )
+        .to_lowercase();
         query.split_whitespace().all(|word| haystack.contains(word))
     }
 
     /// Whether textures.gg vouches for the mod `id`: its own, or one its
     /// admins call official.
     pub fn official(&self, id: &ModId) -> bool {
-        self.listings.get(id).is_some_and(|summary| summary.publisher.official)
+        self.listings
+            .get(id)
+            .is_some_and(|summary| summary.publisher.official)
     }
 
     /// The icon of the mod `id`, once it's arrived.
@@ -193,24 +223,39 @@ impl Mods {
 
     /// The newest release textures.gg has of the mod `id`.
     pub fn newest(&self, id: &ModId) -> Option<&CatalogEntry> {
-        self.offered().into_iter().find(|entry| entry.manifest.id == *id)
+        self.offered()
+            .into_iter()
+            .find(|entry| entry.manifest.id == *id)
     }
 
     /// The sets that list the mod `id`, by title.
     pub fn sets_with(&self, id: &ModId) -> Vec<String> {
-        self.sets.iter().filter(|set| set.mods.iter().any(|m| m.id == *id)).map(|set| set.title.clone()).collect()
+        self.sets
+            .iter()
+            .filter(|set| set.mods.iter().any(|m| m.id == *id))
+            .map(|set| set.title.clone())
+            .collect()
     }
 
     /// The installed mods the newer tgg-melee on offer has no build of yet,
     /// by name.
     pub fn unbuilt_for_update(&self) -> Vec<String> {
-        let Some(built) = &self.next_built else { return Vec::new() };
-        self.local.mods.iter().filter(|m| !built.contains(m.id())).map(|m| m.manifest.name.clone()).collect()
+        let Some(built) = &self.next_built else {
+            return Vec::new();
+        };
+        self.local
+            .mods
+            .iter()
+            .filter(|m| !built.contains(m.id()))
+            .map(|m| m.manifest.name.clone())
+            .collect()
     }
 
     /// A mod's name, from what's installed or the catalog, else its id.
     pub fn name_of(&self, id: &ModId) -> String {
-        self.local.get(id).map(|m| m.manifest.name.clone())
+        self.local
+            .get(id)
+            .map(|m| m.manifest.name.clone())
             .or_else(|| self.newest(id).map(|entry| entry.manifest.name.clone()))
             .unwrap_or_else(|| readable(id))
     }
@@ -225,9 +270,18 @@ impl Mods {
     /// back to an older version). Updating to an installed one switches.
     pub fn port_update(&self) -> Option<PortRelease> {
         let current = self.port()?;
-        let installed: Vec<PortRelease> = self.ports.iter().map(|port| port.release.clone()).collect();
-        let known: Vec<PortRelease> = self.releases.iter().cloned()
-            .chain(installed.into_iter().filter(|release| !self.releases.iter().any(|known| known.version == release.version)))
+        let installed: Vec<PortRelease> =
+            self.ports.iter().map(|port| port.release.clone()).collect();
+        let known: Vec<PortRelease> = self
+            .releases
+            .iter()
+            .cloned()
+            .chain(installed.into_iter().filter(|release| {
+                !self
+                    .releases
+                    .iter()
+                    .any(|known| known.version == release.version)
+            }))
             .collect();
         tgg_mod::port_update(std::slice::from_ref(current), &known)
     }
@@ -239,12 +293,16 @@ impl Mods {
 
     /// Whether anything installed has a newer version.
     pub fn has_updates(&self) -> bool {
-        self.local.mods.iter().any(|m| m.update.is_some()) || self.local.sets.iter().any(|set| set.update.is_some())
+        self.local.mods.iter().any(|m| m.update.is_some())
+            || self.local.sets.iter().any(|set| set.update.is_some())
     }
 
     /// A set's title, by its name, from the registry or the lock.
     pub fn set_title(&self, name: &str) -> String {
-        self.sets.iter().chain(self.local.lock.sets.iter()).find(|set| set.name == name)
+        self.sets
+            .iter()
+            .chain(self.local.lock.sets.iter())
+            .find(|set| set.name == name)
             .map_or_else(|| name.to_owned(), |set| set.title.clone())
     }
 }
@@ -271,14 +329,27 @@ pub struct Work {
 impl Work {
     /// How far along, from 0 to 1: whole steps, and the current step's bytes.
     pub fn fraction(&self) -> f32 {
-        let Some(progress) = self.progress.lock().ok().and_then(|progress| progress.clone()) else { return 0.0 };
-        let within = progress.total.filter(|total| *total > 0).map_or(0.0, |total| progress.bytes as f32 / total as f32);
+        let Some(progress) = self
+            .progress
+            .lock()
+            .ok()
+            .and_then(|progress| progress.clone())
+        else {
+            return 0.0;
+        };
+        let within = progress
+            .total
+            .filter(|total| *total > 0)
+            .map_or(0.0, |total| progress.bytes as f32 / total as f32);
         ((progress.step as f32 + within.min(1.0)) / progress.steps.max(1) as f32).clamp(0.0, 1.0)
     }
 
     /// What the current step does, once one has started.
     pub fn label(&self) -> String {
-        self.progress.lock().ok().and_then(|progress| progress.as_ref().map(|progress| progress.label.clone()))
+        self.progress
+            .lock()
+            .ok()
+            .and_then(|progress| progress.as_ref().map(|progress| progress.label.clone()))
             .unwrap_or_else(|| self.doing.clone())
     }
 }
@@ -365,9 +436,15 @@ mod tests {
 /// "Neutral spawns").
 pub fn readable(id: &ModId) -> String {
     let id = id.to_string();
-    let last = id.rsplit('.').next().unwrap_or(&id).replace(['-', '_'], " ");
+    let last = id
+        .rsplit('.')
+        .next()
+        .unwrap_or(&id)
+        .replace(['-', '_'], " ");
     let mut characters = last.chars();
-    characters.next().map_or_else(String::new, |first| first.to_uppercase().chain(characters).collect())
+    characters.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(characters).collect()
+    })
 }
 
 #[cfg(test)]

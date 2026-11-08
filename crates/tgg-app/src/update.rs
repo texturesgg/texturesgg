@@ -69,7 +69,10 @@ mod tests {
     #[test]
     fn the_check_reads_the_published_version() {
         let (url, served) = serve_once("200 OK", r#"{"version":"999.0.0"}"#);
-        assert_eq!(check_at(&url, "0.1.0").expect("checked"), Some("999.0.0".into()));
+        assert_eq!(
+            check_at(&url, "0.1.0").expect("checked"),
+            Some("999.0.0".into())
+        );
         served.join().expect("served");
 
         let (url, served) = serve_once("200 OK", r#"{"version":"0.0.1"}"#);
@@ -82,7 +85,10 @@ mod tests {
         served.join().expect("served");
 
         let (url, served) = serve_once("200 OK", "{}");
-        assert!(matches!(check_at(&url, "0.1.0"), Err(NetError::Response(_))));
+        assert!(matches!(
+            check_at(&url, "0.1.0"),
+            Err(NetError::Response(_))
+        ));
         served.join().expect("served");
     }
 }

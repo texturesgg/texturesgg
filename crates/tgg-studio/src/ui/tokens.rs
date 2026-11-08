@@ -16,7 +16,12 @@ use tgg_app::settings::Appearance;
 /// An sRGB color from `0xRRGGBB`, as the design system writes it.
 pub fn rgb(hex: u32) -> Color {
     let channel = |shift: u32| rune::color::srgb_decode(((hex >> shift) & 0xff) as f32 / 255.0);
-    Color { r: channel(16), g: channel(8), b: channel(0), a: 1.0 }
+    Color {
+        r: channel(16),
+        g: channel(8),
+        b: channel(0),
+        a: 1.0,
+    }
 }
 
 /// One palette's colors (the web's `color` group, and the editor's
@@ -190,13 +195,19 @@ pub mod text {
     pub const LABEL: TextStyle = TextStyle::new(12.5, 600.0).family(SANS);
     pub const SMALL: TextStyle = TextStyle::new(12.5, 400.0).family(SANS);
     pub const WORDMARK: TextStyle = TextStyle::new(15.0, 800.0).family(SANS).tracking(-0.45);
-    pub const MONO_TEXT: TextStyle = TextStyle::new(12.5, 400.0).family(MONO).features("'zero' 1, 'tnum' 1");
-    pub const MONO_SMALL: TextStyle = TextStyle::new(11.5, 400.0).family(MONO).features("'zero' 1, 'tnum' 1");
+    pub const MONO_TEXT: TextStyle = TextStyle::new(12.5, 400.0)
+        .family(MONO)
+        .features("'zero' 1, 'tnum' 1");
+    pub const MONO_SMALL: TextStyle = TextStyle::new(11.5, 400.0)
+        .family(MONO)
+        .features("'zero' 1, 'tnum' 1");
 }
 
 /// Motion: Rune's springs, which the Catalog's motion rules name (fade 150,
 /// snappy 250, default 300, calm 400 ms). One curve; nothing loops but the
 /// fighter.
 pub mod motion {
-    pub use rune::tok::motion::{INSTANT as FADE, REFLOW as CALM, SETTLE as DEFAULT, SNAP as SNAPPY};
+    pub use rune::tok::motion::{
+        INSTANT as FADE, REFLOW as CALM, SETTLE as DEFAULT, SNAP as SNAPPY,
+    };
 }

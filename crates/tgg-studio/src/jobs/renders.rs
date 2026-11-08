@@ -9,9 +9,9 @@
 //! <data dir>/textures.gg/renders/<sha256>-<RENDER_VERSION>-<SIZE>.png
 //! ```
 
+use dat_parser::hsd::draw::HsdDrawEvaluationPolicy;
 use hsd_render::offscreen::{CAPTURE_FORMAT, Gpu, capture};
 use hsd_render::{CameraView, HsdRenderer, Orbit, PreparedGeometry, neutral_preview_lighting};
-use dat_parser::hsd::draw::HsdDrawEvaluationPolicy;
 use melee_dat::{MeleeModel, MeleeSlot};
 use rune::Pixels;
 use sha2::{Digest, Sha256};
@@ -70,13 +70,29 @@ impl Renders {
     /// Ask for a picture of what `slot` of the game at `iso` holds, unless
     /// it's been asked for already. The worker starts on the first request.
     pub fn request(&mut self, iso: &Path, slot: MeleeSlot) {
-        self.ask(RenderKey::Slot(slot), Job { iso: iso.to_owned(), slot, file: None, pixels: Pixels::new() });
+        self.ask(
+            RenderKey::Slot(slot),
+            Job {
+                iso: iso.to_owned(),
+                slot,
+                file: None,
+                pixels: Pixels::new(),
+            },
+        );
     }
 
     /// Ask for a picture of the skin `id`, its file at `file`, made for
     /// `slot`, drawn with the game at `iso`'s references.
     pub fn request_skin(&mut self, iso: &Path, id: SkinId, file: PathBuf, slot: MeleeSlot) {
-        self.ask(RenderKey::Skin(id), Job { iso: iso.to_owned(), slot, file: Some(file), pixels: Pixels::new() });
+        self.ask(
+            RenderKey::Skin(id),
+            Job {
+                iso: iso.to_owned(),
+                slot,
+                file: Some(file),
+                pixels: Pixels::new(),
+            },
+        );
     }
 
     fn ask(&mut self, key: RenderKey, job: Job) {
@@ -126,22 +142,36 @@ fn work(queue: &mpsc::Receiver<Job>) {
     while let Ok(job) = queue.recv() {
         match render(&job, &mut gpu, &mut game) {
             Ok(rgba) => job.pixels.set(SIZE, SIZE, rgba),
-            Err(error) => tgg_app::log(&format!("render of {} failed: {error}", job.slot.file_name())),
+            Err(error) => tgg_app::log(&format!(
+                "render of {} failed: {error}",
+                job.slot.file_name()
+            )),
         }
     }
 }
 
 fn cache_folder() -> PathBuf {
-    dirs::data_dir().unwrap_or_else(std::env::temp_dir).join("textures.gg").join("renders")
+    dirs::data_dir()
+        .unwrap_or_else(std::env::temp_dir)
+        .join("textures.gg")
+        .join("renders")
 }
 
 fn render(job: &Job, gpu: &mut Option<Gpu>, game: &mut Option<OpenGame>) -> Result<Vec<u8>, Error> {
     // An install may have moved files on the disc: reopen it when it changed.
-    let modified = std::fs::metadata(&job.iso).and_then(|metadata| metadata.modified()).ok();
-    let stale = game.as_ref().is_none_or(|open| open.iso != job.iso || open.modified != modified);
+    let modified = std::fs::metadata(&job.iso)
+        .and_then(|metadata| metadata.modified())
+        .ok();
+    let stale = game
+        .as_ref()
+        .is_none_or(|open| open.iso != job.iso || open.modified != modified);
     if stale {
         let opened = Game::open(&job.iso)?;
-        *game = Some(OpenGame { iso: job.iso.clone(), modified, references: tgg_app::game_references(opened)? });
+        *game = Some(OpenGame {
+            iso: job.iso.clone(),
+            modified,
+            references: tgg_app::game_references(opened)?,
+        });
     }
     let references = &game.as_ref().expect("opened above").references;
     let bytes = match &job.file {
@@ -151,7 +181,13 @@ fn render(job: &Job, gpu: &mut Option<Gpu>, game: &mut Option<OpenGame>) -> Resu
     // A skin for a file costumes share draws as the first model it changes:
     // a laser skin as its laser. Its picture is the file's and the model's.
     let whole = matches!(job.slot, MeleeSlot::Costume { .. } | MeleeSlot::Stage(_));
-    let shared = (!whole).then(|| tgg_app::costumes::changed_models(job.slot, &bytes).into_iter().next()).flatten();
+    let shared = (!whole)
+        .then(|| {
+            tgg_app::costumes::changed_models(job.slot, &bytes)
+                .into_iter()
+                .next()
+        })
+        .flatten();
     if !whole && shared.is_none() {
         return Err("it changes no model the app can draw".into());
     }
@@ -169,7 +205,9 @@ fn render(job: &Job, gpu: &mut Option<Gpu>, game: &mut Option<OpenGame>) -> Resu
         None => gpu.insert(Gpu::request(false)?),
     };
     let mut model = match shared {
-        Some(shared) => MeleeModel::open_shared(&bytes, shared, HsdDrawEvaluationPolicy::GENERIC_HSD)?,
+        Some(shared) => {
+            MeleeModel::open_shared(&bytes, shared, HsdDrawEvaluationPolicy::GENERIC_HSD)?
+        }
         None => tgg_app::load_model(&job.slot.file_name(), &bytes, Some(references))?.model,
     };
     let focus = model.focus();
@@ -179,9 +217,16 @@ fn render(job: &Job, gpu: &mut Option<Gpu>, game: &mut Option<OpenGame>) -> Resu
     let orbit = if shared.is_some() {
         // A three-quarter view, so a model as thin as a laser shows its length
         // and one as flat as a shine its face.
-        Orbit { yaw: std::f64::consts::FRAC_PI_4, pitch: SHARED_PITCH, ..front }
+        Orbit {
+            yaw: std::f64::consts::FRAC_PI_4,
+            pitch: SHARED_PITCH,
+            ..front
+        }
     } else if geometry.focus().is_some() {
-        Orbit { zoom: STAGE_ZOOM, ..front }
+        Orbit {
+            zoom: STAGE_ZOOM,
+            ..front
+        }
     } else {
         front
     };

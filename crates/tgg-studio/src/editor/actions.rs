@@ -18,7 +18,9 @@ use tgg_app::textures::{Listing, texture_size};
 /// Open what the stage shows as a document, from the player's game.
 pub fn open(app: &mut App) {
     let Some(references) = &app.game else { return };
-    let Some(shown) = &app.stage.shown else { return };
+    let Some(shown) = &app.stage.shown else {
+        return;
+    };
     let slot = shown.slot;
     let bytes = match references.game().read_slot(slot) {
         Ok(bytes) => bytes,
@@ -29,17 +31,34 @@ pub fn open(app: &mut App) {
         return app.tell(format!("Its textures couldn't be read: {error}"), true);
     }
     let thumbnails = pictures(&listing);
-    let mut document = Document { slot, listing, thumbnails, selected: None, pending: None, external: Default::default(), colors: Vec::new(), color_pick: None };
+    let mut document = Document {
+        slot,
+        listing,
+        thumbnails,
+        selected: None,
+        pending: None,
+        external: Default::default(),
+        colors: Vec::new(),
+        color_pick: None,
+    };
     super::colors::read(&mut document);
     app.editor = Some(document);
     // The sidebar lists it among the recent edits.
     app.change_settings(move |settings| settings.remember_edit(slot));
-    select(app, (app.editor.as_ref().is_some_and(|document| document.texture_count() > 0)).then_some(0));
+    select(
+        app,
+        (app.editor
+            .as_ref()
+            .is_some_and(|document| document.texture_count() > 0))
+        .then_some(0),
+    );
 }
 
 /// A picture of each texture, through its first use.
 fn pictures(listing: &Listing) -> Vec<Pixels> {
-    let Ok(document) = &listing.document else { return Vec::new() };
+    let Ok(document) = &listing.document else {
+        return Vec::new();
+    };
     (0..document.textures().len())
         .map(|index| {
             let pixels = Pixels::new();
@@ -55,10 +74,16 @@ fn pictures(listing: &Listing) -> Vec<Pixels> {
 /// Inspect `texture` (or nothing): the one way the selection changes. Its
 /// surfaces tint on the stage.
 pub fn select(app: &mut App, texture: Option<usize>) {
-    let Some(document) = &mut app.editor else { return };
+    let Some(document) = &mut app.editor else {
+        return;
+    };
     document.selected = texture;
     let uses: Vec<HsdTextureSourceId> = match (&document.listing.document, texture) {
-        (Ok(document), Some(texture)) => document.textures().get(texture).map(|texture| texture.drawn_as()).unwrap_or_default(),
+        (Ok(document), Some(texture)) => document
+            .textures()
+            .get(texture)
+            .map(|texture| texture.drawn_as())
+            .unwrap_or_default(),
         _ => Vec::new(),
     };
     stage::set_highlight(app, &uses);
@@ -71,10 +96,15 @@ pub fn select(app: &mut App, texture: Option<usize>) {
 /// chosen.
 pub fn select_picked(app: &mut App, textures: &[Vec<HsdTextureSourceId>], tx: &mut Tx) {
     let Some(document) = &app.editor else { return };
-    let Ok(open) = &document.listing.document else { return };
+    let Ok(open) = &document.listing.document else {
+        return;
+    };
     let mut candidates: Vec<usize> = Vec::new();
     for ids in textures {
-        let found = open.textures().iter().position(|texture| ids.iter().any(|id| texture.uses.contains(id)));
+        let found = open
+            .textures()
+            .iter()
+            .position(|texture| ids.iter().any(|id| texture.uses.contains(id)));
         if let Some(index) = found
             && !candidates.contains(&index)
         {
@@ -87,7 +117,9 @@ pub fn select_picked(app: &mut App, textures: &[Vec<HsdTextureSourceId>], tx: &m
         }
         return;
     }
-    let at = document.selected.and_then(|selected| candidates.iter().position(|&index| index == selected));
+    let at = document
+        .selected
+        .and_then(|selected| candidates.iter().position(|&index| index == selected));
     let place = match at {
         Some(at) if at + 1 == candidates.len() => {
             select(app, None);
@@ -100,7 +132,11 @@ pub fn select_picked(app: &mut App, textures: &[Vec<HsdTextureSourceId>], tx: &m
     let next = candidates[place];
     let name = document.listing.name(next);
     let text = if candidates.len() > 1 {
-        format!("{name}: {} of {} on this surface; click again for the next", place + 1, candidates.len())
+        format!(
+            "{name}: {} of {} on this surface; click again for the next",
+            place + 1,
+            candidates.len()
+        )
     } else {
         name
     };
@@ -114,9 +150,15 @@ pub fn select_picked(app: &mut App, textures: &[Vec<HsdTextureSourceId>], tx: &m
 /// palette gets one rebuilt for the new pixels; otherwise they map to the
 /// colors it has.
 pub fn import(app: &mut App, texture: usize, rgba: &[u8]) -> Result<TextureEdit, String> {
-    let Some(document) = &mut app.editor else { return Err("no costume is open".into()) };
-    let Ok(open) = &mut document.listing.document else { return Err("its textures couldn't be read".into()) };
-    let edit = open.import(TextureIndex(texture), rgba).map_err(|error| error.to_string())?;
+    let Some(document) = &mut app.editor else {
+        return Err("no costume is open".into());
+    };
+    let Ok(open) = &mut document.listing.document else {
+        return Err("its textures couldn't be read".into());
+    };
+    let edit = open
+        .import(TextureIndex(texture), rgba)
+        .map_err(|error| error.to_string())?;
     show_pixels(app, texture, &edit.decoded);
     Ok(edit)
 }
@@ -125,12 +167,20 @@ pub fn import(app: &mut App, texture: usize, rgba: &[u8]) -> Result<TextureEdit,
 /// and its picture.
 fn show_pixels(app: &mut App, texture: usize, decoded: &[(HsdTextureSourceId, Vec<u8>)]) {
     let Some(document) = &app.editor else { return };
-    let Ok(open) = &document.listing.document else { return };
+    let Ok(open) = &document.listing.document else {
+        return;
+    };
     let size = texture_size(&open.textures()[texture]);
-    if let (Some((_, pixels)), Some(picture)) = (decoded.first(), document.thumbnails.get(texture)) {
+    if let (Some((_, pixels)), Some(picture)) = (decoded.first(), document.thumbnails.get(texture))
+    {
         picture.set(size.0, size.1, pixels.clone());
     }
-    stage::update_textures(app, decoded.iter().map(|(id, pixels)| (*id, size, pixels.as_slice())));
+    stage::update_textures(
+        app,
+        decoded
+            .iter()
+            .map(|(id, pixels)| (*id, size, pixels.as_slice())),
+    );
 }
 
 /// Step back through the edits.
@@ -144,12 +194,19 @@ pub fn redo(app: &mut App) {
 }
 
 fn step(app: &mut App, back: bool) {
-    let Some(document) = &mut app.editor else { return };
-    let Ok(open) = &mut document.listing.document else { return };
+    let Some(document) = &mut app.editor else {
+        return;
+    };
+    let Ok(open) = &mut document.listing.document else {
+        return;
+    };
     let stepped = if back { open.undo() } else { open.redo() };
     match stepped {
         None => {}
-        Some(Err(error)) => app.tell(format!("Couldn't {}: {error}", if back { "undo" } else { "redo" }), true),
+        Some(Err(error)) => app.tell(
+            format!("Couldn't {}: {error}", if back { "undo" } else { "redo" }),
+            true,
+        ),
         Some(Ok(Undone::Texture(restored))) => {
             show_pixels(app, restored.texture.0, &restored.decoded);
             select(app, Some(restored.texture.0));
@@ -173,7 +230,9 @@ fn step(app: &mut App, back: bool) {
 pub fn save(app: &mut App, install_it: bool, then: Option<Pending>, tx: &mut Tx) {
     let Some(document) = &app.editor else { return };
     let Some(references) = &app.game else { return };
-    let Ok(open) = &document.listing.document else { return };
+    let Ok(open) = &document.listing.document else {
+        return;
+    };
     let (slot, bytes) = (document.slot, open.bytes().to_vec());
     let game = references.game();
     let saved = (|| {
@@ -186,10 +245,15 @@ pub fn save(app: &mut App, install_it: bool, then: Option<Pending>, tx: &mut Tx)
         };
         let mut candidate = app
             .library
-            .inspect(&slot.file_name(), bytes.clone(), MeleeReferenceCatalog::checked_in())
+            .inspect(
+                &slot.file_name(),
+                bytes.clone(),
+                MeleeReferenceCatalog::checked_in(),
+            )
             .map_err(|rejected| tgg_app::Error::Rejected(rejected.reason))?;
         candidate.name = name.clone();
-        app.library.store(&candidate, Some(slot), SkinSource::Edited { from })?;
+        app.library
+            .store(&candidate, Some(slot), SkinSource::Edited { from })?;
         if install_it {
             install::install(game, slot, &bytes, &app.library, &app.data.history())?;
         }
@@ -197,10 +261,18 @@ pub fn save(app: &mut App, install_it: bool, then: Option<Pending>, tx: &mut Tx)
     })();
     match saved {
         Ok(name) => {
-            if let Some(Ok(open)) = app.editor.as_mut().map(|document| &mut document.listing.document) {
+            if let Some(Ok(open)) = app
+                .editor
+                .as_mut()
+                .map(|document| &mut document.listing.document)
+            {
                 open.mark_saved();
             }
-            let text = if install_it { format!("Saved {name} to your library and installed it.") } else { format!("Saved {name} to your library.") };
+            let text = if install_it {
+                format!("Saved {name} to your library and installed it.")
+            } else {
+                format!("Saved {name} to your library.")
+            };
             app.tell(text, false);
             if install_it {
                 crate::library::actions::refresh_after_install(app, slot);
@@ -216,7 +288,9 @@ pub fn save(app: &mut App, install_it: bool, then: Option<Pending>, tx: &mut Tx)
 /// Ask to leave for `then`: straight away when nothing is unsaved, else
 /// the prompt asks first. Whether it left.
 pub fn leave_for(app: &mut App, then: Pending, tx: &mut Tx) -> bool {
-    let Some(document) = &mut app.editor else { return true };
+    let Some(document) = &mut app.editor else {
+        return true;
+    };
     if document.modified() {
         document.pending = Some(then);
         return false;
@@ -232,12 +306,19 @@ pub fn leave(app: &mut App, tx: &mut Tx) {
 
 /// The prompt's answers.
 pub fn answer_save(app: &mut App, tx: &mut Tx) {
-    let then = app.editor.as_mut().and_then(|document| document.pending.take());
+    let then = app
+        .editor
+        .as_mut()
+        .and_then(|document| document.pending.take());
     save(app, false, then, tx);
 }
 
 pub fn answer_discard(app: &mut App, tx: &mut Tx) {
-    if let Some(then) = app.editor.as_mut().and_then(|document| document.pending.take()) {
+    if let Some(then) = app
+        .editor
+        .as_mut()
+        .and_then(|document| document.pending.take())
+    {
         go_on(app, then, tx);
     }
 }
@@ -262,7 +343,11 @@ fn go_on(app: &mut App, then: Pending, tx: &mut Tx) {
 
 /// Edit `slot`, a recent edit: through the prompt when edits are unsaved.
 pub fn edit_recent(app: &mut App, slot: melee_dat::MeleeSlot, tx: &mut Tx) {
-    if app.editor.as_ref().is_some_and(|document| document.slot == slot) {
+    if app
+        .editor
+        .as_ref()
+        .is_some_and(|document| document.slot == slot)
+    {
         return;
     }
     if app.editor.is_some() {
@@ -279,19 +364,28 @@ fn open_slot(app: &mut App, slot: melee_dat::MeleeSlot) {
     match slot {
         melee_dat::MeleeSlot::Stage(stage) => crate::melee::actions::open_stage(app, stage),
         slot => {
-            let Some(character) = slot.character() else { return };
+            let Some(character) = slot.character() else {
+                return;
+            };
             crate::melee::actions::open_fighter(app, character);
             crate::melee::actions::choose_costume(app, slot);
         }
     }
-    if app.stage.shown.as_ref().is_some_and(|shown| shown.slot == slot) {
+    if app
+        .stage
+        .shown
+        .as_ref()
+        .is_some_and(|shown| shown.slot == slot)
+    {
         open(app);
     }
 }
 
 /// Close the document, and show its slot as the game holds it.
 fn close(app: &mut App) {
-    let Some(mut document) = app.editor.take() else { return };
+    let Some(mut document) = app.editor.take() else {
+        return;
+    };
     super::external::forget(&mut document);
     if app.stage.shown.is_some()
         && let Err(problem) = stage::show(app, document.slot)
@@ -311,5 +405,9 @@ pub fn go(app: &mut App, place: Place, tx: &mut Tx) {
 
 /// A skin's name once edited: "Waffle Falco (edited)", not edited twice.
 fn edited_name(name: &str) -> String {
-    if name.ends_with(" (edited)") { name.to_owned() } else { format!("{name} (edited)") }
+    if name.ends_with(" (edited)") {
+        name.to_owned()
+    } else {
+        format!("{name} (edited)")
+    }
 }

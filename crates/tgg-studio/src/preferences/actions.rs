@@ -38,8 +38,11 @@ pub fn choose_game(app: &mut App, tx: &mut Tx) {
         app.tell("Close the editor before changing games.", true);
         return;
     }
-    let options = FileDialogOptions { title: "Choose your Melee ISO".into(), ..Default::default() }
-        .filter("GameCube disc image", &["iso", "gcm"]);
+    let options = FileDialogOptions {
+        title: "Choose your Melee ISO".into(),
+        ..Default::default()
+    }
+    .filter("GameCube disc image", &["iso", "gcm"]);
     tx.open_file(options, |app: &mut App, answer, _| match answer {
         Ok(Some(path)) => {
             crate::welcome::actions::use_game_at(app, &path);

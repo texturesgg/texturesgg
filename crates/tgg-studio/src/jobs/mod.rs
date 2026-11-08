@@ -18,7 +18,11 @@ use tgg_app::library::Library;
 pub enum Done {
     /// What each slot of the game at `iso` holds, and which have an install
     /// to undo.
-    States { iso: PathBuf, states: HashMap<MeleeSlot, SlotState>, undoable: HashSet<MeleeSlot> },
+    States {
+        iso: PathBuf,
+        states: HashMap<MeleeSlot, SlotState>,
+        undoable: HashSet<MeleeSlot>,
+    },
     /// Mods' work: what textures.gg offers, an install, the game ending.
     Mods(Box<crate::mods::Done>),
     /// A report was sent, under this id, or why not.
@@ -41,7 +45,12 @@ pub struct Jobs {
 impl Default for Jobs {
     fn default() -> Self {
         let (done, results) = mpsc::channel();
-        Self { waker: None, done, results, inline: false }
+        Self {
+            waker: None,
+            done,
+            results,
+            inline: false,
+        }
     }
 }
 
@@ -63,7 +72,11 @@ impl Jobs {
                 let (states, undoable) = match tgg_app::Game::open(&iso) {
                     Ok(game) => {
                         let history = History::open_at(history);
-                        let undoable = game.slots().into_iter().filter(|slot| history.can_undo(&game, *slot)).collect();
+                        let undoable = game
+                            .slots()
+                            .into_iter()
+                            .filter(|slot| history.can_undo(&game, *slot))
+                            .collect();
                         (states_of(&game, &Library::open_at(library)), undoable)
                     }
                     Err(error) => {
@@ -71,7 +84,13 @@ impl Jobs {
                         return;
                     }
                 };
-                if done.send(Done::States { iso, states, undoable }).is_ok()
+                if done
+                    .send(Done::States {
+                        iso,
+                        states,
+                        undoable,
+                    })
+                    .is_ok()
                     && let Some(waker) = waker
                 {
                     waker();
@@ -139,7 +158,9 @@ pub fn setup(app: &mut crate::state::App, waker: Waker) {
             crate::report::actions::open(app, true);
         }
         if app.settings.check_for_updates.unwrap_or(true) {
-            app.jobs.spawn("update check", || Done::Update(tgg_app::update::check(env!("CARGO_PKG_VERSION"))));
+            app.jobs.spawn("update check", || {
+                Done::Update(tgg_app::update::check(env!("CARGO_PKG_VERSION")))
+            });
         }
     }
 }
@@ -161,7 +182,11 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
     changed |= app.mods.work.is_some();
     for done in app.jobs.take() {
         changed |= match done {
-            Done::States { iso, states, undoable } => crate::melee::actions::states_read(app, &iso, states, undoable),
+            Done::States {
+                iso,
+                states,
+                undoable,
+            } => crate::melee::actions::states_read(app, &iso, states, undoable),
             Done::Mods(done) => crate::mods::actions::done(app, *done),
             Done::ReportSent(result) => crate::report::actions::sent(app, result),
             Done::Update(newer) => {

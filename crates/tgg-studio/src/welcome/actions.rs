@@ -10,8 +10,11 @@ use tgg_app::settings::Settings;
 
 /// Ask for an ISO with the system's file dialog.
 pub fn choose(_: &mut App, tx: &mut Tx) {
-    let options = FileDialogOptions { title: "Choose your Melee ISO".into(), ..Default::default() }
-        .filter("GameCube disc image", &["iso", "gcm"]);
+    let options = FileDialogOptions {
+        title: "Choose your Melee ISO".into(),
+        ..Default::default()
+    }
+    .filter("GameCube disc image", &["iso", "gcm"]);
     tx.open_file(options, |app: &mut App, answer, _| match answer {
         Ok(Some(path)) => use_game_at(app, &path),
         Ok(None) => {}

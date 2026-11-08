@@ -88,13 +88,28 @@ const SCENES: &[Scene] = &[
     // afresh from the file. (Fox's colors are materials his textures
     // replace, so changing them shows nothing.)
     ("stadium-recolored", |app| {
-        let Some(stage) = app.melee.stages.iter().copied().find(|stage| stage.name() == "Pokemon Stadium") else { return };
+        let Some(stage) = app
+            .melee
+            .stages
+            .iter()
+            .copied()
+            .find(|stage| stage.name() == "Pokemon Stadium")
+        else {
+            return;
+        };
         melee::actions::open_stage(app, stage);
         editor::actions::open(app);
         editor::actions::select(app, None);
-        let groups = app.editor.as_ref().map_or(0, |document| document.colors.len());
+        let groups = app
+            .editor
+            .as_ref()
+            .map_or(0, |document| document.colors.len());
         for group in 0..groups {
-            if app.editor.as_ref().is_some_and(|document| document.colors[group].shifts_hue()) {
+            if app
+                .editor
+                .as_ref()
+                .is_some_and(|document| document.colors[group].shifts_hue())
+            {
                 editor::colors::pick_hue(app, group, &mut rune::Tx::default());
                 editor::colors::set_hue(app, 120.0);
                 editor::colors::apply(app);
@@ -108,7 +123,13 @@ const SCENES: &[Scene] = &[
         }
     }),
     ("final-destination", |app| {
-        if let Some(stage) = app.melee.stages.iter().copied().find(|stage| stage.name() == "Final Destination") {
+        if let Some(stage) = app
+            .melee
+            .stages
+            .iter()
+            .copied()
+            .find(|stage| stage.name() == "Final Destination")
+        {
             melee::actions::open_stage(app, stage);
         }
     }),
@@ -117,19 +138,33 @@ const SCENES: &[Scene] = &[
     // file that isn't one.
     ("library-review", |app| {
         nav::actions::go(app, nav::Place::Library);
-        let (Some(fox), Some(references)) = (melee_dat::Character::from_code("Fx"), &app.game) else { return };
-        let Some(green) = melee_dat::CostumeColor::from_code("Gr") else { return };
-        let Ok(bytes) = references.game().read_slot(melee_dat::MeleeSlot::Costume { character: fox, color: green }) else { return };
+        let (Some(fox), Some(references)) = (melee_dat::Character::from_code("Fx"), &app.game)
+        else {
+            return;
+        };
+        let Some(green) = melee_dat::CostumeColor::from_code("Gr") else {
+            return;
+        };
+        let Ok(bytes) = references.game().read_slot(melee_dat::MeleeSlot::Costume {
+            character: fox,
+            color: green,
+        }) else {
+            return;
+        };
         let folder = std::env::temp_dir().join("tgg-studio-scene");
         let (skin, note) = (folder.join("Fox Green.dat"), folder.join("notes.txt"));
-        let written = std::fs::create_dir_all(&folder).and_then(|()| std::fs::write(&skin, bytes)).and_then(|()| std::fs::write(&note, "not a skin"));
+        let written = std::fs::create_dir_all(&folder)
+            .and_then(|()| std::fs::write(&skin, bytes))
+            .and_then(|()| std::fs::write(&note, "not a skin"));
         if written.is_ok() {
             library::actions::add(app, &[skin, note]);
         }
     }),
     // Leaving an edited costume: the unsaved-changes prompt.
     ("fox-unsaved", |app| {
-        let Some(fox) = melee_dat::Character::from_code("Fx") else { return };
+        let Some(fox) = melee_dat::Character::from_code("Fx") else {
+            return;
+        };
         melee::actions::open_fighter(app, fox);
         editor::actions::open(app);
         editor::colors::pick_swatch(app, 0, 0, &mut rune::Tx::default());
@@ -191,7 +226,13 @@ const SCENES: &[Scene] = &[
     ("mods-installing", |app| {
         mods_scene(app, false);
         // The work alone, with nothing downloading: the picture is of the bar.
-        let progress = tgg_mod::Progress { step: 0, steps: 1, label: "Downloading tgg-melee 0.5.0".into(), bytes: 4, total: Some(10) };
+        let progress = tgg_mod::Progress {
+            step: 0,
+            steps: 1,
+            label: "Downloading tgg-melee 0.5.0".into(),
+            bytes: 4,
+            total: Some(10),
+        };
         app.mods.work = Some(mods::Work {
             doing: "Installing tgg-melee 0.5.0".into(),
             progress: std::sync::Arc::new(std::sync::Mutex::new(Some(progress))),
@@ -214,7 +255,9 @@ const SCENES: &[Scene] = &[
     ("settings", preferences::actions::open),
     ("report", |app| report::actions::open(app, false)),
     ("no-sidebar", |app| app.nav.sidebar = false),
-    ("paper", |app| app.settings.set_appearance(settings::Appearance::Paper)),
+    ("paper", |app| {
+        app.settings.set_appearance(settings::Appearance::Paper)
+    }),
 ];
 
 fn main() {
@@ -233,9 +276,17 @@ fn main() {
     rune::App::new(spec)
         // The app draws its own title row, so Linux and Windows windows have
         // no system one; macOS keeps its window buttons.
-        .window_options(WindowOptions { borderless: cfg!(not(target_os = "macos")), ..Default::default() })
+        .window_options(WindowOptions {
+            borderless: cfg!(not(target_os = "macos")),
+            ..Default::default()
+        })
         .init(move || {
-            let mut app = App::new(start(iso.as_deref()), settings::load(), Data::of_player(), true);
+            let mut app = App::new(
+                start(iso.as_deref()),
+                settings::load(),
+                Data::of_player(),
+                true,
+            );
             open_files(&mut app);
             app
         })
@@ -291,7 +342,9 @@ fn iso_argument() -> Option<PathBuf> {
 /// For scenes: open the fighter `code` names and play the move that shows
 /// its shared model `name`.
 fn show_shared(app: &mut App, code: &str, name: &str) {
-    let Some(character) = melee_dat::Character::from_code(code) else { return };
+    let Some(character) = melee_dat::Character::from_code(code) else {
+        return;
+    };
     melee::actions::open_fighter(app, character);
     if let Some(model) = melee_dat::SharedModel::of(character).find(|model| model.name() == name) {
         stage::actions::play_action(app, model.action());
@@ -313,12 +366,24 @@ fn mods_scene(app: &mut App, installed: bool) {
     let releases = tgg_mod::port_releases(&*net).unwrap_or_default();
     let never = AtomicBool::new(false);
     if installed && let Some(release) = releases.first() {
-        let _ = tgg_mod::install_port(&*net, release, &app.data.ports, &tgg_mod::no_progress, &never);
+        let _ = tgg_mod::install_port(
+            &*net,
+            release,
+            &app.data.ports,
+            &tgg_mod::no_progress,
+            &never,
+        );
     }
-    let port = tgg_mod::installed_ports(&app.data.ports).ok().and_then(|ports| ports.into_iter().find(|port| port.current));
+    let port = tgg_mod::installed_ports(&app.data.ports)
+        .ok()
+        .and_then(|ports| ports.into_iter().find(|port| port.current));
     let sets = tgg_mod::sets(&*net).unwrap_or_default();
-    let catalog = port.as_ref().and_then(|port| tgg_mod::catalog(&*net, &port.port()).ok());
-    if let (Some(catalog), Some(competitive)) = (&catalog, sets.iter().find(|set| set.name == "competitive")) {
+    let catalog = port
+        .as_ref()
+        .and_then(|port| tgg_mod::catalog(&*net, &port.port()).ok());
+    if let (Some(catalog), Some(competitive)) =
+        (&catalog, sets.iter().find(|set| set.name == "competitive"))
+    {
         let plan = tgg_mod::plan_set(competitive, catalog, &tgg_mod::Local::empty());
         let _ = tgg_mod::apply(&*net, &plan, &app.data.mods, &tgg_mod::no_progress, &never);
         if let Ok(id) = "tgg.quick-start".parse() {
@@ -327,7 +392,11 @@ fn mods_scene(app: &mut App, installed: bool) {
         net.publish_mod("tgg.online-rules", "Online rules", "0.1.1", &[]);
     }
     // As the app fetches: before tgg-melee is installed, its newest release's catalog.
-    let layout = port.as_ref().map(tgg_mod::PortInstall::port).or_else(|| releases.first().map(|release| release.port(std::path::PathBuf::new())));
+    let layout = port.as_ref().map(tgg_mod::PortInstall::port).or_else(|| {
+        releases
+            .first()
+            .map(|release| release.port(std::path::PathBuf::new()))
+    });
     let catalog = layout.and_then(|layout| tgg_mod::catalog(&*net, &layout).ok());
     // The registry's listings and their icons, decoded here.
     if let Ok(page) = tgg_mod::mods(&*net, 1) {
@@ -343,7 +412,9 @@ fn mods_scene(app: &mut App, installed: bool) {
     app.mods.sets = sets;
     app.mods.catalog = catalog;
     app.mods.registry = mods::Registry::Answered;
-    app.mods.disc = app.game.as_ref().map_or(mods::Disc::Missing, |references| mods::Disc::Found(references.game().path().to_owned()));
+    app.mods.disc = app.game.as_ref().map_or(mods::Disc::Missing, |references| {
+        mods::Disc::Found(references.game().path().to_owned())
+    });
     nav::actions::go(app, nav::Place::Mods);
 }
 
@@ -354,8 +425,12 @@ fn snapshot() -> bool {
 
 /// For scenes: the image at `url`, fetched and decoded now.
 fn scene_image(app: &mut App, net: &dyn tgg_mod::Net, url: &str) {
-    let Ok(bytes) = net.get(url, 8 * 1024 * 1024) else { return };
-    let Ok(image) = image::load_from_memory(&bytes) else { return };
+    let Ok(bytes) = net.get(url, 8 * 1024 * 1024) else {
+        return;
+    };
+    let Ok(image) = image::load_from_memory(&bytes) else {
+        return;
+    };
     let rgba = image.to_rgba8();
     let pixels = rune::Pixels::new();
     pixels.set(rgba.width(), rgba.height(), rgba.into_raw());

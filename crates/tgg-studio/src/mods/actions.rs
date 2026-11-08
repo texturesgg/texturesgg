@@ -60,15 +60,23 @@ pub fn read_disk(app: &mut App) {
 /// When installed mods aren't built for the current tgg-melee: the newest
 /// older one installed that every one of them is built for.
 fn fallback(folder: &Path, mods: &super::Mods) -> Option<Fallback> {
-    let unfit = |local: &tgg_mod::Local| local.mods.iter().filter(|m| m.fits == Some(false)).count();
+    let unfit =
+        |local: &tgg_mod::Local| local.mods.iter().filter(|m| m.fits == Some(false)).count();
     let now = unfit(&mods.local);
     if now == 0 {
         return None;
     }
-    mods.ports.iter().rev().filter(|port| !port.current).find_map(|older| {
-        let local = tgg_mod::local(folder, Some(&older.port())).ok()?;
-        (unfit(&local) == 0).then(|| Fallback { version: older.version.clone(), unfit: now })
-    })
+    mods.ports
+        .iter()
+        .rev()
+        .filter(|port| !port.current)
+        .find_map(|older| {
+            let local = tgg_mod::local(folder, Some(&older.port())).ok()?;
+            (unfit(&local) == 0).then(|| Fallback {
+                version: older.version.clone(),
+                unfit: now,
+            })
+        })
 }
 
 /// Show or hide the versions of tgg-melee.
@@ -87,7 +95,10 @@ pub fn remove_port(app: &mut App, version: &str) {
     }
     match tgg_mod::remove_port(&app.data.ports, version) {
         Ok(()) => app.tell(format!("Removed tgg-melee {version}."), false),
-        Err(error) => app.tell(format!("Couldn't remove tgg-melee {version}: {error}."), true),
+        Err(error) => app.tell(
+            format!("Couldn't remove tgg-melee {version}: {error}."),
+            true,
+        ),
     }
     read_disk(app);
 }
@@ -120,16 +131,34 @@ pub fn fetch(app: &mut App) {
         let releases = tgg_mod::port_releases(&*net);
         // Before tgg-melee is installed, what's built for its newest
         // release, so the player can look before they install.
-        let layout = port.clone().or_else(|| releases.as_ref().ok()?.first().map(|release| release.port(PathBuf::new())));
+        let layout = port.clone().or_else(|| {
+            releases
+                .as_ref()
+                .ok()?
+                .first()
+                .map(|release| release.port(PathBuf::new()))
+        });
         // A newer tgg-melee with a layout of its own: what's built for it,
         // to say before updating which mods would have to wait.
         // Newer than the version in use, offered or installed already.
-        let current: Vec<tgg_mod::PortInstall> = installed.iter().filter(|install| install.current).cloned().collect();
-        let known: Vec<tgg_mod::PortRelease> = releases.as_ref().map(Clone::clone).unwrap_or_default().into_iter()
+        let current: Vec<tgg_mod::PortInstall> = installed
+            .iter()
+            .filter(|install| install.current)
+            .cloned()
+            .collect();
+        let known: Vec<tgg_mod::PortRelease> = releases
+            .as_ref()
+            .map(Clone::clone)
+            .unwrap_or_default()
+            .into_iter()
             .chain(installed.iter().map(|install| install.release.clone()))
             .collect();
-        let next = tgg_mod::port_update(&current, &known).filter(|_| !current.is_empty())
-            .filter(|release| port.as_ref().is_some_and(|port| port.game_abi != release.game_abi))
+        let next = tgg_mod::port_update(&current, &known)
+            .filter(|_| !current.is_empty())
+            .filter(|release| {
+                port.as_ref()
+                    .is_some_and(|port| port.game_abi != release.game_abi)
+            })
             .map(|release| tgg_mod::catalog(&*net, &release.port(PathBuf::new())));
         let catalog = layout.map(|port| tgg_mod::catalog(&*net, &port));
         // Nothing built for the version in use: the newest older one
@@ -139,17 +168,34 @@ pub fn fetch(app: &mut App) {
             Some(Err(Error::NoCatalog(_))) => true,
             _ => false,
         };
-        let older = (nothing && port.is_some()).then(|| {
-            installed.iter().rev().filter(|older| !older.current).find_map(|older| {
-                let catalog = tgg_mod::catalog(&*net, &older.port()).ok()?;
-                let mut ids: Vec<&tgg_mod::ModId> = catalog.mods.iter().map(|entry| &entry.manifest.id).collect();
-                ids.sort();
-                ids.dedup();
-                (!ids.is_empty()).then(|| (older.version.clone(), ids.len()))
+        let older = (nothing && port.is_some())
+            .then(|| {
+                installed
+                    .iter()
+                    .rev()
+                    .filter(|older| !older.current)
+                    .find_map(|older| {
+                        let catalog = tgg_mod::catalog(&*net, &older.port()).ok()?;
+                        let mut ids: Vec<&tgg_mod::ModId> = catalog
+                            .mods
+                            .iter()
+                            .map(|entry| &entry.manifest.id)
+                            .collect();
+                        ids.sort();
+                        ids.dedup();
+                        (!ids.is_empty()).then(|| (older.version.clone(), ids.len()))
+                    })
             })
-        }).flatten();
+            .flatten();
         let listings = all_listings(&*net);
-        Job::Mods(Box::new(Done::Fetched { releases, sets: tgg_mod::sets(&*net), catalog, next, older, listings }))
+        Job::Mods(Box::new(Done::Fetched {
+            releases,
+            sets: tgg_mod::sets(&*net),
+            catalog,
+            next,
+            older,
+            listings,
+        }))
     });
 }
 
@@ -161,7 +207,11 @@ pub fn show_tab(app: &mut App, tab: Tab) {
 /// Show the mod `id`'s details beside the list, or hide them when they
 /// show already.
 pub fn select(app: &mut App, id: &ModId) {
-    app.mods.selected = if app.mods.selected.as_ref() == Some(id) { None } else { Some(id.clone()) };
+    app.mods.selected = if app.mods.selected.as_ref() == Some(id) {
+        None
+    } else {
+        Some(id.clone())
+    };
     app.mods.expanded.clear();
     if app.mods.selected.is_some() {
         request_details(app, id);
@@ -175,16 +225,28 @@ pub fn close_details(app: &mut App) {
 /// Show what installing the mod `id` on its own will do: its newest
 /// release, and what it needs.
 pub fn review_mod(app: &mut App, id: &ModId) {
-    let Some(catalog) = &app.mods.catalog else { return };
+    let Some(catalog) = &app.mods.catalog else {
+        return;
+    };
     let Ok(any) = "*".parse() else { return };
     let plan = tgg_mod::plan_mods(&[(id.clone(), any)], catalog, &app.mods.local);
-    app.mods.review = Some(Review { title: format!("Install {}", app.mods.name_of(id)), plan });
+    app.mods.review = Some(Review {
+        title: format!("Install {}", app.mods.name_of(id)),
+        plan,
+    });
 }
 
 /// A job finished. True: what shows changed.
 pub fn done(app: &mut App, done: Done) -> bool {
     match done {
-        Done::Fetched { releases, sets, catalog, next, older, listings } => fetched(app, releases, sets, catalog, next, older, listings),
+        Done::Fetched {
+            releases,
+            sets,
+            catalog,
+            next,
+            older,
+            listings,
+        } => fetched(app, releases, sets, catalog, next, older, listings),
         Done::PortInstalled(result) => {
             app.mods.work = None;
             match result {
@@ -204,22 +266,36 @@ pub fn done(app: &mut App, done: Done) -> bool {
             match result {
                 Ok(applied) => {
                     let (new, updated) = (applied.installed.len(), applied.updated.len());
-                    app.tell(match (new, updated) {
-                        (0, 0) => "Your mods are up to date.".to_owned(),
-                        (new, 0) => format!("Installed {}.", count(new, "mod")),
-                        (0, updated) => format!("Updated {}.", count(updated, "mod")),
-                        (new, updated) => format!("Installed {} and updated {updated}.", count(new, "mod")),
-                    }, false);
+                    app.tell(
+                        match (new, updated) {
+                            (0, 0) => "Your mods are up to date.".to_owned(),
+                            (new, 0) => format!("Installed {}.", count(new, "mod")),
+                            (0, updated) => format!("Updated {}.", count(updated, "mod")),
+                            (new, updated) => {
+                                format!("Installed {} and updated {updated}.", count(new, "mod"))
+                            }
+                        },
+                        false,
+                    );
                 }
-                Err(Error::Cancelled) => app.tell("Stopped installing; each mod is as it was or fully installed.", false),
+                Err(Error::Cancelled) => app.tell(
+                    "Stopped installing; each mod is as it was or fully installed.",
+                    false,
+                ),
                 Err(error) => app.tell(format!("Couldn't install: {error}."), true),
             }
             read_disk(app);
         }
         Done::Disc(found) => app.mods.disc = found.map_or(Disc::Missing, Disc::Found),
         Done::Details(id, result) => {
-            let details = result.inspect_err(|error| tgg_app::log(&format!("the details of {id}: {error}"))).ok();
-            let screenshots: Vec<String> = details.iter().flat_map(|details| &details.screenshots).map(|image| image.url.clone()).collect();
+            let details = result
+                .inspect_err(|error| tgg_app::log(&format!("the details of {id}: {error}")))
+                .ok();
+            let screenshots: Vec<String> = details
+                .iter()
+                .flat_map(|details| &details.screenshots)
+                .map(|image| image.url.clone())
+                .collect();
             app.mods.details.insert(id, details);
             for url in screenshots {
                 request_image(app, &url);
@@ -276,13 +352,26 @@ fn fetched(
     // The listings come from endpoints that may not be there yet: without
     // them the page shows what the catalog has.
     if let Ok(listings) = listings {
-        mods.listings = listings.into_iter().map(|summary| (summary.id.clone(), summary)).collect();
+        mods.listings = listings
+            .into_iter()
+            .map(|summary| (summary.id.clone(), summary))
+            .collect();
     }
-    let icons: Vec<String> = mods.listings.values().filter_map(|summary| Some(summary.icon.as_ref()?.url.clone())).collect();
+    let icons: Vec<String> = mods
+        .listings
+        .values()
+        .filter_map(|summary| Some(summary.icon.as_ref()?.url.clone()))
+        .collect();
     // Nothing built for the newer tgg-melee reads as an empty list; failing
     // to ask, as not knowing.
     mods.next_built = match next {
-        Some(Ok(catalog)) => Some(catalog.mods.into_iter().map(|entry| entry.manifest.id).collect()),
+        Some(Ok(catalog)) => Some(
+            catalog
+                .mods
+                .into_iter()
+                .map(|entry| entry.manifest.id)
+                .collect(),
+        ),
         Some(Err(Error::NoCatalog(_))) => Some(Vec::new()),
         Some(Err(_)) | None => None,
     };
@@ -322,8 +411,12 @@ fn request_image(app: &mut App, url: &str) {
     std::thread::Builder::new()
         .name("mod image".into())
         .spawn(move || {
-            let decoded = net.get(&url, IMAGE_LIMIT).map_err(|error| error.to_string())
-                .and_then(|bytes| image::load_from_memory(&bytes).map_err(|error| error.to_string()));
+            let decoded = net
+                .get(&url, IMAGE_LIMIT)
+                .map_err(|error| error.to_string())
+                .and_then(|bytes| {
+                    image::load_from_memory(&bytes).map_err(|error| error.to_string())
+                });
             match decoded {
                 Ok(image) => {
                     let rgba = image.to_rgba8();
@@ -367,7 +460,15 @@ pub fn install_port(app: &mut App) {
 /// Install tgg-melee `version` from textures.gg and make it the one in use;
 /// when it's installed already, just use it.
 pub fn install_version(app: &mut App, version: &str) {
-    let Some(release) = app.mods.releases.iter().find(|release| release.version == version).cloned() else { return };
+    let Some(release) = app
+        .mods
+        .releases
+        .iter()
+        .find(|release| release.version == version)
+        .cloned()
+    else {
+        return;
+    };
     install_release(app, release);
 }
 
@@ -383,23 +484,46 @@ fn install_release(app: &mut App, release: tgg_mod::PortRelease) {
     let work = start(app, format!("Installing tgg-melee {}", release.version));
     app.jobs.spawn("tgg-melee install", move || {
         let report = reporter(&work);
-        Job::Mods(Box::new(Done::PortInstalled(tgg_mod::install_port(&*net, &release, &ports, &report, &work.cancel))))
+        Job::Mods(Box::new(Done::PortInstalled(tgg_mod::install_port(
+            &*net,
+            &release,
+            &ports,
+            &report,
+            &work.cancel,
+        ))))
     });
 }
 
 /// Show what installing the set `name` will do.
 pub fn review_set(app: &mut App, name: &str) {
-    let (Some(set), Some(catalog)) = (app.mods.sets.iter().find(|set| set.name == name), &app.mods.catalog) else { return };
+    let (Some(set), Some(catalog)) = (
+        app.mods.sets.iter().find(|set| set.name == name),
+        &app.mods.catalog,
+    ) else {
+        return;
+    };
     let plan = tgg_mod::plan_set(set, catalog, &app.mods.local);
-    let verb = if app.mods.local.set(name).is_some() { "Update" } else { "Install" };
-    app.mods.review = Some(Review { title: format!("{verb} {}", set.title), plan });
+    let verb = if app.mods.local.set(name).is_some() {
+        "Update"
+    } else {
+        "Install"
+    };
+    app.mods.review = Some(Review {
+        title: format!("{verb} {}", set.title),
+        plan,
+    });
 }
 
 /// Show what updating everything installed will do.
 pub fn review_updates(app: &mut App) {
-    let Some(catalog) = &app.mods.catalog else { return };
+    let Some(catalog) = &app.mods.catalog else {
+        return;
+    };
     let plan = tgg_mod::plan_updates(&app.mods.sets, catalog, &app.mods.local);
-    app.mods.review = Some(Review { title: "Update your mods".into(), plan });
+    app.mods.review = Some(Review {
+        title: "Update your mods".into(),
+        plan,
+    });
 }
 
 pub fn cancel_review(app: &mut App) {
@@ -411,13 +535,21 @@ pub fn confirm_review(app: &mut App) {
     if app.mods.work.is_some() {
         return;
     }
-    let Some(review) = app.mods.review.take() else { return };
+    let Some(review) = app.mods.review.take() else {
+        return;
+    };
     let (net, mods) = (app.mods.net.clone(), app.data.mods.clone());
     let plan: Plan = review.plan;
     let work = start(app, review.title);
     app.jobs.spawn("mods install", move || {
         let report = reporter(&work);
-        Job::Mods(Box::new(Done::Applied(tgg_mod::apply(&*net, &plan, &mods, &report, &work.cancel))))
+        Job::Mods(Box::new(Done::Applied(tgg_mod::apply(
+            &*net,
+            &plan,
+            &mods,
+            &report,
+            &work.cancel,
+        ))))
     });
 }
 
@@ -431,7 +563,13 @@ pub fn cancel_work(app: &mut App) {
 /// Turn the mod `id` on or off.
 pub fn set_enabled(app: &mut App, id: &ModId, on: bool) {
     if let Err(error) = tgg_mod::set_enabled(&app.data.mods, id, on) {
-        app.tell(format!("Couldn't turn it {}: {error}.", if on { "on" } else { "off" }), true);
+        app.tell(
+            format!(
+                "Couldn't turn it {}: {error}.",
+                if on { "on" } else { "off" }
+            ),
+            true,
+        );
     }
     read_disk(app);
 }
@@ -448,7 +586,11 @@ pub fn remove_set(app: &mut App, name: &str) {
 
 /// Uninstall the mod `id`.
 pub fn remove(app: &mut App, id: &ModId) {
-    let name = app.mods.local.get(id).map_or_else(|| id.to_string(), |m| m.manifest.name.clone());
+    let name = app
+        .mods
+        .local
+        .get(id)
+        .map_or_else(|| id.to_string(), |m| m.manifest.name.clone());
     match tgg_mod::uninstall(&app.data.mods, id) {
         Ok(()) => app.tell(format!("Removed {name}."), false),
         Err(error) => app.tell(format!("Couldn't remove {name}: {error}."), true),
@@ -462,13 +604,28 @@ pub fn remove(app: &mut App, id: &ModId) {
 /// through.
 pub fn find_disc(app: &mut App) {
     app.mods.disc = Disc::Looking;
-    let chosen: Vec<PathBuf> = app.settings.play_iso.iter().cloned()
-        .chain(app.game.as_ref().map(|references| references.game().path().to_owned()))
+    let chosen: Vec<PathBuf> = app
+        .settings
+        .play_iso
+        .iter()
+        .cloned()
+        .chain(
+            app.game
+                .as_ref()
+                .map(|references| references.game().path().to_owned()),
+        )
         .collect();
     let everywhere = app.persist;
     app.jobs.spawn("clean disc", move || {
         let found = chosen.into_iter().find(|path| clean(path)).or_else(|| {
-            everywhere.then(|| tgg_app::discover_games().into_iter().find(|game| game.changed == 0).map(|game| game.path)).flatten()
+            everywhere
+                .then(|| {
+                    tgg_app::discover_games()
+                        .into_iter()
+                        .find(|game| game.changed == 0)
+                        .map(|game| game.path)
+                })
+                .flatten()
         });
         Job::Mods(Box::new(Done::Disc(found)))
     });
@@ -482,8 +639,11 @@ fn clean(path: &Path) -> bool {
 
 /// Ask for the disc to play.
 pub fn choose_disc(_: &mut App, tx: &mut Tx) {
-    let options = FileDialogOptions { title: "Choose an unmodified Melee disc".into(), ..Default::default() }
-        .filter("Melee NTSC 1.02 disc image", &["iso", "gcm"]);
+    let options = FileDialogOptions {
+        title: "Choose an unmodified Melee disc".into(),
+        ..Default::default()
+    }
+    .filter("Melee NTSC 1.02 disc image", &["iso", "gcm"]);
     tx.open_file(options, |app: &mut App, answer, _| match answer {
         Ok(Some(path)) => use_disc(app, path),
         Ok(None) => {}
@@ -498,7 +658,13 @@ pub fn use_disc(app: &mut App, path: PathBuf) {
         Ok(game) => {
             let changed = game.changed_slots().len();
             if changed > 0 {
-                app.tell(format!("{} on this disc changed; netplay wants an unmodified one.", count(changed, "file")), true);
+                app.tell(
+                    format!(
+                        "{} on this disc changed; netplay wants an unmodified one.",
+                        count(changed, "file")
+                    ),
+                    true,
+                );
             }
             let remembered = path.clone();
             app.change_settings(move |settings| settings.play_iso = Some(remembered.clone()));
@@ -514,10 +680,18 @@ pub fn play(app: &mut App) {
     if app.mods.playing.is_some() {
         return;
     }
-    let (Some(port), Disc::Found(disc)) = (app.mods.port(), &app.mods.disc) else { return };
+    let (Some(port), Disc::Found(disc)) = (app.mods.port(), &app.mods.disc) else {
+        return;
+    };
     let log = app.data.ports.with_file_name("game.log");
     let version = port.version.clone();
-    let running = tgg_mod::ports::launch_with_args(port, disc, &app.data.mods, std::iter::empty::<&str>(), Some(&log));
+    let running = tgg_mod::ports::launch_with_args(
+        port,
+        disc,
+        &app.data.mods,
+        std::iter::empty::<&str>(),
+        Some(&log),
+    );
     let mut running = match running {
         Ok(running) => running,
         Err(error) => {
@@ -564,7 +738,11 @@ fn start(app: &mut App, doing: String) -> Arc<Shared> {
         cancel: Arc::new(AtomicBool::new(false)),
         waker: app.jobs.waker(),
     });
-    app.mods.work = Some(Work { doing, progress: shared.progress.clone(), cancel: shared.cancel.clone() });
+    app.mods.work = Some(Work {
+        doing,
+        progress: shared.progress.clone(),
+        cancel: shared.cancel.clone(),
+    });
     shared
 }
 
@@ -590,13 +768,19 @@ fn reporter(shared: &Arc<Shared>) -> impl Fn(Progress) + Sync + use<> {
 
 /// "1 mod", "3 mods".
 fn count(n: usize, noun: &str) -> String {
-    if n == 1 { format!("1 {noun}") } else { format!("{n} {noun}s") }
+    if n == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{n} {noun}s")
+    }
 }
 
 /// `line` with its first letter capitalized, as a sentence on its own.
 fn capitalized(line: &str) -> String {
     let mut characters = line.chars();
-    characters.next().map_or_else(String::new, |first| first.to_uppercase().chain(characters).collect())
+    characters.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(characters).collect()
+    })
 }
 
 /// Show all of a part of the chosen mod's details.

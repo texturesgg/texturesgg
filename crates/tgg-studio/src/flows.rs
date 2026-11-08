@@ -83,10 +83,24 @@ fn the_sidebar_hides_whole_and_its_toggle_stays_put() {
     tap(&mut rt, "shell/toggle");
     settle(&mut rt);
     assert!(!rt.state.nav.sidebar);
-    assert_eq!(rt.state.settings.sidebar, Some(false), "and it's remembered");
-    let width = rt.presented("shell/sidebar").map_or(0.0, |(rect, _)| rect[2]);
-    assert!(width < 0.5, "the sidebar narrows to nothing, not {width} pt");
-    assert_eq!(rt.presented("shell/toggle").expect("the toggle still shows").0, toggle);
+    assert_eq!(
+        rt.state.settings.sidebar,
+        Some(false),
+        "and it's remembered"
+    );
+    let width = rt
+        .presented("shell/sidebar")
+        .map_or(0.0, |(rect, _)| rect[2]);
+    assert!(
+        width < 0.5,
+        "the sidebar narrows to nothing, not {width} pt"
+    );
+    assert_eq!(
+        rt.presented("shell/toggle")
+            .expect("the toggle still shows")
+            .0,
+        toggle
+    );
     tap(&mut rt, "shell/toggle");
     assert!(rt.state.nav.sidebar);
 }
@@ -95,7 +109,13 @@ fn the_sidebar_hides_whole_and_its_toggle_stays_put() {
 fn ctrl_backslash_shows_and_hides_the_sidebar() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
-    let command = KeyEvent { key: Key::Command('\\'), mods: Mods { cmd: true, ..Default::default() } };
+    let command = KeyEvent {
+        key: Key::Command('\\'),
+        mods: Mods {
+            cmd: true,
+            ..Default::default()
+        },
+    };
     rt.key(command.clone());
     rt.frame(FRAME);
     assert!(!rt.state.nav.sidebar);
@@ -108,9 +128,15 @@ fn ctrl_backslash_shows_and_hides_the_sidebar() {
 fn without_a_game_welcome_asks_for_one() {
     let (rt, _data) = runtime(Start::Welcome(Welcome::default()));
     assert!(rt.find("welcome/choose").is_some());
-    assert!(rt.find(Place::Melee.key()).is_none(), "no places until there's a game");
+    assert!(
+        rt.find(Place::Melee.key()).is_none(),
+        "no places until there's a game"
+    );
     if cfg!(not(target_os = "macos")) {
-        assert!(rt.find("window/close").is_some(), "a borderless window can still be closed");
+        assert!(
+            rt.find("window/close").is_some(),
+            "a borderless window can still be closed"
+        );
     }
 }
 
@@ -121,11 +147,15 @@ fn an_iso_that_isnt_melee_is_refused_in_the_players_words() {
     std::fs::write(&other, tgg_app::game::test_disc(b"GALE01", 0, b"file")).expect("write disc");
     let (mut rt, _data) = runtime(Start::Welcome(Welcome::default()));
     tap(&mut rt, "welcome/choose");
-    rt.resolve_file_dialog(Some(other)).expect("a dialog was open");
+    rt.resolve_file_dialog(Some(other))
+        .expect("a dialog was open");
     rt.frame(FRAME);
     assert!(rt.state.game.is_none());
     let problem = rt.state.welcome.problem.clone().expect("Welcome says why");
-    assert!(problem.contains("1.02"), "it names the version Melee must be: {problem}");
+    assert!(
+        problem.contains("1.02"),
+        "it names the version Melee must be: {problem}"
+    );
     assert!(rt.find("welcome/problem").is_some());
 }
 
@@ -134,12 +164,16 @@ fn choosing_a_melee_iso_opens_the_game_and_remembers_it() {
     let (folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(Start::Welcome(Welcome::default()));
     tap(&mut rt, "welcome/choose");
-    rt.resolve_file_dialog(Some(iso.clone())).expect("a dialog was open");
+    rt.resolve_file_dialog(Some(iso.clone()))
+        .expect("a dialog was open");
     rt.frame(FRAME);
     assert!(rt.state.game.is_some());
     assert_eq!(rt.state.nav.place, Place::Melee);
     assert_eq!(rt.state.settings.iso_path.as_deref(), Some(iso.as_path()));
-    assert_eq!(rt.state.settings.game_folders, vec![folder.path().to_path_buf()]);
+    assert_eq!(
+        rt.state.settings.game_folders,
+        vec![folder.path().to_path_buf()]
+    );
     assert!(rt.find(Place::Melee.key()).is_some(), "the places show");
 }
 
@@ -147,7 +181,11 @@ fn choosing_a_melee_iso_opens_the_game_and_remembers_it() {
 fn a_game_found_in_the_players_folders_opens_with_one_press() {
     let (_folder, iso) = melee_iso();
     let welcome = Welcome {
-        games: vec![GameChoice { path: iso, slippi_plays: true, changed: 0 }],
+        games: vec![GameChoice {
+            path: iso,
+            slippi_plays: true,
+            changed: 0,
+        }],
         problem: None,
     };
     let (mut rt, _data) = runtime(Start::Welcome(welcome));
@@ -159,15 +197,41 @@ fn a_game_found_in_the_players_folders_opens_with_one_press() {
 fn the_roster_shows_the_games_fighters_and_whats_changed_once_its_read() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
-    assert!(rt.find("melee/fighter/Falco").is_some(), "the test disc holds a Falco costume");
-    assert!(rt.state.melee.states.is_none(), "nothing is read until the window runs");
+    assert!(
+        rt.find("melee/fighter/Falco").is_some(),
+        "the test disc holds a Falco costume"
+    );
+    assert!(
+        rt.state.melee.states.is_none(),
+        "nothing is read until the window runs"
+    );
     // The disc's PlFcRe.dat isn't the game's own file: it reads as custom.
     let data = tempfile::tempdir().expect("temp dir");
-    rt.state.jobs.read_states(&iso, &data.path().join("library"), &data.path().join("games"));
-    let done = rt.state.jobs.wait(std::time::Duration::from_secs(10)).expect("the states arrive");
-    let crate::jobs::Done::States { iso: read, states, undoable } = done else { panic!("the slot states arrive first") };
+    rt.state.jobs.read_states(
+        &iso,
+        &data.path().join("library"),
+        &data.path().join("games"),
+    );
+    let done = rt
+        .state
+        .jobs
+        .wait(std::time::Duration::from_secs(10))
+        .expect("the states arrive");
+    let crate::jobs::Done::States {
+        iso: read,
+        states,
+        undoable,
+    } = done
+    else {
+        panic!("the slot states arrive first")
+    };
     assert!(undoable.is_empty(), "nothing's been installed");
-    assert!(crate::melee::actions::states_read(&mut rt.state, &read, states, undoable));
+    assert!(crate::melee::actions::states_read(
+        &mut rt.state,
+        &read,
+        states,
+        undoable
+    ));
     let falco = &rt.state.melee.fighters[0];
     assert_eq!(rt.state.melee.changed_count(falco), 1);
 }
@@ -177,7 +241,12 @@ fn states_read_for_another_game_are_set_aside() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
     let elsewhere = Path::new("/elsewhere/melee.iso");
-    assert!(!crate::melee::actions::states_read(&mut rt.state, elsewhere, Default::default(), Default::default()));
+    assert!(!crate::melee::actions::states_read(
+        &mut rt.state,
+        elsewhere,
+        Default::default(),
+        Default::default()
+    ));
     assert!(rt.state.melee.states.is_none());
 }
 
@@ -191,7 +260,10 @@ fn the_stages_tab_shows_the_stages() {
 }
 
 fn press_escape(rt: &mut Runtime<App>) {
-    rt.key(KeyEvent { key: Key::Escape, mods: Mods::default() });
+    rt.key(KeyEvent {
+        key: Key::Escape,
+        mods: Mods::default(),
+    });
     rt.frame(FRAME);
 }
 
@@ -200,12 +272,28 @@ fn a_fighter_opens_onto_the_stage_and_escape_closes_it_into_its_plate() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
     tap(&mut rt, "melee/fighter/Falco");
-    assert_eq!(rt.state.melee.subject, Some(Subject::Fighter(melee_dat::Character::from_code("Fc").expect("Falco"))));
-    let shown = rt.state.stage.shown.as_ref().expect("Falco is on the stage");
+    assert_eq!(
+        rt.state.melee.subject,
+        Some(Subject::Fighter(
+            melee_dat::Character::from_code("Fc").expect("Falco")
+        ))
+    );
+    let shown = rt
+        .state
+        .stage
+        .shown
+        .as_ref()
+        .expect("Falco is on the stage");
     assert_eq!(shown.slot.file_name(), "PlFcRe.dat");
     assert!(rt.find("stage/viewport").is_some());
-    assert!(rt.find("melee/crumb").is_some(), "the title row says where the player is");
-    assert!(rt.find("melee/fighter/Falco").is_none(), "the roster gives way to the stage");
+    assert!(
+        rt.find("melee/crumb").is_some(),
+        "the title row says where the player is"
+    );
+    assert!(
+        rt.find("melee/fighter/Falco").is_none(),
+        "the roster gives way to the stage"
+    );
     press_escape(&mut rt);
     assert_eq!(rt.state.melee.subject, None);
     assert!(rt.state.stage.shown.is_none(), "the stage empties");
@@ -239,8 +327,14 @@ fn a_pane_folds_to_its_header() {
     tap(&mut rt, "melee/fighter/Falco");
     assert!(rt.find("melee/costume/PlFcRe.dat").is_some());
     tap(&mut rt, "melee/pane/costumes");
-    assert!(rt.find("melee/costume/PlFcRe.dat").is_none(), "folded, the costumes hide");
-    assert!(rt.find("melee/pane/costumes").is_some(), "but the header stays");
+    assert!(
+        rt.find("melee/costume/PlFcRe.dat").is_none(),
+        "folded, the costumes hide"
+    );
+    assert!(
+        rt.find("melee/pane/costumes").is_some(),
+        "but the header stays"
+    );
 }
 
 #[test]
@@ -249,7 +343,13 @@ fn dragging_across_the_stage_turns_the_camera_by_how_far_it_went() {
     let (mut rt, _data) = runtime(game_at(&iso));
     tap(&mut rt, "melee/fighter/Falco");
     settle(&mut rt);
-    let before = rt.state.stage.shown.as_ref().expect("Falco is on the stage").orbit;
+    let before = rt
+        .state
+        .stage
+        .shown
+        .as_ref()
+        .expect("Falco is on the stage")
+        .orbit;
     let (x, y) = rt.find("stage/viewport").expect("the stage shows");
     rt.pointer_down(x, y);
     rt.frame(FRAME);
@@ -262,10 +362,25 @@ fn dragging_across_the_stage_turns_the_camera_by_how_far_it_went() {
     }
     rt.pointer_up(x + 100.0, y);
     rt.frame(FRAME);
-    let after = rt.state.stage.shown.as_ref().expect("still on the stage").orbit;
-    assert!((after.yaw - (before.yaw - 1.0)).abs() < 1e-6, "100 points turn it a radian: {} → {}", before.yaw, after.yaw);
+    let after = rt
+        .state
+        .stage
+        .shown
+        .as_ref()
+        .expect("still on the stage")
+        .orbit;
+    assert!(
+        (after.yaw - (before.yaw - 1.0)).abs() < 1e-6,
+        "100 points turn it a radian: {} → {}",
+        before.yaw,
+        after.yaw
+    );
     assert_eq!(after.pitch, before.pitch);
-    assert_eq!(rt.cursor(), rune::Cursor::Grab, "let go, it's ready to grab again");
+    assert_eq!(
+        rt.cursor(),
+        rune::Cursor::Grab,
+        "let go, it's ready to grab again"
+    );
 
     // Down turns it to look from above.
     rt.pointer_down(x, y);
@@ -276,8 +391,19 @@ fn dragging_across_the_stage_turns_the_camera_by_how_far_it_went() {
     }
     rt.pointer_up(x, y + 30.0);
     rt.frame(FRAME);
-    let above = rt.state.stage.shown.as_ref().expect("still on the stage").orbit;
-    assert!((above.pitch - (after.pitch + 0.3)).abs() < 1e-6, "30 points down tip it 0.3: {} → {}", after.pitch, above.pitch);
+    let above = rt
+        .state
+        .stage
+        .shown
+        .as_ref()
+        .expect("still on the stage")
+        .orbit;
+    assert!(
+        (above.pitch - (after.pitch + 0.3)).abs() < 1e-6,
+        "30 points down tip it 0.3: {} → {}",
+        after.pitch,
+        above.pitch
+    );
     assert_eq!(above.yaw, after.yaw);
     let after = above;
 
@@ -287,8 +413,19 @@ fn dragging_across_the_stage_turns_the_camera_by_how_far_it_went() {
     (wheel.x, wheel.y, wheel.dy) = (x, y, 40.0);
     rt.wheel_event(wheel);
     rt.frame(FRAME);
-    let zoomed = rt.state.stage.shown.as_ref().expect("still on the stage").orbit;
-    assert!((zoomed.zoom - after.zoom * (-0.04f64).exp()).abs() < 1e-9, "one notch brings it in 4%: {} → {}", after.zoom, zoomed.zoom);
+    let zoomed = rt
+        .state
+        .stage
+        .shown
+        .as_ref()
+        .expect("still on the stage")
+        .orbit;
+    assert!(
+        (zoomed.zoom - after.zoom * (-0.04f64).exp()).abs() < 1e-9,
+        "one notch brings it in 4%: {} → {}",
+        after.zoom,
+        zoomed.zoom
+    );
 }
 
 #[test]
@@ -313,15 +450,27 @@ fn falco_skin(folder: &Path) -> (PathBuf, Vec<u8>) {
 fn add_through_review(rt: &mut Runtime<App>, file: PathBuf) {
     tap(rt, Place::Library.key());
     tap(rt, "library/add-file");
-    rt.resolve_file_dialog(Some(file)).expect("a dialog was open");
+    rt.resolve_file_dialog(Some(file))
+        .expect("a dialog was open");
     rt.frame(FRAME);
     settle(rt);
 }
 
 /// Wait for what every slot holds to be read again, and take it.
 fn reread(rt: &mut Runtime<App>) {
-    let done = rt.state.jobs.wait(std::time::Duration::from_secs(10)).expect("the states arrive");
-    let crate::jobs::Done::States { iso, states, undoable } = done else { panic!("the slot states arrive first") };
+    let done = rt
+        .state
+        .jobs
+        .wait(std::time::Duration::from_secs(10))
+        .expect("the states arrive");
+    let crate::jobs::Done::States {
+        iso,
+        states,
+        undoable,
+    } = done
+    else {
+        panic!("the slot states arrive first")
+    };
     rt.update(|app, _| {
         crate::melee::actions::states_read(app, &iso, states, undoable);
     });
@@ -334,10 +483,21 @@ fn a_skin_added_from_a_file_is_reviewed_then_kept() {
     let files = tempfile::tempdir().expect("temp dir");
     let (skin, _) = falco_skin(files.path());
     add_through_review(&mut rt, skin);
-    let review = rt.state.library_page.review.as_ref().expect("Review opens first");
+    let review = rt
+        .state
+        .library_page
+        .review
+        .as_ref()
+        .expect("Review opens first");
     assert_eq!(review.items.len(), 1);
-    assert_eq!(review.items[0].slot.map(|slot| slot.file_name()).as_deref(), Some("PlFcRe.dat"));
-    assert!(rt.state.library.skins().is_empty(), "nothing joins until the player says");
+    assert_eq!(
+        review.items[0].slot.map(|slot| slot.file_name()).as_deref(),
+        Some("PlFcRe.dat")
+    );
+    assert!(
+        rt.state.library.skins().is_empty(),
+        "nothing joins until the player says"
+    );
     tap(&mut rt, "review/add");
     assert!(rt.state.library_page.review.is_none());
     assert_eq!(rt.state.library.skins().len(), 1);
@@ -355,8 +515,17 @@ fn add_and_install_writes_the_skin_into_the_game() {
     tap(&mut rt, "review/install");
     let slot: melee_dat::MeleeSlot = "PlFcRe.dat".parse().expect("a slot");
     let game = rt.state.game.as_ref().expect("a game").game();
-    assert_eq!(game.read_slot(slot).expect("read back"), bytes, "the disc holds the skin now");
-    assert!(rt.state.notice.as_ref().is_some_and(|notice| notice.text.starts_with("Installed")));
+    assert_eq!(
+        game.read_slot(slot).expect("read back"),
+        bytes,
+        "the disc holds the skin now"
+    );
+    assert!(
+        rt.state
+            .notice
+            .as_ref()
+            .is_some_and(|notice| notice.text.starts_with("Installed"))
+    );
 }
 
 #[test]
@@ -370,13 +539,20 @@ fn an_install_undoes_from_the_fighters_costume() {
     tap(&mut rt, "review/install");
     reread(&mut rt);
     let slot: melee_dat::MeleeSlot = "PlFcRe.dat".parse().expect("a slot");
-    assert!(rt.state.melee.undoable.contains(&slot), "the install can be undone");
+    assert!(
+        rt.state.melee.undoable.contains(&slot),
+        "the install can be undone"
+    );
     tap(&mut rt, Place::Melee.key());
     tap(&mut rt, "melee/fighter/Falco");
     settle(&mut rt);
     tap(&mut rt, "melee/undo");
     let game = rt.state.game.as_ref().expect("a game").game();
-    assert_eq!(game.read_slot(slot).expect("read back"), original, "the costume is back as it was");
+    assert_eq!(
+        game.read_slot(slot).expect("read back"),
+        original,
+        "the costume is back as it was"
+    );
 }
 
 #[test]
@@ -401,7 +577,12 @@ fn a_file_that_isnt_a_skin_says_why_and_adds_nothing() {
     let junk = files.path().join("notes.dat");
     std::fs::write(&junk, b"not a model").expect("write");
     add_through_review(&mut rt, junk);
-    let review = rt.state.library_page.review.as_ref().expect("Review says why");
+    let review = rt
+        .state
+        .library_page
+        .review
+        .as_ref()
+        .expect("Review says why");
     assert!(review.items.is_empty());
     assert_eq!(review.rejected.len(), 1);
     assert!(rt.find("review/rejected/0").is_some());
@@ -434,12 +615,21 @@ fn editing() -> (Runtime<App>, TempDir, TempDir) {
 /// A one-color PNG `size` pixels square, on disk.
 fn png(folder: &Path, size: u32, rgba: [u8; 4]) -> PathBuf {
     let path = folder.join(format!("paint-{size}.png"));
-    image::RgbaImage::from_pixel(size, size, image::Rgba(rgba)).save(&path).expect("write png");
+    image::RgbaImage::from_pixel(size, size, image::Rgba(rgba))
+        .save(&path)
+        .expect("write png");
     path
 }
 
 fn command(rt: &mut Runtime<App>, character: char, shift: bool) {
-    rt.key(KeyEvent { key: Key::Command(character), mods: Mods { cmd: true, shift, ..Default::default() } });
+    rt.key(KeyEvent {
+        key: Key::Command(character),
+        mods: Mods {
+            cmd: true,
+            shift,
+            ..Default::default()
+        },
+    });
     rt.frame(FRAME);
 }
 
@@ -452,7 +642,10 @@ fn edit_textures_opens_the_costume_showing_with_its_first_texture() {
     assert_eq!(document.selected, Some(0));
     assert!(rt.find("editor/texture/0").is_some());
     let shown = rt.state.stage.shown.as_ref().expect("on the same stage");
-    assert!(!shown.highlight.is_empty(), "the selected texture's surfaces tint");
+    assert!(
+        !shown.highlight.is_empty(),
+        "the selected texture's surfaces tint"
+    );
 }
 
 #[test]
@@ -460,7 +653,10 @@ fn done_without_edits_goes_straight_back() {
     let (mut rt, _disc, _data) = editing();
     tap(&mut rt, "editor/done");
     assert!(rt.state.editor.is_none());
-    assert!(rt.state.melee.subject.is_some(), "back to Falco on the stage");
+    assert!(
+        rt.state.melee.subject.is_some(),
+        "back to Falco on the stage"
+    );
 }
 
 #[test]
@@ -472,13 +668,38 @@ fn an_imported_png_shows_on_the_model_and_undoes() {
     rt.frame(FRAME);
     let document = rt.state.editor.as_ref().expect("still editing");
     assert!(document.modified());
-    assert!(rt.state.notice.as_ref().is_some_and(|notice| notice.text.contains("every texel exact")), "{:?}", rt.state.notice);
-    assert!(!rt.state.stage.shown.as_ref().expect("on stage").edited.is_empty(), "the model shows it");
-    assert!(rt.find("editor/edited").is_some(), "the title row says it's edited");
+    assert!(
+        rt.state
+            .notice
+            .as_ref()
+            .is_some_and(|notice| notice.text.contains("every texel exact")),
+        "{:?}",
+        rt.state.notice
+    );
+    assert!(
+        !rt.state
+            .stage
+            .shown
+            .as_ref()
+            .expect("on stage")
+            .edited
+            .is_empty(),
+        "the model shows it"
+    );
+    assert!(
+        rt.find("editor/edited").is_some(),
+        "the title row says it's edited"
+    );
     command(&mut rt, 'z', false);
-    assert!(!rt.state.editor.as_ref().expect("still editing").modified(), "undone back to as it opened");
+    assert!(
+        !rt.state.editor.as_ref().expect("still editing").modified(),
+        "undone back to as it opened"
+    );
     command(&mut rt, 'z', true);
-    assert!(rt.state.editor.as_ref().expect("still editing").modified(), "and redone");
+    assert!(
+        rt.state.editor.as_ref().expect("still editing").modified(),
+        "and redone"
+    );
 }
 
 #[test]
@@ -488,7 +709,11 @@ fn a_png_of_the_wrong_size_is_turned_away() {
     let small = png(files.path(), 4, [0, 0, 255, 255]);
     rt.update(|app, _| crate::editor::files::import_file(app, 0, &small));
     let notice = rt.state.notice.clone().expect("it says why");
-    assert!(notice.error && notice.text.contains("is 4×4; this texture is 8×8"), "{}", notice.text);
+    assert!(
+        notice.error && notice.text.contains("is 4×4; this texture is 8×8"),
+        "{}",
+        notice.text
+    );
     assert!(!rt.state.editor.as_ref().expect("still editing").modified());
 }
 
@@ -499,11 +724,26 @@ fn leaving_with_unsaved_edits_asks_and_discarding_puts_the_costume_back() {
     let red = png(files.path(), 8, [255, 0, 0, 255]);
     rt.update(|app, _| crate::editor::files::import_file(app, 0, &red));
     press_escape(&mut rt);
-    assert_eq!(rt.state.editor.as_ref().and_then(|document| document.pending), Some(crate::editor::Pending::Leave));
+    assert_eq!(
+        rt.state
+            .editor
+            .as_ref()
+            .and_then(|document| document.pending),
+        Some(crate::editor::Pending::Leave)
+    );
     settle(&mut rt);
     tap(&mut rt, "prompt/discard");
     assert!(rt.state.editor.is_none());
-    assert!(rt.state.stage.shown.as_ref().expect("Falco on the stage").edited.is_empty(), "the edit is gone");
+    assert!(
+        rt.state
+            .stage
+            .shown
+            .as_ref()
+            .expect("Falco on the stage")
+            .edited
+            .is_empty(),
+        "the edit is gone"
+    );
 }
 
 #[test]
@@ -516,10 +756,20 @@ fn save_and_install_writes_the_edited_costume_into_the_game() {
     tap(&mut rt, "editor/install");
     let document = rt.state.editor.as_ref().expect("still editing");
     assert!(!document.modified(), "saved");
-    let edited = document.listing.document.as_ref().expect("open").bytes().to_vec();
+    let edited = document
+        .listing
+        .document
+        .as_ref()
+        .expect("open")
+        .bytes()
+        .to_vec();
     let slot = document.slot;
     let game = rt.state.game.as_ref().expect("a game").game();
-    assert_eq!(game.read_slot(slot).expect("read back"), edited, "the disc holds the edit");
+    assert_eq!(
+        game.read_slot(slot).expect("read back"),
+        edited,
+        "the disc holds the edit"
+    );
     let skins = rt.state.library.skins();
     assert_eq!(skins.len(), 1);
     assert_eq!(skins[0].name, "Falco · Red (edited)");
@@ -554,7 +804,14 @@ fn a_texture_exports_as_the_game_draws_it() {
 /// a surface drawing it.
 fn drawn(rt: &Runtime<App>, index: usize) -> Vec<dat_parser::hsd::scene::HsdTextureSourceId> {
     let document = rt.state.editor.as_ref().expect("editing");
-    document.listing.document.as_ref().expect("readable").textures()[index].uses.clone()
+    document
+        .listing
+        .document
+        .as_ref()
+        .expect("readable")
+        .textures()[index]
+        .uses
+        .clone()
 }
 
 #[test]
@@ -565,15 +822,34 @@ fn a_click_on_the_model_asks_to_pick_and_a_drag_doesnt() {
     rt.pointer_move(x + 2.0, y + 1.0);
     rt.pointer_up(x + 2.0, y + 1.0);
     rt.frame(FRAME);
-    let pick = rt.state.stage.shown.as_ref().expect("on the stage").pick.expect("a click picks");
-    assert!(pick.iter().all(|fraction| (0.0..=1.0).contains(fraction)), "{pick:?} is on the plate");
+    let pick = rt
+        .state
+        .stage
+        .shown
+        .as_ref()
+        .expect("on the stage")
+        .pick
+        .expect("a click picks");
+    assert!(
+        pick.iter().all(|fraction| (0.0..=1.0).contains(fraction)),
+        "{pick:?} is on the plate"
+    );
 
     rt.state.stage.shown.as_mut().expect("on the stage").pick = None;
     rt.pointer_down(x, y);
     rt.pointer_move(x + 40.0, y);
     rt.pointer_up(x + 40.0, y);
     rt.frame(FRAME);
-    assert!(rt.state.stage.shown.as_ref().expect("on the stage").pick.is_none(), "a drag turns the camera instead");
+    assert!(
+        rt.state
+            .stage
+            .shown
+            .as_ref()
+            .expect("on the stage")
+            .pick
+            .is_none(),
+        "a drag turns the camera instead"
+    );
 }
 
 #[test]
@@ -583,7 +859,15 @@ fn off_the_editor_a_click_on_the_model_picks_nothing() {
     tap(&mut rt, "melee/fighter/Falco");
     settle(&mut rt);
     tap(&mut rt, "stage/viewport");
-    assert!(rt.state.stage.shown.as_ref().expect("on the stage").pick.is_none());
+    assert!(
+        rt.state
+            .stage
+            .shown
+            .as_ref()
+            .expect("on the stage")
+            .pick
+            .is_none()
+    );
 }
 
 #[test]
@@ -595,12 +879,28 @@ fn picking_a_surface_selects_its_texture_and_picking_it_again_clears_it() {
     rt.state.stage.picked = Some(vec![texture.clone(), texture.clone()]);
     poll(&mut rt);
     assert_eq!(rt.state.editor.as_ref().expect("editing").selected, Some(0));
-    assert!(!rt.state.stage.shown.as_ref().expect("on the stage").highlight.is_empty(), "the model shows where it draws");
+    assert!(
+        !rt.state
+            .stage
+            .shown
+            .as_ref()
+            .expect("on the stage")
+            .highlight
+            .is_empty(),
+        "the model shows where it draws"
+    );
 
     rt.state.stage.picked = Some(vec![texture]);
     poll(&mut rt);
-    assert_eq!(rt.state.editor.as_ref().expect("editing").selected, None, "the selected one again clears it");
-    assert_eq!(rt.state.notice.as_ref().map(|notice| notice.text.as_str()), Some("Selection cleared"));
+    assert_eq!(
+        rt.state.editor.as_ref().expect("editing").selected,
+        None,
+        "the selected one again clears it"
+    );
+    assert_eq!(
+        rt.state.notice.as_ref().map(|notice| notice.text.as_str()),
+        Some("Selection cleared")
+    );
 }
 
 #[test]
@@ -629,25 +929,60 @@ fn a_texture_edited_in_the_image_editor_comes_back_with_each_save() {
     tap(&mut rt, "editor/external");
     let path = {
         let document = rt.state.editor.as_ref().expect("editing");
-        document.external.watched.get(&0).expect("the selected texture is watched").path.clone()
+        document
+            .external
+            .watched
+            .get(&0)
+            .expect("the selected texture is watched")
+            .path
+            .clone()
     };
     let exported = std::fs::read(&path).expect("its PNG is written");
-    assert!(!rt.state.editor.as_ref().expect("editing").modified(), "opening it there changes nothing yet");
+    assert!(
+        !rt.state.editor.as_ref().expect("editing").modified(),
+        "opening it there changes nothing yet"
+    );
 
     // The player paints it red and saves.
     let red = image::RgbaImage::from_pixel(8, 8, image::Rgba([255, 0, 0, 255]));
     red.save(&path).expect("save");
     let later = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
-    std::fs::File::options().write(true).open(&path).expect("open").set_modified(later).expect("touch");
+    std::fs::File::options()
+        .write(true)
+        .open(&path)
+        .expect("open")
+        .set_modified(later)
+        .expect("touch");
     poll(&mut rt);
-    assert!(rt.state.editor.as_ref().expect("editing").modified(), "the save came back as an edit");
-    assert!(!rt.state.stage.shown.as_ref().expect("on stage").edited.is_empty(), "and shows on the model");
+    assert!(
+        rt.state.editor.as_ref().expect("editing").modified(),
+        "the save came back as an edit"
+    );
+    assert!(
+        !rt.state
+            .stage
+            .shown
+            .as_ref()
+            .expect("on stage")
+            .edited
+            .is_empty(),
+        "and shows on the model"
+    );
 
     // Undo puts the PNG back as the document has it, without importing it again.
     command(&mut rt, 'z', false);
     assert!(!rt.state.editor.as_ref().expect("editing").modified());
-    assert_eq!(std::fs::read(&path).expect("still there"), exported, "the PNG matches the document again");
-    assert!(rt.state.editor.as_ref().expect("editing").external.watched[&0].saved().is_none(), "the rewrite isn't a save");
+    assert_eq!(
+        std::fs::read(&path).expect("still there"),
+        exported,
+        "the PNG matches the document again"
+    );
+    assert!(
+        rt.state.editor.as_ref().expect("editing").external.watched[&0]
+            .saved()
+            .is_none(),
+        "the rewrite isn't a save"
+    );
 
     tap(&mut rt, "editor/done");
     assert!(!path.exists(), "leaving the costume deletes its PNG");
@@ -658,7 +993,15 @@ fn ctrl_shift_e_opens_the_selected_texture_in_the_image_editor() {
     let (mut rt, _disc, _data) = editing();
     rt.state.settings.external_editor = Some("true".into());
     command(&mut rt, 'e', true);
-    assert!(rt.state.editor.as_ref().expect("editing").external.watched.contains_key(&0));
+    assert!(
+        rt.state
+            .editor
+            .as_ref()
+            .expect("editing")
+            .external
+            .watched
+            .contains_key(&0)
+    );
     tap(&mut rt, "editor/done");
 }
 
@@ -669,7 +1012,11 @@ fn first_color(rt: &Runtime<App>) -> [u8; 4] {
 #[test]
 fn a_color_changed_in_the_colors_pane_shows_on_the_model_and_undoes() {
     let (mut rt, _iso, _data) = editing();
-    assert_eq!(first_color(&rt), [96, 224, 96, 255], "the costume's green vertices");
+    assert_eq!(
+        first_color(&rt),
+        [96, 224, 96, 255],
+        "the costume's green vertices"
+    );
     let generation = rt.state.stage.shown.as_ref().expect("on stage").generation;
     tap(&mut rt, "editor/color/0/0");
     settle(&mut rt);
@@ -682,34 +1029,78 @@ fn a_color_changed_in_the_colors_pane_shows_on_the_model_and_undoes() {
     rt.frame(FRAME);
     tap(&mut rt, "editor/pick/apply");
     // Its vertices keep 5 bits of red, so full red reads back as 248.
-    assert_eq!(first_color(&rt), [248, 224, 96, 255], "every vertex of that color changed, as the game reads it");
+    assert_eq!(
+        first_color(&rt),
+        [248, 224, 96, 255],
+        "every vertex of that color changed, as the game reads it"
+    );
     assert!(rt.state.editor.as_ref().expect("editing").modified());
-    assert!(rt.state.editor.as_ref().expect("editing").color_pick.is_none(), "the sliders close");
-    assert_ne!(rt.state.stage.shown.as_ref().expect("on stage").generation, generation, "the model is drawn afresh");
-    assert!(rt.state.notice.as_ref().is_some_and(|notice| notice.text.contains("#60E060 to #FFE060")), "{:?}", rt.state.notice);
+    assert!(
+        rt.state
+            .editor
+            .as_ref()
+            .expect("editing")
+            .color_pick
+            .is_none(),
+        "the sliders close"
+    );
+    assert_ne!(
+        rt.state.stage.shown.as_ref().expect("on stage").generation,
+        generation,
+        "the model is drawn afresh"
+    );
+    assert!(
+        rt.state
+            .notice
+            .as_ref()
+            .is_some_and(|notice| notice.text.contains("#60E060 to #FFE060")),
+        "{:?}",
+        rt.state.notice
+    );
 
     command(&mut rt, 'z', false);
-    assert_eq!(first_color(&rt), [96, 224, 96, 255], "undone, the list reads the green again");
+    assert_eq!(
+        first_color(&rt),
+        [96, 224, 96, 255],
+        "undone, the list reads the green again"
+    );
     assert!(!rt.state.editor.as_ref().expect("editing").modified());
 }
 
 #[test]
 fn shifting_a_groups_hue_turns_all_its_colors() {
     let (mut rt, _iso, _data) = editing();
-    let before: Vec<[u8; 4]> = rt.state.editor.as_ref().expect("editing").colors[0].swatches.iter().map(|swatch| swatch.rgba).collect();
+    let before: Vec<[u8; 4]> = rt.state.editor.as_ref().expect("editing").colors[0]
+        .swatches
+        .iter()
+        .map(|swatch| swatch.rgba)
+        .collect();
     tap(&mut rt, "editor/hue/0");
     settle(&mut rt);
     rt.update(|app, _| crate::editor::colors::set_hue(app, 120.0));
     rt.frame(FRAME);
     tap(&mut rt, "editor/pick/apply");
-    let after: Vec<[u8; 4]> = rt.state.editor.as_ref().expect("editing").colors[0].swatches.iter().map(|swatch| swatch.rgba).collect();
-    let mut expected: Vec<[u8; 4]> = before.iter().map(|&rgba| tgg_app::colors::turn_hue(rgba, 120.0)).collect();
+    let after: Vec<[u8; 4]> = rt.state.editor.as_ref().expect("editing").colors[0]
+        .swatches
+        .iter()
+        .map(|swatch| swatch.rgba)
+        .collect();
+    let mut expected: Vec<[u8; 4]> = before
+        .iter()
+        .map(|&rgba| tgg_app::colors::turn_hue(rgba, 120.0))
+        .collect();
     let mut sorted = after.clone();
     expected.sort_unstable();
     sorted.sort_unstable();
     // Within what the vertices' 5- and 6-bit channels keep.
-    let close = sorted.iter().zip(&expected).all(|(got, want)| got.iter().zip(want).all(|(a, b)| a.abs_diff(*b) <= 8));
-    assert!(close, "each color turned a third of the way round: {sorted:?}, wanted about {expected:?}");
+    let close = sorted
+        .iter()
+        .zip(&expected)
+        .all(|(got, want)| got.iter().zip(want).all(|(a, b)| a.abs_diff(*b) <= 8));
+    assert!(
+        close,
+        "each color turned a third of the way round: {sorted:?}, wanted about {expected:?}"
+    );
 }
 
 #[test]
@@ -732,7 +1123,10 @@ fn on_mods(net: std::sync::Arc<tgg_mod::FakeNet>) -> (Runtime<App>, TempDir, Tem
     let (mut rt, data) = runtime(game_at(&iso));
     rt.state.mods.net = net;
     tap(&mut rt, Place::Mods.key());
-    jobs_until(&mut rt, |app| app.mods.registry != crate::mods::Registry::Asking && app.mods.disc != crate::mods::Disc::Looking);
+    jobs_until(&mut rt, |app| {
+        app.mods.registry != crate::mods::Registry::Asking
+            && app.mods.disc != crate::mods::Disc::Looking
+    });
     (rt, disc, data)
 }
 
@@ -740,7 +1134,10 @@ fn on_mods(net: std::sync::Arc<tgg_mod::FakeNet>) -> (Runtime<App>, TempDir, Tem
 fn jobs_until(rt: &mut Runtime<App>, done: impl Fn(&App) -> bool) {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
     while !done(&rt.state) {
-        assert!(std::time::Instant::now() < deadline, "the jobs finished in time");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the jobs finished in time"
+        );
         std::thread::sleep(std::time::Duration::from_millis(10));
         poll(rt);
     }
@@ -751,7 +1148,9 @@ fn jobs_until(rt: &mut Runtime<App>, done: impl Fn(&App) -> bool) {
 fn with_port(net: std::sync::Arc<tgg_mod::FakeNet>) -> (Runtime<App>, TempDir, TempDir) {
     let (mut rt, disc, data) = on_mods(net);
     tap(&mut rt, "mods/install-port");
-    jobs_until(&mut rt, |app| app.mods.port().is_some() && app.mods.registry == crate::mods::Registry::Answered);
+    jobs_until(&mut rt, |app| {
+        app.mods.port().is_some() && app.mods.registry == crate::mods::Registry::Answered
+    });
     (rt, disc, data)
 }
 
@@ -768,24 +1167,49 @@ fn install_set(rt: &mut Runtime<App>, name: &str) {
     tap_shown(rt, &format!("mods/set/{name}/install"));
     settle(rt);
     tap(rt, "mods/review/confirm");
-    jobs_until(rt, |app| app.mods.work.is_none() && app.mods.local.set(name).is_some());
+    jobs_until(rt, |app| {
+        app.mods.work.is_none() && app.mods.local.set(name).is_some()
+    });
 }
 
 #[test]
 fn mods_offers_tgg_melee_then_its_sets() {
     let (mut rt, _disc, _data) = on_mods(std::sync::Arc::new(tgg_mod::FakeNet::new()));
     assert_eq!(rt.state.mods.registry, crate::mods::Registry::Answered);
-    assert!(rt.find("mods/install-port").is_some(), "tgg-melee offers to install");
-    assert!(rt.find("mods/set/competitive").is_some() && rt.find("mods/set/replays").is_some(), "the sets show before it's installed");
-    assert!(rt.find("mods/set/competitive/install").is_none(), "but install once tgg-melee is there");
+    assert!(
+        rt.find("mods/install-port").is_some(),
+        "tgg-melee offers to install"
+    );
+    assert!(
+        rt.find("mods/set/competitive").is_some() && rt.find("mods/set/replays").is_some(),
+        "the sets show before it's installed"
+    );
+    assert!(
+        rt.find("mods/set/competitive/install").is_none(),
+        "but install once tgg-melee is there"
+    );
     assert!(rt.find("mods/note").is_some());
     tap(&mut rt, "mods/install-port");
-    assert!(rt.find("mods/work").is_some(), "the install shows its progress");
-    jobs_until(&mut rt, |app| app.mods.port().is_some() && app.mods.registry == crate::mods::Registry::Answered);
-    assert_eq!(rt.state.mods.port().map(|port| port.version.as_str()), Some(tgg_mod::FakeNet::PORT_VERSION));
+    assert!(
+        rt.find("mods/work").is_some(),
+        "the install shows its progress"
+    );
+    jobs_until(&mut rt, |app| {
+        app.mods.port().is_some() && app.mods.registry == crate::mods::Registry::Answered
+    });
+    assert_eq!(
+        rt.state.mods.port().map(|port| port.version.as_str()),
+        Some(tgg_mod::FakeNet::PORT_VERSION)
+    );
     assert!(rt.find("mods/install-port").is_none() && rt.find("mods/work").is_none());
-    assert!(rt.find("mods/set/competitive/install").is_some(), "a set installs now");
-    assert!(rt.find("mods/play").is_none(), "the test disc isn't unmodified, so nothing to play yet");
+    assert!(
+        rt.find("mods/set/competitive/install").is_some(),
+        "a set installs now"
+    );
+    assert!(
+        rt.find("mods/play").is_none(),
+        "the test disc isn't unmodified, so nothing to play yet"
+    );
     assert_eq!(rt.state.mods.disc, crate::mods::Disc::Missing);
 }
 
@@ -797,16 +1221,33 @@ fn a_set_is_reviewed_then_installed() {
     let review = rt.state.mods.review.as_ref().expect("the plan shows first");
     assert_eq!(review.plan.steps.len(), 7);
     assert!(rt.find("mods/review/tgg.direct-connect").is_some());
-    assert!(rt.state.mods.local.mods.is_empty(), "nothing installs until the player says");
+    assert!(
+        rt.state.mods.local.mods.is_empty(),
+        "nothing installs until the player says"
+    );
     tap(&mut rt, "mods/review/confirm");
-    jobs_until(&mut rt, |app| app.mods.work.is_none() && !app.mods.local.mods.is_empty());
+    jobs_until(&mut rt, |app| {
+        app.mods.work.is_none() && !app.mods.local.mods.is_empty()
+    });
     assert_eq!(rt.state.mods.local.mods.len(), 7);
-    assert_eq!(rt.state.mods.local.set("competitive").map(|set| set.status), Some(tgg_mod::SetStatus::Complete));
-    assert!(data.path().join("mods/tgg.netplay").is_dir(), "into the mods folder");
-    assert!(rt.find("mods/set/competitive/install").is_none(), "an installed set doesn't offer to install");
+    assert_eq!(
+        rt.state.mods.local.set("competitive").map(|set| set.status),
+        Some(tgg_mod::SetStatus::Complete)
+    );
+    assert!(
+        data.path().join("mods/tgg.netplay").is_dir(),
+        "into the mods folder"
+    );
+    assert!(
+        rt.find("mods/set/competitive/install").is_none(),
+        "an installed set doesn't offer to install"
+    );
     tap(&mut rt, "mods/tab/installed");
     assert!(rt.find("mods/installed").is_some() && rt.find("mods/mod/tgg.netplay").is_some());
-    assert_eq!(rt.state.notice.as_ref().map(|notice| notice.text.as_str()), Some("Installed 7 mods."));
+    assert_eq!(
+        rt.state.notice.as_ref().map(|notice| notice.text.as_str()),
+        Some("Installed 7 mods.")
+    );
 }
 
 #[test]
@@ -815,10 +1256,19 @@ fn a_mod_switched_off_customizes_its_set_and_back() {
     install_set(&mut rt, "competitive");
     tap(&mut rt, "mods/tab/installed");
     tap_shown(&mut rt, "mods/mod/tgg.quick-start/switch");
-    assert!(data.path().join("mods/.tgg.quick-start").is_dir(), "a turned-off mod's folder is hidden from the game");
-    assert_eq!(rt.state.mods.local.set("competitive").map(|set| set.status), Some(tgg_mod::SetStatus::Customized));
+    assert!(
+        data.path().join("mods/.tgg.quick-start").is_dir(),
+        "a turned-off mod's folder is hidden from the game"
+    );
+    assert_eq!(
+        rt.state.mods.local.set("competitive").map(|set| set.status),
+        Some(tgg_mod::SetStatus::Customized)
+    );
     tap_shown(&mut rt, "mods/mod/tgg.quick-start/switch");
-    assert_eq!(rt.state.mods.local.set("competitive").map(|set| set.status), Some(tgg_mod::SetStatus::Complete));
+    assert_eq!(
+        rt.state.mods.local.set("competitive").map(|set| set.status),
+        Some(tgg_mod::SetStatus::Complete)
+    );
 }
 
 #[test]
@@ -829,16 +1279,30 @@ fn update_all_installs_what_textures_gg_has_newer() {
     assert!(rt.find("mods/update-all").is_none(), "nothing's newer yet");
     net.publish_mod("tgg.replay-recorder", "Replay recorder", "0.1.1", &[]);
     tap(&mut rt, "mods/refresh");
-    jobs_until(&mut rt, |app| app.mods.registry == crate::mods::Registry::Answered);
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered
+    });
     assert!(rt.state.mods.has_updates());
     tap(&mut rt, "mods/tab/installed");
     tap_shown(&mut rt, "mods/update-all");
     settle(&mut rt);
     tap(&mut rt, "mods/review/confirm");
-    jobs_until(&mut rt, |app| app.mods.work.is_none() && !app.mods.has_updates());
-    let recorder = rt.state.mods.local.mods.iter().find(|m| m.manifest.id.as_str() == "tgg.replay-recorder").expect("still installed");
+    jobs_until(&mut rt, |app| {
+        app.mods.work.is_none() && !app.mods.has_updates()
+    });
+    let recorder = rt
+        .state
+        .mods
+        .local
+        .mods
+        .iter()
+        .find(|m| m.manifest.id.as_str() == "tgg.replay-recorder")
+        .expect("still installed");
     assert_eq!(recorder.manifest.version.to_string(), "0.1.1");
-    assert_eq!(rt.state.notice.as_ref().map(|notice| notice.text.as_str()), Some("Updated 1 mod."));
+    assert_eq!(
+        rt.state.notice.as_ref().map(|notice| notice.text.as_str()),
+        Some("Updated 1 mod.")
+    );
 }
 
 #[test]
@@ -848,7 +1312,10 @@ fn a_set_removed_takes_its_mods() {
     tap(&mut rt, "mods/set/replays/remove");
     assert!(rt.state.mods.local.mods.is_empty());
     tap(&mut rt, "mods/tab/installed");
-    assert!(rt.find("mods/installed/empty").is_some(), "the Installed tab says there's nothing");
+    assert!(
+        rt.find("mods/installed/empty").is_some(),
+        "the Installed tab says there's nothing"
+    );
 }
 
 #[test]
@@ -864,12 +1331,22 @@ fn offline_mods_says_so_and_keeps_what_is_installed() {
 fn play_starts_tgg_melee_and_stop_ends_it() {
     let (mut rt, _disc, data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
     // The test disc has a costume of its own; choose it to play anyway.
-    let iso = rt.state.game.as_ref().expect("a game").game().path().to_owned();
+    let iso = rt
+        .state
+        .game
+        .as_ref()
+        .expect("a game")
+        .game()
+        .path()
+        .to_owned();
     rt.update(|app, _| crate::mods::actions::use_disc(app, iso.clone()));
     rt.frame(FRAME);
     tap(&mut rt, "mods/play");
     assert!(rt.state.mods.playing.is_some());
-    assert!(tgg_mod::game_running(&data.path().join("mods")), "other tgg's see the game running");
+    assert!(
+        tgg_mod::game_running(&data.path().join("mods")),
+        "other tgg's see the game running"
+    );
     assert!(rt.find("mods/stop").is_some());
     tap(&mut rt, "mods/stop");
     jobs_until(&mut rt, |app| app.mods.playing.is_none());
@@ -880,15 +1357,31 @@ fn play_starts_tgg_melee_and_stop_ends_it() {
 fn every_mod_can_be_browsed_and_searched_before_tgg_melee_is_installed() {
     let (mut rt, _disc, _data) = on_mods(std::sync::Arc::new(tgg_mod::FakeNet::new()));
     tap(&mut rt, "mods/tab/all");
-    assert_eq!(rt.state.mods.offered().len(), 10, "the newest release of each, from the newest tgg-melee's catalog");
+    assert_eq!(
+        rt.state.mods.offered().len(),
+        10,
+        "the newest release of each, from the newest tgg-melee's catalog"
+    );
     assert!(rt.find("mods/catalog/tgg.netplay").is_some());
-    assert!(rt.find("mods/catalog/tgg.netplay/install").is_none(), "installing waits for tgg-melee");
+    assert!(
+        rt.find("mods/catalog/tgg.netplay/install").is_none(),
+        "installing waits for tgg-melee"
+    );
     rt.update(|app, _| app.mods.search.text = "replay".into());
     rt.frame(FRAME);
-    let found: Vec<String> = rt.state.mods.found().iter().map(|entry| entry.manifest.id.to_string()).collect();
+    let found: Vec<String> = rt
+        .state
+        .mods
+        .found()
+        .iter()
+        .map(|entry| entry.manifest.id.to_string())
+        .collect();
     assert_eq!(found.len(), 3, "the three replay mods: {found:?}");
     assert!(found.iter().all(|id| id.starts_with("tgg.replay-")));
-    assert!(rt.find("mods/catalog/tgg.netplay").is_none(), "the search hides the rest");
+    assert!(
+        rt.find("mods/catalog/tgg.netplay").is_none(),
+        "the search hides the rest"
+    );
     rt.update(|app, _| app.mods.search.text = "nothing like this".into());
     rt.frame(FRAME);
     assert!(rt.find("mods/all/empty").is_some());
@@ -901,13 +1394,29 @@ fn one_mod_installs_with_what_it_needs() {
     tap_shown(&mut rt, "mods/catalog/tgg.direct-connect/install");
     settle(&mut rt);
     let review = rt.state.mods.review.as_ref().expect("the plan shows first");
-    let ids: Vec<String> = review.plan.steps.iter().map(|step| step.id.to_string()).collect();
-    assert!(ids.contains(&"tgg.direct-connect".to_owned()) && ids.contains(&"tgg.netplay".to_owned()), "and what it needs: {ids:?}");
+    let ids: Vec<String> = review
+        .plan
+        .steps
+        .iter()
+        .map(|step| step.id.to_string())
+        .collect();
+    assert!(
+        ids.contains(&"tgg.direct-connect".to_owned()) && ids.contains(&"tgg.netplay".to_owned()),
+        "and what it needs: {ids:?}"
+    );
     tap(&mut rt, "mods/review/confirm");
-    jobs_until(&mut rt, |app| app.mods.work.is_none() && !app.mods.local.mods.is_empty());
+    jobs_until(&mut rt, |app| {
+        app.mods.work.is_none() && !app.mods.local.mods.is_empty()
+    });
     assert_eq!(rt.state.mods.local.mods.len(), 2);
-    assert!(rt.find("mods/catalog/tgg.direct-connect/switch").is_some(), "installed, it shows its switch");
-    assert_eq!(rt.state.mods.selected, None, "pressing Install didn't open the details");
+    assert!(
+        rt.find("mods/catalog/tgg.direct-connect/switch").is_some(),
+        "installed, it shows its switch"
+    );
+    assert_eq!(
+        rt.state.mods.selected, None,
+        "pressing Install didn't open the details"
+    );
 }
 
 #[test]
@@ -916,19 +1425,42 @@ fn a_mods_details_slide_in_and_install_it() {
     tap(&mut rt, "mods/tab/all");
     tap_shown(&mut rt, "mods/catalog/tgg.replay-browser");
     settle(&mut rt);
-    assert_eq!(rt.state.mods.selected.as_ref().map(ToString::to_string).as_deref(), Some("tgg.replay-browser"));
-    let width = rt.presented("mods/details").map_or(0.0, |(rect, _)| rect[2]);
-    assert!(width > 300.0, "the pane opens to its column, not {width} pt");
+    assert_eq!(
+        rt.state
+            .mods
+            .selected
+            .as_ref()
+            .map(ToString::to_string)
+            .as_deref(),
+        Some("tgg.replay-browser")
+    );
+    let width = rt
+        .presented("mods/details")
+        .map_or(0.0, |(rect, _)| rect[2]);
+    assert!(
+        width > 300.0,
+        "the pane opens to its column, not {width} pt"
+    );
     assert!(rt.find("mods/details/body").is_some());
     tap(&mut rt, "mods/details/install");
     settle(&mut rt);
     tap(&mut rt, "mods/review/confirm");
-    jobs_until(&mut rt, |app| app.mods.work.is_none() && !app.mods.local.mods.is_empty());
-    assert!(rt.find("mods/details/switch").is_some(), "installed, the pane shows its switch");
+    jobs_until(&mut rt, |app| {
+        app.mods.work.is_none() && !app.mods.local.mods.is_empty()
+    });
+    assert!(
+        rt.find("mods/details/switch").is_some(),
+        "installed, the pane shows its switch"
+    );
     tap(&mut rt, "mods/details/close");
     settle(&mut rt);
-    let width = rt.presented("mods/details").map_or(0.0, |(rect, _)| rect[2]);
-    assert!(width < 0.5, "closed, the pane narrows to nothing, not {width} pt");
+    let width = rt
+        .presented("mods/details")
+        .map_or(0.0, |(rect, _)| rect[2]);
+    assert!(
+        width < 0.5,
+        "closed, the pane narrows to nothing, not {width} pt"
+    );
 }
 
 #[test]
@@ -938,22 +1470,40 @@ fn a_newer_tgg_melee_says_which_mods_wait_and_the_older_one_stays_to_go_back_to(
     install_set(&mut rt, "replays");
     net.publish_port("0.6.0");
     tap(&mut rt, "mods/refresh");
-    jobs_until(&mut rt, |app| app.mods.registry == crate::mods::Registry::Answered);
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered
+    });
     assert!(rt.find("mods/update-port").is_some(), "0.6.0 is offered");
     // The fake's mods fit every game; say the newer one has only the player's recorder built.
-    rt.update(|app, _| app.mods.next_built = Some(vec!["tgg.replay-recorder".parse().expect("an id")]));
+    rt.update(|app, _| {
+        app.mods.next_built = Some(vec!["tgg.replay-recorder".parse().expect("an id")])
+    });
     rt.frame(FRAME);
-    assert!(rt.find("mods/update-waits").is_some(), "the mods that would wait are named before updating");
+    assert!(
+        rt.find("mods/update-waits").is_some(),
+        "the mods that would wait are named before updating"
+    );
     assert_eq!(rt.state.mods.unbuilt_for_update().len(), 2);
     tap(&mut rt, "mods/update-port");
-    jobs_until(&mut rt, |app| app.mods.port().is_some_and(|port| port.version == "0.6.0") && app.mods.registry == crate::mods::Registry::Answered);
+    jobs_until(&mut rt, |app| {
+        app.mods.port().is_some_and(|port| port.version == "0.6.0")
+            && app.mods.registry == crate::mods::Registry::Answered
+    });
     assert_eq!(rt.state.mods.ports.len(), 2, "the older version stays");
     assert_eq!(rt.state.mods.fallback, None, "every mod here fits 0.6.0");
     // Say some didn't: the way back is one press.
-    rt.update(|app, _| app.mods.fallback = Some(crate::mods::Fallback { version: "0.5.0".into(), unfit: 2 }));
+    rt.update(|app, _| {
+        app.mods.fallback = Some(crate::mods::Fallback {
+            version: "0.5.0".into(),
+            unfit: 2,
+        })
+    });
     settle(&mut rt);
     tap(&mut rt, "mods/use-fallback");
-    assert_eq!(rt.state.mods.port().map(|port| port.version.as_str()), Some("0.5.0"));
+    assert_eq!(
+        rt.state.mods.port().map(|port| port.version.as_str()),
+        Some("0.5.0")
+    );
     assert_eq!(rt.state.mods.fallback, None);
 }
 
@@ -961,14 +1511,27 @@ fn a_newer_tgg_melee_says_which_mods_wait_and_the_older_one_stays_to_go_back_to(
 fn the_details_pane_is_the_window_tall_and_takes_the_window_controls() {
     let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
     tap(&mut rt, "mods/tab/all");
-    let close = rt.presented("window/close").expect("the window's close shows").0;
+    let close = rt
+        .presented("window/close")
+        .expect("the window's close shows")
+        .0;
     tap_shown(&mut rt, "mods/catalog/tgg.netplay");
     settle(&mut rt);
     let (pane, _) = rt.presented("mods/details").expect("the pane shows");
-    assert!(pane[1] < 0.5, "it starts at the window's top, not {} pt down", pane[1]);
-    let moved = rt.presented("window/close").expect("the window's close still shows").0;
-    assert!((moved[0] + moved[2] - (close[0] + close[2])).abs() < 0.5 && (moved[1] - close[1]).abs() < 0.5,
-        "and it stays where it was: {close:?} then {moved:?}");
+    assert!(
+        pane[1] < 0.5,
+        "it starts at the window's top, not {} pt down",
+        pane[1]
+    );
+    let moved = rt
+        .presented("window/close")
+        .expect("the window's close still shows")
+        .0;
+    assert!(
+        (moved[0] + moved[2] - (close[0] + close[2])).abs() < 0.5
+            && (moved[1] - close[1]).abs() < 0.5,
+        "and it stays where it was: {close:?} then {moved:?}"
+    );
     tap(&mut rt, "mods/details/close");
     settle(&mut rt);
     assert_eq!(rt.state.mods.selected, None);
@@ -980,10 +1543,23 @@ fn checking_for_updates_moves_nothing_on_the_page() {
     let before = rt.presented("mods/tab/sets").expect("the tabs show").0;
     tap(&mut rt, "mods/refresh");
     settle(&mut rt);
-    assert!(rt.find("mods/checking").is_some(), "the action says it's checking, in place");
-    assert_eq!(rt.presented("mods/tab/sets").expect("the tabs show").0, before, "while it asks");
-    jobs_until(&mut rt, |app| app.mods.registry == crate::mods::Registry::Answered);
-    assert_eq!(rt.presented("mods/tab/sets").expect("the tabs show").0, before, "and once it's answered");
+    assert!(
+        rt.find("mods/checking").is_some(),
+        "the action says it's checking, in place"
+    );
+    assert_eq!(
+        rt.presented("mods/tab/sets").expect("the tabs show").0,
+        before,
+        "while it asks"
+    );
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered
+    });
+    assert_eq!(
+        rt.presented("mods/tab/sets").expect("the tabs show").0,
+        before,
+        "and once it's answered"
+    );
 }
 
 #[test]
@@ -992,23 +1568,51 @@ fn versions_install_switch_and_remove_and_an_installed_newer_one_is_still_an_upd
     let (mut rt, _disc, _data) = with_port(net.clone());
     net.publish_port("0.6.0");
     tap(&mut rt, "mods/refresh");
-    jobs_until(&mut rt, |app| app.mods.registry == crate::mods::Registry::Answered);
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered
+    });
     tap(&mut rt, "mods/versions");
     settle(&mut rt);
-    assert!(rt.find("mods/versions/0.6.0/install").is_some(), "the newer release offers to install");
-    assert!(rt.find("mods/versions/0.5.0/use").is_none(), "the one in use has nothing to do");
+    assert!(
+        rt.find("mods/versions/0.6.0/install").is_some(),
+        "the newer release offers to install"
+    );
+    assert!(
+        rt.find("mods/versions/0.5.0/use").is_none(),
+        "the one in use has nothing to do"
+    );
     tap(&mut rt, "mods/versions/0.6.0/install");
-    jobs_until(&mut rt, |app| app.mods.port().is_some_and(|port| port.version == "0.6.0") && app.mods.registry == crate::mods::Registry::Answered);
+    jobs_until(&mut rt, |app| {
+        app.mods.port().is_some_and(|port| port.version == "0.6.0")
+            && app.mods.registry == crate::mods::Registry::Answered
+    });
     tap(&mut rt, "mods/versions/0.5.0/use");
     settle(&mut rt);
-    assert_eq!(rt.state.mods.port().map(|port| port.version.as_str()), Some("0.5.0"));
+    assert_eq!(
+        rt.state.mods.port().map(|port| port.version.as_str()),
+        Some("0.5.0")
+    );
     tap(&mut rt, "mods/versions/done");
-    jobs_until(&mut rt, |app| app.mods.registry == crate::mods::Registry::Answered);
-    assert_eq!(rt.state.mods.port_update().map(|release| release.version), Some("0.6.0".to_owned()), "0.6.0, installed, is still newer");
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered
+    });
+    assert_eq!(
+        rt.state.mods.port_update().map(|release| release.version),
+        Some("0.6.0".to_owned()),
+        "0.6.0, installed, is still newer"
+    );
     tap(&mut rt, "mods/update-port");
-    assert!(rt.state.mods.work.is_none(), "using an installed version downloads nothing");
-    assert_eq!(rt.state.mods.port().map(|port| port.version.as_str()), Some("0.6.0"));
-    jobs_until(&mut rt, |app| app.mods.registry == crate::mods::Registry::Answered);
+    assert!(
+        rt.state.mods.work.is_none(),
+        "using an installed version downloads nothing"
+    );
+    assert_eq!(
+        rt.state.mods.port().map(|port| port.version.as_str()),
+        Some("0.6.0")
+    );
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered
+    });
     tap(&mut rt, "mods/versions");
     settle(&mut rt);
     tap(&mut rt, "mods/versions/0.5.0/remove");
@@ -1018,20 +1622,34 @@ fn versions_install_switch_and_remove_and_an_installed_newer_one_is_still_an_upd
 #[test]
 fn rows_say_who_publishes_each_mod_and_the_details_bring_its_page() {
     let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
-    assert_eq!(rt.state.mods.listings.len(), 10, "the registry's listing of every mod");
+    assert_eq!(
+        rt.state.mods.listings.len(),
+        10,
+        "the registry's listing of every mod"
+    );
     let netplay: tgg_mod::ModId = "tgg.netplay".parse().expect("an id");
     assert!(!rt.state.mods.listings[&netplay].author.is_empty());
     // Icons arrive on threads of their own.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while rt.state.mods.icon(&netplay).is_none_or(|pixels| format!("{pixels:?}").contains("0x0")) {
+    while rt
+        .state
+        .mods
+        .icon(&netplay)
+        .is_none_or(|pixels| format!("{pixels:?}").contains("0x0"))
+    {
         assert!(std::time::Instant::now() < deadline, "the icon arrives");
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     tap(&mut rt, "mods/tab/all");
     tap_shown(&mut rt, "mods/catalog/tgg.netplay");
-    jobs_until(&mut rt, |app| app.mods.details.get(&netplay).is_some_and(Option::is_some));
+    jobs_until(&mut rt, |app| {
+        app.mods.details.get(&netplay).is_some_and(Option::is_some)
+    });
     assert!(rt.find("mods/details/readme").is_some(), "its README");
-    assert!(rt.find("mods/details/releases").is_some(), "and its releases");
+    assert!(
+        rt.find("mods/details/releases").is_some(),
+        "and its releases"
+    );
 }
 
 #[test]
@@ -1040,7 +1658,13 @@ fn a_mod_not_built_for_this_version_is_listed_and_says_so() {
     let (mut rt, _disc, _data) = with_port(net.clone());
     // The registry lists a mod with no build for this game yet.
     rt.update(|app, _| {
-        let mut summary = app.mods.listings.values().next().expect("a listing").clone();
+        let mut summary = app
+            .mods
+            .listings
+            .values()
+            .next()
+            .expect("a listing")
+            .clone();
         summary.id = "tgg.someday".parse().expect("an id");
         summary.name = "Someday".into();
         app.mods.listings.insert(summary.id.clone(), summary);
@@ -1049,7 +1673,10 @@ fn a_mod_not_built_for_this_version_is_listed_and_says_so() {
     assert!(rt.find("mods/all/unbuilt").is_some() && rt.find("mods/listed/tgg.someday").is_some());
     tap_shown(&mut rt, "mods/listed/tgg.someday");
     settle(&mut rt);
-    assert!(rt.find("mods/details/unbuilt").is_some(), "its details say it waits for a build");
+    assert!(
+        rt.find("mods/details/unbuilt").is_some(),
+        "its details say it waits for a build"
+    );
     assert!(rt.find("mods/details/install").is_none());
 }
 
@@ -1059,26 +1686,48 @@ fn a_long_readme_and_release_history_show_their_start_until_asked() {
     let netplay: tgg_mod::ModId = "tgg.netplay".parse().expect("an id");
     tap(&mut rt, "mods/tab/all");
     tap_shown(&mut rt, "mods/catalog/tgg.netplay");
-    jobs_until(&mut rt, |app| app.mods.details.get(&netplay).is_some_and(Option::is_some));
+    jobs_until(&mut rt, |app| {
+        app.mods.details.get(&netplay).is_some_and(Option::is_some)
+    });
     // Say its README and history are long.
     rt.update(|app, _| {
-        let Some(Some(page)) = app.mods.details.get_mut(&"tgg.netplay".parse().expect("an id")) else { return };
+        let Some(Some(page)) = app
+            .mods
+            .details
+            .get_mut(&"tgg.netplay".parse().expect("an id"))
+        else {
+            return;
+        };
         page.readme = Some((0..30).map(|n| format!("Paragraph {n}.\n\n")).collect());
         let release = page.releases[0].clone();
         page.releases = vec![release; 12];
     });
     settle(&mut rt);
-    assert!(rt.find("mods/details/readme/more").is_some() && rt.find("mods/details/releases/more").is_some());
+    assert!(
+        rt.find("mods/details/readme/more").is_some()
+            && rt.find("mods/details/releases/more").is_some()
+    );
     tap_shown(&mut rt, "mods/details/readme/more");
-    assert!(rt.find("mods/details/readme/more").is_none(), "all of it shows");
-    assert!(rt.state.mods.expanded.contains(&crate::mods::Expand::Readme));
+    assert!(
+        rt.find("mods/details/readme/more").is_none(),
+        "all of it shows"
+    );
+    assert!(
+        rt.state
+            .mods
+            .expanded
+            .contains(&crate::mods::Expand::Readme)
+    );
 }
 
 #[test]
 fn official_mods_say_so_and_come_first() {
     let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
     let netplay: tgg_mod::ModId = "tgg.netplay".parse().expect("an id");
-    assert!(rt.state.mods.official(&netplay), "the fake's first-party mods are official");
+    assert!(
+        rt.state.mods.official(&netplay),
+        "the fake's first-party mods are official"
+    );
     // Say one isn't: it sorts after the official ones.
     rt.update(|app, _| {
         let id: tgg_mod::ModId = "tgg.competitive-rules".parse().expect("an id");
@@ -1086,26 +1735,49 @@ fn official_mods_say_so_and_come_first() {
             summary.publisher.official = false;
         }
     });
-    let ids: Vec<String> = rt.state.mods.offered().iter().map(|entry| entry.manifest.id.to_string()).collect();
-    assert_eq!(ids.last().map(String::as_str), Some("tgg.competitive-rules"), "{ids:?}");
+    let ids: Vec<String> = rt
+        .state
+        .mods
+        .offered()
+        .iter()
+        .map(|entry| entry.manifest.id.to_string())
+        .collect();
+    assert_eq!(
+        ids.last().map(String::as_str),
+        Some("tgg.competitive-rules"),
+        "{ids:?}"
+    );
 }
 
 #[test]
 fn settings_keep_each_change_and_the_image_editor_when_closed() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
-    rt.key(KeyEvent { key: Key::Command(','), mods: Mods { cmd: true, ..Default::default() } });
+    rt.key(KeyEvent {
+        key: Key::Command(','),
+        mods: Mods {
+            cmd: true,
+            ..Default::default()
+        },
+    });
     rt.frame(FRAME);
     assert!(rt.state.preferences.open, "Ctrl , opens Settings");
     settle(&mut rt);
     tap(&mut rt, "settings/appearance/paper");
-    assert_eq!(rt.state.settings.appearance(), tgg_app::settings::Appearance::Paper);
+    assert_eq!(
+        rt.state.settings.appearance(),
+        tgg_app::settings::Appearance::Paper
+    );
     tap(&mut rt, "settings/updates/switch");
     assert_eq!(rt.state.settings.check_for_updates, Some(false));
     rt.update(|app, _| app.preferences.editor.text = "  aseprite  ".into());
     tap(&mut rt, "settings/done");
     assert!(!rt.state.preferences.open);
-    assert_eq!(rt.state.settings.external_editor.as_deref(), Some("aseprite"), "kept as typed, trimmed");
+    assert_eq!(
+        rt.state.settings.external_editor.as_deref(),
+        Some("aseprite"),
+        "kept as typed, trimmed"
+    );
     // Emptied, the system's default comes back.
     tap(&mut rt, "sidebar/settings");
     rt.update(|app, _| app.preferences.editor.text.clear());
@@ -1120,22 +1792,39 @@ fn a_report_shows_what_it_would_send_and_copies_it() {
     tap(&mut rt, "sidebar/report");
     settle(&mut rt);
     let report = rt.state.report.as_ref().expect("the report shows");
-    assert!(report.text.starts_with("tgg-studio "), "it says what's running: {}", report.text.lines().next().unwrap_or_default());
+    assert!(
+        report.text.starts_with("tgg-studio "),
+        "it says what's running: {}",
+        report.text.lines().next().unwrap_or_default()
+    );
     tap(&mut rt, "report/copy");
-    assert_eq!(rt.state.report.as_ref().map(|report| report.progress.clone()), Some(crate::report::Progress::Copied));
+    assert_eq!(
+        rt.state
+            .report
+            .as_ref()
+            .map(|report| report.progress.clone()),
+        Some(crate::report::Progress::Copied)
+    );
     rt.update(|app, _| {
         crate::report::actions::sent(app, Ok("r-42".into()));
     });
     rt.frame(FRAME);
     tap(&mut rt, "report/send");
-    assert!(rt.state.report.is_none(), "once it's sent, the button closes it");
+    assert!(
+        rt.state.report.is_none(),
+        "once it's sent, the button closes it"
+    );
 }
 
 #[test]
 fn a_recent_edit_opens_again_from_the_sidebar() {
     let (mut rt, _disc, _data) = editing();
     let slot = rt.state.editor.as_ref().expect("editing").slot;
-    assert_eq!(rt.state.settings.recent.first(), Some(&slot), "remembered as it opened");
+    assert_eq!(
+        rt.state.settings.recent.first(),
+        Some(&slot),
+        "remembered as it opened"
+    );
     let key = format!("sidebar/recent/{}", slot.file_name());
     assert!(rt.find(&key).is_some());
     rt.update(crate::editor::actions::leave);
@@ -1143,6 +1832,10 @@ fn a_recent_edit_opens_again_from_the_sidebar() {
     assert!(rt.state.editor.is_none());
     tap(&mut rt, &key);
     settle(&mut rt);
-    assert_eq!(rt.state.editor.as_ref().map(|document| document.slot), Some(slot), "open for editing again");
+    assert_eq!(
+        rt.state.editor.as_ref().map(|document| document.slot),
+        Some(slot),
+        "open for editing again"
+    );
     assert_eq!(rt.state.nav.place, Place::Melee);
 }

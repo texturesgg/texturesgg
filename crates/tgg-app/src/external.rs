@@ -44,7 +44,11 @@ pub struct Watched {
 impl Watched {
     /// Watch `path`, as it is now: only a later save is read.
     pub fn new(path: PathBuf) -> Self {
-        Self { seen: modified(&path), path, undecodable: None }
+        Self {
+            seen: modified(&path),
+            path,
+            undecodable: None,
+        }
     }
 
     /// When it was saved, if that's since it was last read.
@@ -81,7 +85,9 @@ impl Watched {
 /// a file, and the name stays plain in the image editor's title.
 pub fn new_png_path(file_name: &str) -> PathBuf {
     static NEXT: AtomicU64 = AtomicU64::new(0);
-    temporary_directory().join(NEXT.fetch_add(1, Ordering::Relaxed).to_string()).join(file_name)
+    temporary_directory()
+        .join(NEXT.fetch_add(1, Ordering::Relaxed).to_string())
+        .join(file_name)
 }
 
 /// Stop editing the PNG at `path`: delete it and its folder.
@@ -94,7 +100,9 @@ pub fn remove_png(path: &Path) {
 
 /// Where this process puts PNGs for editing.
 pub fn temporary_directory() -> PathBuf {
-    std::env::temp_dir().join("textures.gg").join(std::process::id().to_string())
+    std::env::temp_dir()
+        .join("textures.gg")
+        .join(std::process::id().to_string())
 }
 
 /// Delete this process's PNGs, when the app quits.
@@ -103,7 +111,9 @@ pub fn remove_temporary_directory() {
 }
 
 fn modified(path: &Path) -> Option<SystemTime> {
-    std::fs::metadata(path).and_then(|metadata| metadata.modified()).ok()
+    std::fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .ok()
 }
 
 /// Open `path` in the player's image editor: `command` when they've set
@@ -203,8 +213,14 @@ mod tests {
     #[test]
     fn a_command_splits_on_whitespace_except_inside_quotes_and_escapes() {
         assert_eq!(words("gimp"), ["gimp"]);
-        assert_eq!(words("  flatpak run\torg.gimp.GIMP "), ["flatpak", "run", "org.gimp.GIMP"]);
-        assert_eq!(words(r#""/opt/My Apps/krita" --nosplash"#), ["/opt/My Apps/krita", "--nosplash"]);
+        assert_eq!(
+            words("  flatpak run\torg.gimp.GIMP "),
+            ["flatpak", "run", "org.gimp.GIMP"]
+        );
+        assert_eq!(
+            words(r#""/opt/My Apps/krita" --nosplash"#),
+            ["/opt/My Apps/krita", "--nosplash"]
+        );
         assert_eq!(words("'/opt/it'\\''s/app' -x"), ["/opt/it's/app", "-x"]);
         assert_eq!(words(r"/opt/My\ Apps/app"), ["/opt/My Apps/app"]);
         assert_eq!(words(r#""say \"hi\" \n""#), [r#"say "hi" \n"#]);
@@ -247,7 +263,12 @@ mod tests {
         let mut watched = Watched::new(path.clone());
         assert_eq!(watched.saved(), None);
         let later = SystemTime::now() + Duration::from_secs(5);
-        std::fs::File::options().write(true).open(&path).unwrap().set_modified(later).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(later)
+            .unwrap();
         assert_eq!(watched.saved(), Some(later));
         watched.read(later);
         assert_eq!(watched.saved(), None, "read, it's not noticed again");

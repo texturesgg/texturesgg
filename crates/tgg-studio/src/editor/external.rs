@@ -31,9 +31,13 @@ pub fn edit(app: &mut App) {
     };
     let name = document.listing.name(texture);
     // Opened again, it keeps its file: the editor may still have it open.
-    let path = document.external.watched.get(&texture).map_or_else(|| external::new_png_path(&format!("{name}.png")), |watched| watched.path.clone());
+    let path = document.external.watched.get(&texture).map_or_else(
+        || external::new_png_path(&format!("{name}.png")),
+        |watched| watched.path.clone(),
+    );
     let written = files::texture_png(document, texture).and_then(|png| {
-        std::fs::create_dir_all(path.parent().expect("in a folder")).map_err(|error| error.to_string())?;
+        std::fs::create_dir_all(path.parent().expect("in a folder"))
+            .map_err(|error| error.to_string())?;
         std::fs::write(&path, png).map_err(|error| error.to_string())
     });
     if let Err(error) = written {
@@ -43,38 +47,66 @@ pub fn edit(app: &mut App) {
         return app.tell(format!("Couldn't open your image editor: {error}"), true);
     }
     if let Some(document) = &mut app.editor {
-        document.external.watched.insert(texture, Watched::new(path));
+        document
+            .external
+            .watched
+            .insert(texture, Watched::new(path));
     }
-    app.tell(format!("Editing {name} in your image editor; each save there updates it here."), false);
+    app.tell(
+        format!("Editing {name} in your image editor; each save there updates it here."),
+        false,
+    );
 }
 
 /// Import every watched PNG saved since it was last read, checking at most
 /// every half second. While any is watched, it asks to be woken for the
 /// next check. Returns whether anything changed.
 pub fn check(app: &mut App, tx: &mut Tx) -> bool {
-    let Some(document) = &mut app.editor else { return false };
+    let Some(document) = &mut app.editor else {
+        return false;
+    };
     if document.external.watched.is_empty() {
         return false;
     }
     tx.wake_after(CHECK);
     let now = Instant::now();
-    if document.external.checked.is_some_and(|checked| now.duration_since(checked) < CHECK) {
+    if document
+        .external
+        .checked
+        .is_some_and(|checked| now.duration_since(checked) < CHECK)
+    {
         return false;
     }
     document.external.checked = Some(now);
-    let saved: Vec<(usize, std::time::SystemTime)> =
-        document.external.watched.iter().filter_map(|(&texture, watched)| Some((texture, watched.saved()?))).collect();
+    let saved: Vec<(usize, std::time::SystemTime)> = document
+        .external
+        .watched
+        .iter()
+        .filter_map(|(&texture, watched)| Some((texture, watched.saved()?)))
+        .collect();
     let mut changed = false;
     for (texture, at) in saved {
-        let Some(document) = &mut app.editor else { break };
-        let Some(watched) = document.external.watched.get_mut(&texture) else { continue };
-        let name = watched.path.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+        let Some(document) = &mut app.editor else {
+            break;
+        };
+        let Some(watched) = document.external.watched.get_mut(&texture) else {
+            continue;
+        };
+        let name = watched
+            .path
+            .file_name()
+            .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
         // A save still being written doesn't decode: try again next check,
         // unless it stays that way.
-        let png = std::fs::read(&watched.path).ok().filter(|png| image::load_from_memory(png).is_ok());
+        let png = std::fs::read(&watched.path)
+            .ok()
+            .filter(|png| image::load_from_memory(png).is_ok());
         let Some(png) = png else {
             if watched.failed_to_decode(at) {
-                app.tell(format!("Couldn't read {name} as a PNG; save it again to try again."), true);
+                app.tell(
+                    format!("Couldn't read {name} as a PNG; save it again to try again."),
+                    true,
+                );
                 changed = true;
             }
             continue;
@@ -90,16 +122,25 @@ pub fn check(app: &mut App, tx: &mut Tx) -> bool {
 /// matches the document again, without importing it back.
 pub fn resync(app: &mut App, texture: usize) {
     let Some(document) = &app.editor else { return };
-    let Some(watched) = document.external.watched.get(&texture) else { return };
+    let Some(watched) = document.external.watched.get(&texture) else {
+        return;
+    };
     let path = watched.path.clone();
-    let written = files::texture_png(document, texture).and_then(|png| std::fs::write(&path, png).map_err(|error| error.to_string()));
+    let written = files::texture_png(document, texture)
+        .and_then(|png| std::fs::write(&path, png).map_err(|error| error.to_string()));
     match written {
         Ok(()) => {
             if let Some(document) = &mut app.editor {
-                document.external.watched.insert(texture, Watched::new(path));
+                document
+                    .external
+                    .watched
+                    .insert(texture, Watched::new(path));
             }
         }
-        Err(error) => app.tell(format!("Couldn't update the PNG in your image editor: {error}"), true),
+        Err(error) => app.tell(
+            format!("Couldn't update the PNG in your image editor: {error}"),
+            true,
+        ),
     }
 }
 

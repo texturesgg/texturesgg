@@ -13,7 +13,10 @@ use crate::state::App;
 use dat_parser::descriptor::jobj::flags::BILLBOARD_FIELD;
 use dat_parser::hsd::scene::{HsdTextureIndex, HsdTextureSourceId};
 use dat_parser::math::Mat4;
-use hsd_render::{HsdRenderer, ModelId, Orbit, PendingPick, PickReadback, PreparedGeometry, neutral_preview_lighting};
+use hsd_render::{
+    HsdRenderer, ModelId, Orbit, PendingPick, PickReadback, PreparedGeometry,
+    neutral_preview_lighting,
+};
 use rune::compose::{Compositor, DeviceKey, Frame};
 use rune::render::KIND_EFFECT;
 
@@ -78,20 +81,41 @@ impl Viewport {
     fn draw(&mut self, f: &mut Frame<'_, App>, size: (u32, u32)) -> Result<(), Error> {
         let key = f.device_key();
         let (device, queue) = (f.device, f.queue);
-        let Some(shown) = f.rt.state.stage.shown.as_mut() else { return Ok(()) };
-        let stale = self.gpu.as_ref().is_none_or(|gpu| gpu.key != key || gpu.generation != shown.generation);
+        let Some(shown) = f.rt.state.stage.shown.as_mut() else {
+            return Ok(());
+        };
+        let stale = self
+            .gpu
+            .as_ref()
+            .is_none_or(|gpu| gpu.key != key || gpu.generation != shown.generation);
         if stale {
             let focus = shown.model.focus();
             let (scene, work) = shown.model.evaluate()?;
             let geometry = PreparedGeometry::new(scene, work)?.with_focus(focus);
-            let (renderer, model) =
-                HsdRenderer::with_model(device, queue, copy::FORMAT, geometry, neutral_preview_lighting(), size, shown.orbit)?;
+            let (renderer, model) = HsdRenderer::with_model(
+                device,
+                queue,
+                copy::FORMAT,
+                geometry,
+                neutral_preview_lighting(),
+                size,
+                shown.orbit,
+            )?;
             let copy = Copy::new(device);
             let target = copy.target(device, size);
             let spawns = Spawns::new(shown.shared.clone());
             // A pick on the old renderer never resolves, or names its packets.
             self.pick = Pick::None;
-            self.gpu = Some(Gpu { key, generation: shown.generation, renderer, model, spawns, posed_orbit: None, target, copy });
+            self.gpu = Some(Gpu {
+                key,
+                generation: shown.generation,
+                renderer,
+                model,
+                spawns,
+                posed_orbit: None,
+                target,
+                copy,
+            });
             shown.posed = true;
             // A new renderer starts from the file's pixels and no tint: show every edit again.
             shown.pending = shown.edited.keys().copied().collect();
@@ -111,21 +135,32 @@ impl Viewport {
         // back from the limit, not from somewhere past it.
         shown.orbit = gpu.renderer.orbit();
         let ticks = advance(&mut self.clock, shown, gpu, f.dt)?;
-        let turned = gpu.posed_orbit != Some(gpu.renderer.orbit()) && faces_camera(shown, &gpu.spawns);
+        let turned =
+            gpu.posed_orbit != Some(gpu.renderer.orbit()) && faces_camera(shown, &gpu.spawns);
         if ticks > 0 || std::mem::take(&mut shown.posed) || turned {
             pose(shown, gpu, device, queue)?;
         }
         for index in std::mem::take(&mut shown.pending) {
-            let Some((size, pixels)) = shown.edited.get(&index) else { continue };
+            let Some((size, pixels)) = shown.edited.get(&index) else {
+                continue;
+            };
             // A refused edit is that edit's problem: forget it so a rebuilt renderer
             // never replays it, say so, and carry on with the rest.
-            if let Err(error) = gpu.renderer.update_scene_texture(queue, gpu.model, HsdTextureIndex(index), *size, pixels) {
+            if let Err(error) = gpu.renderer.update_scene_texture(
+                queue,
+                gpu.model,
+                HsdTextureIndex(index),
+                *size,
+                pixels,
+            ) {
                 shown.edited.remove(&index);
-                self.refused.push(format!("The stage couldn't show an edit: {error}"));
+                self.refused
+                    .push(format!("The stage couldn't show an edit: {error}"));
             }
         }
         if std::mem::take(&mut shown.highlight_changed) {
-            gpu.renderer.set_highlight(queue, gpu.model, &shown.highlight)?;
+            gpu.renderer
+                .set_highlight(queue, gpu.model, &shown.highlight)?;
         }
         gpu.renderer.encode(f.encoder, &gpu.target.view);
         // Pick in the same submission, so it sees this frame's pose. One at a
@@ -133,7 +168,10 @@ impl Viewport {
         if matches!(self.pick, Pick::None)
             && let Some([across, down]) = shown.pick.take()
         {
-            let at = ((across * size.0 as f32) as u32, (down * size.1 as f32) as u32);
+            let at = (
+                (across * size.0 as f32) as u32,
+                (down * size.1 as f32) as u32,
+            );
             if at.0 < size.0 && at.1 < size.1 {
                 // A pick that fails is logged, never fatal to the stage.
                 match gpu.renderer.encode_pick(device, f.encoder, at) {
@@ -179,22 +217,47 @@ impl Viewport {
         let Some(shown) = &stage.shown else { return };
         let (frame, end) = (shown.model.frame(), shown.model.end_frame());
         if let Some(width) = track {
-            let along = if end > 0.0 { (frame / end).clamp(0.0, 1.0) } else { 0.0 };
+            let along = if end > 0.0 {
+                (frame / end).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
             stage.playhead.set([along * width, 0.0]);
         }
-        stage.frame_count.set(format!("F {} / {}", frame.floor() as u32, end.floor() as u32));
+        stage.frame_count.set(format!(
+            "F {} / {}",
+            frame.floor() as u32,
+            end.floor() as u32
+        ));
     }
 }
 
 /// What a pick landed on: for each texture the picked surface draws, most
 /// defining first, the scene's ids for it. Nothing when it missed the
 /// model (the background, or a shot its move spawned).
-fn picked_textures(gpu: &Gpu, shown: &Shown, picked: Option<hsd_render::PickId>) -> Vec<Vec<HsdTextureSourceId>> {
-    let packet = picked.and_then(|pick| gpu.renderer.resolve_pick(pick)).filter(|(model, _)| *model == gpu.model);
-    let Some((_, packet)) = packet else { return Vec::new() };
+fn picked_textures(
+    gpu: &Gpu,
+    shown: &Shown,
+    picked: Option<hsd_render::PickId>,
+) -> Vec<Vec<HsdTextureSourceId>> {
+    let packet = picked
+        .and_then(|pick| gpu.renderer.resolve_pick(pick))
+        .filter(|(model, _)| *model == gpu.model);
+    let Some((_, packet)) = packet else {
+        return Vec::new();
+    };
     let scene = shown.model.scene();
-    gpu.renderer.packet_textures(gpu.model, packet).unwrap_or_default().into_iter()
-        .map(|texture| texture.scene_textures.iter().filter_map(|index| Some(scene.textures.get(index.0)?.id)).collect())
+    gpu.renderer
+        .packet_textures(gpu.model, packet)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|texture| {
+            texture
+                .scene_textures
+                .iter()
+                .filter_map(|index| Some(scene.textures.get(index.0)?.id))
+                .collect()
+        })
         .collect()
 }
 
@@ -224,12 +287,21 @@ fn advance(clock: &mut f64, shown: &mut Shown, gpu: &mut Gpu, dt: f64) -> Result
 /// the model, or what its move spawns (the shine).
 fn faces_camera(shown: &Shown, spawns: &Spawns) -> bool {
     spawns.faces_camera()
-        || shown.model.scene().roots.iter().any(|root| root.joints.iter().any(|joint| joint.flags & BILLBOARD_FIELD != 0))
+        || shown.model.scene().roots.iter().any(|root| {
+            root.joints
+                .iter()
+                .any(|joint| joint.flags & BILLBOARD_FIELD != 0)
+        })
 }
 
 /// Pose the model and what its move spawns for this frame, facing their
 /// billboards toward the camera, and upload them.
-fn pose(shown: &mut Shown, gpu: &mut Gpu, device: &wgpu::Device, queue: &wgpu::Queue) -> Result<(), Error> {
+fn pose(
+    shown: &mut Shown,
+    gpu: &mut Gpu,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> Result<(), Error> {
     let view = gpu.renderer.camera().view_matrix();
     gpu.posed_orbit = Some(gpu.renderer.orbit());
     shown.model.set_view(Some(view));
@@ -242,15 +314,28 @@ fn pose(shown: &mut Shown, gpu: &mut Gpu, device: &wgpu::Device, queue: &wgpu::Q
     // Where each part the spawns follow is, found before the pose and read
     // from it after.
     let fighter = shown.model.fighter();
-    let parts: Vec<_> =
-        gpu.spawns.parts().into_iter().filter_map(|part| Some((part, fighter?.part_joint(part)?))).collect();
+    let parts: Vec<_> = gpu
+        .spawns
+        .parts()
+        .into_iter()
+        .filter_map(|part| Some((part, fighter?.part_joint(part)?)))
+        .collect();
     let scale = fighter.map_or(1.0, |playback| playback.scale());
     let (scene, work) = shown.model.evaluate()?;
-    let joints: Vec<(u8, Mat4)> =
-        parts.into_iter().map(|(part, (root, joint))| (part, work.roots[root].joint_world_matrices[joint.0])).collect();
-    gpu.renderer.update_draw_work(queue, gpu.model, scene, work)?;
-    let joint = |part| joints.iter().find(|(each, _)| *each == part).map(|&(_, matrix)| matrix);
-    gpu.spawns.upload(&mut gpu.renderer, device, queue, joint, view, scale)?;
+    let joints: Vec<(u8, Mat4)> = parts
+        .into_iter()
+        .map(|(part, (root, joint))| (part, work.roots[root].joint_world_matrices[joint.0]))
+        .collect();
+    gpu.renderer
+        .update_draw_work(queue, gpu.model, scene, work)?;
+    let joint = |part| {
+        joints
+            .iter()
+            .find(|(each, _)| *each == part)
+            .map(|&(_, matrix)| matrix)
+    };
+    gpu.spawns
+        .upload(&mut gpu.renderer, device, queue, joint, view, scale)?;
     Ok(())
 }
 
@@ -276,7 +361,12 @@ impl Compositor<App> for Viewport {
             // Off the stage, nothing draws and the clock waits.
             self.clock = 0.0;
         }
-        self.playing = f.rt.state.stage.shown.as_ref().is_some_and(|shown| shown.playing && shown.model.is_animated());
+        self.playing =
+            f.rt.state
+                .stage
+                .shown
+                .as_ref()
+                .is_some_and(|shown| shown.playing && shown.model.is_animated());
         let (device, queue, size) = (f.device, f.queue, f.size);
         let clear = f.rt.clear_color();
         f.ui.prepare(device, queue, &mut f.rt.text.atlas, &f.rt.instances, size);

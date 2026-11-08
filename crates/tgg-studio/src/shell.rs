@@ -7,7 +7,10 @@
 use crate::nav::{Place, actions as nav};
 use crate::state::App;
 use crate::ui::tokens::{Palette, motion, radius, size, space, text};
-use crate::ui::{PLACE_INSET, TEXT_ACTION_INSET, close_glyph, icon_button, place_row, rule, sidebar_glyph, spacer, text_action};
+use crate::ui::{
+    PLACE_INSET, TEXT_ACTION_INSET, close_glyph, icon_button, place_row, rule, sidebar_glyph,
+    spacer, text_action,
+};
 use crate::{editor, keys, library, melee, mods, preferences, report, welcome, window};
 use rune::{Cx, El, col, el, row, text as label};
 
@@ -23,15 +26,29 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         return welcome::view::view(app, &p);
     }
     let shown = app.nav.sidebar;
-    let does = if shown { "Hide sidebar" } else { "Show sidebar" };
+    let does = if shown {
+        "Hide sidebar"
+    } else {
+        "Show sidebar"
+    };
     let toggle = icon_button(sidebar_glyph(&p), does, &p)
         .key("shell/toggle")
         .help(keys::hint(does, keys::Command::ToggleSidebar))
         .on_press(nav::toggle_sidebar)
         .absolute(TOGGLE_AT.0, TOGGLE_AT.1);
-    row().w_full().h_full().fill(p.bg)
+    row()
+        .w_full()
+        .h_full()
+        .fill(p.bg)
         .child(sidebar(app, &p))
-        .child(col().grow(1.0).min_w(0.0).h_full().child(title_row(app, &p)).child(place(app, &p)))
+        .child(
+            col()
+                .grow(1.0)
+                .min_w(0.0)
+                .h_full()
+                .child(title_row(app, &p))
+                .child(place(app, &p)),
+        )
         // A mod's details, the whole window tall at its right, as the sidebar is at its left.
         .child(mods::details::view(app, &p))
         .child(toggle)
@@ -54,34 +71,88 @@ fn sidebar(app: &App, p: &Palette) -> El {
             .on_press_tx(move |app: &mut App, tx| editor::actions::go(app, place, tx))
     });
     // One marker glides between places, so the move from one to the next shows.
-    let index = Place::ALL.iter().position(|place| *place == app.nav.place).unwrap_or(0);
-    let marker = el().key("sidebar/marker").w(size::SIDEBAR - 2.0 * space::XS).h(size::ROW).radius(radius::CONTROL)
-        .fill(p.hover).motion(motion::SNAPPY)
+    let index = Place::ALL
+        .iter()
+        .position(|place| *place == app.nav.place)
+        .unwrap_or(0);
+    let marker = el()
+        .key("sidebar/marker")
+        .w(size::SIDEBAR - 2.0 * space::XS)
+        .h(size::ROW)
+        .radius(radius::CONTROL)
+        .fill(p.hover)
+        .motion(motion::SNAPPY)
         .absolute(0.0, index as f32 * (size::ROW + space::TIGHT));
     let foot = app.game.as_ref().map(|references| {
-        let file = references.game().path().file_name()
+        let file = references
+            .game()
+            .path()
+            .file_name()
             .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
         // In line with the places' words above it.
-        col().px(space::XS + PLACE_INSET).py(space::SM).gap(space::TIGHT)
+        col()
+            .px(space::XS + PLACE_INSET)
+            .py(space::SM)
+            .gap(space::TIGHT)
             .child(label("Melee NTSC 1.02").font(text::LABEL).color(p.muted))
-            .child(label(file).font(text::MONO_SMALL).color(p.faint).truncate_middle())
+            .child(
+                label(file)
+                    .font(text::MONO_SMALL)
+                    .color(p.faint)
+                    .truncate_middle(),
+            )
     });
     // Settings and reporting a problem, in line with the places' words.
-    let tools = row().px(space::XS + PLACE_INSET - TEXT_ACTION_INSET).py(space::XS).gap(space::XXS)
-        .child(text_action("Settings", false, p).key("sidebar/settings")
-            .help(keys::hint("Settings", keys::Command::Settings)).on_press(preferences::actions::open))
-        .child(text_action("Report a problem", false, p).key("sidebar/report").on_press(|app: &mut App| report::actions::open(app, false)));
-    let inner = col().w(size::SIDEBAR).h_full()
-        .child(row().h(size::TITLE_ROW).pl(TITLE_CLEARANCE).items_center().window_drag()
-            .child(label("textures.gg").font(text::WORDMARK).color(p.ink)))
-        .child(col().mx(space::XS).my(space::SNUG).gap(space::TIGHT).child(marker).children(places))
+    let tools = row()
+        .px(space::XS + PLACE_INSET - TEXT_ACTION_INSET)
+        .py(space::XS)
+        .gap(space::XXS)
+        .child(
+            text_action("Settings", false, p)
+                .key("sidebar/settings")
+                .help(keys::hint("Settings", keys::Command::Settings))
+                .on_press(preferences::actions::open),
+        )
+        .child(
+            text_action("Report a problem", false, p)
+                .key("sidebar/report")
+                .on_press(|app: &mut App| report::actions::open(app, false)),
+        );
+    let inner = col()
+        .w(size::SIDEBAR)
+        .h_full()
+        .child(
+            row()
+                .h(size::TITLE_ROW)
+                .pl(TITLE_CLEARANCE)
+                .items_center()
+                .window_drag()
+                .child(label("textures.gg").font(text::WORDMARK).color(p.ink)),
+        )
+        .child(
+            col()
+                .mx(space::XS)
+                .my(space::SNUG)
+                .gap(space::TIGHT)
+                .child(marker)
+                .children(places),
+        )
         .children(recent(app, p))
         .child(spacer())
         .child(rule(p))
         .child(tools)
         .children(foot);
-    row().key("shell/sidebar").w(if shown { size::SIDEBAR + size::LINE } else { 0.0 }).h_full()
-        .motion(motion::DEFAULT).clip_rounded(0.0).fill(p.sunk)
+    row()
+        .key("shell/sidebar")
+        .w(if shown {
+            size::SIDEBAR + size::LINE
+        } else {
+            0.0
+        })
+        .h_full()
+        .motion(motion::DEFAULT)
+        .clip_rounded(0.0)
+        .fill(p.sunk)
         .child(inner)
         .child(el().w(size::LINE).h_full().fill(p.line))
 }
@@ -95,21 +166,49 @@ fn recent(app: &App, p: &Palette) -> Option<El> {
     }
     let open = app.editor.as_ref().map(|document| document.slot);
     let rows = slots.iter().copied().map(|slot| {
-        place_row(&tgg_app::costumes::slot_label(Some(slot)), None, open == Some(slot), p)
-            .key(format!("sidebar/recent/{}", slot.file_name()))
-            .on_press_tx(move |app: &mut App, tx| editor::actions::edit_recent(app, slot, tx))
+        place_row(
+            &tgg_app::costumes::slot_label(Some(slot)),
+            None,
+            open == Some(slot),
+            p,
+        )
+        .key(format!("sidebar/recent/{}", slot.file_name()))
+        .on_press_tx(move |app: &mut App, tx| editor::actions::edit_recent(app, slot, tx))
     });
-    Some(col().key("sidebar/recent").mx(space::XS).mt(space::MD).gap(space::TIGHT)
-        .child(label("Recent").font(text::LABEL).color(p.faint).px(PLACE_INSET).pb(space::XXS))
-        .children(rows))
+    Some(
+        col()
+            .key("sidebar/recent")
+            .mx(space::XS)
+            .mt(space::MD)
+            .gap(space::TIGHT)
+            .child(
+                label("Recent")
+                    .font(text::LABEL)
+                    .color(p.faint)
+                    .px(PLACE_INSET)
+                    .pb(space::XXS),
+            )
+            .children(rows),
+    )
 }
 
 /// Where the player is and what the place can do; empty on a top-level
 /// place, which says its own name. Its empty stretch moves the window.
 fn title_row(app: &App, p: &Palette) -> El {
-    let start = if app.nav.sidebar { space::LG } else { TITLE_CLEARANCE };
-    let mut row = row().key("shell/title").h(size::TITLE_ROW).pl(start).pr(space::XS).gap(space::XS)
-        .items_center().motion(motion::DEFAULT).window_drag()
+    let start = if app.nav.sidebar {
+        space::LG
+    } else {
+        TITLE_CLEARANCE
+    };
+    let mut row = row()
+        .key("shell/title")
+        .h(size::TITLE_ROW)
+        .pl(start)
+        .pr(space::XS)
+        .gap(space::XS)
+        .items_center()
+        .motion(motion::DEFAULT)
+        .window_drag()
         .children(crumbs(app, p))
         .children(notice(app, p))
         .child(el().grow(1.0))
@@ -127,8 +226,11 @@ fn title_row(app: &App, p: &Palette) -> El {
 /// The window's own controls, where the app draws them (not on macOS, which
 /// keeps its own): close.
 pub fn window_controls(p: &Palette) -> Option<El> {
-    cfg!(not(target_os = "macos"))
-        .then(|| icon_button(close_glyph(p), "Close", p).key("window/close").on_press_tx(window::close))
+    cfg!(not(target_os = "macos")).then(|| {
+        icon_button(close_glyph(p), "Close", p)
+            .key("window/close")
+            .on_press_tx(window::close)
+    })
 }
 
 fn place(app: &App, p: &Palette) -> El {
@@ -137,7 +239,12 @@ fn place(app: &App, p: &Palette) -> El {
         Place::Library => library::view::view(app, p),
         Place::Mods => mods::view::view(app, p),
     };
-    col().key("shell/place").grow(1.0).min_h(0.0).w_full().child(page)
+    col()
+        .key("shell/place")
+        .grow(1.0)
+        .min_h(0.0)
+        .w_full()
+        .child(page)
 }
 
 /// Where the player is, when it's below a top-level place.
@@ -154,8 +261,16 @@ fn crumbs(app: &App, p: &Palette) -> Option<El> {
 /// What just happened, said in the title row.
 fn notice(app: &App, p: &Palette) -> Option<El> {
     let notice = app.notice.as_ref()?;
-    Some(label(notice.text.clone()).key("shell/notice").font(text::BODY).color(if notice.error { p.danger } else { p.muted })
-        .truncate().min_w(0.0).shrink().ml(space::SM))
+    Some(
+        label(notice.text.clone())
+            .key("shell/notice")
+            .font(text::BODY)
+            .color(if notice.error { p.danger } else { p.muted })
+            .truncate()
+            .min_w(0.0)
+            .shrink()
+            .ml(space::SM),
+    )
 }
 
 /// The one or few actions the place showing offers, at the title row's end.
@@ -174,9 +289,13 @@ fn title_actions(app: &App, p: &Palette) -> Option<El> {
 /// where the player gets it.
 fn update(app: &App, p: &Palette) -> Option<El> {
     let version = app.update.as_ref()?;
-    Some(text_action(&format!("tgg-studio {version} is out"), false, p).key("shell/update").on_press_tx(|app: &mut App, tx| {
-        if let Err(error) = tx.open_url(tgg_app::update::DOWNLOAD_URL) {
-            app.tell(format!("Couldn't open the download page: {error}"), true);
-        }
-    }))
+    Some(
+        text_action(&format!("tgg-studio {version} is out"), false, p)
+            .key("shell/update")
+            .on_press_tx(|app: &mut App, tx| {
+                if let Err(error) = tx.open_url(tgg_app::update::DOWNLOAD_URL) {
+                    app.tell(format!("Couldn't open the download page: {error}"), true);
+                }
+            }),
+    )
 }

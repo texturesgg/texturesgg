@@ -23,12 +23,27 @@ pub fn view(app: &App, p: &Palette) -> El {
     if !welcome.games.is_empty() {
         body = body.child(games(&welcome.games, p));
     }
-    body = body.child(row().pt(space::XS)
-        .child(button("Choose an ISO…", ButtonKind::Primary, p).key("welcome/choose").on_press_tx(actions::choose)));
+    body = body.child(
+        row().pt(space::XS).child(
+            button("Choose an ISO…", ButtonKind::Primary, p)
+                .key("welcome/choose")
+                .on_press_tx(actions::choose),
+        ),
+    );
     if let Some(problem) = &welcome.problem {
-        body = body.child(label(problem.clone()).key("welcome/problem").font(text::BODY).color(p.danger).wrap());
+        body = body.child(
+            label(problem.clone())
+                .key("welcome/problem")
+                .font(text::BODY)
+                .color(p.danger)
+                .wrap(),
+        );
     }
-    col().w_full().h_full().fill(p.bg).center()
+    col()
+        .w_full()
+        .h_full()
+        .fill(p.bg)
+        .center()
         .child(title_band(p))
         .child(body)
 }
@@ -38,23 +53,61 @@ pub fn view(app: &App, p: &Palette) -> El {
 fn games(games: &[GameChoice], p: &Palette) -> El {
     let rows = games.iter().enumerate().map(|(index, game)| {
         let path = game.path.clone();
-        let name = game.path.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-        let folder = game.path.parent().map_or_else(String::new, |folder| folder.display().to_string());
-        let note = if game.slippi_plays { "Slippi plays this one" } else { "" };
-        row().key(format!("welcome/game/{index}")).h(GAME_ROW).px(space::SM).gap(space::SM).items_center()
-            .fill(p.surface).hover(p.hover).cursor(rune::Cursor::Pointer).role("button").label(name.clone()).focusable(true)
-            .child(col().grow(1.0).min_w(0.0)
-                .child(label(name).font(text::STRONG).color(p.ink).truncate())
-                .child(label(folder).font(text::MONO_SMALL).color(p.faint).truncate_middle()))
+        let name = game
+            .path
+            .file_name()
+            .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+        let folder = game
+            .path
+            .parent()
+            .map_or_else(String::new, |folder| folder.display().to_string());
+        let note = if game.slippi_plays {
+            "Slippi plays this one"
+        } else {
+            ""
+        };
+        row()
+            .key(format!("welcome/game/{index}"))
+            .h(GAME_ROW)
+            .px(space::SM)
+            .gap(space::SM)
+            .items_center()
+            .fill(p.surface)
+            .hover(p.hover)
+            .cursor(rune::Cursor::Pointer)
+            .role("button")
+            .label(name.clone())
+            .focusable(true)
+            .child(
+                col()
+                    .grow(1.0)
+                    .min_w(0.0)
+                    .child(label(name).font(text::STRONG).color(p.ink).truncate())
+                    .child(
+                        label(folder)
+                            .font(text::MONO_SMALL)
+                            .color(p.faint)
+                            .truncate_middle(),
+                    ),
+            )
             .child(label(note).font(text::SMALL).color(p.muted))
             .on_press(move |app: &mut App| actions::use_game_at(app, &path))
     });
-    col().border(size::LINE, p.line_strong).radius(radius::CONTROL).clip_rounded(radius::CONTROL).children(rows)
+    col()
+        .border(size::LINE, p.line_strong)
+        .radius(radius::CONTROL)
+        .clip_rounded(radius::CONTROL)
+        .children(rows)
 }
 
 /// The band across the top that moves the window, with its controls.
 fn title_band(p: &Palette) -> El {
-    let mut band = row().h(size::TITLE_ROW).w_full().pr(space::XS).items_center().window_drag()
+    let mut band = row()
+        .h(size::TITLE_ROW)
+        .w_full()
+        .pr(space::XS)
+        .items_center()
+        .window_drag()
         .child(el().grow(1.0));
     if let Some(controls) = crate::shell::window_controls(p) {
         band = band.child(controls);

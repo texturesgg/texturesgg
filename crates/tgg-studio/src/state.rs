@@ -8,9 +8,9 @@ use crate::jobs::renders::Renders;
 use crate::library::Page as LibraryPage;
 use crate::melee::Melee;
 use crate::mods::Mods;
+use crate::nav::Nav;
 use crate::preferences::Preferences;
 use crate::report::Report;
-use crate::nav::Nav;
 use crate::stage::Stage;
 use crate::welcome::Welcome;
 use std::path::PathBuf;
@@ -73,7 +73,10 @@ impl App {
             Start::Game(references) => (Some(references), Welcome::default()),
             Start::Welcome(welcome) => (None, welcome),
         };
-        let melee = game.as_ref().map(|references| Melee::of(references.game())).unwrap_or_default();
+        let melee = game
+            .as_ref()
+            .map(|references| Melee::of(references.game()))
+            .unwrap_or_default();
         Self {
             settings,
             persist,
@@ -122,8 +125,15 @@ impl Data {
     /// folders the game and the `tgg` CLI use for mods and ports.
     pub fn of_player() -> Self {
         let root = tgg_app::library::Library::default_root();
-        let history = root.parent().map_or_else(|| root.join("games"), |data| data.join("games"));
-        Self { library: root, history, mods: tgg_mod::default_mods_dir(), ports: tgg_mod::default_ports_dir() }
+        let history = root
+            .parent()
+            .map_or_else(|| root.join("games"), |data| data.join("games"));
+        Self {
+            library: root,
+            history,
+            mods: tgg_mod::default_mods_dir(),
+            ports: tgg_mod::default_ports_dir(),
+        }
     }
 
     /// Everything in `folder`; for tests.
@@ -154,6 +164,9 @@ pub struct Notice {
 impl App {
     /// Say `text` in the title row until the next thing happens.
     pub fn tell(&mut self, text: impl Into<String>, error: bool) {
-        self.notice = Some(Notice { text: text.into(), error });
+        self.notice = Some(Notice {
+            text: text.into(),
+            error,
+        });
     }
 }

@@ -59,21 +59,73 @@ pub struct Binding {
 }
 
 const fn bind(press: Press, shift: bool, alt: bool, command: Command, scope: Scope) -> Binding {
-    Binding { chord: Chord { press, shift, alt }, command, scope }
+    Binding {
+        chord: Chord { press, shift, alt },
+        command,
+        scope,
+    }
 }
 
 /// Every shortcut. A chord may appear in several scopes; the most particular
 /// active one wins.
 pub const BINDINGS: &[Binding] = &[
     bind(Press::Escape, false, false, Command::Back, Scope::Window),
-    bind(Press::Command('\\'), false, false, Command::ToggleSidebar, Scope::Window),
-    bind(Press::Space, false, false, Command::TogglePlayback, Scope::Stage),
-    bind(Press::Command('z'), false, false, Command::Undo, Scope::Editor),
-    bind(Press::Command('z'), true, false, Command::Redo, Scope::Editor),
-    bind(Press::Command('s'), false, false, Command::Save, Scope::Editor),
-    bind(Press::Command('s'), false, true, Command::SaveAndInstall, Scope::Editor),
-    bind(Press::Command('e'), true, false, Command::EditExternally, Scope::Editor),
-    bind(Press::Command(','), false, false, Command::Settings, Scope::Window),
+    bind(
+        Press::Command('\\'),
+        false,
+        false,
+        Command::ToggleSidebar,
+        Scope::Window,
+    ),
+    bind(
+        Press::Space,
+        false,
+        false,
+        Command::TogglePlayback,
+        Scope::Stage,
+    ),
+    bind(
+        Press::Command('z'),
+        false,
+        false,
+        Command::Undo,
+        Scope::Editor,
+    ),
+    bind(
+        Press::Command('z'),
+        true,
+        false,
+        Command::Redo,
+        Scope::Editor,
+    ),
+    bind(
+        Press::Command('s'),
+        false,
+        false,
+        Command::Save,
+        Scope::Editor,
+    ),
+    bind(
+        Press::Command('s'),
+        false,
+        true,
+        Command::SaveAndInstall,
+        Scope::Editor,
+    ),
+    bind(
+        Press::Command('e'),
+        true,
+        false,
+        Command::EditExternally,
+        Scope::Editor,
+    ),
+    bind(
+        Press::Command(','),
+        false,
+        false,
+        Command::Settings,
+        Scope::Window,
+    ),
 ];
 
 impl Chord {
@@ -129,7 +181,10 @@ pub fn command_for(app: &App, key: &KeyEvent) -> Option<Command> {
 
 /// The shortcut for `command`, as it reads, for buttons and tooltips.
 pub fn shortcut(command: Command) -> Option<String> {
-    BINDINGS.iter().find(|binding| binding.command == command).map(|binding| binding.chord.label())
+    BINDINGS
+        .iter()
+        .find(|binding| binding.command == command)
+        .map(|binding| binding.chord.label())
 }
 
 /// A tooltip saying what an action does and its shortcut: "Save (Ctrl S)".
@@ -170,15 +225,29 @@ mod tests {
     #[test]
     fn no_chord_is_bound_twice_in_one_scope() {
         for (index, binding) in BINDINGS.iter().enumerate() {
-            let twice = BINDINGS[index + 1..].iter().any(|other| other.scope == binding.scope && other.chord == binding.chord);
-            assert!(!twice, "{:?} is bound twice in {:?}", binding.chord, binding.scope);
+            let twice = BINDINGS[index + 1..]
+                .iter()
+                .any(|other| other.scope == binding.scope && other.chord == binding.chord);
+            assert!(
+                !twice,
+                "{:?} is bound twice in {:?}",
+                binding.chord, binding.scope
+            );
         }
     }
 
     #[test]
     fn chords_read_as_the_platform_writes_them() {
-        let redo = Chord { press: Press::Command('z'), shift: true, alt: false };
-        let expected = if cfg!(target_os = "macos") { "⌘⇧Z" } else { "Ctrl Shift Z" };
+        let redo = Chord {
+            press: Press::Command('z'),
+            shift: true,
+            alt: false,
+        };
+        let expected = if cfg!(target_os = "macos") {
+            "⌘⇧Z"
+        } else {
+            "Ctrl Shift Z"
+        };
         assert_eq!(redo.label(), expected);
     }
 }

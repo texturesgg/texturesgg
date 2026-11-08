@@ -36,7 +36,11 @@ static APP: OnceLock<(&'static str, &'static str)> = OnceLock::new();
 /// What is running, and on what: the first line of a session's log.
 pub fn version() -> String {
     let (name, version) = APP.get().copied().unwrap_or(("tgg-studio", "unknown"));
-    format!("{name} {version} ({} {})", std::env::consts::OS, std::env::consts::ARCH)
+    format!(
+        "{name} {version} ({} {})",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    )
 }
 
 /// Set by [`start`] from the marker the last session's panic left.

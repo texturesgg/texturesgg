@@ -54,7 +54,10 @@ impl Copy {
             immediate_size: 0,
         });
         Self {
-            sampler: device.create_sampler(&wgpu::SamplerDescriptor { label: Some("stage copy"), ..Default::default() }),
+            sampler: device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("stage copy"),
+                ..Default::default()
+            }),
             shader: device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("stage copy"),
                 source: wgpu::ShaderSource::Wgsl(SHADER.into()),
@@ -70,12 +73,17 @@ impl Copy {
         let view = device
             .create_texture(&wgpu::TextureDescriptor {
                 label: Some("stage target"),
-                size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: FORMAT,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             })
             .create_view(&Default::default());
@@ -83,15 +91,31 @@ impl Copy {
             label: Some("stage copy"),
             layout: &self.layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) },
-                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.sampler) },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&self.sampler),
+                },
             ],
         });
-        Target { view, size: (width, height), bind }
+        Target {
+            view,
+            size: (width, height),
+            bind,
+        }
     }
 
     /// Draw `target` over the slot `site` describes, clipped to the slot.
-    pub fn draw(&mut self, device: &wgpu::Device, pass: &mut wgpu::RenderPass<'_>, site: &EffectSite<'_>, target: &Target) {
+    pub fn draw(
+        &mut self,
+        device: &wgpu::Device,
+        pass: &mut wgpu::RenderPass<'_>,
+        site: &EffectSite<'_>,
+        target: &Target,
+    ) {
         let [x, y, w, h] = site.instance.rect;
         let ([ox, oy], [tw, th]) = (site.origin, site.size.map(|side| side as f32));
         let (x, y) = (x - ox, y - oy);
@@ -105,7 +129,12 @@ impl Copy {
         }
         let pipeline = self.pipeline(device, site.format, site.srgb_blend);
         pass.set_viewport(x, y, w, h, 0.0, 1.0);
-        pass.set_scissor_rect(x0 as u32, y0 as u32, (x1 - x0).ceil() as u32, (y1 - y0).ceil() as u32);
+        pass.set_scissor_rect(
+            x0 as u32,
+            y0 as u32,
+            (x1 - x0).ceil() as u32,
+            (y1 - y0).ceil() as u32,
+        );
         pass.set_pipeline(pipeline);
         pass.set_bind_group(0, &target.bind, &[]);
         pass.draw(0..3, 0..1);
@@ -114,18 +143,32 @@ impl Copy {
         pass.set_scissor_rect(0, 0, site.size[0], site.size[1]);
     }
 
-    fn pipeline(&mut self, device: &wgpu::Device, format: wgpu::TextureFormat, srgb: bool) -> &wgpu::RenderPipeline {
+    fn pipeline(
+        &mut self,
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+        srgb: bool,
+    ) -> &wgpu::RenderPipeline {
         let (shader, layout) = (&self.shader, &self.pipeline_layout);
         self.pipelines.entry((format, srgb)).or_insert_with(|| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("stage copy"),
                 layout: Some(layout),
-                vertex: wgpu::VertexState { module: shader, entry_point: Some("vs"), buffers: &[], compilation_options: Default::default() },
+                vertex: wgpu::VertexState {
+                    module: shader,
+                    entry_point: Some("vs"),
+                    buffers: &[],
+                    compilation_options: Default::default(),
+                },
                 fragment: Some(wgpu::FragmentState {
                     module: shader,
                     // An sRGB-encoded frame takes the bytes as they are; a linear one decodes them.
                     entry_point: Some(if srgb { "fs_encoded" } else { "fs_linear" }),
-                    targets: &[Some(wgpu::ColorTargetState { format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
                     compilation_options: Default::default(),
                 }),
                 primitive: Default::default(),

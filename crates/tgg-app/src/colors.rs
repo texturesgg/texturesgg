@@ -78,7 +78,12 @@ pub fn groups(document: &TextureDocument, names: &[String]) -> Vec<ColorGroup> {
         let group = match groups.iter().position(|group| group.textures == textures) {
             Some(group) => group,
             None => {
-                groups.push(ColorGroup { title: title(&textures, names), textures, swatches: Vec::new(), vertex_surfaces: Vec::new() });
+                groups.push(ColorGroup {
+                    title: title(&textures, names),
+                    textures,
+                    swatches: Vec::new(),
+                    vertex_surfaces: Vec::new(),
+                });
                 groups.len() - 1
             }
         };
@@ -89,7 +94,11 @@ pub fn groups(document: &TextureDocument, names: &[String]) -> Vec<ColorGroup> {
         for (rgba, alpha, uses, place) in colors {
             let same = |swatch: &&mut Swatch| {
                 swatch.rgba == rgba
-                    && matches!((&swatch.source, &place), (Source::Vertices(_), Place::Vertex(_)) | (Source::Diffuse(_), Place::Diffuse))
+                    && matches!(
+                        (&swatch.source, &place),
+                        (Source::Vertices(_), Place::Vertex(_))
+                            | (Source::Diffuse(_), Place::Diffuse)
+                    )
             };
             let swatch = match group.swatches.iter_mut().find(same) {
                 Some(swatch) => swatch,
@@ -98,34 +107,52 @@ pub fn groups(document: &TextureDocument, names: &[String]) -> Vec<ColorGroup> {
                         Place::Vertex(_) => Source::Vertices(Vec::new()),
                         Place::Diffuse => Source::Diffuse(Vec::new()),
                     };
-                    group.swatches.push(Swatch { rgba, alpha: false, uses: 0, source });
+                    group.swatches.push(Swatch {
+                        rgba,
+                        alpha: false,
+                        uses: 0,
+                        source,
+                    });
                     group.swatches.last_mut().expect("pushed above")
                 }
             };
             swatch.alpha |= alpha;
             swatch.uses += uses;
             match (&mut swatch.source, place) {
-                (Source::Vertices(colors), Place::Vertex(color)) => colors.push(VertexColorId { surface: index, color }),
+                (Source::Vertices(colors), Place::Vertex(color)) => colors.push(VertexColorId {
+                    surface: index,
+                    color,
+                }),
                 (Source::Diffuse(surfaces), Place::Diffuse) => surfaces.push(index),
                 _ => unreachable!("matched by source above"),
             }
         }
     }
     for group in &mut groups {
-        group.swatches.sort_by_key(|swatch| std::cmp::Reverse(swatch.uses));
+        group
+            .swatches
+            .sort_by_key(|swatch| std::cmp::Reverse(swatch.uses));
     }
     groups
 }
 
 /// Write `change` to `group`'s colors in `document`; what changed, in the
 /// player's words ("#60E060 to #6060E0").
-pub fn apply(document: &mut TextureDocument, group: &ColorGroup, change: Change) -> Result<String, DocumentError> {
+pub fn apply(
+    document: &mut TextureDocument,
+    group: &ColorGroup,
+    change: Change,
+) -> Result<String, DocumentError> {
     match change {
         Change::Swatch { index, rgba } => {
-            let Some(swatch) = group.swatches.get(index) else { return Ok(String::new()) };
+            let Some(swatch) = group.swatches.get(index) else {
+                return Ok(String::new());
+            };
             match &swatch.source {
                 Source::Vertices(colors) => document.recolor_vertices(colors, rgba)?,
-                Source::Diffuse(surfaces) => document.set_material_color(surfaces, MaterialColor::Diffuse, rgba)?,
+                Source::Diffuse(surfaces) => {
+                    document.set_material_color(surfaces, MaterialColor::Diffuse, rgba)?
+                }
             }
             Ok(format!("{} to {}", hex(swatch.rgba), hex(rgba)))
         }
@@ -144,11 +171,27 @@ fn colors_of(surface: &DocumentSurface) -> Vec<([u8; 4], bool, usize, Place)> {
             .vertex_colors
             .iter()
             .enumerate()
-            .map(|(index, color)| (color.rgba, color.has_alpha(), color.vertices(), Place::Vertex(index)))
+            .map(|(index, color)| {
+                (
+                    color.rgba,
+                    color.has_alpha(),
+                    color.vertices(),
+                    Place::Vertex(index),
+                )
+            })
             .collect(),
-        HsdChannelBase::Material => {
-            surface.material.iter().map(|material| (material.get(MaterialColor::Diffuse), true, 1, Place::Diffuse)).collect()
-        }
+        HsdChannelBase::Material => surface
+            .material
+            .iter()
+            .map(|material| {
+                (
+                    material.get(MaterialColor::Diffuse),
+                    true,
+                    1,
+                    Place::Diffuse,
+                )
+            })
+            .collect(),
         HsdChannelBase::White => Vec::new(),
     }
 }
@@ -157,7 +200,11 @@ fn title(textures: &[usize], names: &[String]) -> String {
     if textures.is_empty() {
         return "No texture".into();
     }
-    textures.iter().filter_map(|&texture| names.get(texture).map(String::as_str)).collect::<Vec<_>>().join(" + ")
+    textures
+        .iter()
+        .filter_map(|&texture| names.get(texture).map(String::as_str))
+        .collect::<Vec<_>>()
+        .join(" + ")
 }
 
 /// `rgba` with its hue turned by `degrees`, keeping saturation, value and

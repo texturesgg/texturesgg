@@ -23,7 +23,9 @@ pub fn close(app: &mut App) {
 
 /// Copy the report, to paste it anywhere.
 pub fn copy(app: &mut App, tx: &mut Tx) {
-    let Some(report) = &mut app.report else { return };
+    let Some(report) = &mut app.report else {
+        return;
+    };
     tx.copy(report.text.clone());
     if !matches!(report.progress, Progress::Sent(_)) {
         report.progress = Progress::Copied;
@@ -39,7 +41,9 @@ pub fn discord(app: &mut App, tx: &mut Tx) {
 
 /// Send the report to textures.gg; once it's sent, the button closes.
 pub fn send(app: &mut App) {
-    let Some(report) = &mut app.report else { return };
+    let Some(report) = &mut app.report else {
+        return;
+    };
     match report.progress {
         Progress::Sending => return,
         Progress::Sent(_) => return close(app),
@@ -53,16 +57,23 @@ pub fn send(app: &mut App) {
             id: String,
         }
         let url = format!("{}/api/editor/reports", tgg_app::net::api_url());
-        let sent = tgg_app::net::post_json(&url, &serde_json::json!({ "report": text }), ANSWER_LIMIT)
-            .map_err(|error| error.to_string())
-            .and_then(|answer| serde_json::from_str::<Sent>(&answer).map(|sent| sent.id).map_err(|error| error.to_string()));
+        let sent =
+            tgg_app::net::post_json(&url, &serde_json::json!({ "report": text }), ANSWER_LIMIT)
+                .map_err(|error| error.to_string())
+                .and_then(|answer| {
+                    serde_json::from_str::<Sent>(&answer)
+                        .map(|sent| sent.id)
+                        .map_err(|error| error.to_string())
+                });
         Done::ReportSent(sent)
     });
 }
 
 /// The send's answer.
 pub fn sent(app: &mut App, result: Result<String, String>) -> bool {
-    let Some(report) = &mut app.report else { return false };
+    let Some(report) = &mut app.report else {
+        return false;
+    };
     report.progress = match result {
         Ok(id) => Progress::Sent(id),
         Err(error) => {

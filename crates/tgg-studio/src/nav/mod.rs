@@ -46,6 +46,9 @@ pub struct Nav {
 impl Nav {
     /// Melee, with the sidebar as the settings remember it (shown by default).
     pub fn from_settings(settings: &Settings) -> Self {
-        Self { place: Place::Melee, sidebar: settings.sidebar.unwrap_or(true) }
+        Self {
+            place: Place::Melee,
+            sidebar: settings.sidebar.unwrap_or(true),
+        }
     }
 }

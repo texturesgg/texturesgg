@@ -29,31 +29,64 @@ pub fn read(document: &mut Document) {
 /// Start changing swatch `index` of `group`, from its color; its sliders
 /// scroll into view.
 pub fn pick_swatch(app: &mut App, group: usize, index: usize, tx: &mut Tx) {
-    let Some(document) = &mut app.editor else { return };
-    let Some(swatch) = document.colors.get(group).and_then(|group| group.swatches.get(index)) else { return };
-    document.color_pick = Some(ColorPick { group, change: Change::Swatch { index, rgba: swatch.rgba } });
+    let Some(document) = &mut app.editor else {
+        return;
+    };
+    let Some(swatch) = document
+        .colors
+        .get(group)
+        .and_then(|group| group.swatches.get(index))
+    else {
+        return;
+    };
+    document.color_pick = Some(ColorPick {
+        group,
+        change: Change::Swatch {
+            index,
+            rgba: swatch.rgba,
+        },
+    });
     tx.scroll_into_view("editor/pick");
 }
 
 /// Start turning every vertex color of `group` around the hue circle; its
 /// slider scrolls into view.
 pub fn pick_hue(app: &mut App, group: usize, tx: &mut Tx) {
-    let Some(document) = &mut app.editor else { return };
-    document.color_pick = Some(ColorPick { group, change: Change::Hue(0.0) });
+    let Some(document) = &mut app.editor else {
+        return;
+    };
+    document.color_pick = Some(ColorPick {
+        group,
+        change: Change::Hue(0.0),
+    });
     tx.scroll_into_view("editor/pick");
 }
 
 /// Set channel `channel` (red, green, blue, alpha) of the swatch being
 /// changed to `value`, 0 to 255.
 pub fn set_channel(app: &mut App, channel: usize, value: f32) {
-    if let Some(ColorPick { change: Change::Swatch { rgba, .. }, .. }) = app.editor.as_mut().and_then(|document| document.color_pick.as_mut()) {
+    if let Some(ColorPick {
+        change: Change::Swatch { rgba, .. },
+        ..
+    }) = app
+        .editor
+        .as_mut()
+        .and_then(|document| document.color_pick.as_mut())
+    {
         rgba[channel] = value.round().clamp(0.0, 255.0) as u8;
     }
 }
 
 /// Set how far the group being changed turns, in degrees.
 pub fn set_hue(app: &mut App, degrees: f32) {
-    if let Some(ColorPick { change: Change::Hue(hue), .. }) = app.editor.as_mut().and_then(|document| document.color_pick.as_mut()) {
+    if let Some(ColorPick {
+        change: Change::Hue(hue),
+        ..
+    }) = app
+        .editor
+        .as_mut()
+        .and_then(|document| document.color_pick.as_mut())
+    {
         *hue = degrees.round().clamp(-180.0, 180.0);
     }
 }
@@ -67,10 +100,18 @@ pub fn cancel(app: &mut App) {
 
 /// Write the change, show the model afresh, and say what changed.
 pub fn apply(app: &mut App) {
-    let Some(document) = &mut app.editor else { return };
-    let Some(pick) = document.color_pick.take() else { return };
-    let Some(group) = document.colors.get(pick.group).cloned() else { return };
-    let Ok(open) = &mut document.listing.document else { return };
+    let Some(document) = &mut app.editor else {
+        return;
+    };
+    let Some(pick) = document.color_pick.take() else {
+        return;
+    };
+    let Some(group) = document.colors.get(pick.group).cloned() else {
+        return;
+    };
+    let Ok(open) = &mut document.listing.document else {
+        return;
+    };
     match colors::apply(open, &group, pick.change) {
         Ok(what) => {
             let bytes = open.bytes().to_vec();

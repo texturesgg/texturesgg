@@ -6,7 +6,9 @@
 use super::{Mods, actions, size_text};
 use crate::state::App;
 use crate::ui::tokens::{Palette, space, text};
-use crate::ui::{ButtonKind, Dialog, DialogWidth, Tone, badge, button, dialog, rule, spacer, text_action};
+use crate::ui::{
+    ButtonKind, Dialog, DialogWidth, Tone, badge, button, dialog, rule, spacer, text_action,
+};
 use rune::{El, ScrollSpec, col, row, text as label};
 
 /// The list's tallest, in points; longer lists scroll.
@@ -18,8 +20,15 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
     if !mods.versions || app.nav.place != crate::nav::Place::Mods {
         return None;
     }
-    let rows = versions(mods).into_iter().enumerate().map(|(index, version)| version_row(mods, &version, index == 0, p));
-    let list = col().max_h(LIST_HEIGHT).scroll(ScrollSpec { stick_bottom: false })
+    let rows = versions(mods)
+        .into_iter()
+        .enumerate()
+        .map(|(index, version)| version_row(mods, &version, index == 0, p));
+    let list = col()
+        .max_h(LIST_HEIGHT)
+        .scroll(ScrollSpec {
+            stick_bottom: false,
+        })
         .child(col().children(rows.flat_map(|row| [row, rule(p)])));
     let parts = Dialog {
         title: "tgg-melee versions".into(),
@@ -27,13 +36,24 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
         body: Some(list),
         buttons: vec![spacer(), button("Done", ButtonKind::Secondary, p).key("mods/versions/done").on_press(actions::hide_versions)],
     };
-    Some(dialog("mods/versions", "dialog", DialogWidth::Narrow, parts, actions::hide_versions, p))
+    Some(dialog(
+        "mods/versions",
+        "dialog",
+        DialogWidth::Narrow,
+        parts,
+        actions::hide_versions,
+        p,
+    ))
 }
 
 /// Every version: those textures.gg offers, newest first, then any
 /// installed it no longer offers.
 fn versions(mods: &Mods) -> Vec<String> {
-    let mut versions: Vec<String> = mods.releases.iter().map(|release| release.version.clone()).collect();
+    let mut versions: Vec<String> = mods
+        .releases
+        .iter()
+        .map(|release| release.version.clone())
+        .collect();
     for port in mods.ports.iter().rev() {
         if !versions.contains(&port.version) {
             versions.push(port.version.clone());
@@ -48,7 +68,11 @@ fn version_row(mods: &Mods, version: &str, newest: bool, p: &Palette) -> El {
     let current = mods.port().is_some_and(|port| port.version == version);
     let installed = mods.has_port(version);
     let busy = mods.work.is_some();
-    let size = mods.releases.iter().find(|release| release.version == version).map(|release| size_text(release.size()));
+    let size = mods
+        .releases
+        .iter()
+        .find(|release| release.version == version)
+        .map(|release| size_text(release.size()));
     let state = if current {
         Some(badge("In use", Tone::Mine, p))
     } else if installed {
@@ -62,19 +86,43 @@ fn version_row(mods: &Mods, version: &str, newest: bool, p: &Palette) -> El {
     } else if installed {
         let (used, removed) = (owned.clone(), owned.clone());
         vec![
-            text_action("Remove", true, p).key(format!("mods/versions/{version}/remove")).on_press(move |app: &mut App| actions::remove_port(app, &removed)),
-            button("Use", ButtonKind::Secondary, p).key(format!("mods/versions/{version}/use")).on_press(move |app: &mut App| actions::use_port(app, &used)),
+            text_action("Remove", true, p)
+                .key(format!("mods/versions/{version}/remove"))
+                .on_press(move |app: &mut App| actions::remove_port(app, &removed)),
+            button("Use", ButtonKind::Secondary, p)
+                .key(format!("mods/versions/{version}/use"))
+                .on_press(move |app: &mut App| actions::use_port(app, &used)),
         ]
     } else {
-        vec![button("Install", ButtonKind::Secondary, p).key(format!("mods/versions/{version}/install"))
-            .on_press(move |app: &mut App| actions::install_version(app, &owned))]
+        vec![
+            button("Install", ButtonKind::Secondary, p)
+                .key(format!("mods/versions/{version}/install"))
+                .on_press(move |app: &mut App| actions::install_version(app, &owned)),
+        ]
     };
-    row().key(format!("mods/versions/{version}")).px(space::LG).py(space::XS).gap(space::SM).items_center()
-        .child(col().gap(space::TIGHT).grow(1.0).min_w(0.0)
-            .child(row().gap(space::XS).items_center()
-                .child(label(version.to_owned()).font(text::MONO_TEXT).color(p.ink))
-                .children(newest.then(|| badge("Newest", Tone::News, p))))
-            .children(size.filter(|_| !installed).map(|size| label(size).font(text::MONO_SMALL).color(p.faint))))
+    row()
+        .key(format!("mods/versions/{version}"))
+        .px(space::LG)
+        .py(space::XS)
+        .gap(space::SM)
+        .items_center()
+        .child(
+            col()
+                .gap(space::TIGHT)
+                .grow(1.0)
+                .min_w(0.0)
+                .child(
+                    row()
+                        .gap(space::XS)
+                        .items_center()
+                        .child(label(version.to_owned()).font(text::MONO_TEXT).color(p.ink))
+                        .children(newest.then(|| badge("Newest", Tone::News, p))),
+                )
+                .children(
+                    size.filter(|_| !installed)
+                        .map(|size| label(size).font(text::MONO_SMALL).color(p.faint)),
+                ),
+        )
         .children(state)
         .children(actions)
 }

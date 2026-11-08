@@ -10,8 +10,8 @@ mod spawns;
 pub mod view;
 pub mod viewport;
 
-use hsd_render::Orbit;
 use dat_parser::hsd::scene::{HsdTextureIndex, HsdTextureSourceId};
+use hsd_render::Orbit;
 use melee_dat::{MeleeModel, MeleeReferenceStore, MeleeSlot, SharedModel};
 use rune::{Live, LiveText};
 use std::collections::BTreeMap;
@@ -40,7 +40,14 @@ pub struct Stage {
 
 impl Default for Stage {
     fn default() -> Self {
-        Self { shown: None, shown_count: 0, rejected: Vec::new(), picked: None, playhead: Live::new([0.0, 0.0]), frame_count: LiveText::new(FRAME_COUNT_SPACE) }
+        Self {
+            shown: None,
+            shown_count: 0,
+            rejected: Vec::new(),
+            picked: None,
+            playhead: Live::new([0.0, 0.0]),
+            frame_count: LiveText::new(FRAME_COUNT_SPACE),
+        }
     }
 }
 
@@ -95,9 +102,15 @@ impl Shown {
         if self.moves.is_empty() {
             return None;
         }
-        let Some(animation) = self.animation else { return Some("Idle".into()) };
+        let Some(animation) = self.animation else {
+            return Some("Idle".into());
+        };
         self.moves.iter().find_map(|row| match row {
-            MoveRow::Move { animation: playing, title, .. } if *playing == animation => Some(title.clone()),
+            MoveRow::Move {
+                animation: playing,
+                title,
+                ..
+            } if *playing == animation => Some(title.clone()),
             _ => None,
         })
     }
@@ -107,12 +120,20 @@ impl Shown {
     /// The animation for `action` (`SpecialLwLoop`), when its fighter has one.
     pub fn animation_for(&self, action: &str) -> Option<usize> {
         let playback = self.model.fighter()?;
-        playback.animations().iter().find(|animation| animation.action.as_deref() == Some(action)).map(|animation| animation.index)
+        playback
+            .animations()
+            .iter()
+            .find(|animation| animation.action.as_deref() == Some(action))
+            .map(|animation| animation.index)
     }
 
     /// The action playing (`SpecialLwLoop`), if a move is.
     pub fn action(&self) -> Option<&str> {
         let playback = self.model.fighter()?;
-        playback.animations().get(self.animation?)?.action.as_deref()
+        playback
+            .animations()
+            .get(self.animation?)?
+            .action
+            .as_deref()
     }
 }

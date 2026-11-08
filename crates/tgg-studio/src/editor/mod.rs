@@ -56,11 +56,17 @@ pub enum Pending {
 impl Document {
     /// Whether there are edits not yet saved.
     pub fn modified(&self) -> bool {
-        self.listing.document.as_ref().is_ok_and(|document| document.is_modified())
+        self.listing
+            .document
+            .as_ref()
+            .is_ok_and(|document| document.is_modified())
     }
 
     /// How many textures it has.
     pub fn texture_count(&self) -> usize {
-        self.listing.document.as_ref().map_or(0, |document| document.textures().len())
+        self.listing
+            .document
+            .as_ref()
+            .map_or(0, |document| document.textures().len())
     }
 }

@@ -32,11 +32,7 @@ fn agent() -> ureq::Agent {
 
 /// POST `body` as JSON and return the response's text, at most
 /// `limit` bytes of it.
-pub fn post_json(
-    url: &str,
-    body: &serde_json::Value,
-    limit: u64,
-) -> Result<String, ureq::Error> {
+pub fn post_json(url: &str, body: &serde_json::Value, limit: u64) -> Result<String, ureq::Error> {
     agent()
         .post(url)
         .content_type("application/json")

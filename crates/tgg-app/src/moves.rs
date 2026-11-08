@@ -27,7 +27,11 @@ pub enum MoveRow {
 /// them; empty slots and unnamed records are left out. Binds each once to
 /// learn whether it plays (~0.1 ms each).
 pub fn moves(playback: &MeleeFighterPlayback) -> Vec<MoveRow> {
-    let mut listed: Vec<_> = playback.animations().iter().filter(|animation| animation.action.is_some()).collect();
+    let mut listed: Vec<_> = playback
+        .animations()
+        .iter()
+        .filter(|animation| animation.action.is_some())
+        .collect();
     listed.sort_by_key(|animation| (animation.group, animation.index));
     let mut rows = Vec::new();
     let mut group = None::<MoveGroup>;
@@ -44,7 +48,12 @@ pub fn moves(playback: &MeleeFighterPlayback) -> Vec<MoveRow> {
         rows.push(MoveRow::Move {
             animation: animation.index,
             title: animation.label(),
-            detail: animation.name.is_some().then(|| animation.action.clone()).flatten().unwrap_or_default(),
+            detail: animation
+                .name
+                .is_some()
+                .then(|| animation.action.clone())
+                .flatten()
+                .unwrap_or_default(),
             refused,
         });
     }
@@ -53,5 +62,7 @@ pub fn moves(playback: &MeleeFighterPlayback) -> Vec<MoveRow> {
 
 fn capitalized(text: &str) -> String {
     let mut characters = text.chars();
-    characters.next().map_or_else(String::new, |first| first.to_uppercase().chain(characters).collect())
+    characters.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(characters).collect()
+    })
 }

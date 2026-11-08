@@ -35,7 +35,14 @@ pub enum Progress {
 impl Report {
     /// The report for the log as it stands.
     pub fn now(crashed: bool) -> Self {
-        Self { text: compose(&tgg_app::log::recent(LOG_BYTES), dirs::home_dir().as_deref()), crashed, progress: Progress::Unsent }
+        Self {
+            text: compose(
+                &tgg_app::log::recent(LOG_BYTES),
+                dirs::home_dir().as_deref(),
+            ),
+            crashed,
+            progress: Progress::Unsent,
+        }
     }
 }
 
@@ -58,7 +65,9 @@ mod tests {
 
     #[test]
     fn a_report_keeps_the_logs_end_and_hides_the_home_folder() {
-        let log: String = (0..400).map(|n| format!("line {n} in /home/someone/x\n")).collect();
+        let log: String = (0..400)
+            .map(|n| format!("line {n} in /home/someone/x\n"))
+            .collect();
         let report = compose(&log, Some(Path::new("/home/someone")));
         assert!(report.contains("line 399 in ~/x"));
         assert!(!report.contains("line 99 "), "only the last 300 lines");

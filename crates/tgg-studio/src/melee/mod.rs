@@ -61,7 +61,11 @@ pub struct Panes {
 
 impl Default for Panes {
     fn default() -> Self {
-        Self { costumes: false, shared: false, moves: true }
+        Self {
+            costumes: false,
+            shared: false,
+            moves: true,
+        }
     }
 }
 
@@ -84,13 +88,19 @@ impl Melee {
                 _ => None,
             })
             .collect();
-        Self { fighters: roster(&slots), stages, ..Self::default() }
+        Self {
+            fighters: roster(&slots),
+            stages,
+            ..Self::default()
+        }
     }
 
     /// Whether `slot` holds something other than the game's own file, once
     /// that's known.
     pub fn changed(&self, slot: MeleeSlot) -> bool {
-        self.states.as_ref().is_some_and(|states| !matches!(states.get(&slot), None | Some(SlotState::Vanilla)))
+        self.states
+            .as_ref()
+            .is_some_and(|states| !matches!(states.get(&slot), None | Some(SlotState::Vanilla)))
     }
 
     /// How many of `fighter`'s files the player has changed.
@@ -100,20 +110,30 @@ impl Melee {
 
     /// The costume a fighter's plate shows: its first.
     pub fn shown_slot(fighter: &Fighter) -> Option<MeleeSlot> {
-        fighter.costumes.first().map(|costume| costume.slot(fighter))
+        fighter
+            .costumes
+            .first()
+            .map(|costume| costume.slot(fighter))
     }
 }
 
 impl Melee {
     /// The fighter opened, when it's a fighter.
     pub fn fighter(&self) -> Option<&Fighter> {
-        let Some(Subject::Fighter(character)) = self.subject else { return None };
-        self.fighters.iter().find(|fighter| fighter.character == character)
+        let Some(Subject::Fighter(character)) = self.subject else {
+            return None;
+        };
+        self.fighters
+            .iter()
+            .find(|fighter| fighter.character == character)
     }
 
     /// The slot a fighter opens on: its costume last chosen, else its first.
     pub fn opening_slot(&self, fighter: &Fighter) -> Option<MeleeSlot> {
-        self.chosen.get(&fighter.character).copied().or_else(|| Self::shown_slot(fighter))
+        self.chosen
+            .get(&fighter.character)
+            .copied()
+            .or_else(|| Self::shown_slot(fighter))
     }
 }
 

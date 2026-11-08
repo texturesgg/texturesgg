@@ -23,9 +23,14 @@ pub fn open_game(app: &mut App, references: References) {
 pub fn refresh(app: &mut App) {
     let Some(references) = &app.game else { return };
     let iso = references.game().path().to_owned();
-    app.jobs.read_states(&iso, &app.data.library, &app.data.history);
+    app.jobs
+        .read_states(&iso, &app.data.library, &app.data.history);
     let fighters = app.melee.fighters.iter().filter_map(Melee::shown_slot);
-    let stages = app.melee.stages.iter().map(|stage| MeleeSlot::Stage(*stage));
+    let stages = app
+        .melee
+        .stages
+        .iter()
+        .map(|stage| MeleeSlot::Stage(*stage));
     for slot in fighters.chain(stages) {
         app.renders.request(&iso, slot);
     }
@@ -33,8 +38,16 @@ pub fn refresh(app: &mut App) {
 
 /// What each slot of the game at `iso` holds, and which can be undone, have
 /// been read; they count if that's still the player's game.
-pub fn states_read(app: &mut App, iso: &Path, states: HashMap<MeleeSlot, SlotState>, undoable: HashSet<MeleeSlot>) -> bool {
-    let current = app.game.as_ref().is_some_and(|references| references.game().path() == iso);
+pub fn states_read(
+    app: &mut App,
+    iso: &Path,
+    states: HashMap<MeleeSlot, SlotState>,
+    undoable: HashSet<MeleeSlot>,
+) -> bool {
+    let current = app
+        .game
+        .as_ref()
+        .is_some_and(|references| references.game().path() == iso);
     if current {
         app.melee.states = Some(states);
         app.melee.undoable = undoable;
@@ -48,7 +61,13 @@ pub fn show_tab(app: &mut App, tab: Tab) {
 
 /// Open `character` onto the stage, on the costume last chosen for it.
 pub fn open_fighter(app: &mut App, character: Character) {
-    let Some(slot) = app.melee.fighters.iter().find(|fighter| fighter.character == character).and_then(|fighter| app.melee.opening_slot(fighter)) else {
+    let Some(slot) = app
+        .melee
+        .fighters
+        .iter()
+        .find(|fighter| fighter.character == character)
+        .and_then(|fighter| app.melee.opening_slot(fighter))
+    else {
         return;
     };
     open(app, Subject::Fighter(character), slot);
@@ -74,7 +93,9 @@ fn open(app: &mut App, subject: Subject, slot: MeleeSlot) {
 
 /// Show the fighter opened in its costume `slot`, keeping the camera and move.
 pub fn choose_costume(app: &mut App, slot: MeleeSlot) {
-    let Some(character) = slot.character() else { return };
+    let Some(character) = slot.character() else {
+        return;
+    };
     if stage::show(app, slot).is_ok() {
         app.melee.chosen.insert(character, slot);
     }
