@@ -19,7 +19,7 @@ pub enum ModCommand {
     /// Start a mod in DIR from the SDK's template (or another example), and
     /// build it once so editors find the game's headers.
     New {
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_parser = dir_arg)]
         dir: PathBuf,
         /// The mod's id [default: DIR's name]
         #[arg(long)]
@@ -42,7 +42,7 @@ pub enum ModCommand {
     /// and any of include/, files/ and assets/. A mod without C sources packs
     /// without compiling.
     Build {
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_parser = dir_arg)]
         dir: PathBuf,
         /// First unpack the source from this zip ("-" for stdin) into DIR,
         /// which must be empty or missing. Only manifest.json, src/,
@@ -69,7 +69,7 @@ pub enum ModCommand {
     /// Build the mod for debugging, put it in the game's mods folder, and run
     /// the game with your disc image.
     Dev {
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_parser = dir_arg)]
         dir: PathBuf,
         /// Rebuild on each change, and restart the game when it builds.
         #[arg(long)]
@@ -96,18 +96,19 @@ pub enum ModCommand {
     /// Create the mod on textures.gg from DIR's manifest.json, under your
     /// account. tgg mod publish does this the first time too.
     Register {
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_parser = dir_arg)]
         dir: PathBuf,
     },
     /// Tag the mod's version and push it to its repository on textures.gg,
     /// which builds the tag: DIR is the mod's git checkout.
     Publish {
-        #[arg(default_value = ".")]
+        #[arg(default_value = ".", value_parser = dir_arg)]
         dir: PathBuf,
     },
     /// Pack a built mod: DIR is the mod's installed folder, as the SDK's
     /// tgg_add_mod writes it (manifest.json, the library, and its folders).
     Pack {
+        #[arg(value_parser = dir_arg)]
         dir: PathBuf,
         /// The package zip to write [default: <id>-<version>.zip]
         #[arg(short, long)]
@@ -145,7 +146,7 @@ pub enum ModCommand {
         yes: bool,
         #[command(flatten)]
         port: PortArg,
-        #[arg(required_unless_present = "set", value_name = "ID[@RANGE]|ZIP")]
+        #[arg(required_unless_present = "set", value_name = "ID[@RANGE]|ZIP", value_parser = word_arg)]
         mods: Vec<String>,
     },
     /// Update the sets and mods installed from textures.gg, and say when
@@ -161,20 +162,20 @@ pub enum ModCommand {
     /// Turn installed mods on.
     #[command(visible_alias = "enable")]
     On {
-        #[arg(required = true)]
+        #[arg(required = true, value_parser = id_arg)]
         ids: Vec<ModId>,
     },
     /// Turn installed mods off; the game skips them.
     #[command(visible_alias = "disable")]
     Off {
-        #[arg(required = true)]
+        #[arg(required = true, value_parser = id_arg)]
         ids: Vec<ModId>,
     },
     /// Remove installed mods, or a set and the mods only it installed.
     Remove {
         #[arg(long, conflicts_with = "ids")]
         set: Option<String>,
-        #[arg(required_unless_present = "set")]
+        #[arg(required_unless_present = "set", value_parser = id_arg)]
         ids: Vec<ModId>,
     },
 }
@@ -570,4 +571,27 @@ fn install(mods: &ModsDir, port: Option<&Port>, packages: &[PathBuf]) -> Result<
         }
     }
     Ok(())
+}
+
+/// `help` where a folder or mod goes is a request for the command's help,
+/// not a folder named help, unless one exists.
+fn not_help(text: &str) -> std::result::Result<(), String> {
+    if text.eq_ignore_ascii_case("help") && !Path::new(text).exists() {
+        return Err("for this command's help, use --help".into());
+    }
+    Ok(())
+}
+
+fn dir_arg(text: &str) -> std::result::Result<PathBuf, String> {
+    not_help(text).map(|()| PathBuf::from(text))
+}
+
+fn word_arg(text: &str) -> std::result::Result<String, String> {
+    not_help(text).map(|()| text.to_owned())
+}
+
+fn id_arg(text: &str) -> std::result::Result<ModId, String> {
+    not_help(text)?;
+    text.parse()
+        .map_err(|error: tgg_mod::manifest::ManifestError| error.to_string())
 }
