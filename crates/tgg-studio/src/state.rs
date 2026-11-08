@@ -162,7 +162,8 @@ impl Data {
             library: folder.join("library"),
             history: folder.join("games"),
             mods: folder.join("mods"),
-            ports: folder.join("ports"),
+            // Where tgg-mod looks for them in `tgg`.
+            ports: folder.join("tgg-data").join("tgg").join("ports"),
             tgg: folder.join("tgg-data"),
         }
     }

@@ -30,7 +30,6 @@ pub fn view(app: &App, p: &Palette) -> El {
             .key("replays/refresh")
             .on_press(|app: &mut App| {
                 actions::scan(app);
-                actions::refresh(app);
             })
     };
     let head = row()

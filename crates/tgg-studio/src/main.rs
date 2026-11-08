@@ -284,7 +284,7 @@ const SCENES: &[Scene] = &[
         let folder = std::env::temp_dir().join("tgg-studio-demo");
         let _ = std::fs::remove_dir_all(&folder);
         app.data.mods = folder.join("mods");
-        app.data.ports = folder.join("ports");
+        app.data.ports = folder.join("tgg-data").join("tgg").join("ports");
         app.data.tgg = folder.join("tgg-data");
         if let Some(references) = &app.game {
             app.mods.disc = mods::Disc::Found(references.game().path().to_owned());
@@ -452,7 +452,7 @@ fn mods_scene(app: &mut App, installed: bool) {
     let folder = std::env::temp_dir().join("tgg-studio-scene-mods");
     let _ = std::fs::remove_dir_all(&folder);
     app.data.mods = folder.join("mods");
-    app.data.ports = folder.join("ports");
+    app.data.ports = folder.join("tgg-data").join("tgg").join("ports");
     app.data.tgg = folder.join("tgg-data");
     let net = Arc::new(tgg_mod::FakeNet::new());
     let releases = tgg_mod::port_releases(&*net).unwrap_or_default();

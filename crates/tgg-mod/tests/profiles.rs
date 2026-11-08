@@ -57,28 +57,10 @@ fn install_port(net: &FakeNet, player: &Player) -> PortInstall {
 }
 
 fn resolve(net: &FakeNet, player: &Player, profile: &Profile) -> ProfilePlan {
-    let layout = tgg_mod::profile_layout(profile, &player.ports()).expect("a layout");
-    let port = tgg_mod::Port {
-        executable: PathBuf::new(),
-        game_abi: layout,
-        name: "tgg-melee".into(),
-        target: String::new(),
-        version: String::new(),
-    };
-    let catalog = tgg_mod::refresh_catalog(net, &player.data, &port).expect("catalog");
-    let mapping = tgg_mod::refresh_mapping(net, &player.data).expect("mapping");
-    let current = tgg_mod::ports::installed_ports(&player.ports())
-        .expect("ports")
-        .into_iter()
-        .find(|install| install.current);
-    tgg_mod::resolve_profile(
-        profile,
-        &catalog,
-        &mapping,
-        &player.ports(),
-        &player.local(current.as_ref()),
-        &tgg_mod::trust(&player.data).expect("trust"),
-    )
+    let (plan, offline) =
+        tgg_mod::plan_profile(net, &player.data, &player.mods, profile).expect("plan");
+    assert_eq!(offline, None);
+    plan
 }
 
 /// A tgg-melee replay whose metadata carries `profile`.
@@ -363,16 +345,27 @@ fn a_profile_for_another_game_version_installs_it_alongside() {
     let player = player();
     install_port(&net, &player);
     net.publish_port("0.6.0");
+    // An older replay names its game's version but not its layout: the
+    // release on the mirror does, and gives the download size.
     let mut profile = Profile::new("0.6.0");
-    profile.game.layout = Some(FakeNet::LAYOUT.into());
+    profile.mods.push(tgg_mod::ProfileEntry {
+        id: id("tgg.legal-stages"),
+        version: None,
+        range: None,
+        sha256: None,
+        settings: Default::default(),
+    });
     let plan = resolve(&net, &player, &profile);
+    let release = tgg_mod::ports::port_release(&net, "0.6.0").expect("release");
     assert_eq!(
         plan.game,
         GameNeed::Available {
             version: "0.6.0".into(),
-            size: None
+            size: Some(release.size())
         }
     );
+    assert_eq!(plan.mods.len(), 1);
+    assert!(plan.missing.is_empty());
     assert_eq!(plan.fit, Fit::NeedsProfile);
     let prepared =
         tgg_mod::prepare_profile(&net, &plan, &player.data, &no_progress, &go()).expect("prepare");

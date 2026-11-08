@@ -5,10 +5,11 @@ use super::{Done, Item, MOST, Preparing, Read, Review, Status};
 use crate::jobs::Done as Job;
 use crate::mods::Disc;
 use crate::state::App;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use tgg_mod::{Fit, GameNeed, ProfilePlan, SlippiMapping};
+use tgg_mod::{Fit, GameNeed, Net, NetError, ProfilePlan};
 
 /// The folders replays are looked for in: tgg-melee's (its recorder's),
 /// and Slippi's.
@@ -23,8 +24,8 @@ pub fn folders() -> Vec<(String, PathBuf)> {
     folders
 }
 
-/// The page opened: read the replays the first time, with what textures.gg
-/// said last; ask it again when the Mods page hasn't this session.
+/// The page opened: read the replays the first time (planning them once
+/// read); plan them again when they've been read but not planned.
 pub fn opened(app: &mut App) {
     // What's installed and the disc to play, as Mods knows them.
     crate::mods::actions::read_disk(app);
@@ -39,13 +40,13 @@ pub fn opened(app: &mut App) {
             app.replays.folders = folders();
         }
         scan(app);
-    }
-    if !app.replays.refreshing && app.replays.catalogs.is_empty() {
+    } else if !app.replays.planned {
         refresh(app);
     }
 }
 
-/// Read every replay in the folders again, newest first.
+/// Read every replay in the folders again, newest first; they're planned
+/// once read.
 pub fn scan(app: &mut App) {
     if app.replays.scanning {
         return;
@@ -72,46 +73,64 @@ pub fn scan(app: &mut App) {
     });
 }
 
-/// Ask textures.gg for the Slippi mapping and what's built for each game
-/// the replays name, keeping both on disk.
+/// textures.gg as though out of reach, so planning falls back to what's
+/// kept on disk: for every replay of a game version after the first, whose
+/// plan has just fetched (and kept) what they share.
+struct Kept(Arc<dyn Net>);
+
+impl Net for Kept {
+    fn get(&self, url: &str, _: u64) -> Result<Vec<u8>, NetError> {
+        Err(NetError::Unreachable {
+            url: url.to_owned(),
+            reason: "asked already for this game version".to_owned(),
+        })
+    }
+
+    fn api_url(&self) -> &str {
+        self.0.api_url()
+    }
+
+    fn releases_url(&self) -> &str {
+        self.0.releases_url()
+    }
+}
+
+/// Plan every replay that could be read: what each needs to play, asking
+/// textures.gg once for each game version they name.
 pub fn refresh(app: &mut App) {
     if app.replays.refreshing {
         return;
     }
     app.replays.refreshing = true;
-    let (net, data) = (app.mods.net.clone(), app.data.tgg.clone());
-    // The current game, and the releases textures.gg offers by version.
-    let current = app.mods.port().map(tgg_mod::PortInstall::port);
-    let releases = app.mods.releases.clone();
-    let wanted: Vec<String> = app
+    let net = app.mods.net.clone();
+    let (data, mods) = (app.data.tgg.clone(), app.data.mods.clone());
+    let profiles: Vec<(PathBuf, tgg_mod::Profile)> = app
         .replays
         .items
         .iter()
-        .filter_map(|item| item.profile.as_ref().ok())
-        .map(|profile| profile.game.version.clone())
+        .filter_map(|item| Some((item.path.clone(), item.profile.clone().ok()?)))
         .collect();
-    app.jobs.spawn("replays refresh", move || {
-        let mapping = tgg_mod::refresh_mapping(&*net, &data)
-            .inspect_err(|error| tgg_app::log(&format!("the Slippi mapping: {error}")))
-            .ok();
-        let mut ports: Vec<tgg_mod::Port> = current.into_iter().collect();
-        for release in releases
-            .iter()
-            .filter(|release| wanted.contains(&release.version))
-        {
-            ports.push(release.port(PathBuf::new()));
-        }
-        let mut catalogs = Vec::new();
-        for port in ports {
-            if catalogs.iter().any(|(layout, _)| *layout == port.game_abi) {
-                continue;
-            }
-            match tgg_mod::refresh_catalog(&*net, &data, &port) {
-                Ok(catalog) => catalogs.push((port.game_abi.clone(), catalog)),
-                Err(error) => tgg_app::log(&format!("the catalog for {}: {error}", port.version)),
+    app.jobs.spawn("replays plan", move || {
+        let kept = Kept(net.clone());
+        let mut asked: HashSet<String> = HashSet::new();
+        let mut offline = false;
+        let mut plans = Vec::new();
+        for (path, profile) in profiles {
+            let first = asked.insert(profile.game.version.clone());
+            let ask: &dyn Net = if first && !offline { &*net } else { &kept };
+            match tgg_mod::plan_profile(ask, &data, &mods, &profile) {
+                Ok((plan, note)) => {
+                    if first && let Some(note) = note {
+                        offline = true;
+                        tgg_app::log(&format!("planning replays offline: {note}"));
+                    }
+                    plans.push((path, plan));
+                }
+                Err(error) => tgg_app::log(&format!("planning {}: {error}", path.display())),
             }
         }
-        Job::Replays(Box::new(Done::Refreshed { mapping, catalogs }))
+        let mapping = tgg_mod::cached_mapping(&data);
+        Job::Replays(Box::new(Done::Refreshed { mapping, plans }))
     });
 }
 
@@ -124,26 +143,32 @@ pub fn done(app: &mut App, done: Done) -> bool {
             app.replays.items = reads
                 .into_iter()
                 .map(|read| Item {
+                    status: match &read.profile {
+                        Err(why) => Status::Unreadable(why.clone()),
+                        Ok(_) => Status::Unknown,
+                    },
                     path: read.path,
                     source: read.source,
                     info: read.info,
                     profile: read.profile,
-                    status: Status::Unknown,
+                    plan: None,
                 })
                 .collect();
-            resolve_all(app);
+            refresh(app);
             request_renders(app);
         }
-        Done::Refreshed { mapping, catalogs } => {
+        Done::Refreshed { mapping, plans } => {
             app.replays.refreshing = false;
+            app.replays.planned = true;
             if mapping.is_some() {
                 app.replays.mapping = mapping;
             }
-            for (layout, catalog) in catalogs {
-                app.replays.catalogs.retain(|(known, _)| *known != layout);
-                app.replays.catalogs.push((layout, catalog));
+            for (path, plan) in plans {
+                if let Some(item) = app.replays.items.iter_mut().find(|item| item.path == path) {
+                    item.status = status(&plan);
+                    item.plan = Some(plan);
+                }
             }
-            resolve_all(app);
         }
         Done::Stats { path, result } => {
             app.replays.stats.insert(path, Some(result));
@@ -160,70 +185,6 @@ pub fn done(app: &mut App, done: Done) -> bool {
         }
     }
     true
-}
-
-/// The catalog for `layout`: as fetched this session, else as kept on disk.
-fn catalog_for(app: &App, layout: &str) -> Option<tgg_mod::Catalog> {
-    app.replays
-        .catalogs
-        .iter()
-        .find(|(known, _)| known == layout)
-        .map(|(_, catalog)| catalog.clone())
-        .or_else(|| tgg_mod::cached_catalog(&app.data.tgg, layout))
-}
-
-/// The plan for playing `profile`: what it needs, against the catalog for
-/// its game, the mapping, and what's installed. None while there's no
-/// catalog to resolve against.
-fn plan(app: &App, profile: &tgg_mod::Profile) -> Option<ProfilePlan> {
-    let current = app.mods.port().map(|port| port.release.game_abi.clone());
-    let layout = tgg_mod::profile_layout(profile, &app.data.ports)
-        .or_else(|| (profile.game.version == "any").then_some(current).flatten())
-        .or_else(|| {
-            app.mods
-                .releases
-                .iter()
-                .find(|release| release.version == profile.game.version.trim_start_matches('v'))
-                .map(|release| release.game_abi.clone())
-        })?;
-    let catalog = catalog_for(app, &layout)?;
-    let mapping = app.replays.mapping.clone().unwrap_or_else(empty_mapping);
-    let trust = tgg_mod::trust(&app.data.tgg).unwrap_or_default();
-    Some(tgg_mod::resolve_profile(
-        profile,
-        &catalog,
-        &mapping,
-        &app.data.ports,
-        &app.mods.local,
-        &trust,
-    ))
-}
-
-/// A mapping with nothing in it, before textures.gg has sent one.
-fn empty_mapping() -> SlippiMapping {
-    SlippiMapping {
-        format: 1,
-        snapshot: None,
-        codes: Vec::new(),
-        ignore: Vec::new(),
-        minor: Vec::new(),
-    }
-}
-
-/// Work out every replay's status.
-fn resolve_all(app: &mut App) {
-    let statuses: Vec<Status> = app
-        .replays
-        .items
-        .iter()
-        .map(|item| match &item.profile {
-            Err(why) => Status::Unreadable(why.clone()),
-            Ok(profile) => plan(app, profile).map_or(Status::Unknown, |plan| status(&plan)),
-        })
-        .collect();
-    for (item, status) in app.replays.items.iter_mut().zip(statuses) {
-        item.status = status;
-    }
 }
 
 /// What a plan comes to, for a row.
@@ -244,10 +205,10 @@ pub fn status(plan: &ProfilePlan) -> Status {
     }
 }
 
-/// The plan for the replay at `path`, now.
+/// The plan for the replay at `path`, once planned.
 pub fn plan_for(app: &App, path: &Path) -> Option<ProfilePlan> {
     let item = app.replays.items.iter().find(|item| item.path == path)?;
-    plan(app, item.profile.as_ref().ok()?)
+    item.plan.clone()
 }
 
 /// Play the replay at `path`: as installed straight away when its mods

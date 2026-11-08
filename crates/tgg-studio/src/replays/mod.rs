@@ -6,9 +6,10 @@
 //! of what it needs, and a yes for mods textures.gg doesn't vouch for.
 //!
 //! Reading the replays (their players, stage and the mods they need) is
-//! disk only, on a job; textures.gg is asked for the catalog and the Slippi
-//! mapping when the page opens or the player asks, and what it said last is
-//! kept on disk. `actions` changes it; `view` draws the page and `review`
+//! disk only, on a job; then each is planned (`tgg_mod::plan_profile`) on
+//! another, which asks textures.gg once per game version for the Slippi
+//! mapping, that version's release and its catalog, keeping what it said
+//! on disk for when it can't be reached. `actions` changes it; `view` draws the page and `review`
 //! the dialog before a replay that needs a profile plays.
 
 pub mod actions;
@@ -19,9 +20,7 @@ pub mod view;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use tgg_mod::{
-    Catalog, Error, Prepared, Profile, ProfilePlan, Progress, ReplayInfo, SlippiMapping,
-};
+use tgg_mod::{Error, Prepared, Profile, ProfilePlan, Progress, ReplayInfo, SlippiMapping};
 
 /// The most replays listed: the newest.
 pub const MOST: usize = 300;
@@ -36,10 +35,10 @@ pub struct Replays {
     pub scanned: bool,
     /// textures.gg's Slippi mapping, as last fetched or kept.
     pub mapping: Option<SlippiMapping>,
-    /// What's built for each game layout, as last fetched or kept.
-    pub catalogs: Vec<(String, Catalog)>,
-    /// Asking textures.gg for the catalogs and mapping.
+    /// Planning the replays: asking textures.gg what each needs.
     pub refreshing: bool,
+    /// The replays have been planned once this session.
+    pub planned: bool,
     /// A replay's review before it plays.
     pub review: Option<Review>,
     /// A replay's mods being fetched and its folder built.
@@ -66,13 +65,15 @@ pub struct Item {
     pub info: Option<ReplayInfo>,
     /// The mods its game was played with, or why that can't be read.
     pub profile: Result<Profile, String>,
+    /// What playing it needs, once planned.
+    pub plan: Option<ProfilePlan>,
     pub status: Status,
 }
 
 /// Whether a replay plays as is, and if not, what it needs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Status {
-    /// Not worked out yet: no catalog or mapping to resolve against.
+    /// Not worked out yet: not planned, or textures.gg couldn't say.
     Unknown,
     /// The installed mods match it.
     AsIs,
@@ -146,10 +147,11 @@ pub struct Read {
 pub enum Done {
     /// The replays in the folders, read.
     Scanned(Vec<Read>),
-    /// What textures.gg says now: the mapping, and catalogs by layout.
+    /// The replays planned: each one's plan by its path, and the mapping
+    /// as kept now.
     Refreshed {
         mapping: Option<SlippiMapping>,
-        catalogs: Vec<(String, Catalog)>,
+        plans: Vec<(PathBuf, ProfilePlan)>,
     },
     /// A replay's profile, prepared to play.
     /// A replay's stats, read from its frames.
