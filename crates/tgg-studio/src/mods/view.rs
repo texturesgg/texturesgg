@@ -347,7 +347,7 @@ fn unbuilt_row(mods: &Mods, summary: &ModSummary, p: &Palette) -> El {
 fn mod_text(mods: &Mods, id: &ModId, name: &str, version: &str, description: Option<&str>, p: &Palette) -> El {
     let listed = mods.listings.get(id).map(|summary| {
         let installs = if summary.installs == 1 { "install" } else { "installs" };
-        let mut words = format!("by {} · {} {installs}", summary.author, count_text(summary.installs));
+        let mut words = format!("by {} · {} {installs}", summary.publisher.name, count_text(summary.installs));
         if !summary.tags.is_empty() {
             words = format!("{words} · {}", summary.tags.join(", "));
         }
@@ -356,7 +356,8 @@ fn mod_text(mods: &Mods, id: &ModId, name: &str, version: &str, description: Opt
     col().gap(space::TIGHT).grow(1.0).min_w(0.0)
         .child(row().gap(space::XS).items_end()
             .child(label(name.to_owned()).font(text::STRONG).color(p.ink).truncate())
-            .child(label(version.to_owned()).font(text::MONO_SMALL).color(p.faint)))
+            .child(label(version.to_owned()).font(text::MONO_SMALL).color(p.faint))
+            .children(mods.official(id).then(|| badge("Official", Tone::News, p))))
         .children(description.map(|line| label(line.to_owned()).font(text::SMALL).color(p.muted).truncate()))
         .children(listed)
 }

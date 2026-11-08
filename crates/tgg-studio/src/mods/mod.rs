@@ -143,7 +143,8 @@ impl Mods {
                 None => newest.push(entry),
             }
         }
-        newest.sort_by_key(|entry| entry.manifest.name.to_lowercase());
+        // Official mods first, then by name.
+        newest.sort_by_key(|entry| (!self.official(&entry.manifest.id), entry.manifest.name.to_lowercase()));
         newest
     }
 
@@ -163,7 +164,7 @@ impl Mods {
             .filter(|summary| !offered.iter().any(|entry| entry.manifest.id == summary.id))
             .filter(|summary| self.matches(&summary.id, &summary.name, summary.description.as_deref()))
             .collect();
-        unbuilt.sort_by_key(|summary| summary.name.to_lowercase());
+        unbuilt.sort_by_key(|summary| (!summary.publisher.official, summary.name.to_lowercase()));
         unbuilt
     }
 
@@ -172,10 +173,16 @@ impl Mods {
     fn matches(&self, id: &ModId, name: &str, description: Option<&str>) -> bool {
         let query = self.search.text.to_lowercase();
         let listed = self.listings.get(id);
-        let author = listed.map_or("", |summary| summary.author.as_str());
+        let author = listed.map(|summary| format!("{} {}", summary.publisher.name, summary.author)).unwrap_or_default();
         let tags = listed.map(|summary| summary.tags.join(" ")).unwrap_or_default();
         let haystack = format!("{name} {id} {} {author} {tags}", description.unwrap_or_default()).to_lowercase();
         query.split_whitespace().all(|word| haystack.contains(word))
+    }
+
+    /// Whether textures.gg vouches for the mod `id`: its own, or one its
+    /// admins call official.
+    pub fn official(&self, id: &ModId) -> bool {
+        self.listings.get(id).is_some_and(|summary| summary.publisher.official)
     }
 
     /// The icon of the mod `id`, once it's arrived.

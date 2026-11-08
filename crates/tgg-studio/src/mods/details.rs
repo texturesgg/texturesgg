@@ -62,7 +62,9 @@ fn body(app: &App, p: &Palette) -> Option<El> {
         .child(icon_tile(mods.icon(id), ICON, p))
         .child(col().gap(space::TIGHT).grow(1.0).min_w(0.0)
             .child(label(name).font(text::H3).color(p.ink).wrap())
-            .child(label(listed.map_or_else(|| id.to_string(), |summary| format!("by {}", summary.author))).font(text::SMALL).color(p.muted).truncate()));
+            .child(row().gap(space::XS).items_center()
+                .child(label(listed.map_or_else(|| id.to_string(), |summary| format!("by {}", summary.publisher.name))).font(text::SMALL).color(p.muted).truncate())
+                .children(mods.official(id).then(|| badge("Official", Tone::News, p)))));
     let description = manifest.and_then(|manifest| manifest.description.clone()).or_else(|| listed.and_then(|summary| summary.description.clone()));
     let tags = listed.filter(|summary| !summary.tags.is_empty())
         .map(|summary| row().flex_wrap().gap(space::SNUG).children(summary.tags.iter().map(|tag| badge(tag.clone(), Tone::Plain, p))));

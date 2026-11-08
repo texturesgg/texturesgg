@@ -1073,3 +1073,19 @@ fn a_long_readme_and_release_history_show_their_start_until_asked() {
     assert!(rt.find("mods/details/readme/more").is_none(), "all of it shows");
     assert!(rt.state.mods.expanded.contains(&crate::mods::Expand::Readme));
 }
+
+#[test]
+fn official_mods_say_so_and_come_first() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    let netplay: tgg_mod::ModId = "tgg.netplay".parse().expect("an id");
+    assert!(rt.state.mods.official(&netplay), "the fake's first-party mods are official");
+    // Say one isn't: it sorts after the official ones.
+    rt.update(|app, _| {
+        let id: tgg_mod::ModId = "tgg.competitive-rules".parse().expect("an id");
+        if let Some(summary) = app.mods.listings.get_mut(&id) {
+            summary.publisher.official = false;
+        }
+    });
+    let ids: Vec<String> = rt.state.mods.offered().iter().map(|entry| entry.manifest.id.to_string()).collect();
+    assert_eq!(ids.last().map(String::as_str), Some("tgg.competitive-rules"), "{ids:?}");
+}
