@@ -1382,6 +1382,13 @@ fn every_mod_can_be_browsed_and_searched_before_tgg_melee_is_installed() {
         rt.find("mods/catalog/tgg.netplay").is_none(),
         "the search hides the rest"
     );
+    // A tag, and the publisher, find mods too.
+    rt.update(|app, _| app.mods.search.text = "quality-of-life".into());
+    rt.frame(FRAME);
+    assert_eq!(rt.state.mods.found().len(), 3, "the replay mods' tag");
+    rt.update(|app, _| app.mods.search.text = "textures.gg".into());
+    rt.frame(FRAME);
+    assert_eq!(rt.state.mods.found().len(), 10, "every mod's publisher");
     rt.update(|app, _| app.mods.search.text = "nothing like this".into());
     rt.frame(FRAME);
     assert!(rt.find("mods/all/empty").is_some());
