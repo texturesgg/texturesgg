@@ -93,6 +93,14 @@ pub enum Error {
     /// The game version a profile needs isn't one tgg can get.
     #[error("tgg-melee {0} can't be had for this system")]
     GameUnavailable(String),
+    #[error("{path} isn't a tgg-melee SDK: {why}")]
+    BadSdk { path: PathBuf, why: String },
+    #[error("the SDK has no example {example:?}; it has {have}")]
+    NoExample { example: String, have: String },
+    #[error(
+        "{dir} already has {others}; a new mod starts in a new folder, or one with only dotfiles, a README, a license and a Nix flake"
+    )]
+    FolderInUse { dir: PathBuf, others: String },
     #[error("{path}: {source}")]
     Io {
         path: PathBuf,
