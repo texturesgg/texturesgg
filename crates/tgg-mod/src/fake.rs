@@ -23,7 +23,8 @@ use std::sync::Mutex;
 ///   `tgg.direct-connect` (depends on `tgg.netplay ^0.2`),
 ///   `tgg.replay-player` 0.2.0, `tgg.replay-browser` (depends on
 ///   `tgg.replay-player ^0.2`) and `tgg.replay-recorder`; every other is
-///   0.1.0. Any other layout gets an empty catalog.
+///   0.1.0. Any other layout gets a catalog with no builds. Every catalog
+///   names every published mod in `ids`.
 /// - the sets `competitive` and `replays`, version 1, taking each mod at
 ///   `^<its version>`, minor version included.
 /// - tgg-melee [`FakeNet::PORT_VERSION`] for this system, whose game is a
@@ -290,6 +291,16 @@ impl FakeNet {
                 state.catalog.clone()
             } else {
                 Vec::new()
+            },
+            ids: {
+                let mut ids: Vec<_> = state
+                    .catalog
+                    .iter()
+                    .map(|entry| entry.manifest.id.clone())
+                    .collect();
+                ids.sort();
+                ids.dedup();
+                ids
             },
         };
         catalog.to_json().into_bytes()

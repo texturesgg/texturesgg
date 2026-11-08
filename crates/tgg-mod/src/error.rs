@@ -12,8 +12,13 @@ use std::path::PathBuf;
 pub enum Error {
     /// textures.gg (or the release mirror) can't be reached. What's
     /// installed still works.
-    #[error("can't reach textures.gg ({0}); what's installed still works")]
-    Offline(NetError),
+    /// Why is its source.
+    #[error("can't reach textures.gg; what's installed still works")]
+    Offline(#[source] NetError),
+    /// The registry has no catalog for this game's layout: no mod has been
+    /// built for this tgg-melee yet.
+    #[error("textures.gg has no mods for tgg-melee {0} yet")]
+    NoCatalog(String),
     /// The server answered, but not with what was asked for.
     #[error("{0}")]
     Net(NetError),

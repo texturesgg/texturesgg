@@ -3,7 +3,9 @@
 //!
 //! - `GET /api/registry/sets`: a JSON array of [`Set`]s.
 //! - `GET /api/registry/catalog?layout=<game layout>`: a [`Catalog`] of every
-//!   approved release with a build for that layout, with its `snapshot` id.
+//!   approved release with a build for that layout, with its `snapshot` id,
+//!   and `ids`, every mod id the registry has, so a plan can tell a mod not
+//!   built for the layout from one that doesn't exist.
 //!
 //! Package URLs in the catalog may be relative to the catalog's own URL;
 //! [`catalog`] returns them absolute.
@@ -12,7 +14,7 @@ use crate::catalog::Catalog;
 use crate::depends::Range;
 use crate::error::Error;
 use crate::manifest::ModId;
-use crate::net::Net;
+use crate::net::{Net, NetError};
 use crate::port::Port;
 use serde::{Deserialize, Serialize};
 
@@ -47,10 +49,15 @@ impl Set {
     }
 }
 
-/// The registry's sets.
+/// The registry's sets; none when it has none yet (it answers 404).
 pub fn sets(net: &dyn Net) -> Result<Vec<Set>, Error> {
     let url = format!("{}/api/registry/sets", net.api_url());
-    let body = net.get(&url, LIMIT).map_err(Error::from_net)?;
+    let body = match net.get(&url, LIMIT) {
+        Ok(body) => body,
+        // A registry with no sets yet.
+        Err(NetError::NotFound { .. }) => return Ok(Vec::new()),
+        Err(error) => return Err(Error::from_net(error)),
+    };
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum Sets {
@@ -64,14 +71,17 @@ pub fn sets(net: &dyn Net) -> Result<Vec<Set>, Error> {
 }
 
 /// The registry's catalog for `port`'s game layout, with absolute package
-/// URLs.
+/// URLs; [`Error::NoCatalog`] when it has none for that layout (a 404).
 pub fn catalog(net: &dyn Net, port: &Port) -> Result<Catalog, Error> {
     let url = format!(
         "{}/api/registry/catalog?layout={}",
         net.api_url(),
         query_escape(&port.game_abi)
     );
-    let body = net.get(&url, LIMIT).map_err(Error::from_net)?;
+    let body = net.get(&url, LIMIT).map_err(|error| match error {
+        NetError::NotFound { .. } => Error::NoCatalog(port.version.clone()),
+        error => Error::from_net(error),
+    })?;
     let json = std::str::from_utf8(&body)
         .map_err(|_| Error::Registry("the catalog isn't UTF-8".into()))?;
     let mut catalog =
