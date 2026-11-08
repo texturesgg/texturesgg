@@ -1,14 +1,10 @@
-//! `tgg mod new`: a new mod from one of the SDK's examples.
+//! `tgg mod new`: a new mod from one of the SDK's examples
+//! ([`tgg_mod::new_mod`]), then a first build.
 
 use crate::build::{self, Options};
-use crate::publish::git;
-use anyhow::{Context, Result, anyhow, bail, ensure};
-use std::path::{Path, PathBuf};
-use tgg_mod::ModId;
-
-/// The example a new mod starts from unless told otherwise.
-const TEMPLATE: &str = "template";
-const TEMPLATE_ID: &str = "my-mod";
+use anyhow::{Result, anyhow};
+use std::path::Path;
+use tgg_mod::{ModId, NewMod, Repository};
 
 pub struct New<'a> {
     pub dir: &'a Path,
@@ -22,7 +18,6 @@ pub struct New<'a> {
 
 pub fn new(new: New) -> Result<()> {
     let dir = new.dir;
-    check_folder(dir)?;
     let folder_name = std::path::absolute(dir)?
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
@@ -36,66 +31,35 @@ pub fn new(new: New) -> Result<()> {
         })?,
     };
     let sdk = build::resolve_sdk(new.sdk)?;
-    let example = new.example.as_deref().unwrap_or(TEMPLATE);
-    let source = sdk.root.join("examples").join(example);
-    if !source.join("manifest.json").is_file() {
-        let mut names: Vec<String> = std::fs::read_dir(sdk.root.join("examples"))
-            .map(|entries| {
-                entries
-                    .filter_map(|entry| entry.ok())
-                    .filter(|entry| entry.path().join("manifest.json").is_file())
-                    .map(|entry| entry.file_name().to_string_lossy().into_owned())
-                    .collect()
-            })
-            .unwrap_or_default();
-        names.sort();
-        bail!(
-            "the SDK has no example {example:?}; it has {}",
-            names.join(", ")
-        );
-    }
-    let created = copy_dir(&source, dir, Path::new(""))?;
-
-    // The id and name go in as JSON values, so nothing else in the manifest
-    // changes.
-    let path = dir.join("manifest.json");
-    let mut manifest: serde_json::Value =
-        serde_json::from_slice(&build::read(&path)?).with_context(|| path.display().to_string())?;
-    manifest["id"] = id.as_str().into();
-    let name = new.name.unwrap_or(folder_name);
-    manifest["name"] = name.as_str().into();
-    std::fs::write(
-        &path,
-        serde_json::to_string_pretty(&manifest).expect("json") + "\n",
+    let created = tgg_mod::new_mod(
+        &sdk,
+        &NewMod {
+            dir: dir.to_owned(),
+            id,
+            name: new.name.unwrap_or(folder_name),
+            example: new.example,
+        },
     )?;
-    link_docs(dir, &sdk.version)?;
-    if example == TEMPLATE {
-        // The template's own files name its mod; a file that was already
-        // there is left alone.
-        for file in ["CMakeLists.txt", "README.md"] {
-            let path = dir.join(file);
-            if created.iter().any(|c| c == Path::new(file))
-                && let Ok(text) = std::fs::read_to_string(&path)
-            {
-                let text = if file == "README.md" {
-                    // The template's README describes the template; a new mod
-                    // gets its own, which link_docs then points at the docs
-                    readme(&name, id.as_str())
-                } else {
-                    text.replace(TEMPLATE_ID, id.as_str())
-                };
-                std::fs::write(&path, text).with_context(|| path.display().to_string())?;
-            }
-        }
-    }
     build::read_manifest(dir)?;
 
+    let (id, example) = (&created.id, &created.example);
     if dir.file_name().is_some_and(|folder| folder == id.as_str()) {
         println!("Created {id} from the SDK's {example}");
     } else {
         println!("Created {id} in {} from the SDK's {example}", dir.display());
     }
-    start_repository(dir, &format!("Start {id} from the SDK's {example}"));
+    match created.repository {
+        Repository::Committed | Repository::AlreadyThere => {}
+        Repository::NoGit => println!(
+            "git isn't installed, so there's no repository yet (tgg doctor says how to get it)"
+        ),
+        Repository::NoIdentity => println!(
+            "Made a git repository. To commit, tell git who you are:\n  \
+             git config --global user.name \"Your Name\"\n  \
+             git config --global user.email you@example.com"
+        ),
+        Repository::Failed(error) => eprintln!("Couldn't start its git repository: {error}"),
+    }
 
     // A first build writes build/compile_commands.json, so an editor finds
     // the game's headers right away.
@@ -113,167 +77,4 @@ pub fn new(new: New) -> Result<()> {
         Err(error) => eprintln!("It doesn't build yet: {error:#}"),
     }
     Ok(())
-}
-
-/// Make `dir` a git repository whose first commit is the template, so the
-/// mod's history starts from it. A repository that was already there is left
-/// alone. Without git, or without a name and email for git to commit with,
-/// it says what to do and goes on: a mod builds without a repository.
-fn start_repository(dir: &Path, message: &str) {
-    if git(dir, &["--version"]).is_err() {
-        println!(
-            "git isn't installed, so there's no repository yet (tgg doctor says how to get it)"
-        );
-        return;
-    }
-    if git(dir, &["rev-parse", "--git-dir"]).is_ok() {
-        return;
-    }
-    if let Err(error) = git(dir, &["init", "--quiet", "--initial-branch=main"]) {
-        eprintln!("Couldn't make a git repository: {error:#}");
-        return;
-    }
-    let who = ["user.name", "user.email"]
-        .iter()
-        .all(|key| git(dir, &["config", key]).is_ok_and(|value| !value.is_empty()));
-    if !who {
-        println!(
-            "Made a git repository. To commit, tell git who you are:\n  \
-             git config --global user.name \"Your Name\"\n  \
-             git config --global user.email you@example.com"
-        );
-        return;
-    }
-    if let Err(error) = git(dir, &["add", "--all"])
-        .and_then(|_| git(dir, &["commit", "--quiet", "--message", message]))
-    {
-        eprintln!("Made a git repository but not its first commit: {error:#}");
-    }
-}
-
-/// A new mod's README: its name and id, and how to build and run it.
-fn readme(name: &str, id: &str) -> String {
-    format!(
-        "# {name}\n\n`{id}`, a mod for tgg-melee.\n\n## Build and run\n\n```sh\n\
-         tgg mod build        # build and pack it into build/\n\
-         tgg mod dev --watch  # run it in the game, rebuilding on every change\n\
-         ```\n\n\
-         - The docs came with the SDK: `$(tgg sdk path)/docs`. Start with `writing-mods.md`.\n"
-    )
-}
-
-/// Point the template's "the docs are in your SDK" lines at the docs for
-/// the SDK's version on textures.gg. A file without them is left as it is.
-fn link_docs(dir: &Path, version: &str) -> Result<()> {
-    let url = |page: &str| crate::docs::url(version, page);
-    let edits = [
-        (
-            "README.md",
-            "- The docs came with the SDK: `$(tgg sdk path)/docs`. Start with `writing-mods.md`.".to_owned(),
-            format!(
-                "- The docs: {}. Start with [writing mods]({}); `tgg docs` opens them, and\n  the SDK has a copy in `$(tgg sdk path)/docs`.",
-                url("README"),
-                url("writing-mods")
-            ),
-        ),
-        (
-            "src/mod.c",
-            " * swap what's below for your own code. The docs are in your SDK: run\n * `tgg sdk path` and open docs/writing-mods.md there.".to_owned(),
-            format!(" * swap what's below for your own code. The docs:\n * {}", url("writing-mods")),
-        ),
-    ];
-    for (file, old, new) in edits {
-        let path = dir.join(file);
-        if let Ok(text) = std::fs::read_to_string(&path)
-            && text.contains(&old)
-        {
-            std::fs::write(&path, text.replace(&old, &new))
-                .with_context(|| path.display().to_string())?;
-        }
-    }
-    Ok(())
-}
-
-/// Files a folder may already hold when a mod starts in it: dotfiles (git,
-/// direnv), a README, a license and a Nix flake.
-fn may_already_be_there(name: &str) -> bool {
-    let upper = name.to_ascii_uppercase();
-    name.starts_with('.')
-        || ["README", "LICENSE", "LICENCE", "COPYING"]
-            .iter()
-            .any(|prefix| upper.starts_with(prefix))
-        || ["flake.nix", "flake.lock", "shell.nix", "default.nix"].contains(&name)
-}
-
-/// Refuse a folder that holds anything but what [`may_already_be_there`]
-/// allows.
-fn check_folder(dir: &Path) -> Result<()> {
-    let entries = match std::fs::read_dir(dir) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => return Err(error).with_context(|| dir.display().to_string()),
-    };
-    let mut others: Vec<String> = entries
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .filter(|name| !may_already_be_there(name))
-        .collect();
-    others.sort();
-    ensure!(
-        others.is_empty(),
-        "{} already has {}; tgg mod new starts a mod in a new folder, or one with only \
-         dotfiles, a README, a license and a Nix flake",
-        dir.display(),
-        others.join(", ")
-    );
-    Ok(())
-}
-
-/// Copy the folder `from` into `to`, leaving out any `build/` folder and
-/// keeping files `to` already has; an existing `.gitignore` gets the lines it
-/// lacks. Returns the files it wrote, relative to `to`.
-fn copy_dir(from: &Path, to: &Path, relative: &Path) -> Result<Vec<PathBuf>> {
-    let mut created = Vec::new();
-    std::fs::create_dir_all(to).with_context(|| to.display().to_string())?;
-    for entry in std::fs::read_dir(from).with_context(|| from.display().to_string())? {
-        let entry = entry?;
-        let target = to.join(entry.file_name());
-        let path = relative.join(entry.file_name());
-        let kind = entry.file_type()?;
-        if kind.is_dir() {
-            if entry.file_name() != build::BUILD {
-                created.extend(copy_dir(&entry.path(), &target, &path)?);
-            }
-        } else if kind.is_file() {
-            if !target.exists() {
-                std::fs::copy(entry.path(), &target)
-                    .with_context(|| target.display().to_string())?;
-                created.push(path);
-            } else if entry.file_name() == ".gitignore" {
-                merge_lines(&entry.path(), &target)?;
-            }
-        }
-    }
-    Ok(created)
-}
-
-/// Append to `into` each line of `from` it doesn't have.
-fn merge_lines(from: &Path, into: &Path) -> Result<()> {
-    let ours = std::fs::read_to_string(from).with_context(|| from.display().to_string())?;
-    let mut theirs = std::fs::read_to_string(into).with_context(|| into.display().to_string())?;
-    let missing: Vec<&str> = ours
-        .lines()
-        .filter(|line| !line.trim().is_empty() && !theirs.lines().any(|t| t == *line))
-        .collect();
-    if missing.is_empty() {
-        return Ok(());
-    }
-    if !theirs.is_empty() && !theirs.ends_with('\n') {
-        theirs.push('\n');
-    }
-    for line in missing {
-        theirs.push_str(line);
-        theirs.push('\n');
-    }
-    std::fs::write(into, theirs).with_context(|| into.display().to_string())
 }
