@@ -142,6 +142,26 @@ pub struct Manifest {
     /// serves at `/mods/<id>/<path>`, in byte order of path, from packing.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<ModFile>,
+    /// The Slippi gecko codes the mod reproduces, which the registry's Slippi
+    /// mapping is built from.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub slippi: Vec<SlippiCodeDecl>,
+}
+
+/// A Slippi gecko code a mod reproduces: its address (`0x801D45EC`) or a
+/// Game Start fact (`frozen-stadium`), its name, and the Slippi versions it
+/// holds for (a semver requirement, `*` for every one).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlippiCodeDecl {
+    pub code: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default = "every_version")]
+    pub versions: String,
+}
+
+fn every_version() -> String {
+    "*".to_owned()
 }
 
 /// The tags a manifest's `tags` may name.
@@ -336,6 +356,7 @@ impl Manifest {
             imports: Vec::new(),
             files: Vec::new(),
             assets: Vec::new(),
+            slippi: Vec::new(),
         }
     }
 }

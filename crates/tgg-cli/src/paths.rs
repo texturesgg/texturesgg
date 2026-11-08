@@ -20,6 +20,12 @@ fn under(base: Option<PathBuf>, kind: &str) -> Result<PathBuf> {
         .join("tgg"))
 }
 
+/// The local data folder tgg keeps `tgg/` in: the `data` tgg_mod's profile
+/// functions take.
+pub fn data() -> Result<PathBuf> {
+    dirs::data_local_dir().ok_or_else(|| anyhow!("this system has no data folder"))
+}
+
 pub fn ports() -> Result<PathBuf> {
     Ok(under(dirs::data_local_dir(), "data")?.join("ports"))
 }

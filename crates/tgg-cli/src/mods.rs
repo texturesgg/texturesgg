@@ -407,6 +407,7 @@ fn with_player(
         net: &net,
         mods: tgg_mod::default_mods_dir(),
         ports: crate::paths::ports()?,
+        packages: tgg_mod::packages_dir(&crate::paths::data()?),
         port,
         out: crate::player::Out::stdout(),
         ask: !yes && std::io::IsTerminal::is_terminal(&std::io::stdin()),
@@ -541,6 +542,8 @@ fn write_catalog(output: &Path, packages: &[PathBuf]) -> Result<()> {
                 size: bytes.len() as u64,
                 signature: None,
             },
+            publisher: None,
+            changes_game: true,
         });
     }
     mods.sort_by(|a, b| a.manifest.id.cmp(&b.manifest.id));

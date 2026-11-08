@@ -13,6 +13,7 @@ struct Player {
     _dir: tempfile::TempDir,
     mods: PathBuf,
     ports: PathBuf,
+    packages: PathBuf,
 }
 
 fn player() -> Player {
@@ -20,6 +21,7 @@ fn player() -> Player {
     Player {
         mods: dir.path().join("mods"),
         ports: dir.path().join("ports"),
+        packages: dir.path().join("packages"),
         _dir: dir,
     }
 }
@@ -50,7 +52,15 @@ fn install_set(net: &FakeNet, player: &Player, port: &PortInstall, name: &str) {
     let catalog = tgg_mod::catalog(net, &port.port()).expect("catalog");
     let plan = tgg_mod::plan_set(&set, &catalog, &local(player, port));
     assert!(plan.problems().is_empty(), "{:?}", plan.problems());
-    tgg_mod::apply(net, &plan, &player.mods, &no_progress, &go()).expect("apply");
+    tgg_mod::apply_cached(
+        net,
+        &plan,
+        &player.mods,
+        Some(&player.packages),
+        &no_progress,
+        &go(),
+    )
+    .expect("apply");
 }
 
 #[test]
@@ -88,7 +98,15 @@ fn installing_a_set_shows_its_size_then_installs_it_complete() {
 
     let labels = std::sync::Mutex::new(Vec::new());
     let progress = |p: tgg_mod::Progress| labels.lock().unwrap().push(p.label);
-    let applied = tgg_mod::apply(&net, &plan, &player.mods, &progress, &go()).expect("apply");
+    let applied = tgg_mod::apply_cached(
+        &net,
+        &plan,
+        &player.mods,
+        Some(&player.packages),
+        &progress,
+        &go(),
+    )
+    .expect("apply");
     assert_eq!(applied.installed.len(), competitive.mods.len());
     assert!(
         labels
@@ -183,7 +201,15 @@ fn updating_follows_the_newest_set_and_releases() {
     assert_eq!(action("tgg.ledge-grabs"), Some(Action::Install));
     assert_eq!(action("tgg.netplay"), Some(Action::Keep));
     assert_eq!(action("tgg.skip-results"), None);
-    tgg_mod::apply(&net, &plan, &player.mods, &no_progress, &go()).expect("apply");
+    tgg_mod::apply_cached(
+        &net,
+        &plan,
+        &player.mods,
+        Some(&player.packages),
+        &no_progress,
+        &go(),
+    )
+    .expect("apply");
 
     let state = local(&player, &port);
     assert_eq!(state.sets[0].set.version, 2);
@@ -210,7 +236,15 @@ fn uninstalling_a_set_keeps_mods_installed_on_their_own_or_by_another_set() {
         &local(&player, &port),
     );
     assert_eq!(plan.steps[0].action, Action::Keep);
-    tgg_mod::apply(&net, &plan, &player.mods, &no_progress, &go()).expect("apply");
+    tgg_mod::apply_cached(
+        &net,
+        &plan,
+        &player.mods,
+        Some(&player.packages),
+        &no_progress,
+        &go(),
+    )
+    .expect("apply");
 
     tgg_mod::uninstall_set(&player.mods, "replays").expect("uninstall set");
     let state = local(&player, &port);
@@ -310,7 +344,14 @@ fn a_package_that_isnt_the_planned_one_is_refused() {
     let set = net.set("replays").expect("set");
     let mut plan = tgg_mod::plan_set(&set, &catalog, &local(&player, &port));
     plan.steps[0].download.as_mut().expect("download").sha256 = "0".repeat(64);
-    let result = tgg_mod::apply(&net, &plan, &player.mods, &no_progress, &go());
+    let result = tgg_mod::apply_cached(
+        &net,
+        &plan,
+        &player.mods,
+        Some(&player.packages),
+        &no_progress,
+        &go(),
+    );
     assert!(matches!(result, Err(Error::Checksum { .. })), "{result:?}");
     let state = local(&player, &port);
     assert!(state.mods.is_empty());
@@ -332,7 +373,14 @@ fn cancelling_between_mods_keeps_what_finished_in_the_lock() {
             cancel.store(true, Ordering::Relaxed);
         }
     };
-    let result = tgg_mod::apply(&net, &plan, &player.mods, &progress, &cancel);
+    let result = tgg_mod::apply_cached(
+        &net,
+        &plan,
+        &player.mods,
+        Some(&player.packages),
+        &progress,
+        &cancel,
+    );
     assert!(matches!(result, Err(Error::Cancelled)), "{result:?}");
     let state = local(&player, &port);
     assert_eq!(state.mods.len(), 1);
@@ -491,7 +539,15 @@ fn while_the_game_runs_the_mods_folder_doesnt_change() {
     let set = net.set("competitive").expect("set");
     let plan = tgg_mod::plan_set(&set, &catalog, &local(&player, &port));
     for result in [
-        tgg_mod::apply(&net, &plan, &player.mods, &no_progress, &go()).map(|_| ()),
+        tgg_mod::apply_cached(
+            &net,
+            &plan,
+            &player.mods,
+            Some(&player.packages),
+            &no_progress,
+            &go(),
+        )
+        .map(|_| ()),
         tgg_mod::set_enabled(&player.mods, &id("tgg.replay-player"), false),
         tgg_mod::uninstall(&player.mods, &id("tgg.replay-player")),
         tgg_mod::uninstall_set(&player.mods, "replays"),
@@ -637,7 +693,15 @@ fn plans_bring_what_their_mods_depend_on() {
     set.mods.retain(|m| m.id == id("tgg.direct-connect"));
     let plan = tgg_mod::plan_set(&set, &catalog, &state);
     assert_eq!(plan.steps.len(), 2);
-    tgg_mod::apply(&net, &plan, &player.mods, &no_progress, &go()).expect("apply");
+    tgg_mod::apply_cached(
+        &net,
+        &plan,
+        &player.mods,
+        Some(&player.packages),
+        &no_progress,
+        &go(),
+    )
+    .expect("apply");
     let state = local(&player, &port);
     assert_eq!(
         state.get(&id("tgg.netplay")).expect("installed").sets(),
