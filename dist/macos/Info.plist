@@ -9,7 +9,7 @@
     <key>CFBundleDisplayName</key>
     <string>textures.gg</string>
     <key>CFBundleExecutable</key>
-    <string>tgg-editor</string>
+    <string>tgg-studio</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleIdentifier</key>

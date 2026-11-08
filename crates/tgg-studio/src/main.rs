@@ -362,6 +362,9 @@ fn main() {
         poll: Some(jobs::poll),
         ..AppSpec::new("textures.gg", (1280.0, 800.0), launch, shell::view)
     };
+    // The id its desktop entry and icon are filed under (dist/linux), so
+    // the desktop matches the window to them.
+    rune::set_app_id("gg.textures.app");
     rune::App::new(spec)
         // The app draws its own title row, so Linux and Windows windows have
         // no system one; macOS keeps its window buttons.

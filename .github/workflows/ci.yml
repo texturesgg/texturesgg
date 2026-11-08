@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install gpui-ce's Linux dependencies
+      - name: Install the app's Linux dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install --no-install-recommends -y -qq \
@@ -43,7 +43,7 @@ jobs:
       - name: Lint the melee-iso tests
         run: |
           cargo clippy --locked -p melee-dat --features melee-iso --all-targets -- -D warnings
-          cargo clippy --locked -p tgg-editor --features melee-iso --all-targets -- -D warnings
+          cargo clippy --locked -p tgg-studio --features melee-iso --all-targets -- -D warnings
 
       # The textures.gg site runs the renderer and the crates beneath it in
       # the browser; keep them building for wasm.

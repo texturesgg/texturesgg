@@ -15,7 +15,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="$(cargo metadata --manifest-path "$ROOT/Cargo.toml" --format-version 1 --no-deps |
-  jq -r '.packages[] | select(.name == "tgg-editor") | .version')"
+  jq -r '.packages[] | select(.name == "tgg-studio") | .version')"
 ARCH="$(uname -m)"
 OUT_DIR="$ROOT/target/package"
 APP="$OUT_DIR/textures.gg.app"
@@ -28,15 +28,15 @@ if [[ -n "${NOTARY_KEY_PATH:-}" && -n "${NOTARY_KEY_ID:-}" && -n "${NOTARY_ISSUE
 fi
 
 cd "$ROOT"
-cargo build --locked --release -p tgg-editor
+cargo build --locked --release -p tgg-studio
 
 rm -rf "$APP" "$DMG"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/licenses/fonts"
-install -m 755 "$ROOT/target/release/tgg-editor" "$APP/Contents/MacOS/tgg-editor"
+install -m 755 "$ROOT/target/release/tgg-studio" "$APP/Contents/MacOS/tgg-studio"
 sed "s/__VERSION__/$VERSION/g" "$ROOT/dist/macos/Info.plist" >"$APP/Contents/Info.plist"
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
 install -m 644 "$ROOT/LICENSE" "$APP/Contents/Resources/licenses/LICENSE"
-for font in "$ROOT"/crates/tgg-ui/assets/fonts/*/; do
+for font in "$ROOT"/crates/tgg-studio/assets/fonts/*/; do
   install -m 644 "$font/OFL.txt" "$APP/Contents/Resources/licenses/fonts/$(basename "$font").txt"
 done
 
