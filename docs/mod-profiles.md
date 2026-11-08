@@ -101,6 +101,7 @@ pub struct ProfilePlan {
     pub mods: Vec<ProfileMod>,     // id, version, publisher {name, official}, cached, size, needs_trust
     pub missing: Vec<Missing>,     // Unknown{id} | NotBuilt{id, version} | Unapproved{id, version} | NoModFor{code}
     pub key: String,               // hash of the resolved profile; names its folder
+    pub fit: Fit,                  // AsInstalled | NeedsProfile
 }
 
 // Preparing: network and disk (fetches into the cache, builds the folder; installs the
@@ -116,6 +117,11 @@ pub fn launch_profile(port: &PortInstall, iso: &Path, prepared: &Prepared,
 pub fn trust(data: &Path) -> Result<Trust, Error>;
 pub fn remember_trust(data: &Path, publisher: &str, allow: bool) -> Result<(), Error>;
 ```
+
+`fit` is `AsInstalled` when the player's current port and installed mods already satisfy
+the profile, with any extra installed mods all ones that don't change the game (the same
+rule as the in-game no-restart check below). Then a front end plays it with the normal
+mods folder: no `prepare_profile`, no profile folder.
 
 `resolve_profile` reports the game the profile needs. For a tgg-melee replay recorded on
 rc.8 while the player is on rc.9, it says "needs rc.8: installed" or "available, 18 MB",
