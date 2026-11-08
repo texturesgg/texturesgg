@@ -2129,3 +2129,124 @@ fn an_expired_code_says_so_and_starts_again() {
     tap(&mut rt, "signin/cancel");
     assert!(rt.state.signin.login.is_none());
 }
+
+/// A tgg-melee replay in `folder` whose game had Legal stages and
+/// Competitive rules at 0.1.0, played by ciao (Peach) and Krowten (Fox).
+fn tgg_replay_in(folder: &Path) -> PathBuf {
+    use tgg_mod::slp::write;
+    let profile = serde_json::json!({
+        "format": 1,
+        "game": {"name": "tgg-melee", "version": tgg_mod::FakeNet::PORT_VERSION, "layout": tgg_mod::FakeNet::LAYOUT},
+        "mods": [
+            {"id": "tgg.legal-stages", "version": "0.1.0"},
+            {"id": "tgg.competitive-rules", "version": "0.1.0"}
+        ]
+    });
+    let metadata = serde_json::json!({
+        "playedOn": "tgg-melee",
+        "players": {"0": {"names": {"netplay": "ciao"}}, "1": {"names": {"netplay": "Krowten"}}},
+        "tgg": {"game": format!("tgg-melee {} {}", tgg_mod::FakeNet::PORT_VERSION, tgg_mod::FakeNet::LAYOUT), "profile": profile}
+    });
+    let events = write::events([3, 18, 0], 3, false, 1, &[]);
+    let path = folder.join("Game_20260815T011035.slp");
+    std::fs::write(&path, write::replay(&events, Some(&metadata))).expect("write a replay");
+    path
+}
+
+/// On Replays, with tgg-melee from the fake and `folder` as its one
+/// replay folder, once the replays are read and resolved.
+fn on_replays(folder: &Path) -> (Runtime<App>, TempDir, TempDir) {
+    let (mut rt, disc, data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    rt.update(|app, _| app.replays.folders = vec![("tgg-melee".into(), folder.to_owned())]);
+    tap(&mut rt, crate::nav::Place::Replays.key());
+    jobs_until(&mut rt, |app| {
+        app.replays.scanned && !app.replays.refreshing && !app.replays.scanning
+    });
+    (rt, disc, data)
+}
+
+#[test]
+fn replays_list_who_played_and_what_each_needs() {
+    let replays = tempfile::tempdir().expect("temp");
+    let path = tgg_replay_in(replays.path());
+    let (rt, _disc, _data) = on_replays(replays.path());
+    let item = rt
+        .state
+        .replays
+        .items
+        .first()
+        .expect("the replay is listed");
+    let names: Vec<String> = item
+        .info
+        .as_ref()
+        .expect("read")
+        .players
+        .iter()
+        .filter_map(|player| player.name.clone())
+        .collect();
+    assert_eq!(names, ["ciao", "Krowten"]);
+    assert_eq!(
+        item.status,
+        crate::replays::Status::Needs {
+            mods: 3,
+            size: item_size(&rt),
+            game: None
+        },
+        "its two mods and the replay player aren't installed"
+    );
+    assert!(
+        rt.find(&format!("replays/{}/play", path.display()))
+            .is_some()
+    );
+}
+
+/// The bytes the listed replay's mods download.
+fn item_size(rt: &Runtime<App>) -> u64 {
+    match &rt.state.replays.items[0].status {
+        crate::replays::Status::Needs { size, .. } => *size,
+        _ => 0,
+    }
+}
+
+#[test]
+fn a_replay_that_needs_mods_is_reviewed_then_plays_in_its_own_setup() {
+    let replays = tempfile::tempdir().expect("temp");
+    let path = tgg_replay_in(replays.path());
+    let (mut rt, _disc, data) = on_replays(replays.path());
+    let iso = rt
+        .state
+        .game
+        .as_ref()
+        .expect("a game")
+        .game()
+        .path()
+        .to_owned();
+    rt.update(|app, _| crate::mods::actions::use_disc(app, iso.clone()));
+    tap_shown(&mut rt, &format!("replays/{}/play", path.display()));
+    settle(&mut rt);
+    let review = rt
+        .state
+        .replays
+        .review
+        .as_ref()
+        .expect("what it needs shows first");
+    // Its two mods, and the replay player that plays it.
+    assert_eq!(review.plan.mods.len(), 3);
+    assert!(rt.find("replays/review/mod/tgg.replay-player").is_some());
+    assert!(rt.find("replays/review/mod/tgg.legal-stages").is_some());
+    tap(&mut rt, "replays/review/play");
+    jobs_until(&mut rt, |app| {
+        app.replays.preparing.is_none() && app.mods.playing.is_some()
+    });
+    assert!(
+        rt.state.mods.local.mods.is_empty(),
+        "the player's own mods are untouched"
+    );
+    assert_eq!(
+        tgg_mod::profile_games(&data.path().join("tgg-data")).len(),
+        1,
+        "a profile game runs"
+    );
+    tap(&mut rt, "mods/stop");
+    jobs_until(&mut rt, |app| app.mods.playing.is_none());
+}

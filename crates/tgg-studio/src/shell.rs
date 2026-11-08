@@ -10,7 +10,9 @@ use crate::ui::tokens::{Palette, motion, radius, size, space, text};
 use crate::ui::{
     PLACE_INSET, close_glyph, icon_button, place_row, rule, sidebar_glyph, spacer, text_action,
 };
-use crate::{editor, keys, library, melee, mods, preferences, report, signin, welcome, window};
+use crate::{
+    editor, keys, library, melee, mods, preferences, replays, report, signin, welcome, window,
+};
 use rune::{Cx, El, col, el, row, text as label};
 
 /// Where the sidebar toggle sits, from the window's top left.
@@ -60,6 +62,7 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .children(report::view::view(app, &p))
         .children(signin::view::sign_in(app, &p))
         .children(signin::view::account(app, &p))
+        .children(replays::review::view(app, &p))
 }
 
 /// The places, recent edits, and Settings at the foot. Hidden, it narrows to
@@ -205,6 +208,7 @@ fn place(app: &App, p: &Palette) -> El {
         Place::Melee => melee::view::view(app, p),
         Place::Library => library::view::view(app, p),
         Place::Mods => mods::view::view(app, p),
+        Place::Replays => replays::view::view(app, p),
     };
     col()
         .key("shell/place")
@@ -247,7 +251,8 @@ fn title_actions(app: &App, p: &Palette) -> Option<El> {
     }
     match app.nav.place {
         Place::Melee => melee::subject::title_actions(app, p),
-        Place::Mods => mods::view::title_actions(app, p),
+        // Play, or Stop while a game (or a replay) runs.
+        Place::Mods | Place::Replays => mods::view::title_actions(app, p),
         Place::Library => None,
     }
 }

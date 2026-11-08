@@ -20,7 +20,12 @@ pub fn slippi_folder() -> Option<PathBuf> {
         .map(|config| config.join("Slippi Launcher").join("Settings"))
         .and_then(|path| std::fs::read_to_string(path).ok())
         .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
-        .and_then(|json| json.get("settings")?.get("rootSlpPath")?.as_str().map(PathBuf::from));
+        .and_then(|json| {
+            json.get("settings")?
+                .get("rootSlpPath")?
+                .as_str()
+                .map(PathBuf::from)
+        });
     let home = dirs::home_dir();
     from_settings
         .into_iter()
@@ -36,7 +41,11 @@ pub fn replays_in(folders: &[PathBuf], limit: usize) -> Vec<ReplayFile> {
     for (index, folder) in folders.iter().enumerate() {
         walk(folder, index, 0, &mut found);
     }
-    found.sort_by(|a, b| b.modified.cmp(&a.modified).then_with(|| a.path.cmp(&b.path)));
+    found.sort_by(|a, b| {
+        b.modified
+            .cmp(&a.modified)
+            .then_with(|| a.path.cmp(&b.path))
+    });
     found.truncate(limit);
     found
 }
@@ -46,7 +55,9 @@ pub fn replays_in(folders: &[PathBuf], limit: usize) -> Vec<ReplayFile> {
 const DEPTH: usize = 4;
 
 fn walk(folder: &Path, index: usize, depth: usize, found: &mut Vec<ReplayFile>) {
-    let Ok(entries) = std::fs::read_dir(folder) else { return };
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         let Ok(meta) = entry.metadata() else { continue };
@@ -54,9 +65,16 @@ fn walk(folder: &Path, index: usize, depth: usize, found: &mut Vec<ReplayFile>) 
             if depth < DEPTH {
                 walk(&path, index, depth + 1, found);
             }
-        } else if path.extension().is_some_and(|extension| extension.eq_ignore_ascii_case("slp")) {
+        } else if path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("slp"))
+        {
             let modified = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-            found.push(ReplayFile { path, modified, folder: index });
+            found.push(ReplayFile {
+                path,
+                modified,
+                folder: index,
+            });
         }
     }
 }
@@ -67,8 +85,21 @@ pub fn played_at(path: &Path) -> Option<String> {
     let stem = path.file_stem()?.to_str()?;
     let stamp = stem.strip_prefix("Game_")?;
     let (date, time) = stamp.split_once('T')?;
-    (date.len() == 8 && time.len() >= 4 && date.chars().chain(time.chars().take(4)).all(|c| c.is_ascii_digit())).then(|| {
-        format!("{}-{}-{} {}:{}", &date[..4], &date[4..6], &date[6..8], &time[..2], &time[2..4])
+    (date.len() == 8
+        && time.len() >= 4
+        && date
+            .chars()
+            .chain(time.chars().take(4))
+            .all(|c| c.is_ascii_digit()))
+    .then(|| {
+        format!(
+            "{}-{}-{} {}:{}",
+            &date[..4],
+            &date[4..6],
+            &date[6..8],
+            &time[..2],
+            &time[2..4]
+        )
     })
 }
 
@@ -79,7 +110,10 @@ mod tests {
 
     #[test]
     fn a_slippi_file_name_says_when() {
-        assert_eq!(played_at(Path::new("/x/Game_20260815T011035.slp")).as_deref(), Some("2026-08-15 01:10"));
+        assert_eq!(
+            played_at(Path::new("/x/Game_20260815T011035.slp")).as_deref(),
+            Some("2026-08-15 01:10")
+        );
         assert_eq!(played_at(Path::new("/x/clip.slp")), None);
     }
 
@@ -93,8 +127,78 @@ mod tests {
         std::fs::write(folder.path().join("new.slp"), b"x").expect("write");
         std::fs::write(folder.path().join("notes.txt"), b"x").expect("write");
         let found = replays_in(&[folder.path().to_owned()], 10);
-        let names: Vec<_> = found.iter().map(|file| file.path.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        let names: Vec<_> = found
+            .iter()
+            .map(|file| {
+                file.path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
         assert_eq!(names, ["new.slp", "old.slp"]);
         assert_eq!(replays_in(&[folder.path().to_owned()], 1).len(), 1);
+    }
+}
+
+/// Slippi's character ids (external ids, as Game Start writes them), by the
+/// two-letter code the game's files name each fighter with.
+const CHARACTERS: [&str; 26] = [
+    "Ca", "Dk", "Fx", "Gw", "Kb", "Kp", "Lk", "Lg", "Mr", "Ms", "Mt", "Ns", "Pe", "Pk", "Pp", "Pr",
+    "Ss", "Ys", "Zd", "Sk", "Fc", "Cl", "Dr", "Fe", "Pc", "Gn",
+];
+
+/// The fighter Slippi's character id `id` is.
+pub fn character(id: u8) -> Option<melee_dat::Character> {
+    melee_dat::Character::from_code(CHARACTERS.get(usize::from(id))?)
+}
+
+/// The name of the stage Slippi's stage id `id` is.
+pub fn stage_name(id: u16) -> Option<&'static str> {
+    Some(match id {
+        2 => "Fountain of Dreams",
+        3 => "Pokémon Stadium",
+        4 => "Princess Peach's Castle",
+        5 => "Kongo Jungle",
+        6 => "Brinstar",
+        7 => "Corneria",
+        8 => "Yoshi's Story",
+        9 => "Onett",
+        10 => "Mute City",
+        11 => "Rainbow Cruise",
+        12 => "Jungle Japes",
+        13 => "Great Bay",
+        14 => "Hyrule Temple",
+        15 => "Brinstar Depths",
+        16 => "Yoshi's Island",
+        17 => "Green Greens",
+        18 => "Fourside",
+        19 => "Mushroom Kingdom",
+        20 => "Mushroom Kingdom II",
+        22 => "Venom",
+        23 => "Poké Floats",
+        24 => "Big Blue",
+        25 => "Icicle Mountain",
+        26 => "Icetop",
+        27 => "Flat Zone",
+        28 => "Dream Land",
+        29 => "Yoshi's Island N64",
+        30 => "Kongo Jungle N64",
+        31 => "Battlefield",
+        32 => "Final Destination",
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod id_tests {
+    #[test]
+    fn slippi_ids_name_fighters_and_stages() {
+        assert_eq!(super::character(12).map(|c| c.name()), Some("Peach"));
+        assert_eq!(super::character(2).map(|c| c.name()), Some("Fox"));
+        assert_eq!(super::character(25).map(|c| c.name()), Some("Ganondorf"));
+        assert_eq!(super::stage_name(3), Some("Pokémon Stadium"));
+        assert_eq!(super::character(99), None);
     }
 }

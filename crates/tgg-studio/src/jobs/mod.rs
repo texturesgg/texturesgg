@@ -31,6 +31,8 @@ pub enum Done {
     Update(Option<String>),
     /// Signing in: who's signed in, a code, a poll's answer, signing out.
     SignIn(Box<crate::signin::Done>),
+    /// Replays: read, what textures.gg says, a replay's profile prepared.
+    Replays(Box<crate::replays::Done>),
 }
 
 pub struct Jobs {
@@ -196,6 +198,7 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
             Done::Mods(done) => crate::mods::actions::done(app, *done),
             Done::ReportSent(result) => crate::report::actions::sent(app, result),
             Done::SignIn(done) => crate::signin::actions::done(app, *done, tx),
+            Done::Replays(done) => crate::replays::actions::done(app, *done),
             Done::Update(newer) => {
                 app.update = newer;
                 app.update.is_some()
@@ -203,4 +206,10 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
         };
     }
     changed
+}
+
+/// Hand every result that's arrived to the actions that own it, now; for
+/// scenes, whose jobs run inline before the picture.
+pub fn poll_now(app: &mut crate::state::App) {
+    poll(app, 0.0, &mut rune::Tx::default());
 }

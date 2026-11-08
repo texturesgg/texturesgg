@@ -14,16 +14,19 @@ pub enum Place {
     Library,
     /// Mods from textures.gg for their port of the game.
     Mods,
+    /// Their Slippi and tgg-melee replays.
+    Replays,
 }
 
 impl Place {
-    pub const ALL: [Place; 3] = [Place::Melee, Place::Library, Place::Mods];
+    pub const ALL: [Place; 4] = [Place::Melee, Place::Library, Place::Mods, Place::Replays];
 
     pub fn label(self) -> &'static str {
         match self {
             Place::Melee => "Melee",
             Place::Library => "Library",
             Place::Mods => "Mods",
+            Place::Replays => "Replays",
         }
     }
 
@@ -33,6 +36,7 @@ impl Place {
             Place::Melee => "sidebar/place/melee",
             Place::Library => "sidebar/place/library",
             Place::Mods => "sidebar/place/mods",
+            Place::Replays => "sidebar/place/replays",
         }
     }
 }

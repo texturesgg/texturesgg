@@ -10,6 +10,7 @@ use crate::melee::Melee;
 use crate::mods::Mods;
 use crate::nav::Nav;
 use crate::preferences::Preferences;
+use crate::replays::Replays;
 use crate::report::Report;
 use crate::signin::SignIn;
 use crate::stage::Stage;
@@ -51,6 +52,8 @@ pub struct App {
     pub update: Option<String>,
     /// Who's signed in to textures.gg, and signing in.
     pub signin: SignIn,
+    /// The player's replays, and playing them with their mods.
+    pub replays: Replays,
     /// tgg-melee and its mods.
     pub mods: Mods,
     /// Work off the window's thread.
@@ -101,6 +104,7 @@ impl App {
             report: None,
             update: None,
             signin: SignIn::new(persist, credentials),
+            replays: Replays::default(),
             jobs: Jobs::default(),
         }
     }

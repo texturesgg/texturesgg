@@ -111,7 +111,9 @@ pub fn sign_in(app: &App, p: &Palette) -> Option<El> {
         line: "Confirm this code on textures.gg to connect the app to your account.".into(),
         body: Some(body),
         buttons: vec![
-            button("Cancel", ButtonKind::Secondary, p).key("signin/cancel").on_press(actions::cancel),
+            button("Cancel", ButtonKind::Secondary, p)
+                .key("signin/cancel")
+                .on_press(actions::cancel),
             spacer(),
             action,
         ],

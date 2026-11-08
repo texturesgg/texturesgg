@@ -18,8 +18,8 @@ pub mod install;
 pub mod library;
 pub mod log;
 pub mod moves;
-pub mod replays;
 pub mod net;
+pub mod replays;
 pub mod settings;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_dat;

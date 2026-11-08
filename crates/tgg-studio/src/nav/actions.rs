@@ -13,6 +13,7 @@ pub fn go(app: &mut App, place: Place) {
     match place {
         Place::Library => crate::library::actions::request_renders(app),
         Place::Mods => crate::mods::actions::opened(app),
+        Place::Replays => crate::replays::actions::opened(app),
         Place::Melee => {}
     }
 }
@@ -29,6 +30,6 @@ pub fn toggle_sidebar(app: &mut App) {
 pub fn up(app: &mut App) -> bool {
     match app.nav.place {
         Place::Melee => crate::melee::actions::back(app),
-        Place::Library | Place::Mods => false,
+        Place::Library | Place::Mods | Place::Replays => false,
     }
 }

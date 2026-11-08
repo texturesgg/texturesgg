@@ -15,6 +15,7 @@ mod melee;
 mod mods;
 mod nav;
 mod preferences;
+mod replays;
 mod report;
 mod shell;
 mod signin;
@@ -308,6 +309,14 @@ const SCENES: &[Scene] = &[
             },
             verified: true,
         });
+    }),
+    // The player's own replays, read and resolved against the live
+    // textures.gg before the picture (not deterministic: for a look).
+    ("replays", |app| {
+        app.jobs.inline = true;
+        nav::actions::go(app, nav::Place::Replays);
+        jobs::poll_now(app);
+        app.jobs.inline = false;
     }),
     ("no-sidebar", |app| app.nav.sidebar = false),
     ("paper", |app| {
