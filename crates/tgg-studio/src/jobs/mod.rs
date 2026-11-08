@@ -21,6 +21,10 @@ pub enum Done {
     States { iso: PathBuf, states: HashMap<MeleeSlot, SlotState>, undoable: HashSet<MeleeSlot> },
     /// Mods' work: what textures.gg offers, an install, the game ending.
     Mods(Box<crate::mods::Done>),
+    /// A report was sent, under this id, or why not.
+    ReportSent(Result<String, String>),
+    /// A newer version of the app, if the launch check found one.
+    Update(Option<String>),
 }
 
 pub struct Jobs {
@@ -127,6 +131,17 @@ fn states_of(game: &tgg_app::Game, library: &Library) -> HashMap<MeleeSlot, Slot
 pub fn setup(app: &mut crate::state::App, waker: Waker) {
     app.jobs.set_waker(waker);
     crate::melee::actions::refresh(app);
+    // Outside tests and recordings: offer a report when the last session
+    // crashed, and ask once whether a newer version is out (Settings turns
+    // that off).
+    if app.persist && !app.jobs.inline {
+        if tgg_app::log::crashed_before() {
+            crate::report::actions::open(app, true);
+        }
+        if app.settings.check_for_updates.unwrap_or(true) {
+            app.jobs.spawn("update check", || Done::Update(tgg_app::update::check(env!("CARGO_PKG_VERSION"))));
+        }
+    }
 }
 
 /// Before each frame: hand what's arrived to the actions that own it.
@@ -148,6 +163,11 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
         changed |= match done {
             Done::States { iso, states, undoable } => crate::melee::actions::states_read(app, &iso, states, undoable),
             Done::Mods(done) => crate::mods::actions::done(app, *done),
+            Done::ReportSent(result) => crate::report::actions::sent(app, result),
+            Done::Update(newer) => {
+                app.update = newer;
+                app.update.is_some()
+            }
         };
     }
     changed

@@ -1,5 +1,5 @@
 //! The app's log. Diagnostics go to stderr and, once [`start`] has run, to
-//! `textures.gg/logs/editor.log` under the platform's data directory, so a
+//! `textures.gg/logs/studio.log` under the platform's data directory, so a
 //! player can send what happened. The log stays on their
 //! disk until they choose to send it.
 //!
@@ -21,31 +21,31 @@ static SINK: OnceLock<(Mutex<File>, Instant)> = OnceLock::new();
 /// A log longer than this keeps only its end when a session starts.
 const KEEP_BYTES: u64 = 256 * 1024;
 
-const LOG: &str = "editor.log";
+const LOG: &str = "studio.log";
 /// Left by a panic, taken by the next launch.
-const CRASHED: &str = "crashed";
+const CRASHED: &str = "studio-crashed";
 
 /// Where the log is kept.
 pub fn folder() -> Option<PathBuf> {
     Some(dirs::data_dir()?.join("textures.gg").join("logs"))
 }
 
+/// The app's name and version, as [`start`] was told them.
+static APP: OnceLock<(&'static str, &'static str)> = OnceLock::new();
+
 /// What is running, and on what: the first line of a session's log.
 pub fn version() -> String {
-    format!(
-        "textures.gg editor {} ({} {})",
-        env!("CARGO_PKG_VERSION"),
-        std::env::consts::OS,
-        std::env::consts::ARCH
-    )
+    let (name, version) = APP.get().copied().unwrap_or(("tgg-studio", "unknown"));
+    format!("{name} {version} ({} {})", std::env::consts::OS, std::env::consts::ARCH)
 }
 
 /// Set by [`start`] from the marker the last session's panic left.
 static CRASHED_BEFORE: OnceLock<bool> = OnceLock::new();
 
 /// Begin this session's log in the player's log folder and record panics
-/// there.
-pub fn start() {
+/// there; `name` and `version` say what's running.
+pub fn start(name: &'static str, version: &'static str) {
+    let _ = APP.set((name, version));
     if let Some(folder) = folder() {
         // Asked about once: the marker goes as it is read.
         let _ = CRASHED_BEFORE.set(std::fs::remove_file(folder.join(CRASHED)).is_ok());

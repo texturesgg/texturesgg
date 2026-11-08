@@ -25,6 +25,9 @@ dirs = "5"
 # Costume renders are kept as PNGs, by their file's SHA-256.
 image = { version = "0.25", default-features = false, features = ["png"] }
 sha2 = "0.10"
+# A sent report's answer.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 # The same wgpu Rune and hsd-render draw with: the viewport shares their device.
 wgpu = "30.0.1"
 

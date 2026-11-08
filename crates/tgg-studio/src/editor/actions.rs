@@ -32,6 +32,8 @@ pub fn open(app: &mut App) {
     let mut document = Document { slot, listing, thumbnails, selected: None, pending: None, external: Default::default(), colors: Vec::new(), color_pick: None };
     super::colors::read(&mut document);
     app.editor = Some(document);
+    // The sidebar lists it among the recent edits.
+    app.change_settings(move |settings| settings.remember_edit(slot));
     select(app, (app.editor.as_ref().is_some_and(|document| document.texture_count() > 0)).then_some(0));
 }
 
@@ -254,6 +256,36 @@ fn go_on(app: &mut App, then: Pending, tx: &mut Tx) {
         Pending::Leave => {}
         Pending::Close => tx.close_window(),
         Pending::Go(place) => nav::go(app, place),
+        Pending::Edit(slot) => open_slot(app, slot),
+    }
+}
+
+/// Edit `slot`, a recent edit: through the prompt when edits are unsaved.
+pub fn edit_recent(app: &mut App, slot: melee_dat::MeleeSlot, tx: &mut Tx) {
+    if app.editor.as_ref().is_some_and(|document| document.slot == slot) {
+        return;
+    }
+    if app.editor.is_some() {
+        leave_for(app, Pending::Edit(slot), tx);
+    } else {
+        open_slot(app, slot);
+    }
+}
+
+/// Show `slot` on the stage, under its fighter or stage in Melee, and open
+/// it for editing.
+fn open_slot(app: &mut App, slot: melee_dat::MeleeSlot) {
+    nav::go(app, Place::Melee);
+    match slot {
+        melee_dat::MeleeSlot::Stage(stage) => crate::melee::actions::open_stage(app, stage),
+        slot => {
+            let Some(character) = slot.character() else { return };
+            crate::melee::actions::open_fighter(app, character);
+            crate::melee::actions::choose_costume(app, slot);
+        }
+    }
+    if app.stage.shown.as_ref().is_some_and(|shown| shown.slot == slot) {
+        open(app);
     }
 }
 

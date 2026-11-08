@@ -110,13 +110,18 @@ pub fn switch(key: &str, on: bool, p: &Palette) -> El {
         .child(knob)
 }
 
-/// A one-line search field showing `edit`, its `placeholder` in faint ink
-/// while it's empty. The caller keys it and routes its edits back with
-/// `.on_edit`.
-pub fn search_field(edit: &rune::TextEdit, placeholder: &str, p: &Palette) -> El {
+/// A one-line text field showing `edit`, its `placeholder` in faint ink
+/// while it's empty: a search, a setting. The caller keys it and routes
+/// its edits back with `.on_edit`.
+pub fn text_field(edit: &rune::TextEdit, placeholder: &str, p: &Palette) -> El {
     rune::text_input(edit, type_::BODY).single_line()
         .placeholder(placeholder, p.faint).caret(p.ink, p.selected).color(p.ink)
         // Padded to a control's height around one line of body text.
         .px(space::SM).py(space::XXS + 1.0).radius(radius::CONTROL)
         .fill(p.sunk).border(size::LINE, p.line_strong).label(placeholder)
+}
+
+/// A search field: a text field whose placeholder says what it searches.
+pub fn search_field(edit: &rune::TextEdit, placeholder: &str, p: &Palette) -> El {
+    text_field(edit, placeholder, p)
 }

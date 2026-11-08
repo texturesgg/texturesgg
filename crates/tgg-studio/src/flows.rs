@@ -1089,3 +1089,60 @@ fn official_mods_say_so_and_come_first() {
     let ids: Vec<String> = rt.state.mods.offered().iter().map(|entry| entry.manifest.id.to_string()).collect();
     assert_eq!(ids.last().map(String::as_str), Some("tgg.competitive-rules"), "{ids:?}");
 }
+
+#[test]
+fn settings_keep_each_change_and_the_image_editor_when_closed() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    rt.key(KeyEvent { key: Key::Command(','), mods: Mods { cmd: true, ..Default::default() } });
+    rt.frame(FRAME);
+    assert!(rt.state.preferences.open, "Ctrl , opens Settings");
+    settle(&mut rt);
+    tap(&mut rt, "settings/appearance/paper");
+    assert_eq!(rt.state.settings.appearance(), tgg_app::settings::Appearance::Paper);
+    tap(&mut rt, "settings/updates/switch");
+    assert_eq!(rt.state.settings.check_for_updates, Some(false));
+    rt.update(|app, _| app.preferences.editor.text = "  aseprite  ".into());
+    tap(&mut rt, "settings/done");
+    assert!(!rt.state.preferences.open);
+    assert_eq!(rt.state.settings.external_editor.as_deref(), Some("aseprite"), "kept as typed, trimmed");
+    // Emptied, the system's default comes back.
+    tap(&mut rt, "sidebar/settings");
+    rt.update(|app, _| app.preferences.editor.text.clear());
+    tap(&mut rt, "settings/done");
+    assert_eq!(rt.state.settings.external_editor, None);
+}
+
+#[test]
+fn a_report_shows_what_it_would_send_and_copies_it() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    tap(&mut rt, "sidebar/report");
+    settle(&mut rt);
+    let report = rt.state.report.as_ref().expect("the report shows");
+    assert!(report.text.starts_with("tgg-studio "), "it says what's running: {}", report.text.lines().next().unwrap_or_default());
+    tap(&mut rt, "report/copy");
+    assert_eq!(rt.state.report.as_ref().map(|report| report.progress.clone()), Some(crate::report::Progress::Copied));
+    rt.update(|app, _| {
+        crate::report::actions::sent(app, Ok("r-42".into()));
+    });
+    rt.frame(FRAME);
+    tap(&mut rt, "report/send");
+    assert!(rt.state.report.is_none(), "once it's sent, the button closes it");
+}
+
+#[test]
+fn a_recent_edit_opens_again_from_the_sidebar() {
+    let (mut rt, _disc, _data) = editing();
+    let slot = rt.state.editor.as_ref().expect("editing").slot;
+    assert_eq!(rt.state.settings.recent.first(), Some(&slot), "remembered as it opened");
+    let key = format!("sidebar/recent/{}", slot.file_name());
+    assert!(rt.find(&key).is_some());
+    rt.update(|app, tx| crate::editor::actions::leave(app, tx));
+    tap(&mut rt, Place::Library.key());
+    assert!(rt.state.editor.is_none());
+    tap(&mut rt, &key);
+    settle(&mut rt);
+    assert_eq!(rt.state.editor.as_ref().map(|document| document.slot), Some(slot), "open for editing again");
+    assert_eq!(rt.state.nav.place, Place::Melee);
+}

@@ -8,6 +8,8 @@ use crate::jobs::renders::Renders;
 use crate::library::Page as LibraryPage;
 use crate::melee::Melee;
 use crate::mods::Mods;
+use crate::preferences::Preferences;
+use crate::report::Report;
 use crate::nav::Nav;
 use crate::stage::Stage;
 use crate::welcome::Welcome;
@@ -40,6 +42,12 @@ pub struct App {
     pub editor: Option<Document>,
     /// Pictures of costumes and stages, shared by every place.
     pub renders: Renders,
+    /// Settings, in their dialog.
+    pub preferences: Preferences,
+    /// A report of a problem, open in its dialog.
+    pub report: Option<Report>,
+    /// A newer version of the app, when the launch check found one.
+    pub update: Option<String>,
     /// tgg-melee and its mods.
     pub mods: Mods,
     /// Work off the window's thread.
@@ -81,6 +89,9 @@ impl App {
             editor: None,
             renders: Renders::default(),
             mods: Mods::default(),
+            preferences: Preferences::default(),
+            report: None,
+            update: None,
             jobs: Jobs::default(),
         }
     }

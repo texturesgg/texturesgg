@@ -1,9 +1,9 @@
 //! tgg-studio: the textures.gg desktop app on Rune. It finds the player's
 //! Melee NTSC 1.02 ISO and shows what's in it, keeps their library of skins,
-//! installs them, and edits costumes; mods follow.
+//! installs them, edits costumes, and installs tgg-melee and its mods.
 //!
 //! ```text
-//! tgg-studio [--iso PATH]
+//! tgg-studio [--iso PATH] [SKIN...]                         skins open in the Library's review
 //! tgg-studio [--iso PATH] --snap out.png [--scene NAME]   headless, as Rune's tooling
 //! ```
 
@@ -14,6 +14,8 @@ mod library;
 mod melee;
 mod mods;
 mod nav;
+mod preferences;
+mod report;
 mod shell;
 mod stage;
 mod state;
@@ -209,12 +211,14 @@ const SCENES: &[Scene] = &[
             app.mods.disc = mods::Disc::Found(references.game().path().to_owned());
         }
     }),
+    ("settings", preferences::actions::open),
+    ("report", |app| report::actions::open(app, false)),
     ("no-sidebar", |app| app.nav.sidebar = false),
     ("paper", |app| app.settings.set_appearance(settings::Appearance::Paper)),
 ];
 
 fn main() {
-    tgg_app::log::start();
+    tgg_app::log::start("tgg-studio", env!("CARGO_PKG_VERSION"));
     let iso = iso_argument();
     let spec = AppSpec::<App> {
         min_size: Some((900.0, 600.0)),
@@ -230,7 +234,11 @@ fn main() {
         // The app draws its own title row, so Linux and Windows windows have
         // no system one; macOS keeps its window buttons.
         .window_options(WindowOptions { borderless: cfg!(not(target_os = "macos")), ..Default::default() })
-        .init(move || App::new(start(iso.as_deref()), settings::load(), Data::of_player(), true))
+        .init(move || {
+            let mut app = App::new(start(iso.as_deref()), settings::load(), Data::of_player(), true);
+            open_files(&mut app);
+            app
+        })
         .compositor(stage::viewport::Viewport::default())
         .run();
     // The PNGs opened in the player's image editor go with the app.
@@ -352,4 +360,26 @@ fn scene_image(app: &mut App, net: &dyn tgg_mod::Net, url: &str) {
     let pixels = rune::Pixels::new();
     pixels.set(rgba.width(), rgba.height(), rgba.into_raw());
     app.mods.images.insert(url.to_owned(), pixels);
+}
+
+/// Skin files given on the command line (as a file manager's Open With
+/// passes them): to the Library, through its review, once there's a game.
+fn open_files(app: &mut App) {
+    let mut files = Vec::new();
+    let mut args = rune::extra_args().iter();
+    while let Some(argument) = args.next() {
+        if argument == "--iso" {
+            args.next();
+            continue;
+        }
+        let path = PathBuf::from(argument);
+        if !argument.starts_with('-') && path.is_file() {
+            files.push(path);
+        }
+    }
+    if files.is_empty() || app.game.is_none() {
+        return;
+    }
+    nav::actions::go(app, nav::Place::Library);
+    library::actions::add(app, &files);
 }

@@ -7,8 +7,8 @@
 use crate::nav::{Place, actions as nav};
 use crate::state::App;
 use crate::ui::tokens::{Palette, motion, radius, size, space, text};
-use crate::ui::{PLACE_INSET, close_glyph, icon_button, place_row, rule, sidebar_glyph, spacer};
-use crate::{editor, keys, library, melee, mods, welcome, window};
+use crate::ui::{PLACE_INSET, TEXT_ACTION_INSET, close_glyph, icon_button, place_row, rule, sidebar_glyph, spacer, text_action};
+use crate::{editor, keys, library, melee, mods, preferences, report, welcome, window};
 use rune::{Cx, El, col, el, row, text as label};
 
 /// Where the sidebar toggle sits, from the window's top left.
@@ -40,6 +40,8 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .children(editor::view::prompt(app, &p))
         .children(mods::review::view(app, &p))
         .children(mods::versions::view(app, &p))
+        .children(preferences::view::view(app, &p))
+        .children(report::view::view(app, &p))
 }
 
 /// The places, then the player's game at the foot. Hidden, it narrows to
@@ -64,17 +66,42 @@ fn sidebar(app: &App, p: &Palette) -> El {
             .child(label("Melee NTSC 1.02").font(text::LABEL).color(p.muted))
             .child(label(file).font(text::MONO_SMALL).color(p.faint).truncate_middle())
     });
+    // Settings and reporting a problem, in line with the places' words.
+    let tools = row().px(space::XS + PLACE_INSET - TEXT_ACTION_INSET).py(space::XS).gap(space::XXS)
+        .child(text_action("Settings", false, p).key("sidebar/settings")
+            .help(keys::hint("Settings", keys::Command::Settings)).on_press(preferences::actions::open))
+        .child(text_action("Report a problem", false, p).key("sidebar/report").on_press(|app: &mut App| report::actions::open(app, false)));
     let inner = col().w(size::SIDEBAR).h_full()
         .child(row().h(size::TITLE_ROW).pl(TITLE_CLEARANCE).items_center().window_drag()
             .child(label("textures.gg").font(text::WORDMARK).color(p.ink)))
         .child(col().mx(space::XS).my(space::SNUG).gap(space::TIGHT).child(marker).children(places))
+        .children(recent(app, p))
         .child(spacer())
         .child(rule(p))
+        .child(tools)
         .children(foot);
     row().key("shell/sidebar").w(if shown { size::SIDEBAR + size::LINE } else { 0.0 }).h_full()
         .motion(motion::DEFAULT).clip_rounded(0.0).fill(p.sunk)
         .child(inner)
         .child(el().w(size::LINE).h_full().fill(p.line))
+}
+
+/// The costumes and stages edited lately, the latest first: pressing one
+/// opens it for editing again (through the unsaved-changes prompt).
+fn recent(app: &App, p: &Palette) -> Option<El> {
+    let slots = &app.settings.recent;
+    if slots.is_empty() {
+        return None;
+    }
+    let open = app.editor.as_ref().map(|document| document.slot);
+    let rows = slots.iter().copied().map(|slot| {
+        place_row(&tgg_app::costumes::slot_label(Some(slot)), None, open == Some(slot), p)
+            .key(format!("sidebar/recent/{}", slot.file_name()))
+            .on_press_tx(move |app: &mut App, tx| editor::actions::edit_recent(app, slot, tx))
+    });
+    Some(col().key("sidebar/recent").mx(space::XS).mt(space::MD).gap(space::TIGHT)
+        .child(label("Recent").font(text::LABEL).color(p.faint).px(PLACE_INSET).pb(space::XXS))
+        .children(rows))
 }
 
 /// Where the player is and what the place can do; empty on a top-level
@@ -86,6 +113,7 @@ fn title_row(app: &App, p: &Palette) -> El {
         .children(crumbs(app, p))
         .children(notice(app, p))
         .child(el().grow(1.0))
+        .children(update(app, p))
         .children(title_actions(app, p));
     // While the details pane shows, the window's controls sit in its head, at the window's edge.
     if !mods::details::shown(app)
@@ -140,4 +168,15 @@ fn title_actions(app: &App, p: &Palette) -> Option<El> {
         Place::Mods => mods::view::title_actions(app, p),
         Place::Library => None,
     }
+}
+
+/// A newer version of the app, when the launch check found one: a link to
+/// where the player gets it.
+fn update(app: &App, p: &Palette) -> Option<El> {
+    let version = app.update.as_ref()?;
+    Some(text_action(&format!("tgg-studio {version} is out"), false, p).key("shell/update").on_press_tx(|app: &mut App, tx| {
+        if let Err(error) = tx.open_url(tgg_app::update::DOWNLOAD_URL) {
+            app.tell(format!("Couldn't open the download page: {error}"), true);
+        }
+    }))
 }
