@@ -35,7 +35,7 @@ pub const ANY: &str = "any";
 /// The mod that plays replays back, which a replay's profile always names.
 pub const REPLAY_PLAYER: &str = "tgg.replay-player";
 /// The port's built-in modules, and the variable that turns each off.
-pub const BUILTINS: &[(&str, &str)] = &[("tgg.ucf", "TGG_UCF"), ("tgg.unlocks", "TGG_UNLOCK_ALL")];
+pub const BUILTINS: &[(&str, &str)] = &[("tgg.unlocks", "TGG_UNLOCK_ALL")];
 /// The longest profile file read.
 const PROFILE_LIMIT: u64 = 4 * 1024 * 1024;
 /// The longest mapping read.
@@ -1036,10 +1036,11 @@ mod tests {
         let profile = from_tgg_metadata(&tgg).expect("profile");
         assert_eq!(profile.game.version, "0.1.0-rc.8");
         assert_eq!(profile.game.layout.as_deref(), Some("abc123"));
-        assert!(profile.game.settings["tgg.ucf"]);
         assert!(!profile.game.settings["tgg.unlocks"]);
-        assert_eq!(profile.mods.len(), 1);
-        assert_eq!(profile.mods[0].version, Some(Version::new(0, 1, 2)));
+        assert_eq!(profile.mods.len(), 2);
+        assert_eq!(profile.mods[0].id.as_str(), "tgg.ucf");
+        assert_eq!(profile.mods[0].version, Some(Version::new(0, 84, 0)));
+        assert_eq!(profile.mods[1].version, Some(Version::new(0, 1, 2)));
     }
 
     #[test]
@@ -1054,27 +1055,30 @@ mod tests {
             });
             mapping.apply(&profile)
         };
-        // Slippi 3.16 with UCF 0.8: the legacy mod, and the built-in UCF off.
+        // Slippi 3.16 with UCF 0.8: tgg.ucf 0.8.0.
         let legacy = facts("3.16.0", &["0x800908F4", "0x8016E510", "0x801D45EC"]);
         let ids: Vec<&str> = legacy.mods.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(
             ids,
-            [
-                "tgg.ucf-legacy",
-                "tgg.neutral-spawns",
-                "tgg.stadium-preload"
-            ]
+            ["tgg.ucf", "tgg.neutral-spawns", "tgg.stadium-preload"]
         );
-        assert!(!legacy.game.settings["tgg.ucf"]);
+        assert_eq!(
+            legacy.mods[0].range,
+            Some("0.8.0".parse().expect("a range"))
+        );
         assert!(legacy.missing.is_empty());
-        // 3.19 with UCF 0.84: the built-in UCF, no preload, and an unknown
+        // 3.19 with UCF 0.84: a newer tgg.ucf, no preload, and an unknown
         // code missing.
         let modern = facts(
             "3.19.1",
             &["0x8006B460", "0x800908F4", "0x801D45EC", "0x80000001"],
         );
-        assert!(modern.mods.is_empty(), "{:?}", modern.mods);
-        assert!(modern.game.settings["tgg.ucf"]);
+        let ids: Vec<&str> = modern.mods.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, ["tgg.ucf"]);
+        assert_eq!(
+            modern.mods[0].range,
+            Some(">=0.84".parse().expect("a range"))
+        );
         assert_eq!(
             modern.missing,
             [
