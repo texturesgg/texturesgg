@@ -11,8 +11,10 @@ pub mod actions;
 pub mod library;
 pub mod view;
 
-use library::{CreatedMod, Tools};
+use library::{CreatedMod, Progress, Sdk, Tools};
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 
 /// The example a new mod starts from unless the player picks another.
 pub const TEMPLATE: &str = "template";
@@ -28,8 +30,11 @@ pub struct NewMod {
     pub id: rune::TextEdit,
     /// The folder the mod's own folder (named by its id) goes in.
     pub parent: PathBuf,
-    /// The SDK's examples, once read, or why they couldn't be.
-    pub examples: Option<Result<Vec<String>, String>>,
+    /// The installed tgg-melee's SDK and its examples, once it's here, or
+    /// why it couldn't be had.
+    pub sdk: Option<Result<(Sdk, Vec<String>), String>>,
+    /// The SDK on its way (the first time): how far, and stopping it.
+    pub fetching: Option<Fetching>,
     /// The example it starts from.
     pub example: String,
     /// The examples' menu is open.
@@ -49,7 +54,35 @@ pub enum Stage {
     Failed(String),
 }
 
+/// The SDK being downloaded.
+#[derive(Clone, Default)]
+pub struct Fetching {
+    pub progress: Arc<Mutex<Option<Progress>>>,
+    pub cancel: Arc<AtomicBool>,
+}
+
+impl Fetching {
+    /// How far along, from 0 to 1.
+    pub fn fraction(&self) -> f32 {
+        let progress = self.progress.lock().ok().and_then(|latest| latest.clone());
+        progress
+            .and_then(|progress| {
+                let total = progress.total.filter(|total| *total > 0)?;
+                Some((progress.bytes as f32 / total as f32).clamp(0.0, 1.0))
+            })
+            .unwrap_or(0.0)
+    }
+}
+
 impl NewMod {
+    /// The SDK's examples, once it's here.
+    pub fn examples(&self) -> Option<&[String]> {
+        match &self.sdk {
+            Some(Ok((_, examples))) => Some(examples),
+            _ => None,
+        }
+    }
+
     /// The id the mod gets: the one typed, else one from the name.
     pub fn id_text(&self) -> String {
         let typed = self.id.text.trim();

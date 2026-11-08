@@ -1162,6 +1162,107 @@ fn tap_shown(rt: &mut Runtime<App>, key: &str) {
     tap(rt, key);
 }
 
+/// An SDK in `root`: its description and a template like the real one's.
+/// (The fake textures.gg's own SDK is a placeholder, under a layout no SDK
+/// can have.)
+fn sdk_in(root: &Path) -> tgg_mod::Sdk {
+    let json = serde_json::json!({
+        "api": tgg_mod::API, "api_version": "0.1", "name": "tgg-melee",
+        "version": "0.1.0", "game_abi": "0123456789abcdef",
+        "compiler": "GNU", "compiler_version": "15.3.0", "processor": "x86_64",
+        "target": "x86_64-linux-gnu", "include_dirs": [], "glibc": "2.34",
+        "symbols": "symbols.txt",
+    });
+    let template = root.join("examples").join("template");
+    std::fs::create_dir_all(template.join("src")).expect("the SDK's folders");
+    let files = [
+        (root.join("tgg-game-sdk.json"), json.to_string()),
+        (
+            template.join("manifest.json"),
+            format!(
+                r#"{{"api": "{}", "id": "my-mod", "name": "My mod", "version": "0.1.0"}}"#,
+                tgg_mod::API
+            ),
+        ),
+        (
+            template.join("CMakeLists.txt"),
+            "project(my-mod C)\n".into(),
+        ),
+        (template.join("README.md"), "# My mod\n".into()),
+        (template.join("src").join("mod.c"), "/* my-mod */\n".into()),
+    ];
+    for (path, text) in files {
+        std::fs::write(&path, text).expect("an SDK file");
+    }
+    tgg_mod::Sdk::open(root).expect("the SDK reads")
+}
+
+#[test]
+fn a_new_mod_starts_from_the_sdk_in_a_folder_of_its_own() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    let (sdk_folder, mods) = (
+        tempfile::tempdir().expect("temp"),
+        tempfile::tempdir().expect("temp"),
+    );
+    tap(&mut rt, "mods/new-mod");
+    jobs_until(&mut rt, |app| app.new_mod.sdk.is_some());
+    // The fake's SDK can't be read (see sdk_in), which the dialog says;
+    // then the SDK as the download would have left it.
+    assert!(rt.find("newmod/sdk/failed").is_some());
+    assert!(!crate::newmod::actions::can_create(&rt.state.new_mod));
+    let sdk = sdk_in(sdk_folder.path());
+    rt.update(move |app, _| {
+        app.new_mod.sdk = Some(Ok((sdk.clone(), tgg_mod::sdk_examples(&sdk))));
+    });
+    assert_eq!(
+        rt.state.new_mod.examples(),
+        Some(["template".to_owned()].as_slice()),
+        "{:?}",
+        rt.state.new_mod.sdk.as_ref().map(|sdk| sdk.as_ref().err())
+    );
+    let parent = mods.path().to_owned();
+    rt.update(move |app, _| {
+        app.new_mod.name.text = "Neutral spawns".into();
+        app.new_mod.parent = parent.clone();
+    });
+    settle(&mut rt);
+    assert_eq!(
+        rt.state.new_mod.id_text(),
+        "neutral-spawns",
+        "the id comes from the name"
+    );
+    tap(&mut rt, "newmod/create");
+    jobs_until(&mut rt, |app| {
+        !matches!(app.new_mod.stage, crate::newmod::Stage::Creating)
+    });
+    let crate::newmod::Stage::Created(created) = &rt.state.new_mod.stage else {
+        panic!("it started");
+    };
+    let folder = mods.path().join("neutral-spawns");
+    assert_eq!(created.dir, folder);
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(folder.join("manifest.json")).expect("its manifest"))
+            .expect("json");
+    assert_eq!(manifest["id"], "neutral-spawns");
+    assert_eq!(manifest["name"], "Neutral spawns");
+    assert!(folder.join("src").join("mod.c").is_file());
+    assert!(
+        rt.find("newmod/commands").is_some() && rt.find("newmod/open-folder").is_some(),
+        "what's next shows"
+    );
+    tap(&mut rt, "newmod/done");
+    assert!(!rt.state.new_mod.open);
+}
+
+#[test]
+fn new_mod_waits_for_tgg_melee() {
+    let (rt, _disc, _data) = on_mods(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    assert!(
+        rt.find("mods/new-mod").is_none(),
+        "a mod starts from the installed tgg-melee's SDK"
+    );
+}
+
 /// Install the set `name` through its review.
 fn install_set(rt: &mut Runtime<App>, name: &str) {
     tap_shown(rt, &format!("mods/set/{name}/install"));

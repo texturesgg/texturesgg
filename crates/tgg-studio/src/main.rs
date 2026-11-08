@@ -298,6 +298,11 @@ const SCENES: &[Scene] = &[
         new_mod_scene(app);
         app.new_mod.name.text = "Neutral spawns".into();
     }),
+    // New mod for the player's own tgg-melee: its real SDK and tools.
+    ("new-mod-here", |app| {
+        mods::actions::read_disk(app);
+        newmod::actions::open(app);
+    }),
     // A mod just started.
     ("new-mod-created", |app| {
         mods_scene(app, true);
@@ -305,6 +310,7 @@ const SCENES: &[Scene] = &[
         app.new_mod.name.text = "Neutral spawns".into();
         app.new_mod.stage = newmod::Stage::Created(newmod::library::CreatedMod {
             dir: app.new_mod.folder(),
+            id: "neutral-spawns".parse().expect("an id"),
             example: newmod::TEMPLATE.into(),
             sdk_version: "0.1.0".into(),
             repository: newmod::library::Repository::Committed,
@@ -468,18 +474,29 @@ fn show_shared(app: &mut App, code: &str, name: &str) {
 /// For scenes: New mod open, the SDK's examples and the tools found given
 /// rather than looked for: GCC and git installed, CMake not.
 fn new_mod_scene(app: &mut App) {
+    let json = format!(
+        r#"{{"api": "{}", "api_version": "0.1", "name": "tgg-melee", "version": "0.1.0",
+            "game_abi": "0123456789abcdef", "compiler": "GNU", "compiler_version": "15.3.0",
+            "processor": "x86_64", "target": "x86_64-linux-gnu", "include_dirs": [],
+            "glibc": "2.34", "symbols": "symbols.txt"}}"#,
+        tgg_mod::API
+    );
+    let sdk = tgg_mod::Sdk::parse(json.as_bytes(), std::path::Path::new("/sdk"))
+        .expect("the scene's SDK reads");
+    let examples = vec![
+        newmod::TEMPLATE.into(),
+        "damage-log".into(),
+        "lcancel-trainer".into(),
+    ];
     app.new_mod = newmod::NewMod {
         open: true,
         parent: PathBuf::from("/home/player/mods"),
         example: newmod::TEMPLATE.into(),
-        examples: Some(Ok(vec![
-            newmod::TEMPLATE.into(),
-            "hello-hud".into(),
-            "neutral-spawns".into(),
-        ])),
+        sdk: Some(Ok((sdk, examples))),
         tools: Some(newmod::library::Tools {
-            gcc: Some(PathBuf::from("/usr/bin/gcc")),
+            cc: Some(PathBuf::from("/usr/bin/gcc")),
             cmake: None,
+            ninja: None,
             git: Some(PathBuf::from("/usr/bin/git")),
         }),
         ..newmod::NewMod::default()

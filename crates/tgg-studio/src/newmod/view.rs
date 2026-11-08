@@ -3,13 +3,13 @@
 //! commands that build and run it.
 
 use super::library::{CreatedMod, Repository, Tools};
-use super::{NewMod, Stage, actions, id_from};
+use super::{Fetching, NewMod, Stage, actions, id_from};
 use crate::state::App;
 use crate::ui::tokens::{Palette, radius, size, space, text};
 use crate::ui::{
-    ButtonKind, Dialog, DialogWidth, TEXT_ACTION_INSET, button, button_off, callout, dialog, rule,
-    select, select_item, select_menu, setting_row, setting_row_with, spacer, text_action,
-    text_field,
+    ButtonKind, Dialog, DialogWidth, TEXT_ACTION_INSET, button, button_off, callout, dialog,
+    progress, rule, select, select_item, select_menu, setting_row, setting_row_with, spacer,
+    text_action, text_field,
 };
 use rune::{El, col, row, text as label};
 
@@ -162,13 +162,23 @@ fn folder(new_mod: &NewMod, p: &Palette) -> El {
 }
 
 fn example(new_mod: &NewMod, p: &Palette) -> El {
-    let control = match &new_mod.examples {
-        None => label("Reading the SDK…")
-            .font(text::SMALL)
-            .color(p.muted)
-            .into(),
-        Some(Err(why)) => label(format!("Couldn't read the SDK: {why}"))
-            .key("newmod/examples/failed")
+    let control = match &new_mod.sdk {
+        // The first time, the SDK downloads (a few megabytes).
+        None => col()
+            .key("newmod/sdk/fetching")
+            .w(FIELD)
+            .gap(space::XS)
+            .child(
+                label("Getting tgg-melee's SDK…")
+                    .font(text::SMALL)
+                    .color(p.muted),
+            )
+            .child(progress(
+                new_mod.fetching.as_ref().map_or(0.0, Fetching::fraction),
+                p,
+            )),
+        Some(Err(why)) => label(format!("Couldn't get the SDK: {why}"))
+            .key("newmod/sdk/failed")
             .font(text::SMALL)
             .color(p.danger)
             .wrap()
@@ -188,20 +198,26 @@ fn example(new_mod: &NewMod, p: &Palette) -> El {
     .key("newmod/example/row")
 }
 
-/// Which tools that build mods are missing, if any; a quiet line when
-/// they're all there.
+/// Which of the tools mods need are missing, if any: a C compiler and
+/// CMake to build, git to publish. A quiet line when they're all there.
 fn tools_note(tools: Option<&Tools>, p: &Palette) -> Option<El> {
     let tools = tools?;
-    let missing: Vec<&str> = [
-        ("GCC", tools.gcc.is_none()),
+    let build: Vec<&str> = [
+        ("a C compiler (GCC)", tools.cc.is_none()),
         ("CMake", tools.cmake.is_none()),
-        ("git", tools.git.is_none()),
     ]
     .into_iter()
     .filter(|(_, missing)| *missing)
     .map(|(name, _)| name)
     .collect();
-    if missing.is_empty() {
+    let mut words = Vec::new();
+    if !build.is_empty() {
+        words.push(format!("Building it needs {}.", and_list(&build)));
+    }
+    if tools.git.is_none() {
+        words.push("Publishing it needs git.".to_owned());
+    }
+    if words.is_empty() {
         return Some(
             label("GCC, CMake and git are installed, so it's ready to build.")
                 .key("newmod/tools")
@@ -209,16 +225,17 @@ fn tools_note(tools: Option<&Tools>, p: &Palette) -> Option<El> {
                 .color(p.muted),
         );
     }
+    let missing = build.len() + usize::from(tools.git.is_none());
+    let them = if missing == 1 { "it" } else { "them" };
+    words.push(format!(
+        "The mod starts without {them}; `tgg doctor` says how to get {them}."
+    ));
     Some(
         callout(
-            label(format!(
-                "Building mods needs {} too; `tgg doctor` says how to get {them}. The mod starts without {them}.",
-                and_list(&missing),
-                them = if missing.len() == 1 { "it" } else { "them" },
-            ))
-            .font(text::SMALL)
-            .color(p.muted)
-            .wrap(),
+            label(words.join(" "))
+                .font(text::SMALL)
+                .color(p.muted)
+                .wrap(),
             None,
             p,
         )
@@ -318,9 +335,7 @@ pub fn menu(app: &App, p: &Palette) -> Option<El> {
     if !new_mod.open || !new_mod.menu {
         return None;
     }
-    let Some(Ok(examples)) = &new_mod.examples else {
-        return None;
-    };
+    let examples = new_mod.examples()?;
     let items = examples
         .iter()
         .map(|example| {

@@ -1,52 +1,81 @@
 //! What the player does in New mod, and what comes back from its jobs.
 
-use super::library::{self, CreatedMod, Spec, Tools};
-use super::{NewMod, Stage, TEMPLATE};
+use super::library::{self, CreatedMod, Sdk, Spec, Tools};
+use super::{Fetching, NewMod, Stage, TEMPLATE};
 use crate::jobs::Done as Job;
 use crate::state::App;
 use rune::{FileDialogOptions, Tx};
 
 /// What a New mod job found.
 pub enum Done {
-    /// The SDK's examples (or why they couldn't be read), and the tools.
-    Ready {
-        examples: Result<Vec<String>, String>,
-        tools: Tools,
-    },
+    /// The installed tgg-melee's SDK and its examples, or why it couldn't
+    /// be had; and the build tools found.
+    Ready(Box<Ready>),
     /// The mod made, or why not.
-    Created(Result<CreatedMod, String>),
+    Created(Box<Result<CreatedMod, String>>),
 }
 
-/// Open the dialog afresh, reading the SDK's examples and looking for the
-/// tools on a job.
+/// The SDK and its examples, or why it couldn't be had; the build tools.
+pub struct Ready {
+    pub sdk: Result<(Sdk, Vec<String>), String>,
+    pub tools: Tools,
+}
+
+/// Open the dialog afresh: on a job, get the installed tgg-melee's SDK
+/// (downloading it the first time, its progress shown), read its examples
+/// and look for the build tools.
 pub fn open(app: &mut App) {
-    if app.mods.port().is_none() {
+    let Some(release) = app.mods.port().map(|port| port.release.clone()) else {
         return;
-    }
+    };
     let parent = if app.new_mod.parent.as_os_str().is_empty() {
         super::default_parent()
     } else {
         app.new_mod.parent.clone()
     };
+    let fetching = Fetching::default();
     app.new_mod = NewMod {
         open: true,
         parent,
         example: TEMPLATE.to_owned(),
+        fetching: Some(fetching.clone()),
         ..NewMod::default()
     };
-    let data = app.data.tgg.clone();
-    app.jobs.spawn("new mod: examples", move || {
-        Job::NewMod(Box::new(Done::Ready {
-            examples: library::sdk_examples(&data),
+    let (net, data, waker) = (app.mods.net.clone(), app.data.tgg.clone(), app.jobs.waker());
+    app.jobs.spawn("new mod: the SDK", move || {
+        let report = move |step: library::Progress| {
+            if let Ok(mut latest) = fetching.progress.lock() {
+                *latest = Some(step);
+            }
+            if let Some(waker) = &waker {
+                waker();
+            }
+        };
+        let sdk = library::release_sdk(&*net, &data, &release, &report, &fetching.cancel)
+            .map(|sdk| {
+                let examples = library::sdk_examples(&sdk);
+                (sdk, examples)
+            })
+            .map_err(|error| error.to_string());
+        Job::NewMod(Box::new(Done::Ready(Box::new(Ready {
+            sdk,
             tools: library::tools(),
-        }))
+        }))))
     });
 }
 
+/// Close the dialog (not while the mod's being made), stopping the SDK's
+/// download if it's on its way.
 pub fn close(app: &mut App) {
-    if !matches!(app.new_mod.stage, Stage::Creating) {
-        app.new_mod.open = false;
+    if matches!(app.new_mod.stage, Stage::Creating) {
+        return;
     }
+    if let Some(fetching) = app.new_mod.fetching.take() {
+        fetching
+            .cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    app.new_mod.open = false;
 }
 
 pub fn toggle_menu(app: &mut App) {
@@ -76,16 +105,20 @@ pub fn choose_folder(app: &mut App, tx: &mut Tx) {
     });
 }
 
-/// Whether the mod can be made as filled in: a valid id, while nothing's
-/// being made.
+/// Whether the mod can be made as filled in: the SDK here, a valid id,
+/// while nothing's being made.
 pub fn can_create(new_mod: &NewMod) -> bool {
-    matches!(new_mod.stage, Stage::Editing | Stage::Failed(_)) && new_mod.mod_id().is_some()
+    matches!(new_mod.stage, Stage::Editing | Stage::Failed(_))
+        && new_mod.examples().is_some()
+        && new_mod.mod_id().is_some()
 }
 
 /// Make the mod, on a job.
 pub fn create(app: &mut App) {
     let new_mod = &app.new_mod;
-    let (true, Some(id)) = (can_create(new_mod), new_mod.mod_id()) else {
+    let (true, Some(id), Some(Ok((sdk, _)))) =
+        (can_create(new_mod), new_mod.mod_id(), &new_mod.sdk)
+    else {
         return;
     };
     let name = match new_mod.name.text.trim() {
@@ -98,31 +131,36 @@ pub fn create(app: &mut App) {
         name,
         example: Some(new_mod.example.clone()),
     };
+    let sdk = sdk.clone();
     app.new_mod.stage = Stage::Creating;
     app.new_mod.menu = false;
-    let data = app.data.tgg.clone();
     app.jobs.spawn("new mod", move || {
-        Job::NewMod(Box::new(Done::Created(library::new_mod(&data, &spec))))
+        let created = library::new_mod(&sdk, &spec).map_err(|error| error.to_string());
+        Job::NewMod(Box::new(Done::Created(Box::new(created))))
     });
 }
 
 /// A job finished. True: what shows changed.
 pub fn done(app: &mut App, done: Done) -> bool {
     match done {
-        Done::Ready { examples, tools } => {
-            if let Ok(examples) = &examples
-                && !examples
-                    .iter()
-                    .any(|example| *example == app.new_mod.example)
+        Done::Ready(ready) => {
+            let Ready { sdk, tools } = *ready;
+            app.new_mod.fetching = None;
+            if let Ok((_, examples)) = &sdk
+                && !examples.contains(&app.new_mod.example)
                 && let Some(first) = examples.first()
             {
                 app.new_mod.example = first.clone();
             }
-            app.new_mod.examples = Some(examples);
+            app.new_mod.sdk = Some(sdk);
             app.new_mod.tools = Some(tools);
         }
-        Done::Created(Ok(created)) => app.new_mod.stage = Stage::Created(created),
-        Done::Created(Err(why)) => app.new_mod.stage = Stage::Failed(why),
+        Done::Created(created) => {
+            app.new_mod.stage = match *created {
+                Ok(created) => Stage::Created(created),
+                Err(why) => Stage::Failed(why),
+            }
+        }
     }
     true
 }
