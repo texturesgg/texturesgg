@@ -8,8 +8,7 @@ use crate::nav::{Place, actions as nav};
 use crate::state::App;
 use crate::ui::tokens::{Palette, motion, radius, size, space, text};
 use crate::ui::{
-    PLACE_INSET, TEXT_ACTION_INSET, close_glyph, icon_button, place_row, rule, sidebar_glyph,
-    spacer, text_action,
+    PLACE_INSET, close_glyph, icon_button, place_row, rule, sidebar_glyph, spacer, text_action,
 };
 use crate::{editor, keys, library, melee, mods, preferences, report, welcome, window};
 use rune::{Cx, El, col, el, row, text as label};
@@ -61,7 +60,7 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .children(report::view::view(app, &p))
 }
 
-/// The places, then the player's game at the foot. Hidden, it narrows to
+/// The places, recent edits, and Settings at the foot. Hidden, it narrows to
 /// nothing on the default spring rather than vanishing.
 fn sidebar(app: &App, p: &Palette) -> El {
     let shown = app.nav.sidebar;
@@ -83,41 +82,14 @@ fn sidebar(app: &App, p: &Palette) -> El {
         .fill(p.hover)
         .motion(motion::SNAPPY)
         .absolute(0.0, index as f32 * (size::ROW + space::TIGHT));
-    let foot = app.game.as_ref().map(|references| {
-        let file = references
-            .game()
-            .path()
-            .file_name()
-            .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-        // In line with the places' words above it.
-        col()
-            .px(space::XS + PLACE_INSET)
-            .py(space::SM)
-            .gap(space::TIGHT)
-            .child(label("Melee NTSC 1.02").font(text::LABEL).color(p.muted))
-            .child(
-                label(file)
-                    .font(text::MONO_SMALL)
-                    .color(p.faint)
-                    .truncate_middle(),
-            )
-    });
-    // Settings and reporting a problem, in line with the places' words.
-    let tools = row()
-        .px(space::XS + PLACE_INSET - TEXT_ACTION_INSET)
-        .py(space::XS)
-        .gap(space::XXS)
-        .child(
-            text_action("Settings", false, p)
-                .key("sidebar/settings")
-                .help(keys::hint("Settings", keys::Command::Settings))
-                .on_press(preferences::actions::open),
-        )
-        .child(
-            text_action("Report a problem", false, p)
-                .key("sidebar/report")
-                .on_press(|app: &mut App| report::actions::open(app, false)),
-        );
+    // The foot: Settings for now. Signing in makes it the player's own row,
+    // with Settings in its menu.
+    let foot = col().mx(space::XS).my(space::SNUG).child(
+        place_row("Settings", None, app.preferences.open, p)
+            .key("sidebar/settings")
+            .help(keys::hint("Settings", keys::Command::Settings))
+            .on_press(preferences::actions::open),
+    );
     let inner = col()
         .w(size::SIDEBAR)
         .h_full()
@@ -140,8 +112,7 @@ fn sidebar(app: &App, p: &Palette) -> El {
         .children(recent(app, p))
         .child(spacer())
         .child(rule(p))
-        .child(tools)
-        .children(foot);
+        .child(foot);
     row()
         .key("shell/sidebar")
         .w(if shown {

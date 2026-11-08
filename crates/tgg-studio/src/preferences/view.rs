@@ -1,28 +1,31 @@
 //! The Settings dialog: a row per setting, its name and what it does on
-//! the left, its control on the right.
+//! the left, its control on the right; then where the player's files are,
+//! and help.
 
 use super::actions;
 use crate::state::App;
 use crate::ui::tokens::{Palette, space, text};
 use crate::ui::{
-    ButtonKind, Dialog, DialogWidth, button, chip, dialog, rule, spacer, switch, text_field,
+    ButtonKind, Dialog, DialogWidth, TEXT_ACTION_INSET, button, chip, dialog, rule, spacer, switch,
+    text_action, text_field,
 };
 use rune::{El, col, row, text as label};
 use tgg_app::settings::Appearance;
 
-/// The image editor field's width.
-const FIELD: f32 = 220.0;
+/// The image editor's choices and field, at their widest.
+const CHOICES: f32 = 300.0;
 
 pub fn view(app: &App, p: &Palette) -> Option<El> {
     if !app.preferences.open {
         return None;
     }
     let rows = [
-        game(app, p),
         image_editor(app, p),
         appearance(app, p),
         updates(app, p),
+        game(app, p),
         files(app, p),
+        help(p),
     ];
     let body = col().children(rows.into_iter().enumerate().flat_map(|(index, row)| {
         let line = (index > 0).then(|| rule(p));
@@ -68,33 +71,63 @@ fn setting(key: &str, name: &str, line: impl Into<String>, control: El, p: &Pale
         .child(control)
 }
 
-fn game(app: &App, p: &Palette) -> El {
-    let path = app
-        .game
-        .as_ref()
-        .map(|references| references.game().path().display().to_string())
-        .unwrap_or_default();
-    setting(
-        "settings/game",
-        "Your game",
-        format!("Skins install into {path}."),
-        button("Choose another…", ButtonKind::Secondary, p)
-            .key("settings/choose-game")
-            .on_press_tx(actions::choose_game),
-        p,
-    )
-}
-
+/// The image editor: the system's default, an app on this computer that
+/// opens PNGs, or another (a command typed, or a program browsed for).
 fn image_editor(app: &App, p: &Palette) -> El {
-    let field = text_field(&app.preferences.editor, "Your system's default", p)
-        .key("settings/image-editor/field")
-        .w(FIELD)
-        .on_edit(|app: &mut App| &mut app.preferences.editor);
+    let preferences = &app.preferences;
+    let kept = app.settings.external_editor.as_deref();
+    let default = chip("System default", kept.is_none() && !preferences.other, p)
+        .key("settings/image-editor/default")
+        .role("radio")
+        .on_press(|app: &mut App| actions::choose_editor(app, None));
+    let apps = preferences.apps.iter().enumerate().map(|(index, known)| {
+        let command = known.command.clone();
+        chip(
+            &known.name,
+            !preferences.other && kept == Some(command.as_str()),
+            p,
+        )
+        .key(format!("settings/image-editor/app/{index}"))
+        .role("radio")
+        .on_press(move |app: &mut App| actions::choose_editor(app, Some(command.clone())))
+    });
+    let other = chip("Other…", preferences.other, p)
+        .key("settings/image-editor/other")
+        .role("radio")
+        .on_press(actions::choose_other);
+    let field = preferences.other.then(|| {
+        col()
+            .gap(space::XXS)
+            .child(
+                text_field(&preferences.editor, "A program, such as aseprite", p)
+                    .key("settings/image-editor/field")
+                    .on_edit(|app: &mut App| &mut app.preferences.editor),
+            )
+            .child(
+                row().ml(-TEXT_ACTION_INSET).child(
+                    text_action("Browse…", false, p)
+                        .key("settings/image-editor/browse")
+                        .on_press_tx(actions::browse_editor),
+                ),
+            )
+    });
+    let choices = col()
+        .w(CHOICES)
+        .gap(space::XS)
+        .child(
+            row()
+                .flex_wrap()
+                .gap(space::SNUG)
+                .child(default)
+                .children(apps)
+                .child(other),
+        )
+        .children(field);
     setting(
         "settings/image-editor",
         "Image editor",
-        "The program Edit in your image editor opens textures in, such as aseprite or gimp.",
-        field,
+        "Where Edit in your image editor opens a texture.",
+        choices,
         p,
     )
 }
@@ -140,6 +173,24 @@ fn updates(app: &App, p: &Palette) -> El {
     )
 }
 
+/// The game skins install into, and choosing another.
+fn game(app: &App, p: &Palette) -> El {
+    let path = app
+        .game
+        .as_ref()
+        .map(|references| references.game().path().display().to_string())
+        .unwrap_or_default();
+    setting(
+        "settings/game",
+        "Game",
+        format!("Skins install into {path}."),
+        text_action("Choose another…", false, p)
+            .key("settings/choose-game")
+            .on_press_tx(actions::choose_game),
+        p,
+    )
+}
+
 /// Where the app keeps the player's files: shown, not changed here.
 fn files(app: &App, p: &Palette) -> El {
     let place = |name: &str, path: &std::path::Path| {
@@ -162,4 +213,22 @@ fn files(app: &App, p: &Palette) -> El {
         .child(place("Skins", &app.data.library))
         .child(place("Mods", &app.data.mods))
         .child(place("tgg-melee", &app.data.ports))
+}
+
+/// Help: reporting a problem, the community, and what's running.
+fn help(p: &Palette) -> El {
+    let actions = row()
+        .gap(space::XS)
+        .items_center()
+        .child(
+            button("Report a problem", ButtonKind::Secondary, p)
+                .key("settings/report")
+                .on_press(actions::report_problem),
+        )
+        .child(
+            text_action("Discord", false, p)
+                .key("settings/discord")
+                .on_press_tx(crate::report::actions::discord),
+        );
+    setting("settings/help", "Help", tgg_app::log::version(), actions, p)
 }

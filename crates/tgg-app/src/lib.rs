@@ -13,6 +13,7 @@ pub mod error;
 pub mod external;
 pub mod game;
 pub mod ids;
+pub mod image_apps;
 pub mod install;
 pub mod library;
 pub mod log;

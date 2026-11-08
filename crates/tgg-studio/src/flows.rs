@@ -1770,27 +1770,63 @@ fn settings_keep_each_change_and_the_image_editor_when_closed() {
     );
     tap(&mut rt, "settings/updates/switch");
     assert_eq!(rt.state.settings.check_for_updates, Some(false));
-    rt.update(|app, _| app.preferences.editor.text = "  aseprite  ".into());
+    // Another app, by its command.
+    tap(&mut rt, "settings/image-editor/other");
+    settle(&mut rt);
+    assert!(
+        rt.find("settings/image-editor/field").is_some(),
+        "Other shows the field"
+    );
+    rt.update(|app, _| app.preferences.editor.text = "  my-editor --new  ".into());
     tap(&mut rt, "settings/done");
     assert!(!rt.state.preferences.open);
     assert_eq!(
         rt.state.settings.external_editor.as_deref(),
-        Some("aseprite"),
+        Some("my-editor --new"),
         "kept as typed, trimmed"
     );
-    // Emptied, the system's default comes back.
+    // Reopened, it's still Other; the system's default is a press away.
     tap(&mut rt, "sidebar/settings");
-    rt.update(|app, _| app.preferences.editor.text.clear());
-    tap(&mut rt, "settings/done");
+    settle(&mut rt);
+    assert!(rt.state.preferences.other);
+    tap(&mut rt, "settings/image-editor/default");
     assert_eq!(rt.state.settings.external_editor, None);
+    assert!(rt.find("settings/image-editor/field").is_none());
+}
+
+#[test]
+fn an_app_that_opens_pngs_is_one_press() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    tap(&mut rt, "sidebar/settings");
+    // Whatever this computer has, an app found is offered by name.
+    rt.update(|app, _| {
+        app.preferences.apps = vec![tgg_app::image_apps::ImageApp {
+            name: "Aseprite".into(),
+            command: "aseprite".into(),
+        }]
+    });
+    settle(&mut rt);
+    tap(&mut rt, "settings/image-editor/app/0");
+    assert_eq!(
+        rt.state.settings.external_editor.as_deref(),
+        Some("aseprite")
+    );
+    assert!(!rt.state.preferences.other);
 }
 
 #[test]
 fn a_report_shows_what_it_would_send_and_copies_it() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
-    tap(&mut rt, "sidebar/report");
+    tap(&mut rt, "sidebar/settings");
     settle(&mut rt);
+    tap_shown(&mut rt, "settings/report");
+    settle(&mut rt);
+    assert!(
+        !rt.state.preferences.open,
+        "Settings gives way to the report"
+    );
     let report = rt.state.report.as_ref().expect("the report shows");
     assert!(
         report.text.starts_with("tgg-studio "),

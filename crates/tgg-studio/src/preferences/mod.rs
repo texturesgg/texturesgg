@@ -13,6 +13,10 @@ use rune::TextEdit;
 pub struct Preferences {
     /// The dialog shows.
     pub open: bool,
-    /// The image editor's command, as the player types it.
+    /// The apps on this computer that open PNGs, as found when it opened.
+    pub apps: Vec<tgg_app::image_apps::ImageApp>,
+    /// The image editor is another app or a command: the field shows.
+    pub other: bool,
+    /// That app's command, as the player types it or browses for it.
     pub editor: TextEdit,
 }

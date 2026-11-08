@@ -76,11 +76,17 @@ pub fn view(app: &App, p: &Palette) -> El {
         .pt(space::XS)
         .pb(space::XL)
         .gap(space::MD)
-        .child(page_head(
-            "Melee",
-            "What's in your game, and what you've changed.",
-            p,
-        ))
+        .child(
+            row()
+                .items_end()
+                .gap(space::LG)
+                .child(col().grow(1.0).min_w(0.0).child(page_head(
+                    "Melee",
+                    "What's in your game, and what you've changed.",
+                    p,
+                )))
+                .children(game(app, p)),
+        )
         .children(melee.problem.as_ref().map(|problem| {
             label(problem.clone())
                 .key("melee/problem")
@@ -133,3 +139,39 @@ fn card(
         .label(name)
         .focusable(true)
 }
+
+/// The head's side: the game skins go into, its file, and choosing another.
+fn game(app: &App, p: &Palette) -> Option<El> {
+    let references = app.game.as_ref()?;
+    let file = references
+        .game()
+        .path()
+        .file_name()
+        .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+    Some(
+        col()
+            .key("melee/game")
+            .items_end()
+            .gap(space::TIGHT)
+            .max_w(GAME_SIDE)
+            .min_w(0.0)
+            .child(label("Melee NTSC 1.02").font(text::STRONG).color(p.ink))
+            .child(
+                label(file)
+                    .font(text::MONO_SMALL)
+                    .color(p.muted)
+                    .truncate_middle()
+                    .min_w(0.0),
+            )
+            .child(
+                row().mr(-ui::TEXT_ACTION_INSET).child(
+                    ui::text_action("Choose another game…", false, p)
+                        .key("melee/choose-game")
+                        .on_press_tx(crate::preferences::actions::choose_game),
+                ),
+            ),
+    )
+}
+
+/// The head's side, at its widest.
+const GAME_SIDE: f32 = 420.0;
