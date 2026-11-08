@@ -150,7 +150,8 @@ pub struct Manifest {
 
 /// A Slippi gecko code a mod reproduces: its address (`0x801D45EC`) or a
 /// Game Start fact (`frozen-stadium`), its name, and the Slippi versions it
-/// holds for (a semver requirement, `*` for every one).
+/// holds for (a semver requirement, `*` for every one), unless the console
+/// also ran one of the codes in `unless`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SlippiCodeDecl {
     pub code: String,
@@ -158,6 +159,8 @@ pub struct SlippiCodeDecl {
     pub name: String,
     #[serde(default = "every_version")]
     pub versions: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unless: Vec<String>,
 }
 
 fn every_version() -> String {

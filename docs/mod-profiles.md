@@ -47,7 +47,7 @@ the lock.
 - `label`: optional display text ("Competitive v3", "Slippi 3.19 online"). Nothing reads
   it to decide anything.
 
-The port's built-in modules (UCF, unlocks) are part of the game; their on/off state is a
+The port's built-in module (unlocks) is part of the game; their on/off state is a
 counted setting of the game and travels the same way.
 
 ## Where profiles come from
@@ -73,10 +73,14 @@ reproduces in its manifest, so the mapping is data its author maintains:
               "versions": "<3.19" } ]
 ```
 
+An entry may add `unless`: codes whose presence means the entry doesn't hold (`tgg.ucf`
+0.8.0 declares UCF 0.8's codes `unless` UCF 0.84's pad buffer, which 0.84 runs beside
+them).
+
 The registry builds the mapping from approved releases and serves it
 (`GET /api/registry/slippi`), with a list of codes that don't affect gameplay. A replay's
-profile is the mods mapped from its codes, plus the settings its Game Start implies
-(frozen Stadium, UCF version), with every unmapped gameplay code under `missing`. This
+profile is the mods mapped from its codes, plus what its Game Start implies (frozen
+Stadium, no UCF), with every unmapped gameplay code under `missing`. This
 replaces `rules.py` in the replay harness, which becomes a client of the same mapping.
 
 ## Formats
@@ -94,9 +98,10 @@ carry it. Every field but `format` and `game` may be left out.
     "name": "tgg-melee",
     "version": "0.1.0-rc.9",
     "layout": "a1b2c3d4e5f60718",
-    "settings": { "tgg.ucf": true, "tgg.unlocks": true }
+    "settings": { "tgg.unlocks": true }
   },
   "mods": [
+    { "id": "tgg.ucf", "version": "0.84.0", "sha256": "4e07a8…" },
     { "id": "tgg.neutral-spawns", "version": "0.1.2", "sha256": "9f86d0…" },
     { "id": "tgg.competitive-rules", "version": "0.1.2",
       "settings": { "stocks": 4, "stock-time": 8, "items": "Off" } },
@@ -120,9 +125,8 @@ carry it. Every field but `format` and `game` may be left out.
   a front end can fetch the catalog the profile's mods are built for before that port is
   installed.
 - `game.settings`: the on/off state of the port's built-in modules, by module id
-  (`tgg.ucf`, `tgg.unlocks`); a module left out runs as the port defaults (on). A module
-  that is off is started with its environment variable off (`TGG_UCF=0`,
-  `TGG_UNLOCK_ALL=0`).
+  (`tgg.unlocks`); a module left out runs as the port defaults (on). A module that is off
+  is started with its environment variable off (`TGG_UNLOCK_ALL=0`).
 - `mods[].version` is exact. A mod may give `range` instead (one of the ranges a manifest's
   `depends` takes): the newest approved release in it. Profiles from a Slippi replay do,
   since the mapping names ranges. `sha256` is the package for the platform the profile was
@@ -150,7 +154,7 @@ the `game`, `modSetId` and `mods` it writes today:
 metadata: {
   ..., "playedOn": "tgg-melee",
   "tgg": { "game": "tgg-melee 0.1.0-rc.9 a1b2c3d4e5f60718",
-           "modSetId": "…", "mods": ["tgg.ucf 0.84.0", "tgg.neutral-spawns 0.1.2"],
+           "modSetId": "…", "mods": ["tgg.ucf 0.84.0", "tgg.unlocks 1.0.0", "tgg.neutral-spawns 0.1.2"],
            "profile": { …the profile as JSON… } }
 }
 ```
@@ -178,18 +182,19 @@ means on, left out means off), with no settings.
     { "code": "0x801D45EC", "name": "Preload Stadium Transformations", "versions": "<3.19",
       "id": "tgg.stadium-preload", "range": "^0.1" },
     { "code": "0x800908F4", "name": "UCF 0.8", "versions": ">=3.9", "unless": ["0x8006B460"],
-      "id": "tgg.ucf-legacy", "range": "^0.1", "game": { "tgg.ucf": false } },
-    { "code": "0x8006B460", "name": "UCF 0.84", "versions": "*", "game": { "tgg.ucf": true } },
+      "id": "tgg.ucf", "range": "0.8.0" },
+    { "code": "0x8006B460", "name": "UCF 0.84", "versions": "*",
+      "id": "tgg.ucf", "range": ">=0.84.0" },
     { "code": "0x801C65C8", "name": "Stadium (3.19)", "versions": ">=3.19", "stages": [3] },
     { "code": "frozen-stadium", "name": "Frozen Pokémon Stadium", "versions": "*",
-      "id": "tgg.frozen-stadium", "range": "^0.1" },
-    { "code": "ucf-off", "name": "No UCF", "versions": "*", "game": { "tgg.ucf": false } }
+      "id": "tgg.frozen-stadium", "range": "^0.1" }
   ],
   "minor": [
     { "code": "0x801239A8", "name": "Freeze glitch fix", "versions": "*" }
   ],
   "ignore": [
     { "code": "0x800908F4", "name": "UCF 0.84", "versions": ">=3.16" },
+    { "code": "ucf-off", "name": "No UCF", "versions": "*" },
     { "code": "0x801A50AC", "name": "…", "versions": "*" }
   ]
 }
@@ -205,7 +210,7 @@ means on, left out means off), with no settings.
 - `stages` (`codes` and `minor`, optional): the stage ids (Game Start's) the code matters
   on. On any other stage the code is ignored.
 - `unless` (`codes`, optional): codes whose presence keeps the entry from holding. UCF
-  0.84 runs UCF 0.8's addresses too, so the legacy entries name 0.84's pad-buffer code.
+  0.84 runs UCF 0.8's addresses too, so the UCF 0.8 entries name 0.84's pad-buffer code.
 - `id`, `range`: the mod and the releases that reproduce the code. Without them, the
   entry's `game` says what the game does itself; an entry with neither is a gameplay
   code nothing reproduces yet (`no-mod-for`), useful with `stages`. `settings`: counted
@@ -221,8 +226,11 @@ means on, left out means off), with no settings.
 - `format` 1; `snapshot` names this state of the mapping. 404 reads as an empty mapping.
 
 The registry builds `codes` from the `slippi` field of each approved release's manifest
-(each release's id and the range of its releases that declare the code), plus entries for
-what the game does itself; `minor` and `ignore` are kept by the registry's admins.
+(`code`, `name`, `versions`, `unless`), plus entries for what the game does itself. A
+code the newest release declares gets `>=` the oldest release of the newest run that
+declares it; a code only older releases declare gets the newest of those exactly, so a
+mod's versions can follow the rule variants Slippi ran (`tgg.ucf` 0.8.0 for UCF 0.8,
+0.84.0 for UCF 0.84). `minor` and `ignore` are kept by the registry's admins.
 
 Reading a replay touches its head (Event Payloads, Game Start, the gecko list) and its
 tail (`metadata`), not its frames, with one exception: a Pokémon Stadium game recorded
@@ -250,7 +258,7 @@ JSON lines on stdout, one object each, told apart by `event`:
 {"event":"plan","key":"3f9a…","fit":"needs-profile","game":{"version":"0.1.0-rc.8","state":"available","size":18000000},"mods":[{"id":"tgg.neutral-spawns","name":"Neutral spawns","version":"0.1.2","publisher":{"name":"textures.gg","official":true},"cached":false,"size":4096,"needs_trust":false}],"missing":[{"why":"no-mod-for","code":"0x801D24FC"}]}
 {"event":"needs-trust","publishers":[{"name":"someone","mods":["someone.mod"]}]}
 {"event":"progress","step":0,"steps":3,"label":"Downloading Neutral spawns","bytes":4096,"total":4096}
-{"event":"done","fit":"needs-profile","folder":"/home/me/.local/share/tgg/profiles/3f9a…","settings":"/home/me/.local/share/tgg/profiles/3f9a…/settings.json","port":{"version":"0.1.0-rc.8","executable":"/home/me/.local/share/tgg/ports/0.1.0-rc.8/tgg-melee"},"env":{"TGG_MODS_DIR":"…","TGG_SETTINGS":"…","TGG_UCF":"0"}}
+{"event":"done","fit":"needs-profile","folder":"/home/me/.local/share/tgg/profiles/3f9a…","settings":"/home/me/.local/share/tgg/profiles/3f9a…/settings.json","port":{"version":"0.1.0-rc.8","executable":"/home/me/.local/share/tgg/ports/0.1.0-rc.8/tgg-melee"},"env":{"TGG_MODS_DIR":"…","TGG_SETTINGS":"…","TGG_UNLOCK_ALL":"0"}}
 {"event":"error","message":"can't reach textures.gg; what's installed still works"}
 ```
 
