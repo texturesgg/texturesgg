@@ -50,3 +50,7 @@ tempfile = "3"
 
 [lints]
 workspace = true
+
+[build-dependencies]
+# The icon and version details in tgg-studio.exe, on Windows (build.rs).
+winresource = "0.1.34"

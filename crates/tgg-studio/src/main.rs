@@ -1,3 +1,6 @@
+// A window app on Windows: no console beside it (debug builds keep one,
+// for what they print).
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 //! tgg-studio: the textures.gg desktop app on Rune. It finds the player's
 //! Melee NTSC 1.02 ISO and shows what's in it, keeps their library of skins,
 //! installs them, edits costumes, and installs tgg-melee and its mods.
