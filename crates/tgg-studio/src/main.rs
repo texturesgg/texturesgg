@@ -111,6 +111,30 @@ const SCENES: &[Scene] = &[
         }
     }),
     ("library", |app| nav::actions::go(app, nav::Place::Library)),
+    // Review over Library: Fox's green costume, offered as a skin, and a
+    // file that isn't one.
+    ("library-review", |app| {
+        nav::actions::go(app, nav::Place::Library);
+        let (Some(fox), Some(references)) = (melee_dat::Character::from_code("Fx"), &app.game) else { return };
+        let Some(green) = melee_dat::CostumeColor::from_code("Gr") else { return };
+        let Ok(bytes) = references.game().read_slot(melee_dat::MeleeSlot::Costume { character: fox, color: green }) else { return };
+        let folder = std::env::temp_dir().join("tgg-studio-scene");
+        let (skin, note) = (folder.join("Fox Green.dat"), folder.join("notes.txt"));
+        let written = std::fs::create_dir_all(&folder).and_then(|()| std::fs::write(&skin, bytes)).and_then(|()| std::fs::write(&note, "not a skin"));
+        if written.is_ok() {
+            library::actions::add(app, &[skin, note]);
+        }
+    }),
+    // Leaving an edited costume: the unsaved-changes prompt.
+    ("fox-unsaved", |app| {
+        let Some(fox) = melee_dat::Character::from_code("Fx") else { return };
+        melee::actions::open_fighter(app, fox);
+        editor::actions::open(app);
+        editor::colors::pick_swatch(app, 0, 0, &mut rune::Tx::default());
+        editor::colors::set_channel(app, 0, 255.0);
+        editor::colors::apply(app);
+        editor::actions::leave(app, &mut rune::Tx::default());
+    }),
     ("mods", |app| nav::actions::go(app, nav::Place::Mods)),
     ("no-sidebar", |app| app.nav.sidebar = false),
     ("paper", |app| app.settings.set_appearance(settings::Appearance::Paper)),

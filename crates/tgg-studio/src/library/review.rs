@@ -14,6 +14,8 @@ use tgg_app::costumes::slot_label;
 
 /// The dialog's width, in points.
 const WIDTH: f32 = 560.0;
+/// The file list's tallest, in points; longer lists scroll.
+const LIST_HEIGHT: f32 = 440.0;
 
 /// The dialog over a scrim, when files are being reviewed.
 pub fn view(app: &App, p: &Palette) -> Option<El> {
@@ -26,7 +28,8 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
             .child(label(title(review)).font(text::H3).color(p.ink))
             .child(label("Check where each goes before they join your library.").font(text::BODY).color(p.muted)))
         .child(rule(p))
-        .child(col().grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false })
+        // A most height, not grow: the dialog has none of its own to grow into.
+        .child(col().max_h(LIST_HEIGHT).scroll(ScrollSpec { stick_bottom: false })
             .child(col().children(items(app, review, p)).children(rejected(review, p))))
         .child(rule(p))
         .child(buttons(app, review, p));
