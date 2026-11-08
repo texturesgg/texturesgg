@@ -3,15 +3,15 @@
 //! collections, every mod, or what's installed, a tab each; a mod's details
 //! slide in at the window's right.
 
-use super::{Disc, Mods, Registry, Tab, actions, size_text};
+use super::{Disc, Mods, Registry, Tab, actions, count_text, size_text};
 use crate::state::App;
-use crate::ui::tokens::{Palette, radius, space, text};
+use crate::ui::tokens::{Palette, radius, size, space, text};
 use crate::ui::{
-    ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, callout, page_head, panel, progress, rule, search_field, skeleton,
+    ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, callout, icon_tile, page_head, panel, progress, rule, search_field, skeleton,
     spacer, status, switch, tab, text_action,
 };
 use rune::{El, ScrollSpec, col, el, row, text as label};
-use tgg_mod::{CatalogEntry, LocalMod, ModId, Set, SetStatus};
+use tgg_mod::{CatalogEntry, LocalMod, ModId, ModSummary, Set, SetStatus};
 
 /// A collection's card: wide enough for its description to read as a line
 /// or two.
@@ -48,7 +48,7 @@ fn tabs(mods: &Mods, p: &Palette) -> El {
     };
     row().gap(space::LG)
         .child(tab_for("Collections", mods.sets.len(), Tab::Sets, "mods/tab/sets"))
-        .child(tab_for("All mods", mods.offered().len(), Tab::All, "mods/tab/all"))
+        .child(tab_for("All mods", mods.offered().len() + mods.found_unbuilt().len(), Tab::All, "mods/tab/all"))
         .child(tab_for("Installed", mods.local.mods.len(), Tab::Installed, "mods/tab/installed"))
 }
 
@@ -269,16 +269,24 @@ fn set_card(mods: &Mods, set: &Set, p: &Palette) -> El {
 /// with a search.
 fn all(mods: &Mods, p: &Palette) -> El {
     let found = mods.found();
-    let empty = (found.is_empty() && !loading(mods)).then(|| {
-        let words = if mods.offered().is_empty() { "textures.gg has no mods for this tgg-melee yet." } else { "No mod matches that." };
+    let unbuilt = mods.found_unbuilt();
+    let empty = (found.is_empty() && unbuilt.is_empty() && !loading(mods)).then(|| {
+        let words = if mods.offered().is_empty() && mods.listings.is_empty() { "textures.gg has no mods for this tgg-melee yet." } else { "No mod matches that." };
         label(words).key("mods/all/empty").font(text::BODY).color(p.muted)
     });
     let rows = found.into_iter().map(|entry| catalog_row(mods, entry, p));
+    // What waits for a build, after what installs.
+    let waiting = (!unbuilt.is_empty()).then(|| {
+        col().key("mods/all/unbuilt").gap(space::XS)
+            .child(label("Not built for this version yet").font(text::LABEL).color(p.faint))
+            .child(list(unbuilt.into_iter().map(|summary| unbuilt_row(mods, summary, p)), p))
+    });
     col().max_w(COLUMN).gap(space::SM)
         .child(search_field(&mods.search, "Search mods", p).key("mods/search").on_edit(|app: &mut App| &mut app.mods.search))
         .children(note(mods, p).filter(|_| mods.port().is_none()))
         .children(empty)
         .child(list(rows.chain(loading(mods).then(|| placeholder_rows(p)).into_iter().flatten()), p))
+        .children(waiting)
 }
 
 /// Rows between rules.
@@ -318,13 +326,39 @@ fn catalog_row(mods: &Mods, entry: &CatalogEntry, p: &Palette) -> El {
         None => el(),
     };
     mod_line(mods, &id, format!("mods/catalog/{id}"), p).label(manifest.name.clone())
-        .child(col().gap(space::TIGHT).grow(1.0).min_w(0.0)
-            .child(row().gap(space::XS).items_end()
-                .child(label(manifest.name.clone()).font(text::STRONG).color(p.ink).truncate())
-                .child(label(manifest.version.to_string()).font(text::MONO_SMALL).color(p.faint)))
-            .children(manifest.description.clone().map(|line| label(line).font(text::SMALL).color(p.muted).truncate())))
+        .child(icon_tile(mods.icon(&id), size::THUMBNAIL, p))
+        .child(mod_text(mods, &id, &manifest.name, &manifest.version.to_string(), manifest.description.as_deref(), p))
         .child(label(size_text(entry.package.size)).font(text::MONO_SMALL).color(p.faint))
         .child(end)
+}
+
+/// A mod the registry lists that isn't built for this tgg-melee yet: what
+/// it is, and that it waits for a build.
+fn unbuilt_row(mods: &Mods, summary: &ModSummary, p: &Palette) -> El {
+    let id = &summary.id;
+    mod_line(mods, id, format!("mods/listed/{id}"), p).label(summary.name.clone())
+        .child(icon_tile(mods.icon(id), size::THUMBNAIL, p))
+        .child(mod_text(mods, id, &summary.name, &summary.version.to_string(), summary.description.as_deref(), p))
+        .child(badge("Not built for this version yet", Tone::Plain, p))
+}
+
+/// A mod's words in a row: its name and version, its line, and who
+/// publishes it and how often it's installed, when the registry says.
+fn mod_text(mods: &Mods, id: &ModId, name: &str, version: &str, description: Option<&str>, p: &Palette) -> El {
+    let listed = mods.listings.get(id).map(|summary| {
+        let installs = if summary.installs == 1 { "install" } else { "installs" };
+        let mut words = format!("by {} · {} {installs}", summary.author, count_text(summary.installs));
+        if !summary.tags.is_empty() {
+            words = format!("{words} · {}", summary.tags.join(", "));
+        }
+        label(words).font(text::SMALL).color(p.faint).truncate()
+    });
+    col().gap(space::TIGHT).grow(1.0).min_w(0.0)
+        .child(row().gap(space::XS).items_end()
+            .child(label(name.to_owned()).font(text::STRONG).color(p.ink).truncate())
+            .child(label(version.to_owned()).font(text::MONO_SMALL).color(p.faint)))
+        .children(description.map(|line| label(line.to_owned()).font(text::SMALL).color(p.muted).truncate()))
+        .children(listed)
 }
 
 /// What's installed, each mod with its switch; updating them all.
@@ -361,6 +395,7 @@ fn mod_row(mods: &Mods, m: &LocalMod, p: &Palette) -> El {
     let removed = id.clone();
     mod_line(mods, &id, key.clone(), p).label(m.manifest.name.clone())
         .child(toggle)
+        .child(icon_tile(mods.icon(&id), size::THUMBNAIL, p))
         .child(col().gap(space::TIGHT).grow(1.0).min_w(0.0)
             .child(row().gap(space::XS).items_end()
                 .child(label(m.manifest.name.clone()).font(text::STRONG).color(if on { p.ink } else { p.muted }).truncate())

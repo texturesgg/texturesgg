@@ -1014,3 +1014,41 @@ fn versions_install_switch_and_remove_and_an_installed_newer_one_is_still_an_upd
     tap(&mut rt, "mods/versions/0.5.0/remove");
     assert_eq!(rt.state.mods.ports.len(), 1, "an older version can go");
 }
+
+#[test]
+fn rows_say_who_publishes_each_mod_and_the_details_bring_its_page() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    assert_eq!(rt.state.mods.listings.len(), 10, "the registry's listing of every mod");
+    let netplay: tgg_mod::ModId = "tgg.netplay".parse().expect("an id");
+    assert!(!rt.state.mods.listings[&netplay].author.is_empty());
+    // Icons arrive on threads of their own.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while rt.state.mods.icon(&netplay).is_none_or(|pixels| format!("{pixels:?}").contains("0x0")) {
+        assert!(std::time::Instant::now() < deadline, "the icon arrives");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    tap(&mut rt, "mods/tab/all");
+    tap_shown(&mut rt, "mods/catalog/tgg.netplay");
+    jobs_until(&mut rt, |app| app.mods.details.get(&netplay).is_some_and(Option::is_some));
+    assert!(rt.find("mods/details/readme").is_some(), "its README");
+    assert!(rt.find("mods/details/releases").is_some(), "and its releases");
+}
+
+#[test]
+fn a_mod_not_built_for_this_version_is_listed_and_says_so() {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let (mut rt, _disc, _data) = with_port(net.clone());
+    // The registry lists a mod with no build for this game yet.
+    rt.update(|app, _| {
+        let mut summary = app.mods.listings.values().next().expect("a listing").clone();
+        summary.id = "tgg.someday".parse().expect("an id");
+        summary.name = "Someday".into();
+        app.mods.listings.insert(summary.id.clone(), summary);
+    });
+    tap(&mut rt, "mods/tab/all");
+    assert!(rt.find("mods/all/unbuilt").is_some() && rt.find("mods/listed/tgg.someday").is_some());
+    tap_shown(&mut rt, "mods/listed/tgg.someday");
+    settle(&mut rt);
+    assert!(rt.find("mods/details/unbuilt").is_some(), "its details say it waits for a build");
+    assert!(rt.find("mods/details/install").is_none());
+}

@@ -14,6 +14,15 @@ use tgg_mod::{Error, ModId, Plan, Progress};
 /// been asked to stop.
 const GAME_CHECK: Duration = Duration::from_millis(250);
 
+/// The most pages of listings fetched at once: 50 mods a page.
+const LISTING_PAGES: u32 = 20;
+
+/// The most icons and screenshots kept: each is fetched once.
+const MOST_IMAGES: usize = 500;
+
+/// The largest icon or screenshot downloaded.
+const IMAGE_LIMIT: u64 = 8 * 1024 * 1024;
+
 /// The page opened: read what's installed, ask textures.gg what it offers
 /// the first time, and look for the disc to play.
 pub fn opened(app: &mut App) {
@@ -139,7 +148,8 @@ pub fn fetch(app: &mut App) {
                 (!ids.is_empty()).then(|| (older.version.clone(), ids.len()))
             })
         }).flatten();
-        Job::Mods(Box::new(Done::Fetched { releases, sets: tgg_mod::sets(&*net), catalog, next, older }))
+        let listings = all_listings(&*net);
+        Job::Mods(Box::new(Done::Fetched { releases, sets: tgg_mod::sets(&*net), catalog, next, older, listings }))
     });
 }
 
@@ -152,6 +162,9 @@ pub fn show_tab(app: &mut App, tab: Tab) {
 /// show already.
 pub fn select(app: &mut App, id: &ModId) {
     app.mods.selected = if app.mods.selected.as_ref() == Some(id) { None } else { Some(id.clone()) };
+    if app.mods.selected.is_some() {
+        request_details(app, id);
+    }
 }
 
 pub fn close_details(app: &mut App) {
@@ -170,7 +183,7 @@ pub fn review_mod(app: &mut App, id: &ModId) {
 /// A job finished. True: what shows changed.
 pub fn done(app: &mut App, done: Done) -> bool {
     match done {
-        Done::Fetched { releases, sets, catalog, next, older } => fetched(app, releases, sets, catalog, next, older),
+        Done::Fetched { releases, sets, catalog, next, older, listings } => fetched(app, releases, sets, catalog, next, older, listings),
         Done::PortInstalled(result) => {
             app.mods.work = None;
             match result {
@@ -203,6 +216,14 @@ pub fn done(app: &mut App, done: Done) -> bool {
             read_disk(app);
         }
         Done::Disc(found) => app.mods.disc = found.map_or(Disc::Missing, Disc::Found),
+        Done::Details(id, result) => {
+            let details = result.inspect_err(|error| tgg_app::log(&format!("the details of {id}: {error}"))).ok();
+            let screenshots: Vec<String> = details.iter().flat_map(|details| &details.screenshots).map(|image| image.url.clone()).collect();
+            app.mods.details.insert(id, details);
+            for url in screenshots {
+                request_image(app, &url);
+            }
+        }
         Done::GameEnded(result) => {
             app.mods.playing = None;
             if let Err(why) = result {
@@ -220,6 +241,7 @@ fn fetched(
     catalog: Option<Result<tgg_mod::Catalog, Error>>,
     next: Option<Result<tgg_mod::Catalog, Error>>,
     older: Option<(String, usize)>,
+    listings: Result<Vec<tgg_mod::ModSummary>, Error>,
 ) {
     let mods = &mut app.mods;
     let mut failed = None;
@@ -249,9 +271,15 @@ fn fetched(
         }
         None => mods.catalog = None,
     }
+    mods.older_with_mods = older;
+    // The listings come from endpoints that may not be there yet: without
+    // them the page shows what the catalog has.
+    if let Ok(listings) = listings {
+        mods.listings = listings.into_iter().map(|summary| (summary.id.clone(), summary)).collect();
+    }
+    let icons: Vec<String> = mods.listings.values().filter_map(|summary| Some(summary.icon.as_ref()?.url.clone())).collect();
     // Nothing built for the newer tgg-melee reads as an empty list; failing
     // to ask, as not knowing.
-    mods.older_with_mods = older;
     mods.next_built = match next {
         Some(Ok(catalog)) => Some(catalog.mods.into_iter().map(|entry| entry.manifest.id).collect()),
         Some(Err(Error::NoCatalog(_))) => Some(Vec::new()),
@@ -264,7 +292,59 @@ fn fetched(
     } else {
         Registry::Answered
     };
+    for url in icons {
+        request_image(app, &url);
+    }
     read_disk(app);
+}
+
+/// Every mod the registry lists, page by page, up to `LISTING_PAGES`.
+fn all_listings(net: &dyn tgg_mod::Net) -> Result<Vec<tgg_mod::ModSummary>, Error> {
+    let first = tgg_mod::mods(net, 1)?;
+    let pages = first.total_pages.min(LISTING_PAGES);
+    let mut listings = first.items;
+    for page in 2..=pages {
+        listings.extend(tgg_mod::mods(net, page)?.items);
+    }
+    Ok(listings)
+}
+
+/// Fetch the icon or screenshot at `url` once, on a thread of its own; it
+/// shows wherever it's drawn as soon as it's decoded. Up to `MOST_IMAGES`.
+fn request_image(app: &mut App, url: &str) {
+    if app.mods.images.contains_key(url) || app.mods.images.len() >= MOST_IMAGES {
+        return;
+    }
+    let pixels = rune::Pixels::new();
+    app.mods.images.insert(url.to_owned(), pixels.clone());
+    let (net, url) = (app.mods.net.clone(), url.to_owned());
+    std::thread::Builder::new()
+        .name("mod image".into())
+        .spawn(move || {
+            let decoded = net.get(&url, IMAGE_LIMIT).map_err(|error| error.to_string())
+                .and_then(|bytes| image::load_from_memory(&bytes).map_err(|error| error.to_string()));
+            match decoded {
+                Ok(image) => {
+                    let rgba = image.to_rgba8();
+                    pixels.set(rgba.width(), rgba.height(), rgba.into_raw());
+                }
+                Err(error) => tgg_app::log(&format!("the image {url}: {error}")),
+            }
+        })
+        .expect("start an image's thread");
+}
+
+/// Ask the registry for the mod `id`'s page, once.
+fn request_details(app: &mut App, id: &ModId) {
+    if app.mods.details.contains_key(id) {
+        return;
+    }
+    app.mods.details.insert(id.clone(), None);
+    let (net, id) = (app.mods.net.clone(), id.clone());
+    app.jobs.spawn("mod details", move || {
+        let details = tgg_mod::mod_details(&*net, &id);
+        Job::Mods(Box::new(Done::Details(id, details)))
+    });
 }
 
 /// Install the newest tgg-melee, or update to it.

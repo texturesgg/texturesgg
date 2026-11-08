@@ -86,3 +86,13 @@ pub fn skeleton(fraction: f32, p: &Palette) -> El {
     const LINE: f32 = 10.0;
     el().w_frac(fraction.clamp(0.0, 1.0)).h(LINE).radius(LINE / 2.0).fill(p.raise)
 }
+
+/// A mod's icon, `side` points square: the picture once it's arrived, a
+/// quiet tile until then (or when it has none).
+pub fn icon_tile(pixels: Option<&rune::Pixels>, side: f32, p: &Palette) -> El {
+    let tile = el().size(side, side).radius(radius::CONTROL).clip_rounded(radius::CONTROL).fill(p.raise).border(size::LINE, p.line);
+    match pixels {
+        Some(pixels) => tile.pixels_fit(pixels, rune::SurfaceFit::Fill),
+        None => tile,
+    }
+}

@@ -18,10 +18,13 @@ pub mod versions;
 pub mod view;
 
 use rune::TextEdit;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use tgg_mod::{Applied, Catalog, CatalogEntry, Error, Local, ModId, Net, Plan, PortInstall, PortRelease, Progress, Set};
+use tgg_mod::{
+    Applied, Catalog, CatalogEntry, Error, Local, ModDetails, ModId, ModSummary, Net, Plan, PortInstall, PortRelease, Progress, Set,
+};
 
 /// The name tgg-studio gives textures.gg when it asks.
 const USER_AGENT: &str = concat!("tgg-studio/", env!("CARGO_PKG_VERSION"));
@@ -70,6 +73,13 @@ pub struct Mods {
     pub older_with_mods: Option<(String, usize)>,
     /// The versions of tgg-melee show, in a dialog.
     pub versions: bool,
+    /// What the registry says about each mod it lists: author, icon, tags,
+    /// installs; empty until it answers (or when it can't).
+    pub listings: HashMap<ModId, ModSummary>,
+    /// Each mod's registry page, once asked for: `None` while it's on its way.
+    pub details: HashMap<ModId, Option<ModDetails>>,
+    /// Icons and screenshots by URL, filled as they arrive.
+    pub images: HashMap<String, rune::Pixels>,
 }
 
 /// An older tgg-melee to go back to: its version, and how many installed
@@ -112,6 +122,9 @@ impl Default for Mods {
             next_built: None,
             older_with_mods: None,
             versions: false,
+            listings: HashMap::new(),
+            details: HashMap::new(),
+            images: HashMap::new(),
         }
     }
 }
@@ -131,16 +144,41 @@ impl Mods {
         newest
     }
 
-    /// The mods offered that the search matches: its words, each in the
-    /// name, id or description, without case.
+    /// The mods offered that the search matches.
     pub fn found(&self) -> Vec<&CatalogEntry> {
-        let query = self.search.text.to_lowercase();
-        let words: Vec<&str> = query.split_whitespace().collect();
         self.offered().into_iter().filter(|entry| {
             let manifest = &entry.manifest;
-            let haystack = format!("{} {} {}", manifest.name, manifest.id, manifest.description.as_deref().unwrap_or_default()).to_lowercase();
-            words.iter().all(|word| haystack.contains(word))
+            self.matches(&manifest.id, &manifest.name, manifest.description.as_deref())
         }).collect()
+    }
+
+    /// The mods the registry lists that aren't built for this tgg-melee yet,
+    /// by name, that the search matches.
+    pub fn found_unbuilt(&self) -> Vec<&ModSummary> {
+        let offered = self.offered();
+        let mut unbuilt: Vec<&ModSummary> = self.listings.values()
+            .filter(|summary| !offered.iter().any(|entry| entry.manifest.id == summary.id))
+            .filter(|summary| self.matches(&summary.id, &summary.name, summary.description.as_deref()))
+            .collect();
+        unbuilt.sort_by_key(|summary| summary.name.to_lowercase());
+        unbuilt
+    }
+
+    /// Whether the search matches a mod: each of its words in the mod's
+    /// name, id, description, author or tags, without case.
+    fn matches(&self, id: &ModId, name: &str, description: Option<&str>) -> bool {
+        let query = self.search.text.to_lowercase();
+        let listed = self.listings.get(id);
+        let author = listed.map_or("", |summary| summary.author.as_str());
+        let tags = listed.map(|summary| summary.tags.join(" ")).unwrap_or_default();
+        let haystack = format!("{name} {id} {} {author} {tags}", description.unwrap_or_default()).to_lowercase();
+        query.split_whitespace().all(|word| haystack.contains(word))
+    }
+
+    /// The icon of the mod `id`, once it's arrived.
+    pub fn icon(&self, id: &ModId) -> Option<&rune::Pixels> {
+        let url = &self.listings.get(id)?.icon.as_ref()?.url;
+        self.images.get(url)
     }
 
     /// The newest release textures.gg has of the mod `id`.
@@ -273,6 +311,8 @@ pub enum Done {
         /// When nothing is built for the current tgg-melee: an older
         /// installed one that has mods, and how many.
         older: Option<(String, usize)>,
+        /// Every mod the registry lists, with its author, icon and tags.
+        listings: Result<Vec<ModSummary>, Error>,
     },
     PortInstalled(Result<PortInstall, Error>),
     Applied(Result<Applied, Error>),
@@ -280,6 +320,8 @@ pub enum Done {
     Disc(Option<PathBuf>),
     /// The game ended: why, when it didn't end well.
     GameEnded(Result<(), String>),
+    /// The registry's page for a mod.
+    Details(ModId, Result<ModDetails, Error>),
 }
 
 /// `bytes` as a player reads a size: "840 KB", "12.4 MB".
@@ -324,5 +366,26 @@ mod readable_tests {
     fn an_id_reads_as_a_name() {
         let id = "tgg.neutral-spawns".parse().expect("an id");
         assert_eq!(super::readable(&id), "Neutral spawns");
+    }
+}
+
+/// A count as a player reads it: "940", "1.2k", "34k", "1.5M".
+pub fn count_text(count: u64) -> String {
+    match count {
+        0..1_000 => count.to_string(),
+        1_000..10_000 => format!("{:.1}k", count as f64 / 1e3),
+        10_000..1_000_000 => format!("{}k", count / 1_000),
+        _ => format!("{:.1}M", count as f64 / 1e6),
+    }
+}
+
+#[cfg(test)]
+mod count_tests {
+    #[test]
+    fn counts_read_short() {
+        assert_eq!(super::count_text(940), "940");
+        assert_eq!(super::count_text(1_234), "1.2k");
+        assert_eq!(super::count_text(34_500), "34k");
+        assert_eq!(super::count_text(1_500_000), "1.5M");
     }
 }

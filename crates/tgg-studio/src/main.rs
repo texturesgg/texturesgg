@@ -170,7 +170,15 @@ const SCENES: &[Scene] = &[
     ("mods-details", |app| {
         mods_scene(app, true);
         mods::actions::show_tab(app, mods::Tab::All);
-        if let Ok(id) = "tgg.direct-connect".parse() {
+        if let Ok(id) = "tgg.direct-connect".parse::<tgg_mod::ModId>() {
+            // Its page fetched here, not on a job, so it's there for the picture.
+            let net = app.mods.net.clone();
+            if let Ok(details) = tgg_mod::mod_details(&*net, &id) {
+                for shot in &details.screenshots {
+                    scene_image(app, &*net, &shot.url);
+                }
+                app.mods.details.insert(id.clone(), Some(details));
+            }
             mods::actions::select(app, &id);
         }
     }),
@@ -300,6 +308,15 @@ fn mods_scene(app: &mut App, installed: bool) {
     // As the app fetches: before tgg-melee is installed, its newest release's catalog.
     let layout = port.as_ref().map(tgg_mod::PortInstall::port).or_else(|| releases.first().map(|release| release.port(std::path::PathBuf::new())));
     let catalog = layout.and_then(|layout| tgg_mod::catalog(&*net, &layout).ok());
+    // The registry's listings and their icons, decoded here.
+    if let Ok(page) = tgg_mod::mods(&*net, 1) {
+        for summary in page.items {
+            if let Some(icon) = &summary.icon {
+                scene_image(app, &*net, &icon.url);
+            }
+            app.mods.listings.insert(summary.id.clone(), summary);
+        }
+    }
     app.mods.net = net;
     app.mods.releases = releases;
     app.mods.sets = sets;
@@ -312,4 +329,14 @@ fn mods_scene(app: &mut App, installed: bool) {
 /// Whether this run is a snapshot (`--snap`), for Rune's tooling.
 fn snapshot() -> bool {
     std::env::args().any(|argument| argument == "--snap")
+}
+
+/// For scenes: the image at `url`, fetched and decoded now.
+fn scene_image(app: &mut App, net: &dyn tgg_mod::Net, url: &str) {
+    let Ok(bytes) = net.get(url, 8 * 1024 * 1024) else { return };
+    let Ok(image) = image::load_from_memory(&bytes) else { return };
+    let rgba = image.to_rgba8();
+    let pixels = rune::Pixels::new();
+    pixels.set(rgba.width(), rgba.height(), rgba.into_raw());
+    app.mods.images.insert(url.to_owned(), pixels);
 }
