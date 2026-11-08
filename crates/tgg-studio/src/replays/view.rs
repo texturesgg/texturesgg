@@ -10,7 +10,7 @@ use crate::state::App;
 use crate::ui::tokens::{Palette, radius, size, space, text};
 use crate::ui::{
     ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, chip, icon_tile, page_head, progress, rule,
-    search_field, skeleton, text_action,
+    search_field, skeleton, split, split_list, split_page, text_action,
 };
 use rune::{El, ScrollSpec, col, row, text as label};
 
@@ -89,42 +89,14 @@ pub fn view(app: &App, p: &Palette) -> El {
     // Wide, the list and the chosen replay's details sit side by side, each
     // scrolling on its own under the head and filters, which stay.
     if app.side_by_side() {
-        let lists = row()
-            .gap(space::LG)
-            .grow(1.0)
-            .min_h(0.0)
-            .child(
-                col()
-                    .grow(1.0)
-                    .min_w(0.0)
-                    .max_w(COLUMN)
-                    .gap(space::SM)
-                    .child(filters(replays, p))
-                    .child(
-                        col()
-                            .key("replays/scroll")
-                            .grow(1.0)
-                            .min_h(0.0)
-                            .scroll(ScrollSpec {
-                                stick_bottom: false,
-                            })
-                            .child(col().pb(space::XL).child(list)),
-                    ),
-            )
-            .child(super::details::column(app, p));
-        let page = col()
-            .px(space::LG + 4.0)
-            .pt(space::XS)
-            .pb(space::LG)
-            .gap(space::LG)
-            .grow(1.0)
-            .min_h(0.0)
-            .child(head)
-            .child(lists);
+        let page = split_page().child(head).child(split(
+            split_list("replays/scroll", Some(filters(replays, p)), list),
+            super::details::column(app, p),
+        ));
         return col().grow(1.0).min_h(0.0).child(page);
     }
     let page = col()
-        .px(space::LG + 4.0)
+        .px(space::PAGE)
         .pt(space::XS)
         .pb(space::XL)
         .gap(space::LG)

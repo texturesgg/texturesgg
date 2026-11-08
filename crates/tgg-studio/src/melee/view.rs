@@ -72,7 +72,7 @@ pub fn view(app: &App, p: &Palette) -> El {
             .collect(),
     };
     let page = col()
-        .px(space::LG + 4.0)
+        .px(space::PAGE)
         .pt(space::XS)
         .pb(space::XL)
         .gap(space::MD)

@@ -10,6 +10,7 @@
 
 mod controls;
 pub mod fonts;
+mod layout;
 mod marks;
 mod surfaces;
 pub mod tokens;
@@ -18,6 +19,7 @@ pub use controls::{
     ButtonKind, PLACE_INSET, TEXT_ACTION_INSET, button, chip, icon_button, place_row, search_field,
     select, select_item, select_menu, select_rule, slider, switch, tab, text_action, text_field,
 };
+pub use layout::{split, split_details, split_empty, split_list, split_page};
 pub use marks::{
     Tone, avatar, badge, close_glyph, dot, icon_tile, pause_glyph, play_glyph, progress,
     settings_glyph, sidebar_glyph, skeleton, status, swatch,

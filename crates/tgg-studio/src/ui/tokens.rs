@@ -133,6 +133,8 @@ pub mod space {
     pub const LG: f32 = 24.0;
     pub const XL: f32 = 32.0;
     pub const XXL: f32 = 48.0;
+    /// A place's page in from the place's sides.
+    pub const PAGE: f32 = LG + XXS;
 }
 
 /// Corners in points. Tables and plates are square; controls and panes take
@@ -152,8 +154,10 @@ pub mod size {
     pub const CONTROL: f32 = 28.0;
     /// The pane column beside the stage.
     pub const PANE_COLUMN: f32 = 320.0;
-    /// A list's details as a column of the page, beside the list.
-    pub const DETAILS_COLUMN: f32 = 380.0;
+    /// A list's details beside the list, at their narrowest and widest;
+    /// between, a third of the width (`ui::split`).
+    pub const DETAILS_MIN: f32 = 360.0;
+    pub const DETAILS_MAX: f32 = 520.0;
     /// The narrowest a place lays a list and its details side by side;
     /// narrower, the details slide in over the list.
     pub const SIDE_BY_SIDE: f32 = 960.0;

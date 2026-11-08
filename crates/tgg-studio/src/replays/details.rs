@@ -282,33 +282,11 @@ type Stat = Box<dyn Fn(&PlayerStats) -> String>;
 /// its own.
 pub fn column(app: &App, p: &Palette) -> El {
     let body = body(app, p).unwrap_or_else(|| {
-        col()
-            .key("replays/details/empty")
-            .px(space::MD)
-            .py(space::LG)
-            .child(
-                label("Choose a replay to see who played, where, and how it went.")
-                    .font(text::BODY)
-                    .color(p.muted)
-                    .wrap(),
-            )
-    });
-    col()
-        .key("replays/details/column")
-        .w(size::DETAILS_COLUMN)
-        .h_full()
-        .min_h(0.0)
-        .fill(p.surface)
-        .border(size::LINE, p.line)
-        .radius(crate::ui::tokens::radius::CONTROL)
-        .clip_rounded(crate::ui::tokens::radius::CONTROL)
-        .child(
-            col()
-                .grow(1.0)
-                .min_h(0.0)
-                .scroll(ScrollSpec {
-                    stick_bottom: false,
-                })
-                .child(body),
+        ui::split_empty(
+            "Choose a replay to see who played, where, and how it went.",
+            p,
         )
+        .key("replays/details/empty")
+    });
+    ui::split_details(body, p).key("replays/details/column")
 }

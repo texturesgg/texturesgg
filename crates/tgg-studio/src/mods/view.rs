@@ -8,7 +8,8 @@ use crate::state::App;
 use crate::ui::tokens::{Palette, radius, size, space, text};
 use crate::ui::{
     ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, callout, icon_tile, page_head, panel,
-    progress, rule, search_field, skeleton, spacer, status, switch, tab, text_action,
+    progress, rule, search_field, skeleton, spacer, split, split_list, split_page, status, switch,
+    tab, text_action,
 };
 use rune::{El, ScrollSpec, col, el, row, text as label};
 use tgg_mod::{CatalogEntry, LocalMod, ModId, ModSummary, Set, SetStatus};
@@ -42,30 +43,13 @@ pub fn view(app: &App, p: &Palette) -> El {
     let notices: Vec<El> = notices(app, p);
     // Wide, a list and its details sit side by side, each scrolling on its
     // own under the head and tabs, which stay.
+    let top = top(mods, p);
     if app.side_by_side() && mods.tab != Tab::Sets {
-        let lists = row()
-            .gap(space::LG)
-            .grow(1.0)
-            .min_h(0.0)
-            .child(
-                col()
-                    .key("mods/scroll")
-                    .grow(1.0)
-                    .min_w(0.0)
-                    .h_full()
-                    .scroll(ScrollSpec {
-                        stick_bottom: false,
-                    })
-                    .child(col().pb(space::XL).child(list)),
-            )
-            .child(super::details::column(app, p));
-        let page = col()
-            .px(space::LG + 4.0)
-            .pt(space::XS)
-            .pb(space::LG)
-            .gap(space::LG)
-            .grow(1.0)
-            .min_h(0.0)
+        let lists = split(
+            split_list("mods/scroll", top, list),
+            super::details::column(app, p),
+        );
+        let page = split_page()
             .child(head)
             .children(
                 (!notices.is_empty()).then(|| col().max_w(COLUMN).gap(space::XS).children(notices)),
@@ -80,8 +64,15 @@ pub fn view(app: &App, p: &Palette) -> El {
             );
         return col().grow(1.0).min_h(0.0).child(page);
     }
+    // Narrow, a list reads best no wider than the column; collections'
+    // cards wrap to the page.
+    let list = if mods.tab == Tab::Sets {
+        list
+    } else {
+        col().max_w(COLUMN).gap(space::SM).children(top).child(list)
+    };
     let page = col()
-        .px(space::LG + 4.0)
+        .px(space::PAGE)
         .pt(space::XS)
         .pb(space::XL)
         .gap(space::LG)
@@ -104,6 +95,26 @@ pub fn view(app: &App, p: &Palette) -> El {
             stick_bottom: false,
         })
         .child(page)
+}
+
+/// What stays above a tab's list: All mods' search, Installed's Update all.
+fn top(mods: &Mods, p: &Palette) -> Option<El> {
+    match mods.tab {
+        Tab::Sets => None,
+        Tab::All => Some(
+            search_field(&mods.search, "Search mods", p)
+                .key("mods/search")
+                .on_edit(|app: &mut App| &mut app.mods.search),
+        ),
+        Tab::Installed => (mods.has_updates() && mods.catalog.is_some() && mods.work.is_none())
+            .then(|| {
+                row().child(spacer()).child(
+                    button("Update all", ButtonKind::Secondary, p)
+                        .key("mods/update-all")
+                        .on_press(actions::review_updates),
+                )
+            }),
+    }
 }
 
 fn tabs(mods: &Mods, p: &Palette) -> El {
@@ -570,13 +581,7 @@ fn all(mods: &Mods, p: &Palette) -> El {
             ))
     });
     col()
-        .max_w(COLUMN)
         .gap(space::SM)
-        .child(
-            search_field(&mods.search, "Search mods", p)
-                .key("mods/search")
-                .on_edit(|app: &mut App| &mut app.mods.search),
-        )
         .children(note(mods, p).filter(|_| mods.port().is_none()))
         .children(empty)
         .child(list(
@@ -749,12 +754,6 @@ fn mod_text(
 
 /// What's installed, each mod with its switch; updating them all.
 fn installed(mods: &Mods, p: &Palette) -> El {
-    let update_all =
-        (mods.has_updates() && mods.catalog.is_some() && mods.work.is_none()).then(|| {
-            button("Update all", ButtonKind::Secondary, p)
-                .key("mods/update-all")
-                .on_press(actions::review_updates)
-        });
     let empty = mods.local.mods.is_empty().then(|| {
         label("Nothing installed yet. Install a collection, or any mod from All mods.")
             .key("mods/installed/empty")
@@ -764,9 +763,7 @@ fn installed(mods: &Mods, p: &Palette) -> El {
     let rows = mods.local.mods.iter().map(|m| mod_row(mods, m, p));
     col()
         .key("mods/installed")
-        .max_w(COLUMN)
         .gap(space::SM)
-        .children(update_all.map(|update_all| row().child(spacer()).child(update_all)))
         .children(empty)
         .children((!mods.local.mods.is_empty()).then(|| list(rows, p)))
 }

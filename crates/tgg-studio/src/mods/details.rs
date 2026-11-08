@@ -521,33 +521,7 @@ fn fact(name: &str, value: String, p: &Palette) -> El {
 /// own, so the list beside it can be long.
 pub fn column(app: &App, p: &Palette) -> El {
     let body = body(app, p).unwrap_or_else(|| {
-        col()
-            .key("mods/details/empty")
-            .px(space::MD)
-            .py(space::LG)
-            .child(
-                label("Choose a mod to see its details.")
-                    .font(text::BODY)
-                    .color(p.muted)
-                    .wrap(),
-            )
+        crate::ui::split_empty("Choose a mod to see its details.", p).key("mods/details/empty")
     });
-    col()
-        .key("mods/details/column")
-        .w(size::DETAILS_COLUMN)
-        .h_full()
-        .min_h(0.0)
-        .fill(p.surface)
-        .border(size::LINE, p.line)
-        .radius(radius::CONTROL)
-        .clip_rounded(radius::CONTROL)
-        .child(
-            col()
-                .grow(1.0)
-                .min_h(0.0)
-                .scroll(ScrollSpec {
-                    stick_bottom: false,
-                })
-                .child(body),
-        )
+    crate::ui::split_details(body, p).key("mods/details/column")
 }
