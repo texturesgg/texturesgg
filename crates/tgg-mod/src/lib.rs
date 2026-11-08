@@ -100,8 +100,8 @@ pub use ports::{
     port_update, remove_port,
 };
 pub use prepare::{
-    Prepared, RunningProfile, finish_profile, launch_profile, prepare_profile, profile_folder,
-    profile_games,
+    Prepared, RunningProfile, finish_profile, launch_profile, plan_profile, prepare_profile,
+    profile_folder, profile_games,
 };
 pub use profile::{
     Fit, GameNeed, Missing, Profile, ProfileEntry, ProfileGame, ProfileMod, ProfilePlan, Settings,
