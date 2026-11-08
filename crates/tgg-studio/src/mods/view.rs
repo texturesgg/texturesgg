@@ -859,25 +859,6 @@ fn mod_row(mods: &Mods, m: &LocalMod, p: &Palette) -> El {
         )
 }
 
-/// The title row's action on Mods: Play, once tgg-melee is installed, or
-/// Stop while it runs.
-pub fn title_actions(app: &App, p: &Palette) -> Option<El> {
-    let mods = &app.mods;
-    mods.port()?;
-    if mods.playing.is_some() {
-        return Some(
-            button("Stop tgg-melee", ButtonKind::Secondary, p)
-                .key("mods/stop")
-                .on_press(actions::stop),
-        );
-    }
-    matches!(mods.disc, Disc::Found(_)).then(|| {
-        button("Play tgg-melee", ButtonKind::Primary, p)
-            .key("mods/play")
-            .on_press(actions::play)
-    })
-}
-
 /// "1 mod", "8 mods".
 pub fn mod_count(count: usize) -> String {
     if count == 1 {

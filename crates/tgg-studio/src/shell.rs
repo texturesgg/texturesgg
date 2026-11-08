@@ -4,15 +4,17 @@
 //! keeps one place at the top left whether it shows or not. Drawing only: what
 //! it shows comes from the app's state, and pressing calls `nav::actions`.
 
+use crate::mods::Disc;
 use crate::nav::{Group, Place, actions as nav};
 use crate::state::App;
 use crate::ui::tokens::{Palette, motion, radius, size, space, text};
 use crate::ui::{
-    PLACE_INSET, close_glyph, icon_button, place_row, rule, sidebar_glyph, spacer, text_action,
+    PLACE_INSET, close_glyph, icon_button, place_row, play_action, rule, sidebar_glyph, spacer,
+    text_action,
 };
 use crate::{
-    editor, keys, library, melee, mods, newmod, preferences, replays, report, signin, welcome,
-    window,
+    editor, keys, library, melee, mods, newmod, preferences, replays, report, signin, slippi,
+    welcome, window,
 };
 use rune::{Cx, El, col, el, row, text as label};
 
@@ -82,9 +84,10 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
 /// nothing on the default spring rather than vanishing.
 fn sidebar(app: &App, p: &Palette) -> El {
     let shown = app.nav.sidebar;
-    // The places under their groups' names (your ISO, tgg-melee), so which
-    // game a place is about shows. Every row has a fixed height, so the
-    // marker's offset is their sum.
+    // The places under their games' names (Slippi, tgg-melee), each name
+    // with its game's Play, so which game a place is about, and what Play
+    // starts, shows. Every row has a fixed height, so the marker's offset
+    // is their sum.
     let mut places = Vec::new();
     let mut at = 0.0;
     let mut marked = 0.0;
@@ -99,8 +102,16 @@ fn sidebar(app: &App, p: &Palette) -> El {
                 .key(format!("sidebar/group/{n}"))
                 .h(head)
                 .items_end()
-                .px(PLACE_INSET)
-                .child(label(group.label()).font(text::LABEL).color(p.faint)),
+                .pl(PLACE_INSET)
+                .child(
+                    row()
+                        .h(size::GROUP_HEAD)
+                        .w_full()
+                        .items_center()
+                        .child(label(group.label()).font(text::LABEL).color(p.faint))
+                        .child(el().grow(1.0))
+                        .children(game_action(app, group, p)),
+                ),
         );
         at += head + space::TIGHT;
         for place in Place::ALL
@@ -165,6 +176,45 @@ fn sidebar(app: &App, p: &Palette) -> El {
         .fill(p.sunk)
         .child(inner)
         .child(el().w(size::LINE).h_full().fill(p.line))
+}
+
+/// What a game's name in the sidebar offers: Play, when it can start;
+/// tgg-melee's Stop while it runs; Set up, while tgg-melee or its clean
+/// disc is missing (Mods says what's needed). Slippi offers nothing until
+/// Slippi Launcher has installed its Dolphin.
+fn game_action(app: &App, group: Group, p: &Palette) -> Option<El> {
+    let (action, key) = match group {
+        Group::Iso if app.slippi.running => (
+            label("Open").font(text::LABEL).color(p.faint),
+            "sidebar/slippi/open",
+        ),
+        Group::Iso => {
+            app.slippi.dolphin.as_ref()?;
+            app.game.as_ref()?;
+            (
+                play_action("Play Slippi", p).on_press(slippi::actions::play),
+                "sidebar/slippi/play",
+            )
+        }
+        Group::Port if app.mods.playing.is_some() => (
+            text_action("Stop", false, p).on_press(mods::actions::stop),
+            "sidebar/tgg-melee/stop",
+        ),
+        Group::Port => match (app.mods.port(), &app.mods.disc) {
+            (Some(_), Disc::Found(_)) => (
+                play_action("Play tgg-melee", p).on_press(mods::actions::play),
+                "sidebar/tgg-melee/play",
+            ),
+            (None, _) | (Some(_), Disc::Missing) => (
+                text_action("Set up", false, p)
+                    .on_press_tx(|app: &mut App, tx| editor::actions::go(app, Place::Mods, tx)),
+                "sidebar/tgg-melee/set-up",
+            ),
+            // Still looking for the disc.
+            (Some(_), _) => return None,
+        },
+    };
+    Some(action.key(key))
 }
 
 /// The costumes and stages edited lately, the latest first: pressing one
@@ -292,9 +342,8 @@ fn title_actions(app: &App, p: &Palette) -> Option<El> {
     }
     match app.nav.place {
         Place::Melee => melee::subject::title_actions(app, p),
-        // Play, or Stop while a game (or a replay) runs.
-        Place::Mods | Place::Replays => mods::view::title_actions(app, p),
-        Place::Library => None,
+        // Each game's Play is beside its name in the sidebar.
+        Place::Mods | Place::Replays | Place::Library => None,
     }
 }
 

@@ -35,6 +35,8 @@ pub enum Done {
     Replays(Box<crate::replays::Done>),
     /// New mod: the SDK's examples and the tools found, or the mod made.
     NewMod(Box<crate::newmod::actions::Done>),
+    /// Slippi's Dolphin, started from here, closed.
+    SlippiEnded,
 }
 
 pub struct Jobs {
@@ -163,6 +165,13 @@ pub fn setup(app: &mut crate::state::App, waker: Waker) {
         if tgg_app::log::crashed_before() {
             crate::report::actions::open(app, true);
         }
+        // What each game's Play needs: Slippi's Dolphin; tgg-melee and a
+        // clean disc for it.
+        crate::slippi::actions::find(app);
+        crate::mods::actions::read_disk(app);
+        if app.mods.disc == crate::mods::Disc::Unknown {
+            crate::mods::actions::find_disc(app);
+        }
         // Who's signed in, as the site says now.
         crate::signin::actions::check(app);
         if app.settings.check_for_updates.unwrap_or(true) {
@@ -202,6 +211,7 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
             Done::SignIn(done) => crate::signin::actions::done(app, *done, tx),
             Done::Replays(done) => crate::replays::actions::done(app, *done),
             Done::NewMod(done) => crate::newmod::actions::done(app, *done),
+            Done::SlippiEnded => crate::slippi::actions::ended(app),
             Done::Update(newer) => {
                 app.update = newer;
                 app.update.is_some()

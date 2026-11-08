@@ -63,7 +63,7 @@ impl Group {
 
     pub fn label(self) -> &'static str {
         match self {
-            Group::Iso => "Your ISO",
+            Group::Iso => "Slippi",
             Group::Port => "tgg-melee",
         }
     }

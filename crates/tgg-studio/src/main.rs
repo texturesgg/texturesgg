@@ -23,6 +23,7 @@ mod replays;
 mod report;
 mod shell;
 mod signin;
+mod slippi;
 mod stage;
 mod state;
 mod ui;

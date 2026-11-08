@@ -22,6 +22,7 @@ pub mod net;
 pub mod replay_stats;
 pub mod replays;
 pub mod settings;
+pub mod slippi;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_dat;
 pub mod textures;

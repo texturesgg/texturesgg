@@ -17,8 +17,8 @@ pub mod tokens;
 
 pub use controls::{
     ButtonKind, PLACE_INSET, TEXT_ACTION_INSET, button, button_off, chip, icon_button, place_row,
-    search_field, select, select_item, select_menu, select_rule, slider, switch, tab, text_action,
-    text_field,
+    play_action, search_field, select, select_item, select_menu, select_rule, slider, switch, tab,
+    text_action, text_field,
 };
 pub use layout::{split, split_details, split_empty, split_list, split_page};
 pub use marks::{

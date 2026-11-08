@@ -139,6 +139,24 @@ pub fn text_action(label: &str, danger: bool, p: &Palette) -> El {
         .radius(radius::CONTROL)
 }
 
+/// Starting a game, beside the name of the game it starts: the play glyph
+/// and "Play", in ink, padded like a text action.
+pub fn play_action(label: &str, p: &Palette) -> El {
+    row()
+        .gap(space::XXS)
+        .items_center()
+        .role("button")
+        .label(label)
+        .focusable(true)
+        .hover(p.hover)
+        .cursor(rune::Cursor::Pointer)
+        .px(TEXT_ACTION_INSET)
+        .py(space::TIGHT)
+        .radius(radius::CONTROL)
+        .child(super::play_glyph(p.ink))
+        .child(text("Play").font(type_::LABEL).color(p.ink))
+}
+
 /// A text action's padding either side of its words.
 pub const TEXT_ACTION_INSET: f32 = space::XXS;
 

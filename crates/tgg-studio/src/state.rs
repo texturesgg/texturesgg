@@ -60,6 +60,8 @@ pub struct App {
     /// sidebar; measured on the window, not the place, because a details
     /// pane sliding in narrows the place and would keep itself there.
     pub window_width: f32,
+    /// Slippi's Dolphin, which plays the player's ISO.
+    pub slippi: crate::slippi::Slippi,
     /// tgg-melee and its mods.
     pub mods: Mods,
     /// Work off the window's thread.
@@ -106,6 +108,7 @@ impl App {
             editor: None,
             renders: Renders::default(),
             mods: Mods::default(),
+            slippi: crate::slippi::Slippi::default(),
             preferences: Preferences::default(),
             report: None,
             update: None,

@@ -2,6 +2,7 @@
 //! the left, its control on the right, and help at the end.
 
 use super::{Menu, actions};
+use crate::mods::Disc;
 use crate::state::App;
 use crate::ui::tokens::{Palette, space};
 use crate::ui::{
@@ -23,6 +24,7 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
         appearance(app, p),
         updates(app, p),
         game(app, p),
+        disc(app, p),
         help(p),
     ];
     let body = col().children(rows.into_iter().enumerate().flat_map(|(index, row)| {
@@ -216,17 +218,23 @@ fn updates(app: &App, p: &Palette) -> El {
     )
 }
 
-/// The game skins install into, and choosing another.
+/// Slippi's ISO: the game skins install into and Slippi's Play opens, and
+/// choosing another. Without Slippi's Dolphin, where to get it.
 fn game(app: &App, p: &Palette) -> El {
     let path = app.game.as_ref().map(|references| references.game().path());
-    let file = path
-        .and_then(|path| path.file_name())
-        .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+    let file = file_name(path);
+    let line = if app.slippi.dolphin.is_some() {
+        format!("Skins install into {file}, and Play beside Slippi opens it in Slippi's Dolphin.")
+    } else {
+        format!(
+            "Skins install into {file}. Play beside Slippi shows once Slippi Launcher is installed (slippi.gg)."
+        )
+    };
     // The file's name says which; its whole path is a hover away.
     setting(
         "settings/game",
-        "Game",
-        format!("Skins install into {file}."),
+        "Slippi ISO",
+        line,
         text_action("Choose another…", false, p)
             .key("settings/choose-game")
             .on_press_tx(actions::choose_game),
@@ -236,6 +244,50 @@ fn game(app: &App, p: &Palette) -> El {
         path.map(|path| path.display().to_string())
             .unwrap_or_default(),
     )
+}
+
+/// tgg-melee's disc: an unmodified one, which may be the Slippi ISO while
+/// nothing's installed into it, and choosing another.
+fn disc(app: &App, p: &Palette) -> El {
+    let found = match &app.mods.disc {
+        Disc::Found(path) => Some(path.as_path()),
+        _ => None,
+    };
+    let same =
+        found.is_some() && found == app.game.as_ref().map(|references| references.game().path());
+    let line = match &app.mods.disc {
+        Disc::Found(_) if same => {
+            "tgg-melee plays your Slippi ISO too, while it's unmodified. Netplay and replays need the game files as they shipped.".to_owned()
+        }
+        Disc::Found(_) => format!(
+            "tgg-melee plays {}, unmodified, since netplay and replays need the game files as they shipped.",
+            file_name(found)
+        ),
+        Disc::Missing => {
+            "None of your discs is unmodified, and tgg-melee needs one: netplay and replays need the game files as they shipped.".to_owned()
+        }
+        Disc::Unknown | Disc::Looking => "Looking for an unmodified disc…".to_owned(),
+    };
+    setting(
+        "settings/disc",
+        "tgg-melee disc",
+        line,
+        text_action("Choose another…", false, p)
+            .key("settings/choose-disc")
+            .on_press_tx(crate::mods::actions::choose_disc),
+        p,
+    )
+    .help(
+        found
+            .map(|path| path.display().to_string())
+            .unwrap_or_default(),
+    )
+}
+
+/// A path's file name, or nothing.
+fn file_name(path: Option<&std::path::Path>) -> String {
+    path.and_then(|path| path.file_name())
+        .map_or_else(String::new, |name| name.to_string_lossy().into_owned())
 }
 
 /// Help: reporting a problem, the community, and what's running.

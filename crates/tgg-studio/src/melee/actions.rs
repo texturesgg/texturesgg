@@ -49,8 +49,18 @@ pub fn states_read(
         .as_ref()
         .is_some_and(|references| references.game().path() == iso);
     if current {
+        let changed = states
+            .values()
+            .any(|state| !matches!(state, SlotState::Vanilla));
         app.melee.states = Some(states);
         app.melee.undoable = undoable;
+        // tgg-melee was playing this game while it was unmodified; a skin
+        // installed since means it looks for another.
+        let shared = matches!(&app.mods.disc, crate::mods::Disc::Found(disc) if disc == iso);
+        if changed && shared {
+            app.mods.disc = crate::mods::Disc::Unknown;
+            crate::mods::actions::find_disc(app);
+        }
     }
     current
 }

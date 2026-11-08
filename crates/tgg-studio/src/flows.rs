@@ -1308,8 +1308,9 @@ fn mods_offers_tgg_melee_then_its_sets() {
         "a set installs now"
     );
     assert!(
-        rt.find("mods/play").is_none(),
-        "the test disc isn't unmodified, so nothing to play yet"
+        rt.find("sidebar/tgg-melee/play").is_none()
+            && rt.find("sidebar/tgg-melee/set-up").is_some(),
+        "the test disc isn't unmodified, so it says set up, not play"
     );
     assert_eq!(rt.state.mods.disc, crate::mods::Disc::Missing);
 }
@@ -1442,16 +1443,16 @@ fn play_starts_tgg_melee_and_stop_ends_it() {
         .to_owned();
     rt.update(|app, _| crate::mods::actions::use_disc(app, iso.clone()));
     rt.frame(FRAME);
-    tap(&mut rt, "mods/play");
+    tap(&mut rt, "sidebar/tgg-melee/play");
     assert!(rt.state.mods.playing.is_some());
     assert!(
         tgg_mod::game_running(&data.path().join("mods")),
         "other tgg's see the game running"
     );
-    assert!(rt.find("mods/stop").is_some());
-    tap(&mut rt, "mods/stop");
+    assert!(rt.find("sidebar/tgg-melee/stop").is_some());
+    tap(&mut rt, "sidebar/tgg-melee/stop");
     jobs_until(&mut rt, |app| app.mods.playing.is_none());
-    assert!(rt.find("mods/play").is_some());
+    assert!(rt.find("sidebar/tgg-melee/play").is_some());
 }
 
 #[test]
@@ -2389,7 +2390,7 @@ fn a_replay_that_needs_mods_is_reviewed_then_plays_in_its_own_setup() {
         1,
         "a profile game runs"
     );
-    tap(&mut rt, "mods/stop");
+    tap(&mut rt, "sidebar/tgg-melee/stop");
     jobs_until(&mut rt, |app| app.mods.playing.is_none());
 }
 
@@ -2509,4 +2510,60 @@ fn wide_a_list_and_its_details_sit_side_by_side() {
     tap(&mut rt, "mods/tab/sets");
     settle(&mut rt);
     assert!(rt.find("mods/details/column").is_none());
+}
+
+/// A stand-in for Slippi's Dolphin: a script that ends at once.
+#[cfg(unix)]
+fn fake_dolphin(folder: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let program = folder.join("dolphin");
+    std::fs::write(&program, "#!/bin/sh\nexit 0\n").expect("write the script");
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755))
+        .expect("make it runnable");
+    program
+}
+
+#[cfg(unix)]
+#[test]
+fn slippi_plays_beside_its_name_once_its_dolphin_is_found() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, data) = runtime(game_at(&iso));
+    assert!(
+        rt.find("sidebar/slippi/play").is_none(),
+        "no Play without Slippi's Dolphin"
+    );
+    let dolphin = fake_dolphin(data.path());
+    rt.update(|app, _| app.slippi.dolphin = Some(dolphin.clone()));
+    rt.frame(FRAME);
+    tap(&mut rt, "sidebar/slippi/play");
+    assert!(rt.state.slippi.running);
+    assert!(rt.find("sidebar/slippi/open").is_some(), "says it's open");
+    jobs_until(&mut rt, |app| !app.slippi.running);
+    assert!(
+        rt.find("sidebar/slippi/play").is_some(),
+        "Play again once it closes"
+    );
+}
+
+#[test]
+fn tgg_melee_says_set_up_until_its_installed() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    assert!(rt.find("sidebar/tgg-melee/play").is_none());
+    tap(&mut rt, "sidebar/tgg-melee/set-up");
+    assert_eq!(rt.state.nav.place, Place::Mods, "Set up goes to Mods");
+}
+
+#[test]
+fn tgg_melee_stops_playing_the_slippi_iso_once_its_changed() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    // As if the ISO had been unmodified when tgg-melee chose it; the test
+    // disc holds a costume of its own, as a skin installed since would.
+    rt.update(|app, _| {
+        app.mods.disc = crate::mods::Disc::Found(iso.clone());
+        crate::melee::actions::refresh(app);
+    });
+    reread(&mut rt);
+    jobs_until(&mut rt, |app| app.mods.disc == crate::mods::Disc::Missing);
 }
