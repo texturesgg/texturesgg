@@ -124,6 +124,9 @@ pub struct Data {
     pub mods: PathBuf,
     /// The folder tgg-melee's versions are installed in.
     pub ports: PathBuf,
+    /// tgg's own data folder: the package cache, the cached catalog and
+    /// Slippi mapping, profile folders, and trust answers.
+    pub tgg: PathBuf,
 }
 
 impl Data {
@@ -139,6 +142,7 @@ impl Data {
             history,
             mods: tgg_mod::default_mods_dir(),
             ports: tgg_mod::default_ports_dir(),
+            tgg: tgg_mod::default_data_dir(),
         }
     }
 
@@ -150,6 +154,7 @@ impl Data {
             history: folder.join("games"),
             mods: folder.join("mods"),
             ports: folder.join("ports"),
+            tgg: folder.join("tgg-data"),
         }
     }
 

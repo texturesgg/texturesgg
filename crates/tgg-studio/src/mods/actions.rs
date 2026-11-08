@@ -655,6 +655,8 @@ fn apply_plan(
     target: Option<ModId>,
 ) {
     let (net, mods) = (app.mods.net.clone(), app.data.mods.clone());
+    // Packages come from, and go into, tgg's cache, shared with profiles.
+    let packages = tgg_mod::packages_dir(&app.data.tgg);
     app.mods.removing = removing;
     let work = start(app, doing);
     if let Some(work) = &mut app.mods.work {
@@ -662,10 +664,11 @@ fn apply_plan(
     }
     app.jobs.spawn("mods install", move || {
         let report = reporter(&work);
-        Job::Mods(Box::new(Done::Applied(tgg_mod::apply(
+        Job::Mods(Box::new(Done::Applied(tgg_mod::apply_cached(
             &*net,
             &plan,
             &mods,
+            Some(&packages),
             &report,
             &work.cancel,
         ))))

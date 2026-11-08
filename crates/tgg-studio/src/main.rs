@@ -284,6 +284,7 @@ const SCENES: &[Scene] = &[
         let _ = std::fs::remove_dir_all(&folder);
         app.data.mods = folder.join("mods");
         app.data.ports = folder.join("ports");
+        app.data.tgg = folder.join("tgg-data");
         if let Some(references) = &app.game {
             app.mods.disc = mods::Disc::Found(references.game().path().to_owned());
         }
@@ -416,6 +417,7 @@ fn mods_scene(app: &mut App, installed: bool) {
     let _ = std::fs::remove_dir_all(&folder);
     app.data.mods = folder.join("mods");
     app.data.ports = folder.join("ports");
+    app.data.tgg = folder.join("tgg-data");
     let net = Arc::new(tgg_mod::FakeNet::new());
     let releases = tgg_mod::port_releases(&*net).unwrap_or_default();
     let never = AtomicBool::new(false);
@@ -439,7 +441,14 @@ fn mods_scene(app: &mut App, installed: bool) {
         (&catalog, sets.iter().find(|set| set.name == "competitive"))
     {
         let plan = tgg_mod::plan_set(competitive, catalog, &tgg_mod::Local::empty());
-        let _ = tgg_mod::apply(&*net, &plan, &app.data.mods, &tgg_mod::no_progress, &never);
+        let _ = tgg_mod::apply_cached(
+            &*net,
+            &plan,
+            &app.data.mods,
+            None,
+            &tgg_mod::no_progress,
+            &never,
+        );
         if let Ok(id) = "tgg.quick-start".parse() {
             let _ = tgg_mod::set_enabled(&app.data.mods, &id, false);
         }
