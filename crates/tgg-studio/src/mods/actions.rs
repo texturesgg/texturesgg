@@ -584,6 +584,32 @@ fn dropped(mods: &super::Mods, only: Option<&str>) -> Vec<ModId> {
         .collect()
 }
 
+/// Show what updating the mod `id` alone will do: its newest release that
+/// still fits its collections, and anything new that release needs. Its
+/// collections' own versions stay as they are, as does every other mod.
+pub fn review_mod_update(app: &mut App, id: &ModId) {
+    let Some(catalog) = &app.mods.catalog else {
+        return;
+    };
+    let mut plan = tgg_mod::plan_updates(&app.mods.sets, catalog, &app.mods.local);
+    plan.steps
+        .retain(|step| step.id == *id || step.action == tgg_mod::Action::Install);
+    plan.sets.clear();
+    if !plan
+        .steps
+        .iter()
+        .any(|step| step.id == *id && matches!(step.action, tgg_mod::Action::Update { .. }))
+    {
+        return app.tell(format!("{} is up to date.", app.mods.name_of(id)), false);
+    }
+    app.mods.review = Some(Review {
+        title: format!("Update {}", app.mods.name_of(id)),
+        plan,
+        dropped: Vec::new(),
+        remove_dropped: false,
+    });
+}
+
 /// Remove the mods an update drops along with it, or keep them.
 pub fn set_remove_dropped(app: &mut App, remove: bool) {
     if let Some(review) = &mut app.mods.review {

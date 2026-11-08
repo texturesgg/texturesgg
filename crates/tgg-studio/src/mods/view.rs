@@ -604,6 +604,14 @@ fn catalog_row(mods: &Mods, entry: &CatalogEntry, p: &Palette) -> El {
         }
         None => el(),
     };
+    // Installed, the version the player has, and the newer one when it's out.
+    let shown = installed.map_or_else(
+        || manifest.version.to_string(),
+        |m| m.manifest.version.to_string(),
+    );
+    let update = installed
+        .and_then(|m| m.update.as_ref())
+        .map(|version| update_mod(mods, &id, version, &format!("mods/catalog/{id}"), p));
     mod_line(mods, &id, format!("mods/catalog/{id}"), p)
         .label(manifest.name.clone())
         .child(icon_tile(mods.icon(&id), size::THUMBNAIL, p))
@@ -611,10 +619,11 @@ fn catalog_row(mods: &Mods, entry: &CatalogEntry, p: &Palette) -> El {
             mods,
             &id,
             &manifest.name,
-            &manifest.version.to_string(),
+            &shown,
             manifest.description.as_deref(),
             p,
         ))
+        .children(update)
         .child(
             label(size_text(entry.package.size))
                 .font(text::MONO_SMALL)
@@ -741,7 +750,7 @@ fn mod_row(mods: &Mods, m: &LocalMod, p: &Palette) -> El {
     let notes = m
         .update
         .as_ref()
-        .map(|version| badge(format!("{version} is out"), Tone::News, p))
+        .map(|version| update_mod(mods, &id, version, &key, p))
         .or_else(|| {
             (m.fits == Some(false)).then(|| badge("Not built for this tgg-melee", Tone::Danger, p))
         });
@@ -813,4 +822,25 @@ pub fn mod_count(count: usize) -> String {
     } else {
         format!("{count} mods")
     }
+}
+
+/// A newer release of an installed mod, and updating it alone (through the
+/// review), keyed `{key}/update`; just the news while an install runs.
+pub(super) fn update_mod(
+    mods: &Mods,
+    id: &ModId,
+    version: &impl std::fmt::Display,
+    key: &str,
+    p: &Palette,
+) -> El {
+    let wanted = id.clone();
+    row()
+        .gap(space::XS)
+        .items_center()
+        .child(badge(format!("{version} is out"), Tone::News, p))
+        .children(mods.work.is_none().then(|| {
+            button("Update", ButtonKind::Secondary, p)
+                .key(format!("{key}/update"))
+                .on_press(move |app: &mut App| actions::review_mod_update(app, &wanted))
+        }))
 }

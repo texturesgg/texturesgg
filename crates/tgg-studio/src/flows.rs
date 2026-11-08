@@ -1983,3 +1983,60 @@ fn a_dropped_mod_can_stay() {
         "kept, no longer part of Competitive"
     );
 }
+
+#[test]
+fn one_mod_updates_on_its_own_and_stays_in_its_collection() {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let (mut rt, _disc, _data) = with_port(net.clone());
+    install_set(&mut rt, "replays");
+    net.publish_mod("tgg.replay-recorder", "Replay recorder", "0.1.1", &[]);
+    net.publish_mod("tgg.replay-player", "Replay player", "0.2.1", &[]);
+    tap(&mut rt, "mods/refresh");
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered
+    });
+    tap(&mut rt, "mods/tab/installed");
+    tap_shown(&mut rt, "mods/mod/tgg.replay-recorder/update");
+    settle(&mut rt);
+    let review = rt
+        .state
+        .mods
+        .review
+        .as_ref()
+        .expect("its update's plan shows");
+    let ids: Vec<String> = review
+        .plan
+        .steps
+        .iter()
+        .map(|step| step.id.to_string())
+        .collect();
+    assert_eq!(ids, ["tgg.replay-recorder"], "only that mod");
+    tap(&mut rt, "mods/review/confirm");
+    jobs_until(&mut rt, |app| {
+        app.mods.work.is_none()
+            && app
+                .mods
+                .local
+                .get(&"tgg.replay-recorder".parse().expect("an id"))
+                .is_some_and(|m| m.update.is_none())
+    });
+    let local = &rt.state.mods.local;
+    let recorder = local
+        .get(&"tgg.replay-recorder".parse().expect("an id"))
+        .expect("installed");
+    assert_eq!(recorder.manifest.version.to_string(), "0.1.1");
+    assert_eq!(recorder.sets(), ["replays"], "still part of Replays");
+    assert!(
+        !recorder.direct(),
+        "not turned into one installed on its own"
+    );
+    let player = local
+        .get(&"tgg.replay-player".parse().expect("an id"))
+        .expect("installed");
+    assert_eq!(
+        player.manifest.version.to_string(),
+        "0.2.0",
+        "the other mod's update waits"
+    );
+    assert!(player.update.is_some());
+}

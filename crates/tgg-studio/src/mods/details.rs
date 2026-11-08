@@ -475,9 +475,9 @@ fn actions_for(app: &App, p: &Palette) -> El {
                         .color(p.ink),
                 )
                 .children(
-                    m.update
-                        .as_ref()
-                        .map(|version| badge(format!("{version} is out"), Tone::News, p)),
+                    m.update.as_ref().map(|version| {
+                        super::view::update_mod(mods, &id, version, "mods/details", p)
+                    }),
                 )
                 .child(spacer())
                 .child(
