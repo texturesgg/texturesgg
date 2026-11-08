@@ -2,7 +2,7 @@
 //! page's head, and dialogs.
 
 use super::tokens::{Palette, elevation, radius, size, space, text as type_};
-use rune::{El, col, el, row, text};
+use rune::{El, ScrollSpec, col, el, row, text};
 
 /// A plate: the frame a model is shown in, on the color hsd-render clears
 /// to, so a render sits in it seamlessly. Square-cornered; the caller sizes it.
@@ -159,6 +159,8 @@ pub fn dialog<S: 'static>(
         .key(key)
         .w(width)
         .max_h(size::DIALOG_MOST_HEIGHT)
+        .shrink()
+        .min_h(0.0)
         .fill(p.raise)
         .border(size::LINE, p.line_strong)
         .radius(radius::CONTROL)
@@ -177,6 +179,16 @@ pub fn dialog<S: 'static>(
         )
         .child(rule(p));
     if let Some(body) = parts.body {
+        // What's in it scrolls when it's taller than the dialog may be, so
+        // the head and the buttons always show.
+        let body = col()
+            .key(format!("{key}/body"))
+            .shrink()
+            .min_h(0.0)
+            .scroll(ScrollSpec {
+                stick_bottom: false,
+            })
+            .child(body);
         dialog = dialog.child(body).child(rule(p));
     }
     dialog = dialog.child(
@@ -187,12 +199,15 @@ pub fn dialog<S: 'static>(
             .items_center()
             .children(parts.buttons),
     );
-    el().key(format!("{key}/scrim"))
+    // A column, so a dialog taller than the window shrinks to fit inside it.
+    col()
+        .key(format!("{key}/scrim"))
         .absolute(0.0, 0.0)
         .w_full()
         .h_full()
         .fill(p.scrim)
         .center()
+        .py(space::LG)
         .child(dialog)
 }
 
