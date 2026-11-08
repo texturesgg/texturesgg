@@ -46,6 +46,10 @@ pub enum PortCommand {
         /// The installed version to run [default: the one in use]
         #[arg(long)]
         version: Option<String>,
+        /// Run with a profile (.json, or a replay's .slp) for this session:
+        /// its game version and its own mods, fetched as needed.
+        #[arg(long, conflicts_with = "version")]
+        profile: Option<PathBuf>,
         /// Show the game's own output as it runs. Otherwise it goes to
         /// game.log in tgg's data folder, and its end is shown if the game
         /// fails.
@@ -203,7 +207,7 @@ pub fn install(version: &str, debug: bool) -> Result<Installed> {
     Ok(installed)
 }
 
-pub fn run(command: PortCommand) -> Result<()> {
+pub fn run(command: PortCommand, api: &str) -> Result<()> {
     match command {
         PortCommand::Install { version, debug } => {
             let installed = install(&version, debug)?;
@@ -307,9 +311,16 @@ pub fn run(command: PortCommand) -> Result<()> {
         }
         PortCommand::Run {
             version,
+            profile,
             verbose,
             args,
         } => {
+            if let Some(profile) = profile {
+                if !args.is_empty() {
+                    bail!("--profile runs the game without extra arguments");
+                }
+                return crate::profiles::play(api, &profile, None, false, verbose);
+            }
             let installed = resolve(version.as_deref())?;
             check_runtime(&installed)?;
             let iso = crate::config::iso_or_ask()?;
@@ -338,12 +349,12 @@ pub fn run(command: PortCommand) -> Result<()> {
 }
 
 /// The game's output from the last `tgg port run`, in tgg's data folder.
-const GAME_LOG: &str = "game.log";
+pub const GAME_LOG: &str = "game.log";
 /// The lines of it shown when the game fails.
 const TAIL: usize = 20;
 
 /// Show the end of the game's log, and where the rest is.
-fn print_tail(log: &std::path::Path) {
+pub fn print_tail(log: &std::path::Path) {
     let Ok(text) = std::fs::read_to_string(log) else {
         return;
     };

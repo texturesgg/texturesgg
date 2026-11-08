@@ -11,6 +11,7 @@ mod mods;
 mod paths;
 mod player;
 mod ports;
+mod profiles;
 mod publish;
 mod releases;
 mod scaffold;
@@ -50,6 +51,21 @@ enum Command {
     /// Install, pick and run released builds of tgg-melee.
     #[command(subcommand)]
     Port(ports::PortCommand),
+    /// Play a replay (.slp) with exactly the game and mods it was played
+    /// with, fetched for this session; your own mods stay as they are.
+    Replay {
+        file: std::path::PathBuf,
+        /// Don't ask: fetch every mod it needs and play even if some can't
+        /// be had.
+        #[arg(short, long)]
+        yes: bool,
+        /// Show the game's own output as it runs.
+        #[arg(short, long)]
+        verbose: bool,
+    },
+    /// Mod profiles: the exact mods a replay or a profile file needs.
+    #[command(subcommand)]
+    Profile(profiles::ProfileCommand),
     /// The SDK mods build against.
     #[command(subcommand)]
     Sdk(sdks::SdkCommand),
@@ -98,7 +114,11 @@ fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Login { no_browser } => account::login(&cli.api, !no_browser),
         Command::Logout => account::logout(&cli.api),
-        Command::Port(command) => ports::run(command),
+        Command::Port(command) => ports::run(command, &cli.api),
+        Command::Replay { file, yes, verbose } => {
+            profiles::play(&cli.api, &file, Some(&file), yes, verbose)
+        }
+        Command::Profile(command) => profiles::run(command, &cli.api),
         Command::Sdk(command) => sdks::run(command),
         Command::Mod(command) => mods::run(command, &cli.api),
         Command::Config(command) => config::run(command),

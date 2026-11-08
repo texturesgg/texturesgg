@@ -254,7 +254,8 @@ JSON lines on stdout, one object each, told apart by `event`:
 {"event":"error","message":"can't reach textures.gg; what's installed still works"}
 ```
 
-- `plan` comes first. `game.state` is `installed`, `available` (`size` in bytes, or null
+- `plan` comes first; it also has `label`, and `game.current` for an installed game.
+  `game.state` is `installed`, `available` (`size` in bytes, or null
   when tgg hasn't seen that release) or `unavailable`. `fit` is `as-installed` or
   `needs-profile`.
 - `needs-trust` ends the run (exit 0) when a mod needs the player's yes and its publisher
@@ -298,35 +299,58 @@ throughout.
 ```rust
 // Reading: disk only, cheap enough to call per row of a replay list
 pub fn profile_from_slp(path: &Path, mapping: Option<&SlippiMapping>) -> Result<Profile, Error>;
-pub fn profile_from_local(local: &Local) -> Profile;
+pub fn profile_from_local(local: &Local) -> Profile;   // counted mods; no settings yet
 pub fn profile_from_file(path: &Path) -> Result<Profile, Error>;
+pub fn profile_layout(profile: &Profile, ports: &Path) -> Option<String>; // the catalog to use
 
-// Registry: network, cached on disk (below)
+// Registry: network; the cache keeps the last of each for offline use
 pub fn slippi_mapping(net: &dyn Net) -> Result<SlippiMapping, Error>;
+pub fn refresh_mapping(net: &dyn Net, data: &Path) -> Result<SlippiMapping, Error>;
+pub fn refresh_catalog(net: &dyn Net, data: &Path, port: &Port) -> Result<Catalog, Error>;
+pub fn cached_mapping(data: &Path) -> Option<SlippiMapping>;
+pub fn cached_catalog(data: &Path, layout: &str) -> Option<Catalog>;
 
-// Resolving: no network, no writes
+// Resolving: no network, no writes. `ports` is <data>/tgg/ports (the package cache is
+// beside it); `local` is the player's installs, which `fit` compares against.
 pub fn resolve_profile(profile: &Profile, catalog: &Catalog, mapping: &SlippiMapping,
-                       ports: &Path, trust: &Trust) -> ProfilePlan;
+                       ports: &Path, local: &Local, trust: &Trust) -> ProfilePlan;
 pub struct ProfilePlan {
-    pub game: GameNeed,            // version, Installed(PortInstall) | Available{size} | Unavailable
-    pub mods: Vec<ProfileMod>,     // id, version, publisher {name, official}, cached, size, needs_trust
-    pub missing: Vec<Missing>,     // Unknown{id} | NotBuilt{id, version} | Unapproved{id, version} | NoModFor{code}
+    pub game: GameNeed,            // Installed(PortInstall) | Available{version, size: Option<u64>}
+                                   //   | Unavailable{version}; .version()
+    pub mods: Vec<ProfileMod>,     // id, name, version, publisher {name, official}, cached, size,
+                                   //   needs_trust, package, settings, changes_game
+    pub missing: Vec<Missing>,     // Unknown{id} | NotBuilt{id, version} | Unapproved{id, version}
+                                   //   | NoModFor{code, minor}; .is_minor()
     pub key: String,               // hash of the resolved profile; names its folder
     pub fit: Fit,                  // AsInstalled | NeedsProfile
+    pub profile: Profile,          // the resolved profile (exact versions, this platform's sha256)
 }
+impl ProfilePlan { pub fn size(&self) -> u64; pub fn untrusted(&self) -> Vec<&str>; }
 
 // Preparing: network and disk (fetches into the cache, builds the folder; installs the
-// needed port version alongside the others without making it current)
+// needed port version alongside the others without making it current). Refuses with
+// Error::NeedsTrust while a mod's needs_trust is set: clear it on a yes for this session,
+// or remember_trust and resolve again.
 pub fn prepare_profile(net: &dyn Net, plan: &ProfilePlan, data: &Path,
                        progress: OnProgress, cancel: &AtomicBool) -> Result<Prepared, Error>;
+pub struct Prepared { key, folder, settings, port: PortInstall, profile, data }
+impl Prepared { pub fn env(&self) -> Vec<(String, OsString)>; }
 
 // Launching: runs that port version with the profile's folder for one session
 pub fn launch_profile(port: &PortInstall, iso: &Path, prepared: &Prepared,
                       replay: Option<&Path>, log: Option<&Path>) -> Result<Running, Error>;
+pub fn finish_profile(data: &Path) -> Result<bool, Error>;   // clears ended games; still running?
+pub fn profile_games(data: &Path) -> Vec<RunningProfile>;   // the live running.json entries
 
 // Trust: answers remembered per publisher, shared by every front end
-pub fn trust(data: &Path) -> Result<Trust, Error>;
+pub fn trust(data: &Path) -> Result<Trust, Error>;          // .answer(name), .allows(&Publisher)
 pub fn remember_trust(data: &Path, publisher: &str, allow: bool) -> Result<(), Error>;
+
+// The package cache
+pub fn apply_cached(net, plan, mods, packages: Option<&Path>, progress, cancel); // apply uses
+                                                                     // <default data>/tgg/packages
+pub fn prune_packages(data: &Path, mods: &Path, older_than: Duration) -> Result<Vec<PathBuf>, Error>;
+pub fn default_data_dir() -> PathBuf;                          // the `data` above
 ```
 
 `fit` is `AsInstalled` when the player's current port and installed mods already satisfy

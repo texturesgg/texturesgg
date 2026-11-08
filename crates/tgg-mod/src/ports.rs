@@ -625,6 +625,25 @@ where
     spawn(port, iso, mods, args, &[], log)
 }
 
+/// [`launch_with_args`] with the variables `env` set for the game too.
+pub fn launch_with_env<I, S>(
+    port: &PortInstall,
+    iso: &Path,
+    mods: &Path,
+    args: I,
+    env: &[(String, std::ffi::OsString)],
+    log: Option<&Path>,
+) -> Result<Running, Error>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    if lock::game_running(mods) {
+        return Err(Error::GameRunning);
+    }
+    spawn(port, iso, mods, args, env, log)
+}
+
 /// Start `port` with `iso`, `args` and the environment `env` beside
 /// `TGG_MODS_DIR`, and write its pid file into `mods`.
 pub(crate) fn spawn<I, S>(
