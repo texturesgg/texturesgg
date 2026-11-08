@@ -930,3 +930,46 @@ fn a_mods_details_slide_in_and_install_it() {
     let width = rt.presented("mods/details").map_or(0.0, |(rect, _)| rect[2]);
     assert!(width < 0.5, "closed, the pane narrows to nothing, not {width} pt");
 }
+
+#[test]
+fn a_newer_tgg_melee_says_which_mods_wait_and_the_older_one_stays_to_go_back_to() {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let (mut rt, _disc, _data) = with_port(net.clone());
+    install_set(&mut rt, "replays");
+    net.publish_port("0.6.0");
+    tap(&mut rt, "mods/refresh");
+    jobs_until(&mut rt, |app| app.mods.registry == crate::mods::Registry::Answered);
+    assert!(rt.find("mods/update-port").is_some(), "0.6.0 is offered");
+    // The fake's mods fit every game; say the newer one has only the player's recorder built.
+    rt.update(|app, _| app.mods.next_built = Some(vec!["tgg.replay-recorder".parse().expect("an id")]));
+    rt.frame(FRAME);
+    assert!(rt.find("mods/update-waits").is_some(), "the mods that would wait are named before updating");
+    assert_eq!(rt.state.mods.unbuilt_for_update().len(), 2);
+    tap(&mut rt, "mods/update-port");
+    jobs_until(&mut rt, |app| app.mods.port().is_some_and(|port| port.version == "0.6.0") && app.mods.registry == crate::mods::Registry::Answered);
+    assert_eq!(rt.state.mods.ports.len(), 2, "the older version stays");
+    assert_eq!(rt.state.mods.fallback, None, "every mod here fits 0.6.0");
+    // Say some didn't: the way back is one press.
+    rt.update(|app, _| app.mods.fallback = Some(crate::mods::Fallback { version: "0.5.0".into(), unfit: 2 }));
+    rt.frame(FRAME);
+    tap(&mut rt, "mods/use-fallback");
+    assert_eq!(rt.state.mods.port().map(|port| port.version.as_str()), Some("0.5.0"));
+    assert_eq!(rt.state.mods.fallback, None);
+}
+
+#[test]
+fn the_details_pane_is_the_window_tall_and_takes_the_window_controls() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    tap(&mut rt, "mods/tab/all");
+    let close = rt.presented("window/close").expect("the window's close shows").0;
+    tap_shown(&mut rt, "mods/catalog/tgg.netplay");
+    settle(&mut rt);
+    let (pane, _) = rt.presented("mods/details").expect("the pane shows");
+    assert!(pane[1] < 0.5, "it starts at the window's top, not {} pt down", pane[1]);
+    let moved = rt.presented("window/close").expect("the window's close still shows").0;
+    assert!((moved[0] + moved[2] - (close[0] + close[2])).abs() < 0.5 && (moved[1] - close[1]).abs() < 0.5,
+        "and it stays where it was: {close:?} then {moved:?}");
+    tap(&mut rt, "mods/details/close");
+    settle(&mut rt);
+    assert_eq!(rt.state.mods.selected, None);
+}

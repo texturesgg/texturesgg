@@ -6,18 +6,34 @@
 use super::{actions, size_text};
 use crate::state::App;
 use crate::ui::tokens::{Palette, motion, size, space, text};
-use crate::ui::{ButtonKind, Tone, badge, button, close_glyph, icon_button, rule, spacer, switch, text_action};
+use crate::ui::{ButtonKind, Tone, badge, button, rule, spacer, switch, text_action};
 use rune::{El, ScrollSpec, col, el, row, text as label};
 use tgg_mod::Manifest;
 
-/// The pane beside the lists: as wide as the editor's pane column while a
-/// mod is chosen, narrowing to nothing on the default spring otherwise.
+/// Whether the pane shows: on Mods, while a mod is chosen.
+pub fn shown(app: &App) -> bool {
+    app.nav.place == crate::nav::Place::Mods && app.mods.selected.is_some()
+}
+
+/// The pane at the window's right, the whole window tall as the sidebar is
+/// at its left: its own head (which moves the window and, while it shows,
+/// holds the window's controls) over the mod's details. As wide as the
+/// editor's pane column while it shows, narrowing to nothing on the default
+/// spring otherwise; its content is pinned to the window's edge, so it
+/// slides in rather than unfolding.
 pub fn view(app: &App, p: &Palette) -> El {
-    let shown = app.mods.selected.is_some();
-    row().key("mods/details").w(if shown { size::PANE_COLUMN + size::LINE } else { 0.0 }).h_full()
+    let shown = shown(app);
+    let head = row().h(size::TITLE_ROW).pl(space::MD).pr(space::XS).gap(space::XS).items_center().window_drag()
+        .child(label("Details").font(text::LABEL).color(p.faint))
+        .child(spacer())
+        .child(text_action("Hide", false, p).key("mods/details/close").on_press(actions::close_details))
+        .children(shown.then(|| crate::shell::window_controls(p)).flatten());
+    row().key("mods/details").w(if shown { size::PANE_COLUMN + size::LINE } else { 0.0 }).h_full().justify_end()
         .motion(motion::DEFAULT).clip_rounded(0.0).fill(p.sunk)
         .child(el().w(size::LINE).h_full().fill(p.line))
-        .child(col().w(size::PANE_COLUMN).h_full().scroll(ScrollSpec { stick_bottom: false }).children(body(app, p)))
+        .child(col().w(size::PANE_COLUMN).h_full()
+            .child(head)
+            .child(col().grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).children(body(app, p))))
 }
 
 /// What the pane says about the chosen mod.
@@ -27,11 +43,9 @@ fn body(app: &App, p: &Palette) -> Option<El> {
     let installed = mods.local.get(id);
     let offered = mods.newest(id);
     let manifest: &Manifest = installed.map(|m| &m.manifest).or(offered.map(|entry| &entry.manifest))?;
-    let head = row().gap(space::XS).items_start()
-        .child(col().gap(space::TIGHT).grow(1.0).min_w(0.0)
-            .child(label(manifest.name.clone()).font(text::H3).color(p.ink).wrap())
-            .child(label(manifest.id.to_string()).font(text::MONO_SMALL).color(p.faint).truncate()))
-        .child(icon_button(close_glyph(p), "Close", p).key("mods/details/close").on_press(actions::close_details));
+    let head = col().gap(space::TIGHT)
+        .child(label(manifest.name.clone()).font(text::H3).color(p.ink).wrap())
+        .child(label(manifest.id.to_string()).font(text::MONO_SMALL).color(p.faint).truncate());
     let mut facts = vec![fact("Version", manifest.version.to_string(), p)];
     if let Some(entry) = offered {
         if installed.is_some_and(|m| m.manifest.version < entry.manifest.version) {
@@ -51,7 +65,7 @@ fn body(app: &App, p: &Palette) -> Option<El> {
     if let Some(license) = &manifest.license {
         facts.push(fact("License", license.clone(), p));
     }
-    Some(col().key("mods/details/body").px(space::MD).py(space::MD).gap(space::MD)
+    Some(col().key("mods/details/body").px(space::MD).pt(space::XS).pb(space::MD).gap(space::MD)
         .child(head)
         .children(manifest.description.clone().map(|line| label(line).font(text::BODY).color(p.muted).wrap()))
         .child(actions_for(app, p))

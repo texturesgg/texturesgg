@@ -35,9 +35,7 @@ pub fn view(app: &App, p: &Palette) -> El {
         .children(mods.problem.as_ref().map(|problem| label(problem.clone()).key("mods/problem").font(text::BODY).color(p.danger)))
         .child(game(app, p))
         .child(col().gap(space::MD).child(col().child(tabs(mods, p)).child(rule(p))).child(list));
-    row().grow(1.0).min_h(0.0).w_full()
-        .child(col().key("mods/scroll").grow(1.0).min_w(0.0).h_full().scroll(ScrollSpec { stick_bottom: false }).child(page))
-        .child(super::details::view(app, p))
+    col().key("mods/scroll").grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(page)
 }
 
 fn tabs(mods: &Mods, p: &Palette) -> El {
@@ -89,6 +87,8 @@ fn game(app: &App, p: &Palette) -> El {
                     .child(label(port.version.clone()).font(text::MONO_TEXT).color(p.muted))
                     .child(spacer())
                     .children(update))
+                .children(waiting(mods, p))
+                .children(fallback(mods, &port.version, p))
                 .child(disc(app, p));
         }
     }
@@ -96,6 +96,47 @@ fn game(app: &App, p: &Palette) -> El {
         body = body.child(working(work, p));
     }
     body
+}
+
+/// Before updating: what the newer tgg-melee has no build of yet. Nothing
+/// at all, or the installed mods that would wait for one.
+fn waiting(mods: &Mods, p: &Palette) -> Option<El> {
+    let release = mods.port_update().filter(|_| mods.work.is_none())?;
+    let built = mods.next_built.as_ref()?;
+    let words = if built.is_empty() {
+        format!("No mods are built for {} yet. Update later to keep playing with mods.", release.version)
+    } else {
+        let names = mods.unbuilt_for_update();
+        let first = names.first()?;
+        let who = match names.len() {
+            1 => first.clone(),
+            n => format!("{first} and {} others", n - 1),
+        };
+        let verb = if names.len() == 1 { "isn't" } else { "aren't" };
+        format!("{who} {verb} built for {} yet. Update now and they wait; or update later.", release.version)
+    };
+    Some(label(words).key("mods/update-waits").font(text::SMALL).color(p.muted).wrap())
+}
+
+/// After an update: what isn't built for the version in use (installed
+/// mods, or nothing at all), and going back to an older one installed that
+/// has them.
+fn fallback(mods: &Mods, current: &str, p: &Palette) -> Option<El> {
+    let (words, version) = match (&mods.fallback, &mods.older_with_mods) {
+        (Some(fallback), _) => {
+            let count = if fallback.unfit == 1 { "1 of your mods isn't".to_owned() } else { format!("{} of your mods aren't", fallback.unfit) };
+            (format!("{count} built for {current} yet."), fallback.version.clone())
+        }
+        (None, Some((version, count))) => {
+            (format!("No mods are built for {current} yet; {version} has {}.", mod_count(*count)), version.clone())
+        }
+        (None, None) => return None,
+    };
+    Some(row().key("mods/fallback").gap(space::XS).items_center()
+        .child(label(words).font(text::SMALL).color(p.danger).wrap().shrink().min_w(0.0))
+        .child(spacer())
+        .child(button(&format!("Use {version} for now"), ButtonKind::Secondary, p).key("mods/use-fallback")
+            .on_press(move |app: &mut App| actions::use_port(app, &version))))
 }
 
 /// The disc tgg-melee plays, and choosing another.
@@ -180,6 +221,8 @@ fn set_card(mods: &Mods, set: &Set, p: &Palette) -> El {
         .child(col().gap(space::TIGHT)
             .child(label(mod_count(set.mods.len())).font(text::MONO_SMALL).color(p.faint))
             .child(label(names.join(" · ")).key(format!("mods/set/{}/mods", set.name)).font(text::SMALL).color(p.faint).wrap()))
+        // Cards in a row are as tall as the tallest; the buttons sit at the foot.
+        .child(spacer())
         .child(row().gap(space::XS).items_center().children(main).child(spacer()).children(remove))
 }
 

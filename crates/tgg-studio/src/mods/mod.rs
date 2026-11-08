@@ -58,6 +58,23 @@ pub struct Mods {
     pub search: TextEdit,
     /// The mod whose details show beside the list.
     pub selected: Option<ModId>,
+    /// An older tgg-melee every installed mod is built for, when some
+    /// aren't built for the current one.
+    pub fallback: Option<Fallback>,
+    /// The mods built for the newer tgg-melee on offer, when its layout
+    /// differs from the current one's, as last fetched.
+    pub next_built: Option<Vec<ModId>>,
+    /// When nothing is built for the current tgg-melee: the newest older one
+    /// installed that has mods, and how many.
+    pub older_with_mods: Option<(String, usize)>,
+}
+
+/// An older tgg-melee to go back to: its version, and how many installed
+/// mods aren't built for the current one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Fallback {
+    pub version: String,
+    pub unfit: usize,
 }
 
 /// Which list the page shows under the game.
@@ -88,6 +105,9 @@ impl Default for Mods {
             tab: Tab::default(),
             search: TextEdit::default(),
             selected: None,
+            fallback: None,
+            next_built: None,
+            older_with_mods: None,
         }
     }
 }
@@ -127,6 +147,13 @@ impl Mods {
     /// The sets that list the mod `id`, by title.
     pub fn sets_with(&self, id: &ModId) -> Vec<String> {
         self.sets.iter().filter(|set| set.mods.iter().any(|m| m.id == *id)).map(|set| set.title.clone()).collect()
+    }
+
+    /// The installed mods the newer tgg-melee on offer has no build of yet,
+    /// by name.
+    pub fn unbuilt_for_update(&self) -> Vec<String> {
+        let Some(built) = &self.next_built else { return Vec::new() };
+        self.local.mods.iter().filter(|m| !built.contains(m.id())).map(|m| m.manifest.name.clone()).collect()
     }
 
     /// A mod's name, from what's installed or the catalog, else its id.
@@ -227,6 +254,12 @@ pub enum Done {
         releases: Result<Vec<PortRelease>, Error>,
         sets: Result<Vec<Set>, Error>,
         catalog: Option<Result<Catalog, Error>>,
+        /// What's built for the newer tgg-melee on offer, when its layout
+        /// differs.
+        next: Option<Result<Catalog, Error>>,
+        /// When nothing is built for the current tgg-melee: an older
+        /// installed one that has mods, and how many.
+        older: Option<(String, usize)>,
     },
     PortInstalled(Result<PortInstall, Error>),
     Applied(Result<Applied, Error>),

@@ -32,6 +32,8 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
     row().w_full().h_full().fill(p.bg)
         .child(sidebar(app, &p))
         .child(col().grow(1.0).min_w(0.0).h_full().child(title_row(app, &p)).child(place(app, &p)))
+        // A mod's details, the whole window tall at its right, as the sidebar is at its left.
+        .child(mods::details::view(app, &p))
         .child(toggle)
         // Dialogs, over everything.
         .children(library::review::view(app, &p))
@@ -84,7 +86,10 @@ fn title_row(app: &App, p: &Palette) -> El {
         .children(notice(app, p))
         .child(el().grow(1.0))
         .children(title_actions(app, p));
-    if let Some(controls) = window_controls(p) {
+    // While the details pane shows, the window's controls sit in its head, at the window's edge.
+    if !mods::details::shown(app)
+        && let Some(controls) = window_controls(p)
+    {
         row = row.child(controls);
     }
     row

@@ -1,6 +1,6 @@
 //! What the player does on the Mods page, and what comes back from its jobs.
 
-use super::{Disc, Done, Playing, Registry, Review, Tab, Work};
+use super::{Disc, Done, Fallback, Playing, Registry, Review, Tab, Work};
 use crate::jobs::Done as Job;
 use crate::state::App;
 use rune::{FileDialogOptions, Tx};
@@ -45,6 +45,35 @@ pub fn read_disk(app: &mut App) {
         }
         Err(error) => mods.problem = Some(capitalized(&error.to_string())),
     }
+    mods.fallback = fallback(&app.data.mods, mods);
+}
+
+/// When installed mods aren't built for the current tgg-melee: the newest
+/// older one installed that every one of them is built for.
+fn fallback(folder: &Path, mods: &super::Mods) -> Option<Fallback> {
+    let unfit = |local: &tgg_mod::Local| local.mods.iter().filter(|m| m.fits == Some(false)).count();
+    let now = unfit(&mods.local);
+    if now == 0 {
+        return None;
+    }
+    mods.ports.iter().rev().filter(|port| !port.current).find_map(|older| {
+        let local = tgg_mod::local(folder, Some(&older.port())).ok()?;
+        (unfit(&local) == 0).then(|| Fallback { version: older.version.clone(), unfit: now })
+    })
+}
+
+/// Make the installed tgg-melee `version` the one in use.
+pub fn use_port(app: &mut App, version: &str) {
+    match tgg_mod::ports::use_port(&app.data.ports, version) {
+        Ok(port) => app.tell(format!("Using tgg-melee {}.", port.version), false),
+        Err(error) => app.tell(format!("Couldn't switch tgg-melee: {error}."), true),
+    }
+    read_disk(app);
+    // Its layout has a catalog of its own.
+    if app.mods.registry != Registry::Asking {
+        app.mods.registry = Registry::Answered;
+        fetch(app);
+    }
 }
 
 /// Ask textures.gg for tgg-melee's releases, the sets, and what's built for
@@ -56,16 +85,36 @@ pub fn fetch(app: &mut App) {
     app.mods.registry = Registry::Asking;
     let net = app.mods.net.clone();
     let port = app.mods.port().map(tgg_mod::PortInstall::port);
+    let installed = app.mods.ports.clone();
     app.jobs.spawn("textures.gg", move || {
         let releases = tgg_mod::port_releases(&*net);
         // Before tgg-melee is installed, what's built for its newest
         // release, so the player can look before they install.
-        let layout = port.or_else(|| releases.as_ref().ok()?.first().map(|release| release.port(PathBuf::new())));
-        Job::Mods(Box::new(Done::Fetched {
-            releases,
-            sets: tgg_mod::sets(&*net),
-            catalog: layout.map(|port| tgg_mod::catalog(&*net, &port)),
-        }))
+        let layout = port.clone().or_else(|| releases.as_ref().ok()?.first().map(|release| release.port(PathBuf::new())));
+        // A newer tgg-melee with a layout of its own: what's built for it,
+        // to say before updating which mods would have to wait.
+        let next = releases.as_ref().ok()
+            .and_then(|releases| tgg_mod::port_update(&installed, releases))
+            .filter(|release| port.as_ref().is_some_and(|port| port.game_abi != release.game_abi))
+            .map(|release| tgg_mod::catalog(&*net, &release.port(PathBuf::new())));
+        let catalog = layout.map(|port| tgg_mod::catalog(&*net, &port));
+        // Nothing built for the version in use: the newest older one
+        // installed that has mods, to offer going back to.
+        let nothing = match &catalog {
+            Some(Ok(catalog)) => catalog.mods.is_empty(),
+            Some(Err(Error::NoCatalog(_))) => true,
+            _ => false,
+        };
+        let older = (nothing && port.is_some()).then(|| {
+            installed.iter().rev().filter(|older| !older.current).find_map(|older| {
+                let catalog = tgg_mod::catalog(&*net, &older.port()).ok()?;
+                let mut ids: Vec<&tgg_mod::ModId> = catalog.mods.iter().map(|entry| &entry.manifest.id).collect();
+                ids.sort();
+                ids.dedup();
+                (!ids.is_empty()).then(|| (older.version.clone(), ids.len()))
+            })
+        }).flatten();
+        Job::Mods(Box::new(Done::Fetched { releases, sets: tgg_mod::sets(&*net), catalog, next, older }))
     });
 }
 
@@ -96,7 +145,7 @@ pub fn review_mod(app: &mut App, id: &ModId) {
 /// A job finished. True: what shows changed.
 pub fn done(app: &mut App, done: Done) -> bool {
     match done {
-        Done::Fetched { releases, sets, catalog } => fetched(app, releases, sets, catalog),
+        Done::Fetched { releases, sets, catalog, next, older } => fetched(app, releases, sets, catalog, next, older),
         Done::PortInstalled(result) => {
             app.mods.work = None;
             match result {
@@ -144,6 +193,8 @@ fn fetched(
     releases: Result<Vec<tgg_mod::PortRelease>, Error>,
     sets: Result<Vec<tgg_mod::Set>, Error>,
     catalog: Option<Result<tgg_mod::Catalog, Error>>,
+    next: Option<Result<tgg_mod::Catalog, Error>>,
+    older: Option<(String, usize)>,
 ) {
     let mods = &mut app.mods;
     let mut failed = None;
@@ -173,6 +224,14 @@ fn fetched(
         }
         None => mods.catalog = None,
     }
+    // Nothing built for the newer tgg-melee reads as an empty list; failing
+    // to ask, as not knowing.
+    mods.older_with_mods = older;
+    mods.next_built = match next {
+        Some(Ok(catalog)) => Some(catalog.mods.into_iter().map(|entry| entry.manifest.id).collect()),
+        Some(Err(Error::NoCatalog(_))) => Some(Vec::new()),
+        Some(Err(_)) | None => None,
+    };
     mods.registry = if offline {
         Registry::Offline
     } else if let Some(why) = failed {
