@@ -7,7 +7,7 @@
 use super::{Item, Replays, Status, actions};
 use crate::jobs::renders::RenderKey;
 use crate::state::App;
-use crate::ui::tokens::{Palette, radius, space, text};
+use crate::ui::tokens::{Palette, radius, size, space, text};
 use crate::ui::{
     ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, chip, icon_tile, page_head, progress, rule,
     search_field, skeleton, text_action,
@@ -16,8 +16,6 @@ use rune::{El, ScrollSpec, col, row, text as label};
 
 /// The list reads best no wider than this.
 const COLUMN: f32 = 860.0;
-/// A replay's preparing progress, in its row.
-const INLINE_PROGRESS: f32 = 80.0;
 /// Placeholder rows while the replays are first read.
 const PLACEHOLDERS: usize = 6;
 /// A fighter's picture in a row.
@@ -88,6 +86,43 @@ pub fn view(app: &App, p: &Palette) -> El {
         .key("replays/list")
         .child(rule(p))
         .children(body.into_iter().flat_map(|row| [row, rule(p)]));
+    // Wide, the list and the chosen replay's details sit side by side, each
+    // scrolling on its own under the head and filters, which stay.
+    if app.side_by_side() {
+        let lists = row()
+            .gap(space::LG)
+            .grow(1.0)
+            .min_h(0.0)
+            .child(
+                col()
+                    .grow(1.0)
+                    .min_w(0.0)
+                    .max_w(COLUMN)
+                    .gap(space::SM)
+                    .child(filters(replays, p))
+                    .child(
+                        col()
+                            .key("replays/scroll")
+                            .grow(1.0)
+                            .min_h(0.0)
+                            .scroll(ScrollSpec {
+                                stick_bottom: false,
+                            })
+                            .child(col().pb(space::XL).child(list)),
+                    ),
+            )
+            .child(super::details::column(app, p));
+        let page = col()
+            .px(space::LG + 4.0)
+            .pt(space::XS)
+            .pb(space::LG)
+            .gap(space::LG)
+            .grow(1.0)
+            .min_h(0.0)
+            .child(head)
+            .child(lists);
+        return col().grow(1.0).min_h(0.0).child(page);
+    }
     let page = col()
         .px(space::LG + 4.0)
         .pt(space::XS)
@@ -226,7 +261,7 @@ fn replay_row(app: &App, replays: &Replays, item: &Item, p: &Palette) -> El {
             .child(label("Getting its mods…").font(text::SMALL).color(p.muted))
             .child(
                 col()
-                    .w(INLINE_PROGRESS)
+                    .w(size::INLINE_PROGRESS)
                     .child(progress(preparing.fraction(), p)),
             )
             .child(text_action("Stop", false, p).on_press(actions::cancel_preparing))

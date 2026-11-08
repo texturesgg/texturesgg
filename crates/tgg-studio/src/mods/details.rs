@@ -25,7 +25,8 @@ const CHANGELOG_BLOCKS: usize = 4;
 
 /// Whether the pane shows: on Mods, while a mod is chosen.
 pub fn shown(app: &App) -> bool {
-    app.nav.place == crate::nav::Place::Mods && app.mods.selected.is_some()
+    // Side by side, the details are a column of the page instead.
+    app.nav.place == crate::nav::Place::Mods && app.mods.selected.is_some() && !app.side_by_side()
 }
 
 /// The pane at the window's right, the whole window tall as the sidebar is
@@ -513,4 +514,40 @@ fn fact(name: &str, value: String, p: &Palette) -> El {
         .gap(space::TIGHT)
         .child(label(name.to_owned()).font(text::LABEL).color(p.faint))
         .child(label(value).font(text::BODY).color(p.ink).wrap())
+}
+
+/// The details as a column of the page, beside the list (side by side):
+/// the chosen mod's, else a line saying to choose one. It scrolls on its
+/// own, so the list beside it can be long.
+pub fn column(app: &App, p: &Palette) -> El {
+    let body = body(app, p).unwrap_or_else(|| {
+        col()
+            .key("mods/details/empty")
+            .px(space::MD)
+            .py(space::LG)
+            .child(
+                label("Choose a mod to see its details.")
+                    .font(text::BODY)
+                    .color(p.muted)
+                    .wrap(),
+            )
+    });
+    col()
+        .key("mods/details/column")
+        .w(size::DETAILS_COLUMN)
+        .h_full()
+        .min_h(0.0)
+        .fill(p.surface)
+        .border(size::LINE, p.line)
+        .radius(radius::CONTROL)
+        .clip_rounded(radius::CONTROL)
+        .child(
+            col()
+                .grow(1.0)
+                .min_h(0.0)
+                .scroll(ScrollSpec {
+                    stick_bottom: false,
+                })
+                .child(body),
+        )
 }

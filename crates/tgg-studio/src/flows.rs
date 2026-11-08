@@ -1422,6 +1422,7 @@ fn one_mod_installs_with_what_it_needs() {
 #[test]
 fn a_mods_details_slide_in_and_install_it() {
     let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    narrow(&mut rt);
     tap(&mut rt, "mods/tab/all");
     tap_shown(&mut rt, "mods/catalog/tgg.replay-browser");
     settle(&mut rt);
@@ -1510,6 +1511,7 @@ fn a_newer_tgg_melee_says_which_mods_wait_and_the_older_one_stays_to_go_back_to(
 #[test]
 fn the_details_pane_is_the_window_tall_and_takes_the_window_controls() {
     let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    narrow(&mut rt);
     tap(&mut rt, "mods/tab/all");
     let close = rt
         .presented("window/close")
@@ -2300,6 +2302,7 @@ fn a_replays_details_slide_in_with_its_players_and_stats() {
     let replays = tempfile::tempdir().expect("temp");
     let path = tgg_replay_in(replays.path());
     let (mut rt, _disc, _data) = on_replays(replays.path());
+    narrow(&mut rt);
     tap_shown(&mut rt, &format!("replays/{}", path.display()));
     jobs_until(&mut rt, |app| {
         app.replays.stats.get(&path).is_some_and(Option::is_some)
@@ -2345,4 +2348,38 @@ fn replays_filter_by_a_search_and_by_where_they_came_from() {
         rt.state.replays.shown().is_empty(),
         "it came from tgg-melee's folder"
     );
+}
+
+/// Narrow the window below where lists and details sit side by side, so
+/// details slide in over the list.
+fn narrow(rt: &mut Runtime<App>) {
+    rt.set_viewport((960.0, WINDOW.1), 2.0);
+    settle(rt);
+    assert!(
+        !rt.state.side_by_side(),
+        "narrow enough for details to slide in"
+    );
+}
+
+#[test]
+fn wide_a_list_and_its_details_sit_side_by_side() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    assert!(rt.state.side_by_side(), "the test window is wide");
+    tap(&mut rt, "mods/tab/all");
+    settle(&mut rt);
+    assert!(
+        rt.find("mods/details/empty").is_some(),
+        "the details column says to choose a mod"
+    );
+    tap_shown(&mut rt, "mods/catalog/tgg.netplay");
+    settle(&mut rt);
+    assert!(rt.find("mods/details/column").is_some() && rt.find("mods/details/body").is_some());
+    let pane = rt
+        .presented("mods/details")
+        .map_or(0.0, |(rect, _)| rect[2]);
+    assert!(pane < 0.5, "no pane slides in over the list, not {pane} pt");
+    // Collections are cards; they keep the page.
+    tap(&mut rt, "mods/tab/sets");
+    settle(&mut rt);
+    assert!(rt.find("mods/details/column").is_none());
 }

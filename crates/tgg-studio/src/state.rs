@@ -54,6 +54,10 @@ pub struct App {
     pub signin: SignIn,
     /// The player's replays, and playing them with their mods.
     pub replays: Replays,
+    /// How wide the window is, as last laid out. The place is that less the
+    /// sidebar; measured on the window, not the place, because a details
+    /// pane sliding in narrows the place and would keep itself there.
+    pub window_width: f32,
     /// tgg-melee and its mods.
     pub mods: Mods,
     /// Work off the window's thread.
@@ -105,6 +109,7 @@ impl App {
             update: None,
             signin: SignIn::new(persist, credentials),
             replays: Replays::default(),
+            window_width: 0.0,
             jobs: Jobs::default(),
         }
     }
@@ -183,5 +188,19 @@ impl App {
             text: text.into(),
             error,
         });
+    }
+}
+
+impl App {
+    /// Whether the place is wide enough for a list and its details side by
+    /// side; narrower, the details slide in over the list.
+    pub fn side_by_side(&self) -> bool {
+        use crate::ui::tokens::size;
+        let sidebar = if self.nav.sidebar {
+            size::SIDEBAR + size::LINE
+        } else {
+            0.0
+        };
+        self.window_width - sidebar >= size::SIDE_BY_SIDE
     }
 }

@@ -152,6 +152,13 @@ pub mod size {
     pub const CONTROL: f32 = 28.0;
     /// The pane column beside the stage.
     pub const PANE_COLUMN: f32 = 320.0;
+    /// A list's details as a column of the page, beside the list.
+    pub const DETAILS_COLUMN: f32 = 380.0;
+    /// The narrowest a place lays a list and its details side by side;
+    /// narrower, the details slide in over the list.
+    pub const SIDE_BY_SIDE: f32 = 960.0;
+    /// Work's progress shown in a row of a list, in place of its action.
+    pub const INLINE_PROGRESS: f32 = 80.0;
     /// A card's width: a fighter's, a stage's, a skin's. Its plate is 4:5.
     pub const CARD: f32 = 148.0;
     /// A texture's thumbnail in a list.

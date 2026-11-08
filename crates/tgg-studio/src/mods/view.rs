@@ -18,8 +18,6 @@ use tgg_mod::{CatalogEntry, LocalMod, ModId, ModSummary, Set, SetStatus};
 const SET_CARD: f32 = 300.0;
 /// The notices and the lists read best no wider than this.
 const COLUMN: f32 = 720.0;
-/// A one-mod update's progress bar, in its row.
-const INLINE_PROGRESS: f32 = 80.0;
 /// The head's side, where tgg-melee's version and disc are, at its widest.
 const HEAD_SIDE: f32 = 420.0;
 /// Placeholder cards and rows while textures.gg first answers.
@@ -42,6 +40,46 @@ pub fn view(app: &App, p: &Palette) -> El {
         Tab::Installed => installed(mods, p),
     };
     let notices: Vec<El> = notices(app, p);
+    // Wide, a list and its details sit side by side, each scrolling on its
+    // own under the head and tabs, which stay.
+    if app.side_by_side() && mods.tab != Tab::Sets {
+        let lists = row()
+            .gap(space::LG)
+            .grow(1.0)
+            .min_h(0.0)
+            .child(
+                col()
+                    .key("mods/scroll")
+                    .grow(1.0)
+                    .min_w(0.0)
+                    .h_full()
+                    .scroll(ScrollSpec {
+                        stick_bottom: false,
+                    })
+                    .child(col().pb(space::XL).child(list)),
+            )
+            .child(super::details::column(app, p));
+        let page = col()
+            .px(space::LG + 4.0)
+            .pt(space::XS)
+            .pb(space::LG)
+            .gap(space::LG)
+            .grow(1.0)
+            .min_h(0.0)
+            .child(head)
+            .children(
+                (!notices.is_empty()).then(|| col().max_w(COLUMN).gap(space::XS).children(notices)),
+            )
+            .child(
+                col()
+                    .gap(space::MD)
+                    .grow(1.0)
+                    .min_h(0.0)
+                    .child(col().child(tabs(mods, p)).child(rule(p)))
+                    .child(lists),
+            );
+        return col().grow(1.0).min_h(0.0).child(page);
+    }
     let page = col()
         .px(space::LG + 4.0)
         .pt(space::XS)
@@ -847,7 +885,11 @@ pub(super) fn update_mod(
             .gap(space::XS)
             .items_center()
             .child(label("Updating…").font(text::SMALL).color(p.muted))
-            .child(col().w(INLINE_PROGRESS).child(progress(work.fraction(), p)));
+            .child(
+                col()
+                    .w(size::INLINE_PROGRESS)
+                    .child(progress(work.fraction(), p)),
+            );
     }
     let wanted = id.clone();
     row()

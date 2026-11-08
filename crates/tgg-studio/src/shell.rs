@@ -41,6 +41,12 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .w_full()
         .h_full()
         .fill(p.bg)
+        // Its width decides whether lists and details sit side by side.
+        .on_layout(|app: &mut App, rect: [f32; 4]| {
+            if (app.window_width - rect[2]).abs() >= 0.5 {
+                app.window_width = rect[2];
+            }
+        })
         .child(sidebar(app, &p))
         .child(
             col()

@@ -17,7 +17,9 @@ const FIGHTER: f32 = 72.0;
 
 /// Whether the pane shows: on Replays, while a replay is chosen.
 pub fn shown(app: &App) -> bool {
-    app.nav.place == crate::nav::Place::Replays && app.replays.selected.is_some()
+    app.nav.place == crate::nav::Place::Replays
+        && app.replays.selected.is_some()
+        && !app.side_by_side()
 }
 
 /// The pane: its head (moving the window, holding the window's controls
@@ -274,3 +276,39 @@ const STAT: f32 = 56.0;
 
 /// How one stat reads for a player.
 type Stat = Box<dyn Fn(&PlayerStats) -> String>;
+
+/// The details as a column of the page, beside the list (side by side):
+/// the chosen replay's, else a line saying to choose one. It scrolls on
+/// its own.
+pub fn column(app: &App, p: &Palette) -> El {
+    let body = body(app, p).unwrap_or_else(|| {
+        col()
+            .key("replays/details/empty")
+            .px(space::MD)
+            .py(space::LG)
+            .child(
+                label("Choose a replay to see who played, where, and how it went.")
+                    .font(text::BODY)
+                    .color(p.muted)
+                    .wrap(),
+            )
+    });
+    col()
+        .key("replays/details/column")
+        .w(size::DETAILS_COLUMN)
+        .h_full()
+        .min_h(0.0)
+        .fill(p.surface)
+        .border(size::LINE, p.line)
+        .radius(crate::ui::tokens::radius::CONTROL)
+        .clip_rounded(crate::ui::tokens::radius::CONTROL)
+        .child(
+            col()
+                .grow(1.0)
+                .min_h(0.0)
+                .scroll(ScrollSpec {
+                    stick_bottom: false,
+                })
+                .child(body),
+        )
+}
