@@ -113,6 +113,7 @@ pub use registry::{
     mod_details, mods, sets,
 };
 pub use sdk::Sdk;
+pub use slp::{ReplayInfo, ReplayPlayer, replay_info};
 pub use symbols::Symbols;
 pub use trust::{Trust, remember_trust, trust};
 
