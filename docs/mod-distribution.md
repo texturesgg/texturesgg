@@ -96,9 +96,14 @@ in-game browser will read it directly.
   "textures.gg has no mods for tgg-melee X yet".
 - `GET /api/registry/sets`: every set: `{name, title, description, version,
   mods: [{id, range}]}`. 404 reads as no sets.
-- `GET /api/registry/mods?page=&pageSize=`: every mod with an approved
-  release, most installed first, 50 to a page by default (at most 100).
-  Each mod is described by its newest approved release. `port` is the newest
+- `GET /api/registry/mods?page=&pageSize=&sort=`: every mod with an approved
+  release, 50 to a page by default (at most 100), official mods first and
+  then most installed (`sort=official`, the default; `sort=installs` is
+  most installed alone). Each mod is described by its newest approved
+  release. `publisher` is who a store shows as publishing it: the name
+  textures.gg's admins set for the mod (first-party mods say `textures.gg`),
+  or else its author's account name, and `official`, whether the admins
+  vouch for it. `author` is the author's account name. `port` is the newest
   tgg-melee release the registry builds mods for; `targets` are the systems
   that release has builds for on it. `installs` counts package downloads
   (installs and updates).
@@ -112,6 +117,7 @@ in-game browser will read it directly.
         "name": "UCF",
         "description": "Universal controller fix.",
         "author": "texturesgg",
+        "publisher": { "name": "textures.gg", "official": true },
         "icon": { "url": "https://api.textures.gg/api/registry/images/<sha256>.png", "width": 256, "height": 256 },
         "tags": ["competitive", "netplay"],
         "installs": 412,
@@ -214,7 +220,8 @@ pub fn mod_details(net: &dyn Net, id: &ModId) -> Result<ModDetails, Error>;  // 
 pub struct ModPage { port: Option<String>, items: Vec<ModSummary>, page: u32,
                      page_size: u32, total: u64, total_pages: u32 }
 pub struct ModSummary { id: ModId, name: String, description: Option<String>,
-                        author: String, icon: Option<Image>, tags: Vec<String>,
+                        author: String, publisher: Publisher,
+                        icon: Option<Image>, tags: Vec<String>,
                         installs: u64, version: Version, updated_at: String,
                         sets: Vec<String>, targets: Vec<System>, netplay: Option<Netplay> }
 pub struct ModDetails { summary: ModSummary /* flattened */, port: Option<String>,
@@ -222,6 +229,7 @@ pub struct ModDetails { summary: ModSummary /* flattened */, port: Option<String
                         homepage: Option<String>, source: Option<String>,
                         license: Option<String>, releases: Vec<ModRelease>,
                         depends: Vec<SetMod> }
+pub struct Publisher { name: String, official: bool }
 pub struct Image { url: String /* absolute */, width: u32, height: u32 }
 pub struct ModRelease { version: Version, date: String, changelog: Option<String> }
 pub enum System { Linux, Windows, Macos, Other }

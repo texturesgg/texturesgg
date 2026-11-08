@@ -100,7 +100,7 @@ pub fn catalog(net: &dyn Net, port: &Port) -> Result<Catalog, Error> {
 /// How many mods a page of [`mods`] holds.
 pub const PAGE_SIZE: u32 = 50;
 
-/// One page of the registry's mods, most installed first.
+/// One page of the registry's mods: official ones first, then most installed.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModPage {
@@ -125,8 +125,11 @@ pub struct ModSummary {
     pub name: String,
     /// One line or so, from the manifest.
     pub description: Option<String>,
-    /// The name of the textures.gg account that publishes it.
+    /// The name of the textures.gg account it belongs to. Stores show
+    /// [`ModSummary::publisher`].
     pub author: String,
+    /// Who publishes it, as a store shows them.
+    pub publisher: Publisher,
     pub icon: Option<Image>,
     /// From [`crate::manifest::TAGS`] when this tgg was built; the registry
     /// may know newer ones.
@@ -143,6 +146,15 @@ pub struct ModSummary {
     pub targets: Vec<System>,
     /// What that release counts as for netplay; None before it has a build.
     pub netplay: Option<Netplay>,
+}
+
+/// Who publishes a mod: the name textures.gg's admins gave it (first-party
+/// mods say "textures.gg"), or else its author's account name; and whether
+/// the admins vouch for it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Publisher {
+    pub name: String,
+    pub official: bool,
 }
 
 /// A mod's page in a store: its [`ModSummary`] and the rest.
