@@ -139,7 +139,10 @@ pub fn polled(app: &mut App, result: Result<Poll, Error>, tx: &mut Tx) {
             tx.wake_after(login.interval);
         }
         Ok(Poll::Done(account)) => {
-            app.tell(format!("Signed in as {}.", account.handle), false);
+            app.tell(
+                format!("Signed in as {}.", super::shown_name(&account)),
+                false,
+            );
             app.signin.who = Some(SignedIn {
                 account,
                 verified: true,

@@ -17,9 +17,9 @@ pub fn foot(app: &App, p: &Palette) -> El {
     let who = app.signin.who.as_ref();
     let name = who.map_or_else(
         || "Sign in".to_owned(),
-        |signed| signed.account.handle.clone(),
+        |signed| super::shown_name(&signed.account),
     );
-    let mark = who.map(|signed| avatar(&signed.account.handle, p));
+    let mark = who.map(|signed| avatar(&super::shown_name(&signed.account), p));
     let account = row()
         .key("sidebar/account")
         .grow(1.0)
@@ -139,7 +139,7 @@ pub fn account(app: &App, p: &Palette) -> Option<El> {
         "Signed in to textures.gg. The site couldn't be reached to check just now.".to_owned()
     };
     let parts = Dialog {
-        title: who.account.handle.clone(),
+        title: super::shown_name(&who.account),
         line,
         body: None,
         buttons: vec![

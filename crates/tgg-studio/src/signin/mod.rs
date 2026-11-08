@@ -93,3 +93,12 @@ pub enum Done {
     /// Signed out.
     SignedOut(Result<(), Error>),
 }
+
+/// The name an account goes by here: its display name, else its handle.
+pub fn shown_name(account: &tgg_account::Account) -> String {
+    account
+        .display_name
+        .clone()
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| account.handle.clone())
+}
