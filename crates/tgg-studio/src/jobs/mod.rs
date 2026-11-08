@@ -29,12 +29,15 @@ pub struct Jobs {
     waker: Option<Waker>,
     done: mpsc::Sender<Done>,
     results: mpsc::Receiver<Done>,
+    /// Run spawned work on the window's thread, to its end, before the
+    /// next frame: for recordings, whose clock runs ahead of real time.
+    pub inline: bool,
 }
 
 impl Default for Jobs {
     fn default() -> Self {
         let (done, results) = mpsc::channel();
-        Self { waker: None, done, results }
+        Self { waker: None, done, results, inline: false }
     }
 }
 
@@ -75,6 +78,10 @@ impl Jobs {
 
     /// Run `work` on a thread named `name`, and send what it returns back.
     pub fn spawn(&self, name: &str, work: impl FnOnce() -> Done + Send + 'static) {
+        if self.inline {
+            let _ = self.done.send(work());
+            return;
+        }
         let (done, waker) = (self.done.clone(), self.waker.clone());
         std::thread::Builder::new()
             .name(name.into())

@@ -196,6 +196,19 @@ const SCENES: &[Scene] = &[
             cancel: std::sync::Arc::default(),
         });
     }),
+    // The launch video's start: a player new to mods, against the live
+    // textures.gg, its mods and ports in a scratch folder (`--video` with
+    // `demo/script.json` drives the rest).
+    ("demo", |app| {
+        app.jobs.inline = true;
+        let folder = std::env::temp_dir().join("tgg-studio-demo");
+        let _ = std::fs::remove_dir_all(&folder);
+        app.data.mods = folder.join("mods");
+        app.data.ports = folder.join("ports");
+        if let Some(references) = &app.game {
+            app.mods.disc = mods::Disc::Found(references.game().path().to_owned());
+        }
+    }),
     ("no-sidebar", |app| app.nav.sidebar = false),
     ("paper", |app| app.settings.set_appearance(settings::Appearance::Paper)),
 ];
