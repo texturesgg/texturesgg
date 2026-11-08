@@ -4,8 +4,9 @@ The textures.gg desktop app rebuilt on Rune in the Catalog design
 (`mocks/b-language.html`), growing to hold the mod loader and browser. The
 proof of concept that showed hsd-render drawing a fighter on Rune's own
 device (`spikes/editor-next/app`, last at f584823) is retired; the app is
-`crates/tgg-studio`, run with `cargo run -p tgg-studio --release`. This plan is how the real app gets built without losing what
-tgg-editor already does well.
+`crates/tgg-studio`, run with `cargo run -p tgg-studio --release`. This
+plan is how the real app gets built without losing what tgg-editor already
+does well.
 
 ## Goals
 
