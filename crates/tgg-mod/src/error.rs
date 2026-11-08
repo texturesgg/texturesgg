@@ -51,6 +51,9 @@ pub enum Error {
     Registry(String),
     #[error("{0} isn't installed")]
     NotInstalled(ModId),
+    /// The registry lists no such mod: none by that id, or none approved.
+    #[error("textures.gg has no mod {0}")]
+    NoSuchMod(ModId),
     #[error("the set {0} isn't installed")]
     SetNotInstalled(String),
     /// The lock file names a format newer than this tgg reads.

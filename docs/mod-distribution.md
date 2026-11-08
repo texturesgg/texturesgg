@@ -96,7 +96,54 @@ in-game browser will read it directly.
   "textures.gg has no mods for tgg-melee X yet".
 - `GET /api/registry/sets`: every set: `{name, title, description, version,
   mods: [{id, range}]}`. 404 reads as no sets.
-- Package URLs are content-addressed (by SHA-256) and immutable.
+- `GET /api/registry/mods?page=&pageSize=`: every mod with an approved
+  release, most installed first, 50 to a page by default (at most 100).
+  Each mod is described by its newest approved release. `port` is the newest
+  tgg-melee release the registry builds mods for; `targets` are the systems
+  that release has builds for on it. `installs` counts package downloads
+  (installs and updates).
+
+  ```json
+  {
+    "port": "0.1.0",
+    "items": [
+      {
+        "id": "tgg.ucf",
+        "name": "UCF",
+        "description": "Universal controller fix.",
+        "author": "texturesgg",
+        "icon": { "url": "https://api.textures.gg/api/registry/images/<sha256>.png", "width": 256, "height": 256 },
+        "tags": ["competitive", "netplay"],
+        "installs": 412,
+        "version": "0.84.0",
+        "updatedAt": "2026-11-07T18:00:00.000Z",
+        "sets": ["competitive"],
+        "targets": ["linux", "windows", "macos"],
+        "netplay": "code"
+      }
+    ],
+    "page": 1, "pageSize": 50, "total": 1, "totalPages": 1
+  }
+  ```
+
+- `GET /api/registry/mods/<id>`: one mod's page: the summary above, `port`,
+  and `readme` (markdown: the README at the newest release, or null),
+  `screenshots` (images as `icon`), `homepage`, `source` (its public source
+  repository, or null), `license`, `releases` (every approved release,
+  newest first: `{version, date, changelog}`, the changelog being that
+  version's CHANGELOG.md section or null) and `depends` (`[{id, range}]` of
+  the newest release). 404 for a mod it doesn't list.
+- `GET /api/registry/images/<sha256>.png`: an icon or screenshot.
+- Package and image URLs are content-addressed (by SHA-256) and immutable.
+  Lists and catalogs may be a minute old.
+
+A release's listing is read from its source when the release is recorded, so
+review covers it: the README, the CHANGELOG.md section whose heading names the
+version (`## 1.2.0`, `## [1.2.0] - 2026-11-07`), and the manifest's `icon`,
+`screenshots`, `tags` and `homepage`. An icon or screenshot that is missing
+or isn't a PNG fails the release. Images are at most 4096 pixels a side, 512
+KiB for the icon and 4 MiB for a screenshot. The mods list and pages read
+nothing of a port, so they work before one is installed.
 
 Builds: the builder builds each approved release for every active layout,
 which is one per target for each active port version. Adding a port release to
@@ -161,6 +208,24 @@ pub fn launch(port: &PortInstall, iso: &Path, mods: &Path) -> Result<Running, Er
 pub fn sets(net: &dyn Net) -> Result<Vec<Set>, Error>;
 pub fn catalog(net: &dyn Net, port: &Port) -> Result<Catalog, Error>;
 
+// Store listings: what the Mods place and the in-game browser show
+pub fn mods(net: &dyn Net, page: u32) -> Result<ModPage, Error>;      // page from 1, PAGE_SIZE (50) each
+pub fn mod_details(net: &dyn Net, id: &ModId) -> Result<ModDetails, Error>;  // NoSuchMod on a 404
+pub struct ModPage { port: Option<String>, items: Vec<ModSummary>, page: u32,
+                     page_size: u32, total: u64, total_pages: u32 }
+pub struct ModSummary { id: ModId, name: String, description: Option<String>,
+                        author: String, icon: Option<Image>, tags: Vec<String>,
+                        installs: u64, version: Version, updated_at: String,
+                        sets: Vec<String>, targets: Vec<System>, netplay: Option<Netplay> }
+pub struct ModDetails { summary: ModSummary /* flattened */, port: Option<String>,
+                        readme: Option<String>, screenshots: Vec<Image>,
+                        homepage: Option<String>, source: Option<String>,
+                        license: Option<String>, releases: Vec<ModRelease>,
+                        depends: Vec<SetMod> }
+pub struct Image { url: String /* absolute */, width: u32, height: u32 }
+pub struct ModRelease { version: Version, date: String, changelog: Option<String> }
+pub enum System { Linux, Windows, Macos, Other }
+
 // Planning: no network, no writes
 pub fn plan_set(set: &Set, catalog: &Catalog, local: &Local) -> Plan;
 pub fn plan_mods(want: &[(ModId, Range)], catalog: &Catalog, local: &Local) -> Plan;
@@ -202,8 +267,10 @@ mods folder (usually nothing) with no build checks. `Local::empty()` is the
 state of a player with nothing installed.
 
 `FakeNet` comes with the first version of the crate: a catalog for one layout,
-a Competitive and a Replays set, small packages, and a port release, so the
-app's flow tests drive the whole Mods place with no network.
+a Competitive and a Replays set, small packages, store listings of every mod
+(an icon, two tags, a README, changelogs, and installs counted from its own
+package downloads), and a port release, so the app's flow tests drive the
+whole Mods place with no network.
 
 ## Behavior
 

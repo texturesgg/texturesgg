@@ -706,3 +706,77 @@ fn a_registry_with_nothing_yet_says_so() {
         )
     );
 }
+
+#[test]
+fn the_store_lists_every_mod_and_details_one() {
+    let net = FakeNet::new();
+    let page = tgg_mod::mods(&net, 1).expect("mods");
+    assert_eq!(page.port.as_deref(), Some(FakeNet::PORT_VERSION));
+    assert_eq!(page.total, 10);
+    assert_eq!(page.items.len(), 10);
+    let stages = page
+        .items
+        .iter()
+        .find(|summary| summary.id == id("tgg.legal-stages"))
+        .expect("legal stages");
+    assert_eq!(stages.version.to_string(), "0.1.1");
+    assert_eq!(stages.tags, ["competitive", "netplay"]);
+    assert_eq!(stages.sets, ["competitive"]);
+    let icon = stages.icon.as_ref().expect("an icon");
+    assert_eq!((icon.width, icon.height), (64, 64));
+    let png = net.get(&icon.url, 1 << 20).expect("the icon");
+    assert!(png.starts_with(b"\x89PNG"));
+    assert!(tgg_mod::mods(&net, 2).expect("page 2").items.is_empty());
+
+    let details = tgg_mod::mod_details(&net, &id("tgg.direct-connect")).expect("details");
+    assert_eq!(details.summary.name, "Direct connect");
+    assert!(
+        details
+            .readme
+            .expect("a README")
+            .starts_with("# Direct connect")
+    );
+    assert_eq!(details.depends.len(), 1);
+    assert_eq!(details.depends[0].id, id("tgg.netplay"));
+    let versions: Vec<String> = tgg_mod::mod_details(&net, &id("tgg.legal-stages"))
+        .expect("details")
+        .releases
+        .iter()
+        .map(|release| release.version.to_string())
+        .collect();
+    assert_eq!(versions, ["0.1.1", "0.1.0"]);
+    assert!(matches!(
+        tgg_mod::mod_details(&net, &id("me.nothing")),
+        Err(Error::NoSuchMod(_))
+    ));
+}
+
+#[test]
+fn installing_a_mod_counts_toward_its_installs() {
+    let net = FakeNet::new();
+    let player = player();
+    let port = install_port(&net, &player);
+    install_set(&net, &player, &port, "replays");
+    let page = tgg_mod::mods(&net, 1).expect("mods");
+    // Most installed first: the three Replays mods.
+    let top: Vec<(&str, u64)> = page.items[..3]
+        .iter()
+        .map(|summary| (summary.id.as_str(), summary.installs))
+        .collect();
+    assert_eq!(
+        top,
+        [
+            ("tgg.replay-browser", 1),
+            ("tgg.replay-player", 1),
+            ("tgg.replay-recorder", 1)
+        ]
+    );
+    assert_eq!(page.items[3].installs, 0);
+}
+
+#[test]
+fn the_store_reads_offline_as_offline() {
+    let net = FakeNet::new();
+    net.set_offline(true);
+    assert!(matches!(tgg_mod::mods(&net, 1), Err(Error::Offline(_))));
+}
