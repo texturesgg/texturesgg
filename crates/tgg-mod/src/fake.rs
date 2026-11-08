@@ -161,7 +161,8 @@ impl FakeNet {
         net
     }
 
-    /// Publish 0.1.0 of each mod [`slippi_mapping`] maps a code to.
+    /// Publish each mod [`slippi_mapping`] maps a code to: 0.1.0, and
+    /// tgg.ucf at 0.8.0 and 0.84.0.
     pub fn publish_slippi_mods(&self) {
         for code in slippi_mapping().codes {
             if let Some(id) = code.id {
@@ -170,8 +171,15 @@ impl FakeNet {
                     .catalog
                     .iter()
                     .any(|entry| entry.manifest.id == id);
-                if !published {
-                    self.publish_mod(id.as_str(), &code.name, "0.1.0", &[]);
+                if published {
+                    continue;
+                }
+                let versions: &[&str] = match id.as_str() {
+                    "tgg.ucf" => &["0.8.0", "0.84.0"],
+                    _ => &["0.1.0"],
+                };
+                for version in versions {
+                    self.publish_mod(id.as_str(), &code.name, version, &[]);
                 }
             }
         }
@@ -669,9 +677,8 @@ impl Net for FakeNet {
 
 /// The Slippi mapping [`FakeNet`] serves, seeded from the replay harness's
 /// `rules.py`: the gecko codes of Slippi's online rule set that tgg-melee
-/// mods reproduce, UCF (0.84 is built into the port; 0.8 from Slippi 3.9
-/// to 3.16 is `tgg.ucf-legacy`, with the built-in one off) and frozen
-/// Stadium.
+/// mods reproduce, UCF (`tgg.ucf`: 0.8.0 for Slippi 3.9 to 3.16, 0.84 after)
+/// and frozen Stadium.
 pub fn slippi_mapping() -> SlippiMapping {
     let req = |text: &str| semver::VersionReq::parse(text).expect("a requirement");
     let code = |code: &str, name: &str, versions: &str, id: Option<&str>| SlippiCode {
@@ -685,7 +692,6 @@ pub fn slippi_mapping() -> SlippiMapping {
         settings: Default::default(),
         game: Default::default(),
     };
-    let ucf = |on: bool| BTreeMap::from([("tgg.ucf".to_owned(), on)]);
     let mut codes = vec![
         code(
             "0x8016E510",
@@ -730,18 +736,17 @@ pub fn slippi_mapping() -> SlippiMapping {
             Some("tgg.frozen-stadium"),
         ),
     ];
+    // UCF 0.8 (Slippi 3.9 to 3.16) is tgg.ucf 0.8.0, UCF 0.84 the newer
+    // releases.
     for address in ["0x800908F4", "0x800C9A44", "0x800998A4"] {
-        let mut legacy = code(address, "UCF 0.8", ">=3.9", Some("tgg.ucf-legacy"));
+        let mut legacy = code(address, "UCF 0.8", ">=3.9", Some("tgg.ucf"));
         legacy.unless = vec!["0x8006B460".into()];
-        legacy.game = ucf(false);
+        legacy.range = Some("0.8.0".parse().expect("a range"));
         codes.push(legacy);
     }
-    let mut modern = code("0x8006B460", "UCF 0.84", "*", None);
-    modern.game = ucf(true);
+    let mut modern = code("0x8006B460", "UCF 0.84", "*", Some("tgg.ucf"));
+    modern.range = Some(">=0.84".parse().expect("a range"));
     codes.push(modern);
-    let mut off = code(crate::profile::UCF_OFF, "No UCF", "*", None);
-    off.game = ucf(false);
-    codes.push(off);
     // Slippi 3.19's Pokémon Stadium changes: no mod yet, and they matter on
     // Stadium alone.
     for address in ["0x800165AC", "0x801C65C8", "0x801D4760"] {
@@ -767,7 +772,7 @@ pub fn slippi_mapping() -> SlippiMapping {
     })
     .collect();
     // UCF 0.84 (from Slippi 3.16) runs UCF 0.8's addresses too.
-    let ignore = ["0x800908F4", "0x800C9A44", "0x800998A4"]
+    let mut ignore: Vec<SlippiIgnore> = ["0x800908F4", "0x800C9A44", "0x800998A4"]
         .into_iter()
         .map(|address| SlippiIgnore {
             code: address.into(),
@@ -776,6 +781,13 @@ pub fn slippi_mapping() -> SlippiMapping {
             stages: Vec::new(),
         })
         .collect();
+    // No UCF: no tgg.ucf.
+    ignore.push(SlippiIgnore {
+        code: crate::profile::UCF_OFF.into(),
+        name: "No UCF".into(),
+        versions: req("*"),
+        stages: Vec::new(),
+    });
     SlippiMapping {
         format: crate::profile::FORMAT,
         snapshot: Some("fake-slippi-1".into()),

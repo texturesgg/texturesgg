@@ -199,11 +199,14 @@ fn a_profile_plays_as_installed_when_the_installs_match() {
     .expect("mods");
     assert_eq!(resolve(&net, &player, &profile).fit, Fit::AsInstalled);
 
-    // With its built-in UCF off, or a setting the player hasn't saved, it
+    // With a built-in module off, or a setting the player hasn't saved, it
     // needs its own folder.
-    let mut ucf_off = profile.clone();
-    ucf_off.game.settings.insert("tgg.ucf".into(), false);
-    assert_eq!(resolve(&net, &player, &ucf_off).fit, Fit::NeedsProfile);
+    let mut unlocks_off = profile.clone();
+    unlocks_off
+        .game
+        .settings
+        .insert("tgg.unlocks".into(), false);
+    assert_eq!(resolve(&net, &player, &unlocks_off).fit, Fit::NeedsProfile);
     let mut set = profile.clone();
     set.mods[0].settings.insert("starters".into(), json!(5));
     assert_eq!(resolve(&net, &player, &set).fit, Fit::NeedsProfile);
@@ -249,13 +252,12 @@ fn a_slippi_replay_maps_its_codes_through_the_registry() {
     assert_eq!(
         ids,
         [
-            "tgg.ucf-legacy",
+            "tgg.ucf",
             "tgg.neutral-spawns",
             "tgg.frozen-stadium",
             "tgg.replay-player"
         ]
     );
-    assert!(!profile.game.settings["tgg.ucf"]);
     assert_eq!(
         profile.missing,
         [
@@ -282,9 +284,15 @@ fn a_slippi_replay_maps_its_codes_through_the_registry() {
             "tgg.frozen-stadium",
             "tgg.neutral-spawns",
             "tgg.replay-player",
-            "tgg.ucf-legacy"
+            "tgg.ucf"
         ]
     );
+    let ucf = plan
+        .mods
+        .iter()
+        .find(|m| m.id.as_str() == "tgg.ucf")
+        .expect("ucf");
+    assert_eq!(ucf.version, "0.8.0".parse().expect("a version"));
     assert_eq!(plan.missing, profile.missing);
     assert!(matches!(plan.game, GameNeed::Installed(ref p) if p.current));
 
@@ -310,7 +318,8 @@ fn a_tgg_replay_without_a_profile_reads_its_mods() {
     assert_eq!(profile.game.version, "0.1.0-rc.8");
     assert_eq!(profile.game.layout.as_deref(), Some("layout8"));
     assert!(!profile.game.settings["tgg.unlocks"]);
-    assert_eq!(profile.mods[0].id, id("tgg.legal-stages"));
+    let ids: Vec<&str> = profile.mods.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(ids, ["tgg.ucf", "tgg.legal-stages", "tgg.replay-player"]);
 }
 
 #[test]

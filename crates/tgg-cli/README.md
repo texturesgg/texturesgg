@@ -287,7 +287,7 @@ the game when it builds; Ctrl-C ends the session. Ctrl-C or SIGTERM to `tgg` (fr
 `timeout`, say) reaches the game too, here and in `tgg port run`, and a game still running
 five seconds later is killed. `--gdb` runs the game under gdb, which needs its debug
 info (`tgg port install --debug`). The game's own switches pass through the environment: `TGG_SKIP_INTRO=1`, `TGG_INPUT_SCRIPT`, `TGG_SYNCTEST=1` (the rollback
-check), `TGG_UCF=0`, `TGG_UNLOCK_ALL=0`. A dev build never matches a registry build, so
+check), `TGG_UNLOCK_ALL=0`. A dev build never matches a registry build, so
 it never matches a netplay peer's.
 
 ## License
