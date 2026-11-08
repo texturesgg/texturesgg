@@ -3638,6 +3638,8 @@ dependencies = [
  "image",
  "melee-dat",
  "rune",
+ "serde",
+ "serde_json",
  "sha2",
  "tempfile",
  "tgg-app",

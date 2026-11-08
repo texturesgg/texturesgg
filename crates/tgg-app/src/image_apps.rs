@@ -123,10 +123,9 @@ fn without_field_codes(exec: &str) -> String {
             out.push(character);
             continue;
         }
-        match characters.next() {
-            Some('%') => out.push('%'),
-            // A field code: dropped.
-            Some(_) | None => {}
+        // `%%` is a percent sign; any other `%` and its letter, a field code, go.
+        if characters.next() == Some('%') {
+            out.push('%');
         }
     }
     out.split_whitespace().collect::<Vec<_>>().join(" ")
