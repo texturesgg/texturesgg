@@ -136,7 +136,8 @@ pub enum ModCommand {
     /// The sets of mods on textures.gg.
     Sets,
     /// Install mods from textures.gg (ID, or ID@RANGE such as
-    /// tgg.netplay@^0.2), a set of them (--set), or package zips.
+    /// tgg.netplay@^0.2), a set of them (--set), or package zips. With
+    /// nothing named, pick a set.
     Install {
         /// A set from tgg mod sets, such as competitive.
         #[arg(long, conflicts_with = "mods")]
@@ -146,7 +147,7 @@ pub enum ModCommand {
         yes: bool,
         #[command(flatten)]
         port: PortArg,
-        #[arg(required_unless_present = "set", value_name = "ID[@RANGE]|ZIP", value_parser = word_arg)]
+        #[arg(value_name = "ID[@RANGE]|ZIP", value_parser = word_arg)]
         mods: Vec<String>,
     },
     /// Update the sets and mods installed from textures.gg, and say when
@@ -159,16 +160,17 @@ pub enum ModCommand {
         #[arg(short, long)]
         yes: bool,
     },
-    /// Turn installed mods on.
+    /// Turn installed mods on; with none named, pick them.
     #[command(visible_alias = "enable")]
     On {
-        #[arg(required = true, value_parser = id_arg)]
+        #[arg(value_parser = id_arg)]
         ids: Vec<ModId>,
     },
-    /// Turn installed mods off; the game skips them.
+    /// Turn installed mods off (the game skips them); with none named, pick
+    /// them.
     #[command(visible_alias = "disable")]
     Off {
-        #[arg(required = true, value_parser = id_arg)]
+        #[arg(value_parser = id_arg)]
         ids: Vec<ModId>,
     },
     /// Remove installed mods, or a set and the mods only it installed.
@@ -331,14 +333,23 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
                 return install(&ModsDir::game(), port.open()?.as_ref(), &packages);
             }
             with_player(api, port.game()?, yes, |player| {
+                if set.is_none() && mods.is_empty() {
+                    if !crate::ui::interactive() {
+                        bail!("name mods, or a set with --set; tgg mod sets lists them");
+                    }
+                    return match player.pick_set()? {
+                        Some(set) => player.install(Some(&set), &[]),
+                        None => Ok(()),
+                    };
+                }
                 player.install(set.as_deref(), &mods)
             })
         }
         ModCommand::Update { set, yes } => with_player(api, PortArg::default().game()?, yes, |p| {
             p.update(set.as_deref())
         }),
-        ModCommand::On { ids } => with_player(api, None, true, |p| p.set_enabled(&ids, true)),
-        ModCommand::Off { ids } => with_player(api, None, true, |p| p.set_enabled(&ids, false)),
+        ModCommand::On { ids } => toggle(api, ids, true),
+        ModCommand::Off { ids } => toggle(api, ids, false),
         ModCommand::Remove { set, ids } => {
             let port = PortArg::default().game().ok().flatten();
             with_player(api, port, true, |p| p.remove(set.as_deref(), &ids))
@@ -513,6 +524,7 @@ fn write_catalog(output: &Path, packages: &[PathBuf]) -> Result<()> {
         schema: catalog::SCHEMA,
         snapshot: None,
         mods,
+        ids: Vec::new(),
     };
     std::fs::write(output, catalog.to_json()).with_context(|| output.display().to_string())?;
     println!("{}: {} mods", output.display(), catalog.mods.len());
@@ -594,4 +606,23 @@ fn id_arg(text: &str) -> std::result::Result<ModId, String> {
     not_help(text)?;
     text.parse()
         .map_err(|error: tgg_mod::manifest::ManifestError| error.to_string())
+}
+
+/// `tgg mod on|off`: the mods `ids`, or with none, the ones picked from a
+/// checklist in an interactive terminal.
+fn toggle(api: &str, ids: Vec<ModId>, on: bool) -> Result<()> {
+    with_player(api, None, true, |player| {
+        let ids = if ids.is_empty() {
+            if !crate::ui::interactive() {
+                bail!(
+                    "name the mods: tgg mod {} ID...",
+                    if on { "on" } else { "off" }
+                );
+            }
+            player.pick_mods(on)?
+        } else {
+            ids
+        };
+        player.set_enabled(&ids, on)
+    })
 }

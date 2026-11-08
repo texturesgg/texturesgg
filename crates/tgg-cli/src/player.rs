@@ -5,30 +5,31 @@
 
 use anyhow::{Result, anyhow, bail};
 use std::fmt::Display;
-use std::io::{BufRead, IsTerminal, Write};
+use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use tgg_mod::{
-    Action, Catalog, Local, LocalMod, ModId, Net, Plan, Port, Problem, Progress, Range, SetStatus,
-    netplay,
+    Action, Local, LocalMod, ModId, Net, Plan, Port, Problem, Progress, Range, SetStatus, netplay,
 };
 
 /// Where a command's output goes: the terminal, or a buffer in tests.
 pub struct Out {
     buffer: Option<Mutex<String>>,
-    /// Progress overwrites one line.
+    /// Progress is a bar.
     terminal: bool,
     /// The last progress label printed.
     label: Mutex<String>,
+    bar: Mutex<Option<indicatif::ProgressBar>>,
 }
 
 impl Out {
     pub fn stdout() -> Self {
         Self {
             buffer: None,
-            terminal: std::io::stdout().is_terminal(),
+            terminal: crate::ui::interactive(),
             label: Mutex::default(),
+            bar: Mutex::default(),
         }
     }
 
@@ -38,6 +39,7 @@ impl Out {
             buffer: Some(Mutex::default()),
             terminal: false,
             label: Mutex::default(),
+            bar: Mutex::default(),
         }
     }
 
@@ -64,8 +66,7 @@ impl Out {
         }
     }
 
-    /// One progress line: in a terminal it overwrites itself; elsewhere each
-    /// step is printed once.
+    /// Progress: a bar in a terminal; elsewhere each step printed once.
     fn progress(&self, progress: &Progress) {
         let label = format!(
             "[{}/{}] {}",
@@ -74,13 +75,13 @@ impl Out {
             progress.label
         );
         if self.terminal && self.buffer.is_none() {
-            let percent = progress
-                .total
-                .filter(|total| *total > 0)
-                .map(|total| format!(" {}%", progress.bytes * 100 / total))
-                .unwrap_or_default();
-            print!("\r\x1b[2K{label}{percent}");
-            let _ = std::io::stdout().flush();
+            let mut bar = self.bar.lock().expect("lock");
+            let bar = bar.get_or_insert_with(|| {
+                crate::ui::bar("", 0).unwrap_or_else(indicatif::ProgressBar::hidden)
+            });
+            bar.set_length(progress.total.unwrap_or(0));
+            bar.set_position(progress.bytes);
+            bar.set_message(label);
             return;
         }
         let mut last = self.label.lock().expect("lock");
@@ -90,11 +91,10 @@ impl Out {
         }
     }
 
-    /// End the overwriting progress line.
+    /// Clear the progress bar.
     fn progress_done(&self) {
-        if self.terminal && self.buffer.is_none() {
-            print!("\r\x1b[2K");
-            let _ = std::io::stdout().flush();
+        if let Some(bar) = self.bar.lock().expect("lock").take() {
+            bar.finish_and_clear();
         }
     }
 }
@@ -172,27 +172,24 @@ impl Player<'_> {
             }
             None => tgg_mod::plan_mods(&want, &catalog, &local),
         };
-        self.carry_out(&plan, &catalog, "Install")
+        self.carry_out(&plan, "Install")
     }
 
     /// Update every set and mod tgg installed, or the set `set`.
     pub fn update(&self, set: Option<&str>) -> Result<()> {
         let port = self.port()?;
-        let mut local = self.local()?;
-        if let Some(name) = set {
-            if local.set(name).is_none() {
-                return Err(tgg_mod::Error::SetNotInstalled(name.to_owned()).into());
-            }
-            // Plan the one set: the others, and mods installed on their own,
-            // out of the picture.
-            local.lock.sets.retain(|set| set.name == name);
-            for entry in local.lock.mods.values_mut() {
-                entry.direct = false;
-            }
+        let local = self.local()?;
+        if let Some(name) = set
+            && local.set(name).is_none()
+        {
+            return Err(tgg_mod::Error::SetNotInstalled(name.to_owned()).into());
         }
         let sets = tgg_mod::sets(self.net)?;
         let catalog = tgg_mod::catalog(self.net, port)?;
-        let plan = tgg_mod::plan_updates(&sets, &catalog, &local);
+        let plan = match set {
+            Some(name) => tgg_mod::plan_set_update(name, &sets, &catalog, &local)?,
+            None => tgg_mod::plan_updates(&sets, &catalog, &local),
+        };
         for planned in &plan.sets {
             if let Some(have) = local.set(&planned.name)
                 && have.set.version < planned.version
@@ -203,7 +200,7 @@ impl Player<'_> {
                 ));
             }
         }
-        self.carry_out(&plan, &catalog, "Update")?;
+        self.carry_out(&plan, "Update")?;
         if set.is_none() {
             self.port_update();
         }
@@ -222,19 +219,17 @@ impl Player<'_> {
             && let Some(newer) = tgg_mod::port_update(&installed, &releases)
         {
             self.out.line(format_args!(
-                "tgg-melee {} is out: tgg port install, then tgg port use {}",
-                newer.version, newer.version
+                "tgg-melee {} is out: {}, then {}",
+                crate::ui::ver(&newer.version),
+                crate::ui::cmd("tgg port install"),
+                crate::ui::cmd(format!("tgg port use {}", newer.version))
             ));
         }
     }
 
     /// Show `plan`, ask, and apply it.
-    fn carry_out(&self, plan: &Plan, catalog: &Catalog, verb: &str) -> Result<()> {
-        let problems: Vec<String> = plan
-            .problems()
-            .iter()
-            .map(|problem| self.problem(problem, catalog))
-            .collect();
+    fn carry_out(&self, plan: &Plan, verb: &str) -> Result<()> {
+        let problems: Vec<String> = plan.problems().iter().map(Problem::to_string).collect();
         let rows: Vec<(&str, String, String, &str)> = plan
             .steps
             .iter()
@@ -264,8 +259,16 @@ impl Player<'_> {
         let ids = rows.iter().map(|row| row.1.len()).max().unwrap_or(0);
         let versions = rows.iter().map(|row| row.2.len()).max().unwrap_or(0);
         for (action, id, version, name) in &rows {
+            let padded = format!("{action:7}");
+            let action = if *action == "install" {
+                crate::ui::green(padded)
+            } else {
+                crate::ui::yellow(padded)
+            };
+            let version = crate::ui::ver(format!("{version:versions$}"));
             self.out.line(format_args!(
-                "  {action:7} {id:ids$} {version:versions$}  {name}"
+                "  {action} {id:ids$} {version}  {}",
+                crate::ui::dim(name)
             ));
         }
         if keeps > 0 {
@@ -319,18 +322,6 @@ impl Player<'_> {
         Ok(())
     }
 
-    fn problem(&self, problem: &Problem, catalog: &Catalog) -> String {
-        match problem {
-            Problem::Unavailable { id, .. }
-                if !catalog.mods.iter().any(|entry| entry.manifest.id == *id) =>
-            {
-                let version = self.port.as_ref().map_or("", |port| port.version.as_str());
-                format!("textures.gg has no {id} for tgg-melee {version}")
-            }
-            problem => problem.to_string(),
-        }
-    }
-
     /// The installed mods and sets.
     pub fn list(&self, json: bool) -> Result<()> {
         let local = self.local()?;
@@ -355,8 +346,10 @@ impl Player<'_> {
             return Ok(());
         }
         if local.mods.is_empty() && local.sets.is_empty() {
-            self.out
-                .line(format_args!("No mods in {}", self.mods.display()));
+            self.out.line(format_args!(
+                "No mods in {}",
+                crate::ui::path(self.mods.display())
+            ));
             self.out.line("tgg mod sets shows the sets on textures.gg.");
             return Ok(());
         }
@@ -453,7 +446,10 @@ impl Player<'_> {
                     .line(format_args!("{:width$}  {}", "", set.description));
             }
         }
-        self.out.line("tgg mod install --set NAME installs one.");
+        self.out.line(format_args!(
+            "{} installs one.",
+            crate::ui::cmd("tgg mod install --set NAME")
+        ));
         Ok(())
     }
 
@@ -488,14 +484,60 @@ impl Player<'_> {
                 for name in m.sets() {
                     if let Some(set) = before.set(name) {
                         self.out.line(format_args!(
-                            "The set {} is incomplete without it; tgg mod install --set {} puts it back",
-                            set.set.title, set.set.name
+                            "The set {} is incomplete without it; {} puts it back",
+                            set.set.title,
+                            crate::ui::cmd(format!("tgg mod install --set {}", set.set.name))
                         ));
                     }
                 }
             }
         }
         Ok(())
+    }
+
+    /// Pick a set from the registry's, in an interactive terminal; `None`
+    /// when the player backs out.
+    pub fn pick_set(&self) -> Result<Option<String>> {
+        let sets = tgg_mod::sets(self.net)?;
+        if sets.is_empty() {
+            bail!("textures.gg has no sets yet");
+        }
+        let items = sets
+            .iter()
+            .map(|set| {
+                let mods = plural(set.mods.len(), "mod", "mods");
+                let hint = if set.description.is_empty() {
+                    mods
+                } else {
+                    format!("{} · {mods}", set.description)
+                };
+                (set.name.clone(), set.title.clone(), hint)
+            })
+            .collect();
+        crate::ui::pick("Install which set?", items, None)
+    }
+
+    /// Pick installed mods to turn on (those off) or off (those on), in an
+    /// interactive terminal.
+    pub fn pick_mods(&self, on: bool) -> Result<Vec<ModId>> {
+        let local = self.local()?;
+        let items: Vec<(ModId, String, String)> = local
+            .mods
+            .iter()
+            .filter(|m| m.enabled != on)
+            .map(|m| {
+                let label = format!("{} {}", m.manifest.name, crate::ui::dim(m.id()));
+                (m.id().clone(), label, m.sets().join(", "))
+            })
+            .collect();
+        if items.is_empty() {
+            let state = if on { "on" } else { "off" };
+            self.out
+                .line(format_args!("Every installed mod is {state}."));
+            return Ok(Vec::new());
+        }
+        let verb = if on { "Turn on" } else { "Turn off" };
+        crate::ui::pick_many(format!("{verb} which mods?"), items)
     }
 
     /// Turn the mods `ids` on or off.
@@ -509,8 +551,12 @@ impl Player<'_> {
     }
 }
 
-/// Ask `question` with a yes default; no when stdin ends.
+/// Ask `question` with a yes default: a prompt in an interactive terminal,
+/// else a line read from stdin (no when it ends).
 fn confirm(question: &str) -> Result<bool> {
+    if crate::ui::interactive() {
+        return crate::ui::confirm(question);
+    }
     print!("{question} [Y/n] ");
     std::io::stdout().flush()?;
     let mut answer = String::new();
@@ -536,6 +582,7 @@ mod tests {
 
     /// A player with the fake registry's port installed and no mods.
     fn setup() -> Setup {
+        console::set_colors_enabled(false);
         let net = FakeNet::new();
         let root = tempfile::tempdir().expect("temp dir");
         let release = tgg_mod::port_releases(&net).expect("releases")[0].clone();
@@ -621,11 +668,9 @@ mod tests {
             .expect("install");
         let out = player.out.take();
         assert!(out.contains("install tgg.legal-stages   0.1.0"), "{out}");
-        // Its dependency isn't planned, so the plan says so.
-        assert!(
-            out.contains("! tgg.direct-connect needs tgg.netplay"),
-            "{out}"
-        );
+        // Its dependency comes along.
+        assert!(out.contains("install tgg.netplay        0.2.0"), "{out}");
+        assert!(!out.contains('!'), "{out}");
         let local = setup.local();
         assert!(
             local
@@ -642,7 +687,7 @@ mod tests {
             player
                 .out
                 .take()
-                .contains("! textures.gg has no nobody.nothing for tgg-melee 0.5.0")
+                .contains("! textures.gg has no mod nobody.nothing")
         );
         assert!(parse_spec("tgg.netplay@^x").is_err());
     }
@@ -808,7 +853,7 @@ mod tests {
         ] {
             assert_eq!(
                 error.to_string(),
-                "can't reach textures.gg (no connection); what's installed still works"
+                "can't reach textures.gg; what's installed still works"
             );
         }
     }
