@@ -158,6 +158,20 @@ the `tgg` binary beside the game, and the port gets one call:
 int tgg_restart_with(const char* profile_json, const char* then);
 ```
 
+The game loads its mods once, at start, so a profile that needs a mod the running game
+doesn't have means a restart. It only restarts when it must:
+
+- The running mods are exactly the profile's: no restart.
+- The running game has extra mods the profile doesn't name: no restart when every extra is
+  one that doesn't change the game (the same check synctest makes per mod, recorded with
+  each build), since it can't affect how the replay plays. An extra that changes the game
+  means a restart.
+- The profile needs a mod or game version the running game doesn't have: restart.
+
+A restart boots straight into what was asked (no intro or menus, as quick-start does) with
+the native pack already built, so it reads as a short loading screen, and leaving playback
+restarts back into the player's own mods and the screen they came from.
+
 `tgg_restart_with` runs `tgg profile prepare <profile.json> --machine` beside the game.
 The helper prints its plan (including `needs_trust` entries), progress and finally the
 prepared folder as JSON lines on stdout; the port draws the progress and any trust
@@ -209,9 +223,11 @@ Platform session:
 5. CLI: `tgg replay <file.slp>`, `tgg port run --profile <file>`,
    `tgg profile prepare --machine`.
 
-Studio session: playing a replay from the app (pick a file, show what it needs including
-the game version, the trust prompt, Play) on `profile_from_slp`, `resolve_profile`,
-`prepare_profile` and `launch_profile`.
+Studio session: a replay browser in the app (the player's Slippi and tgg replay folders,
+each row marked "plays as is" or "needs …" from `profile_from_slp` and `resolve_profile`
+against the cached catalog and mapping), and playing a replay from it: what it needs
+including the game version, the trust prompt, then Play through `prepare_profile` and
+`launch_profile`. The in-game browser and the app's call the same `tgg-mod` code.
 
 ## Open questions
 
