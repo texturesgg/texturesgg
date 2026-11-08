@@ -141,6 +141,22 @@ const SCENES: &[Scene] = &[
     // install under way.
     ("mods", |app| mods_scene(app, false)),
     ("mods-installed", |app| mods_scene(app, true)),
+    ("mods-installed-tab", |app| {
+        mods_scene(app, true);
+        mods::actions::show_tab(app, mods::Tab::Installed);
+    }),
+    ("mods-all", |app| {
+        mods_scene(app, true);
+        mods::actions::show_tab(app, mods::Tab::All);
+    }),
+    // Direct connect's details beside every mod.
+    ("mods-details", |app| {
+        mods_scene(app, true);
+        mods::actions::show_tab(app, mods::Tab::All);
+        if let Ok(id) = "tgg.direct-connect".parse() {
+            mods::actions::select(app, &id);
+        }
+    }),
     ("mods-review", |app| {
         mods_scene(app, true);
         mods::actions::review_set(app, "replays");
@@ -264,7 +280,9 @@ fn mods_scene(app: &mut App, installed: bool) {
         }
         net.publish_mod("tgg.online-rules", "Online rules", "0.1.1", &[]);
     }
-    let catalog = port.as_ref().and_then(|port| tgg_mod::catalog(&*net, &port.port()).ok());
+    // As the app fetches: before tgg-melee is installed, its newest release's catalog.
+    let layout = port.as_ref().map(tgg_mod::PortInstall::port).or_else(|| releases.first().map(|release| release.port(std::path::PathBuf::new())));
+    let catalog = layout.and_then(|layout| tgg_mod::catalog(&*net, &layout).ok());
     app.mods.net = net;
     app.mods.releases = releases;
     app.mods.sets = sets;

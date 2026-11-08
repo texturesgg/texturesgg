@@ -1,21 +1,26 @@
 //! Mods: tgg-melee (the Melee port with a mod loader built in) and the mods
-//! textures.gg publishes for it. The page installs the port, offers the
-//! curated sets, lists what's installed with each mod's switch and update,
-//! and Play starts the game with the player's unmodified disc.
+//! textures.gg publishes for it. The page installs the port and Play starts
+//! it with the player's unmodified disc; under that, three tabs: the curated
+//! sets, every mod built for the port (searchable), and what's installed
+//! with each mod's switch and update. Pressing a mod shows its details in a
+//! pane beside the list.
 //!
 //! Everything comes from `tgg-mod`: the network only when the page opens or
 //! the player asks (no polling), installs and launches on threads of their
 //! own, and what's installed read from disk as it changes. `actions` changes
-//! it; `view` draws the page and `review` the dialog shown before an install.
+//! it; `view` draws the page, `details` the pane and `review` the dialog
+//! shown before an install.
 
 pub mod actions;
+pub mod details;
 pub mod review;
 pub mod view;
 
+use rune::TextEdit;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use tgg_mod::{Applied, Catalog, Error, Local, Net, Plan, PortInstall, PortRelease, Progress, Set};
+use tgg_mod::{Applied, Catalog, CatalogEntry, Error, Local, ModId, Net, Plan, PortInstall, PortRelease, Progress, Set};
 
 /// The name tgg-studio gives textures.gg when it asks.
 const USER_AGENT: &str = concat!("tgg-studio/", env!("CARGO_PKG_VERSION"));
@@ -30,7 +35,8 @@ pub struct Mods {
     pub releases: Vec<PortRelease>,
     /// The sets textures.gg offers, as last fetched.
     pub sets: Vec<Set>,
-    /// What's built for the current port's layout, as last fetched.
+    /// What's built for the current port's layout (or, before one is
+    /// installed, the newest release's), as last fetched.
     pub catalog: Option<Catalog>,
     /// What the mods folder holds, checked against the catalog.
     pub local: Local,
@@ -47,6 +53,20 @@ pub struct Mods {
     pub disc: Disc,
     /// The game, while it runs.
     pub playing: Option<Playing>,
+    pub tab: Tab,
+    /// What the player's looking for among every mod.
+    pub search: TextEdit,
+    /// The mod whose details show beside the list.
+    pub selected: Option<ModId>,
+}
+
+/// Which list the page shows under the game.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Tab {
+    #[default]
+    Sets,
+    All,
+    Installed,
 }
 
 impl Default for Mods {
@@ -65,11 +85,57 @@ impl Default for Mods {
             review: None,
             disc: Disc::Unknown,
             playing: None,
+            tab: Tab::default(),
+            search: TextEdit::default(),
+            selected: None,
         }
     }
 }
 
 impl Mods {
+    /// The newest release of each mod textures.gg has built, by name.
+    pub fn offered(&self) -> Vec<&CatalogEntry> {
+        let mut newest: Vec<&CatalogEntry> = Vec::new();
+        for entry in self.catalog.iter().flat_map(|catalog| &catalog.mods) {
+            match newest.iter_mut().find(|known| known.manifest.id == entry.manifest.id) {
+                Some(known) if known.manifest.version < entry.manifest.version => *known = entry,
+                Some(_) => {}
+                None => newest.push(entry),
+            }
+        }
+        newest.sort_by_key(|entry| entry.manifest.name.to_lowercase());
+        newest
+    }
+
+    /// The mods offered that the search matches: its words, each in the
+    /// name, id or description, without case.
+    pub fn found(&self) -> Vec<&CatalogEntry> {
+        let query = self.search.text.to_lowercase();
+        let words: Vec<&str> = query.split_whitespace().collect();
+        self.offered().into_iter().filter(|entry| {
+            let manifest = &entry.manifest;
+            let haystack = format!("{} {} {}", manifest.name, manifest.id, manifest.description.as_deref().unwrap_or_default()).to_lowercase();
+            words.iter().all(|word| haystack.contains(word))
+        }).collect()
+    }
+
+    /// The newest release textures.gg has of the mod `id`.
+    pub fn newest(&self, id: &ModId) -> Option<&CatalogEntry> {
+        self.offered().into_iter().find(|entry| entry.manifest.id == *id)
+    }
+
+    /// The sets that list the mod `id`, by title.
+    pub fn sets_with(&self, id: &ModId) -> Vec<String> {
+        self.sets.iter().filter(|set| set.mods.iter().any(|m| m.id == *id)).map(|set| set.title.clone()).collect()
+    }
+
+    /// A mod's name, from what's installed or the catalog, else its id.
+    pub fn name_of(&self, id: &ModId) -> String {
+        self.local.get(id).map(|m| m.manifest.name.clone())
+            .or_else(|| self.newest(id).map(|entry| entry.manifest.name.clone()))
+            .unwrap_or_else(|| id.to_string())
+    }
+
     /// The tgg-melee version in use.
     pub fn port(&self) -> Option<&PortInstall> {
         self.ports.iter().find(|port| port.current)

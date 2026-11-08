@@ -1,6 +1,6 @@
 //! What the player does on the Mods page, and what comes back from its jobs.
 
-use super::{Disc, Done, Playing, Registry, Review, Work};
+use super::{Disc, Done, Playing, Registry, Review, Tab, Work};
 use crate::jobs::Done as Job;
 use crate::state::App;
 use rune::{FileDialogOptions, Tx};
@@ -57,12 +57,40 @@ pub fn fetch(app: &mut App) {
     let net = app.mods.net.clone();
     let port = app.mods.port().map(tgg_mod::PortInstall::port);
     app.jobs.spawn("textures.gg", move || {
+        let releases = tgg_mod::port_releases(&*net);
+        // Before tgg-melee is installed, what's built for its newest
+        // release, so the player can look before they install.
+        let layout = port.or_else(|| releases.as_ref().ok()?.first().map(|release| release.port(PathBuf::new())));
         Job::Mods(Box::new(Done::Fetched {
-            releases: tgg_mod::port_releases(&*net),
+            releases,
             sets: tgg_mod::sets(&*net),
-            catalog: port.map(|port| tgg_mod::catalog(&*net, &port)),
+            catalog: layout.map(|port| tgg_mod::catalog(&*net, &port)),
         }))
     });
+}
+
+/// Show the list `tab`.
+pub fn show_tab(app: &mut App, tab: Tab) {
+    app.mods.tab = tab;
+}
+
+/// Show the mod `id`'s details beside the list, or hide them when they
+/// show already.
+pub fn select(app: &mut App, id: &ModId) {
+    app.mods.selected = if app.mods.selected.as_ref() == Some(id) { None } else { Some(id.clone()) };
+}
+
+pub fn close_details(app: &mut App) {
+    app.mods.selected = None;
+}
+
+/// Show what installing the mod `id` on its own will do: its newest
+/// release, and what it needs.
+pub fn review_mod(app: &mut App, id: &ModId) {
+    let Some(catalog) = &app.mods.catalog else { return };
+    let Ok(any) = "*".parse() else { return };
+    let plan = tgg_mod::plan_mods(&[(id.clone(), any)], catalog, &app.mods.local);
+    app.mods.review = Some(Review { title: format!("Install {}", app.mods.name_of(id)), plan });
 }
 
 /// A job finished. True: what shows changed.

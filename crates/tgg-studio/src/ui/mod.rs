@@ -14,9 +14,9 @@ mod marks;
 mod surfaces;
 pub mod tokens;
 
-pub use controls::{ButtonKind, PLACE_INSET, TEXT_ACTION_INSET, button, chip, icon_button, place_row, slider, switch, tab, text_action};
+pub use controls::{ButtonKind, PLACE_INSET, TEXT_ACTION_INSET, button, chip, icon_button, place_row, search_field, slider, switch, tab, text_action};
 pub use marks::{Tone, badge, close_glyph, dot, pause_glyph, play_glyph, progress, sidebar_glyph, status, swatch};
-pub use surfaces::{Dialog, DialogWidth, card, card_plate, dialog, page_head, pane, pane_header, pane_row, panel, plate, rule, section_label, spacer};
+pub use surfaces::{Dialog, DialogWidth, card, card_plate, dialog, page_head, pane, pane_header, pane_row, panel, plate, rule, spacer};
 
 #[cfg(test)]
 mod tests;

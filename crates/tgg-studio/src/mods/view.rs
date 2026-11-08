@@ -1,19 +1,20 @@
-//! The Mods page: the game (tgg-melee, and the disc it plays), the sets
-//! textures.gg offers, and the mods installed, each with its switch.
+//! The Mods page: the game (tgg-melee, and the disc it plays), then the
+//! sets, every mod, or what's installed, a tab each; a mod's details slide
+//! in beside them.
 
-use super::{Disc, Mods, Registry, actions, size_text};
+use super::{Disc, Mods, Registry, Tab, actions, size_text};
 use crate::state::App;
-use crate::ui::tokens::{Palette, space, text};
+use crate::ui::tokens::{Palette, radius, space, text};
 use crate::ui::{
-    ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, page_head, panel, progress, rule, section_label, spacer, status,
-    switch, text_action,
+    ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, page_head, panel, progress, rule, search_field, spacer, status,
+    switch, tab, text_action,
 };
-use rune::{El, ScrollSpec, col, row, text as label};
-use tgg_mod::{LocalMod, Set, SetStatus};
+use rune::{El, ScrollSpec, col, el, row, text as label};
+use tgg_mod::{CatalogEntry, LocalMod, ModId, Set, SetStatus};
 
 /// A set's card: wide enough for its description to read as a line or two.
 const SET_CARD: f32 = 300.0;
-/// The game's panel, and the installed list, read best no wider than this.
+/// The game's panel, and the lists, read best no wider than this.
 const COLUMN: f32 = 720.0;
 
 pub fn view(app: &App, p: &Palette) -> El {
@@ -23,14 +24,30 @@ pub fn view(app: &App, p: &Palette) -> El {
         .children((mods.registry != Registry::Asking).then(|| {
             text_action("Check for updates", false, p).key("mods/refresh").on_press(actions::fetch)
         }));
+    let list = match mods.tab {
+        Tab::Sets => sets(mods, p),
+        Tab::All => all(mods, p),
+        Tab::Installed => installed(mods, p),
+    };
     let page = col().px(space::LG + 4.0).pt(space::XS).pb(space::XL).gap(space::LG)
         .child(head)
         .children(registry_line(mods, p))
         .children(mods.problem.as_ref().map(|problem| label(problem.clone()).key("mods/problem").font(text::BODY).color(p.danger)))
         .child(game(app, p))
-        .child(sets(mods, p))
-        .children(installed(mods, p));
-    col().key("mods/scroll").grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(page)
+        .child(col().gap(space::MD).child(col().child(tabs(mods, p)).child(rule(p))).child(list));
+    row().grow(1.0).min_h(0.0).w_full()
+        .child(col().key("mods/scroll").grow(1.0).min_w(0.0).h_full().scroll(ScrollSpec { stick_bottom: false }).child(page))
+        .child(super::details::view(app, p))
+}
+
+fn tabs(mods: &Mods, p: &Palette) -> El {
+    let tab_for = |name: &str, count: usize, which: Tab, key: &str| {
+        tab(name, count, mods.tab == which, p).key(key.to_owned()).on_press(move |app: &mut App| actions::show_tab(app, which))
+    };
+    row().gap(space::LG)
+        .child(tab_for("Sets", mods.sets.len(), Tab::Sets, "mods/tab/sets"))
+        .child(tab_for("All mods", mods.offered().len(), Tab::All, "mods/tab/all"))
+        .child(tab_for("Installed", mods.local.mods.len(), Tab::Installed, "mods/tab/installed"))
 }
 
 /// Whether textures.gg is being asked, or couldn't be.
@@ -107,24 +124,29 @@ fn working(work: &super::Work, p: &Palette) -> El {
         .child(progress(work.fraction(), p))
 }
 
-/// The sets textures.gg offers, as cards.
-fn sets(mods: &Mods, p: &Palette) -> El {
+/// Why a list can't install yet, or has nothing: tgg-melee isn't installed,
+/// or textures.gg has nothing built for it.
+fn note(mods: &Mods, p: &Palette) -> Option<El> {
     let note = if mods.port().is_none() {
-        Some("Install tgg-melee first; then a set installs in one step.".to_owned())
+        Some("Install tgg-melee first; then mods install in one step.".to_owned())
     } else {
         mods.no_mods.clone()
     };
+    note.map(|note| label(note).key("mods/note").font(text::SMALL).color(p.muted))
+}
+
+/// The sets textures.gg offers, as cards.
+fn sets(mods: &Mods, p: &Palette) -> El {
     let empty = (mods.sets.is_empty() && mods.registry == Registry::Answered)
         .then(|| label("textures.gg has no sets yet.").key("mods/no-sets").font(text::BODY).color(p.muted));
     col().gap(space::SM)
-        .child(section_label("Sets", None, p))
-        .children(note.map(|note| label(note).key("mods/sets-note").font(text::SMALL).color(p.muted)))
+        .children(note(mods, p))
         .children(empty)
         .child(row().flex_wrap().gap(space::MD).children(mods.sets.iter().map(|set| set_card(mods, set, p))))
 }
 
-/// A set: its title, what it's for, how many mods, whether it's installed,
-/// and installing, updating or removing it.
+/// A set: its title, what it's for, the mods in it, whether it's
+/// installed, and installing, updating or removing it.
 fn set_card(mods: &Mods, set: &Set, p: &Palette) -> El {
     let local = mods.local.set(&set.name);
     let state = local.map(|local| match local.status {
@@ -133,7 +155,7 @@ fn set_card(mods: &Mods, set: &Set, p: &Palette) -> El {
         SetStatus::Outdated => badge("Update", Tone::News, p),
         SetStatus::Incomplete => badge("Incomplete", Tone::Danger, p),
     });
-    let ready = mods.catalog.is_some() && mods.work.is_none();
+    let ready = mods.catalog.is_some() && mods.port().is_some() && mods.work.is_none();
     let name = set.name.clone();
     let main = ready.then(|| match local.map(|local| local.status) {
         None => Some(button("Install", ButtonKind::Primary, p)),
@@ -148,30 +170,96 @@ fn set_card(mods: &Mods, set: &Set, p: &Palette) -> El {
         text_action("Remove", true, p).key(format!("mods/set/{}/remove", set.name))
             .on_press(move |app: &mut App| actions::remove_set(app, &name))
     });
+    let names: Vec<String> = set.mods.iter().map(|m| mods.name_of(&m.id)).collect();
     panel(p).key(format!("mods/set/{}", set.name)).w(SET_CARD)
         .child(row().gap(space::XS).items_center()
             .child(label(set.title.clone()).font(text::H3).color(p.ink))
             .child(spacer())
             .children(state))
         .child(label(set.description.clone()).font(text::BODY).color(p.muted).wrap())
-        .child(label(mod_count(set.mods.len())).font(text::MONO_SMALL).color(p.faint))
+        .child(col().gap(space::TIGHT)
+            .child(label(mod_count(set.mods.len())).font(text::MONO_SMALL).color(p.faint))
+            .child(label(names.join(" · ")).key(format!("mods/set/{}/mods", set.name)).font(text::SMALL).color(p.faint).wrap()))
         .child(row().gap(space::XS).items_center().children(main).child(spacer()).children(remove))
 }
 
-/// What's installed, each mod with its switch; updating them all.
-fn installed(mods: &Mods, p: &Palette) -> Option<El> {
-    if mods.local.mods.is_empty() {
-        return None;
-    }
-    let update_all = (mods.has_updates() && mods.catalog.is_some() && mods.work.is_none())
-        .then(|| button("Update all", ButtonKind::Secondary, p).key("mods/update-all").on_press(actions::review_updates));
-    let rows = mods.local.mods.iter().map(|m| mod_row(mods, m, p));
-    Some(col().key("mods/installed").max_w(COLUMN).gap(space::SM)
-        .child(row().items_center().child(section_label("Installed", Some(mods.local.mods.len()), p)).child(spacer()).children(update_all))
-        .child(col().child(rule(p)).children(rows.flat_map(|row| [row, rule(p)]))))
+/// Every mod textures.gg has built for the game, newest release of each,
+/// with a search.
+fn all(mods: &Mods, p: &Palette) -> El {
+    let found = mods.found();
+    let empty = found.is_empty().then(|| {
+        let words = if mods.offered().is_empty() { "textures.gg has no mods for this tgg-melee yet." } else { "No mod matches that." };
+        label(words).key("mods/all/empty").font(text::BODY).color(p.muted)
+    });
+    let rows = found.into_iter().map(|entry| catalog_row(mods, entry, p));
+    col().max_w(COLUMN).gap(space::SM)
+        .child(search_field(&mods.search, "Search mods", p).key("mods/search").on_edit(|app: &mut App| &mut app.mods.search))
+        .children(note(mods, p).filter(|_| mods.port().is_none()))
+        .children(empty)
+        .child(list(rows, p))
 }
 
-/// A mod: its switch, name and version, where it came from, and its update.
+/// Rows between rules.
+fn list(rows: impl Iterator<Item = El>, p: &Palette) -> El {
+    col().child(rule(p)).children(rows.flat_map(|row| [row, rule(p)]))
+}
+
+/// A row of a list of mods: pressing it shows the mod's details,
+/// highlighted while they show.
+fn mod_line(mods: &Mods, id: &ModId, key: String, p: &Palette) -> El {
+    let chosen = mods.selected.as_ref() == Some(id);
+    let pressed = id.clone();
+    row().key(key).py(space::XS).px(space::XS).mx(-space::XS).gap(space::SM).items_center().radius(radius::CONTROL)
+        .fill(if chosen { p.selected } else { rune::Color::TRANSPARENT }).hover(p.hover).cursor(rune::Cursor::Pointer)
+        .role("button").focusable(true)
+        .on_press(move |app: &mut App| actions::select(app, &pressed))
+}
+
+/// A mod textures.gg offers: its name, version and line, its size, and
+/// installing it, or its switch once it's installed.
+fn catalog_row(mods: &Mods, entry: &CatalogEntry, p: &Palette) -> El {
+    let manifest = &entry.manifest;
+    let id = manifest.id.clone();
+    let installed = mods.local.get(&id);
+    let end = match installed {
+        Some(m) => {
+            let on = m.enabled;
+            let toggled = id.clone();
+            switch(&format!("mods/catalog/{id}/switch"), on, p).label(manifest.name.clone())
+                .on_press(move |app: &mut App| actions::set_enabled(app, &toggled, !on))
+        }
+        None if mods.port().is_some() && mods.work.is_none() => {
+            let wanted = id.clone();
+            button("Install", ButtonKind::Secondary, p).key(format!("mods/catalog/{id}/install"))
+                .on_press(move |app: &mut App| actions::review_mod(app, &wanted))
+        }
+        None => el(),
+    };
+    mod_line(mods, &id, format!("mods/catalog/{id}"), p).label(manifest.name.clone())
+        .child(col().gap(space::TIGHT).grow(1.0).min_w(0.0)
+            .child(row().gap(space::XS).items_end()
+                .child(label(manifest.name.clone()).font(text::STRONG).color(p.ink).truncate())
+                .child(label(manifest.version.to_string()).font(text::MONO_SMALL).color(p.faint)))
+            .children(manifest.description.clone().map(|line| label(line).font(text::SMALL).color(p.muted).truncate())))
+        .child(label(size_text(entry.package.size)).font(text::MONO_SMALL).color(p.faint))
+        .child(end)
+}
+
+/// What's installed, each mod with its switch; updating them all.
+fn installed(mods: &Mods, p: &Palette) -> El {
+    let update_all = (mods.has_updates() && mods.catalog.is_some() && mods.work.is_none())
+        .then(|| button("Update all", ButtonKind::Secondary, p).key("mods/update-all").on_press(actions::review_updates));
+    let empty = mods.local.mods.is_empty()
+        .then(|| label("Nothing installed yet. Install a set, or any mod from All mods.").key("mods/installed/empty").font(text::BODY).color(p.muted));
+    let rows = mods.local.mods.iter().map(|m| mod_row(mods, m, p));
+    col().key("mods/installed").max_w(COLUMN).gap(space::SM)
+        .children(update_all.map(|update_all| row().child(spacer()).child(update_all)))
+        .children(empty)
+        .children((!mods.local.mods.is_empty()).then(|| list(rows, p)))
+}
+
+/// An installed mod: its switch, name and version, where it came from, and
+/// its update.
 fn mod_row(mods: &Mods, m: &LocalMod, p: &Palette) -> El {
     let id = m.id().clone();
     let on = m.enabled;
@@ -185,10 +273,11 @@ fn mod_row(mods: &Mods, m: &LocalMod, p: &Palette) -> El {
     };
     let notes = m.update.as_ref().map(|version| badge(format!("{version} is out"), Tone::News, p))
         .or_else(|| (m.fits == Some(false)).then(|| badge("Not built for this tgg-melee", Tone::Danger, p)));
+    let toggled = id.clone();
     let toggle = switch(&format!("{key}/switch"), on, p).label(m.manifest.name.clone())
-        .on_press(move |app: &mut App| actions::set_enabled(app, &id, !on));
-    let remove_id = m.id().clone();
-    row().key(key.clone()).py(space::XS).gap(space::SM).items_center()
+        .on_press(move |app: &mut App| actions::set_enabled(app, &toggled, !on));
+    let removed = id.clone();
+    mod_line(mods, &id, key.clone(), p).label(m.manifest.name.clone())
         .child(toggle)
         .child(col().gap(space::TIGHT).grow(1.0).min_w(0.0)
             .child(row().gap(space::XS).items_end()
@@ -198,7 +287,7 @@ fn mod_row(mods: &Mods, m: &LocalMod, p: &Palette) -> El {
         .children(notes)
         // Quiet in a list of many; removing a whole set is the loud one.
         .child(text_action("Remove", false, p).key(format!("{key}/remove")).mr(-TEXT_ACTION_INSET)
-            .on_press(move |app: &mut App| actions::remove(app, &remove_id)))
+            .on_press(move |app: &mut App| actions::remove(app, &removed)))
 }
 
 /// The title row's action on Mods: Play, once tgg-melee is installed, or
@@ -213,6 +302,6 @@ pub fn title_actions(app: &App, p: &Palette) -> Option<El> {
 }
 
 /// "1 mod", "8 mods".
-fn mod_count(count: usize) -> String {
+pub fn mod_count(count: usize) -> String {
     if count == 1 { "1 mod".to_owned() } else { format!("{count} mods") }
 }

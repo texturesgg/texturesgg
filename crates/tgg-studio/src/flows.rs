@@ -751,7 +751,7 @@ fn jobs_until(rt: &mut Runtime<App>, done: impl Fn(&App) -> bool) {
 fn with_port(net: std::sync::Arc<tgg_mod::FakeNet>) -> (Runtime<App>, TempDir, TempDir) {
     let (mut rt, disc, data) = on_mods(net);
     tap(&mut rt, "mods/install-port");
-    jobs_until(&mut rt, |app| app.mods.port().is_some() && app.mods.catalog.is_some());
+    jobs_until(&mut rt, |app| app.mods.port().is_some() && app.mods.registry == crate::mods::Registry::Answered);
     (rt, disc, data)
 }
 
@@ -778,10 +778,10 @@ fn mods_offers_tgg_melee_then_its_sets() {
     assert!(rt.find("mods/install-port").is_some(), "tgg-melee offers to install");
     assert!(rt.find("mods/set/competitive").is_some() && rt.find("mods/set/replays").is_some(), "the sets show before it's installed");
     assert!(rt.find("mods/set/competitive/install").is_none(), "but install once tgg-melee is there");
-    assert!(rt.find("mods/sets-note").is_some());
+    assert!(rt.find("mods/note").is_some());
     tap(&mut rt, "mods/install-port");
     assert!(rt.find("mods/work").is_some(), "the install shows its progress");
-    jobs_until(&mut rt, |app| app.mods.port().is_some() && app.mods.catalog.is_some());
+    jobs_until(&mut rt, |app| app.mods.port().is_some() && app.mods.registry == crate::mods::Registry::Answered);
     assert_eq!(rt.state.mods.port().map(|port| port.version.as_str()), Some(tgg_mod::FakeNet::PORT_VERSION));
     assert!(rt.find("mods/install-port").is_none() && rt.find("mods/work").is_none());
     assert!(rt.find("mods/set/competitive/install").is_some(), "a set installs now");
@@ -803,8 +803,9 @@ fn a_set_is_reviewed_then_installed() {
     assert_eq!(rt.state.mods.local.mods.len(), 7);
     assert_eq!(rt.state.mods.local.set("competitive").map(|set| set.status), Some(tgg_mod::SetStatus::Complete));
     assert!(data.path().join("mods/tgg.netplay").is_dir(), "into the mods folder");
-    assert!(rt.find("mods/installed").is_some() && rt.find("mods/mod/tgg.netplay").is_some());
     assert!(rt.find("mods/set/competitive/install").is_none(), "an installed set doesn't offer to install");
+    tap(&mut rt, "mods/tab/installed");
+    assert!(rt.find("mods/installed").is_some() && rt.find("mods/mod/tgg.netplay").is_some());
     assert_eq!(rt.state.notice.as_ref().map(|notice| notice.text.as_str()), Some("Installed 7 mods."));
 }
 
@@ -812,6 +813,7 @@ fn a_set_is_reviewed_then_installed() {
 fn a_mod_switched_off_customizes_its_set_and_back() {
     let (mut rt, _disc, data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
     install_set(&mut rt, "competitive");
+    tap(&mut rt, "mods/tab/installed");
     tap_shown(&mut rt, "mods/mod/tgg.quick-start/switch");
     assert!(data.path().join("mods/.tgg.quick-start").is_dir(), "a turned-off mod's folder is hidden from the game");
     assert_eq!(rt.state.mods.local.set("competitive").map(|set| set.status), Some(tgg_mod::SetStatus::Customized));
@@ -829,6 +831,7 @@ fn update_all_installs_what_textures_gg_has_newer() {
     tap(&mut rt, "mods/refresh");
     jobs_until(&mut rt, |app| app.mods.registry == crate::mods::Registry::Answered);
     assert!(rt.state.mods.has_updates());
+    tap(&mut rt, "mods/tab/installed");
     tap_shown(&mut rt, "mods/update-all");
     settle(&mut rt);
     tap(&mut rt, "mods/review/confirm");
@@ -844,7 +847,8 @@ fn a_set_removed_takes_its_mods() {
     install_set(&mut rt, "replays");
     tap(&mut rt, "mods/set/replays/remove");
     assert!(rt.state.mods.local.mods.is_empty());
-    assert!(rt.find("mods/installed").is_none());
+    tap(&mut rt, "mods/tab/installed");
+    assert!(rt.find("mods/installed/empty").is_some(), "the Installed tab says there's nothing");
 }
 
 #[test]
@@ -870,4 +874,59 @@ fn play_starts_tgg_melee_and_stop_ends_it() {
     tap(&mut rt, "mods/stop");
     jobs_until(&mut rt, |app| app.mods.playing.is_none());
     assert!(rt.find("mods/play").is_some());
+}
+
+#[test]
+fn every_mod_can_be_browsed_and_searched_before_tgg_melee_is_installed() {
+    let (mut rt, _disc, _data) = on_mods(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    tap(&mut rt, "mods/tab/all");
+    assert_eq!(rt.state.mods.offered().len(), 10, "the newest release of each, from the newest tgg-melee's catalog");
+    assert!(rt.find("mods/catalog/tgg.netplay").is_some());
+    assert!(rt.find("mods/catalog/tgg.netplay/install").is_none(), "installing waits for tgg-melee");
+    rt.update(|app, _| app.mods.search.text = "replay".into());
+    rt.frame(FRAME);
+    let found: Vec<String> = rt.state.mods.found().iter().map(|entry| entry.manifest.id.to_string()).collect();
+    assert_eq!(found.len(), 3, "the three replay mods: {found:?}");
+    assert!(found.iter().all(|id| id.starts_with("tgg.replay-")));
+    assert!(rt.find("mods/catalog/tgg.netplay").is_none(), "the search hides the rest");
+    rt.update(|app, _| app.mods.search.text = "nothing like this".into());
+    rt.frame(FRAME);
+    assert!(rt.find("mods/all/empty").is_some());
+}
+
+#[test]
+fn one_mod_installs_with_what_it_needs() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    tap(&mut rt, "mods/tab/all");
+    tap_shown(&mut rt, "mods/catalog/tgg.direct-connect/install");
+    settle(&mut rt);
+    let review = rt.state.mods.review.as_ref().expect("the plan shows first");
+    let ids: Vec<String> = review.plan.steps.iter().map(|step| step.id.to_string()).collect();
+    assert!(ids.contains(&"tgg.direct-connect".to_owned()) && ids.contains(&"tgg.netplay".to_owned()), "and what it needs: {ids:?}");
+    tap(&mut rt, "mods/review/confirm");
+    jobs_until(&mut rt, |app| app.mods.work.is_none() && !app.mods.local.mods.is_empty());
+    assert_eq!(rt.state.mods.local.mods.len(), 2);
+    assert!(rt.find("mods/catalog/tgg.direct-connect/switch").is_some(), "installed, it shows its switch");
+    assert_eq!(rt.state.mods.selected, None, "pressing Install didn't open the details");
+}
+
+#[test]
+fn a_mods_details_slide_in_and_install_it() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    tap(&mut rt, "mods/tab/all");
+    tap_shown(&mut rt, "mods/catalog/tgg.replay-browser");
+    settle(&mut rt);
+    assert_eq!(rt.state.mods.selected.as_ref().map(ToString::to_string).as_deref(), Some("tgg.replay-browser"));
+    let width = rt.presented("mods/details").map_or(0.0, |(rect, _)| rect[2]);
+    assert!(width > 300.0, "the pane opens to its column, not {width} pt");
+    assert!(rt.find("mods/details/body").is_some());
+    tap(&mut rt, "mods/details/install");
+    settle(&mut rt);
+    tap(&mut rt, "mods/review/confirm");
+    jobs_until(&mut rt, |app| app.mods.work.is_none() && !app.mods.local.mods.is_empty());
+    assert!(rt.find("mods/details/switch").is_some(), "installed, the pane shows its switch");
+    tap(&mut rt, "mods/details/close");
+    settle(&mut rt);
+    let width = rt.presented("mods/details").map_or(0.0, |(rect, _)| rect[2]);
+    assert!(width < 0.5, "closed, the pane narrows to nothing, not {width} pt");
 }
