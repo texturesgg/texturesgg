@@ -20,6 +20,8 @@ hsd-render = { path = "../hsd-render", default-features = false }
 melee-dat = { path = "../melee-dat" }
 # tgg-melee and its mods from textures.gg: installing, planning, launching.
 tgg-mod = { path = "../tgg-mod" }
+# Signing in to textures.gg, shared with the tgg CLI.
+tgg-account = { path = "../tgg-account" }
 # Where costume renders are kept.
 dirs = "5"
 # Costume renders are kept as PNGs, by their file's SHA-256.

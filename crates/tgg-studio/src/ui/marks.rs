@@ -162,3 +162,37 @@ pub fn icon_tile(pixels: Option<&rune::Pixels>, side: f32, p: &Palette) -> El {
         None => tile,
     }
 }
+
+/// The settings glyph: three slider tracks, each with its knob.
+pub fn settings_glyph(p: &Palette) -> El {
+    let track = |knob: f32| {
+        el().w(14.0).h(1.5).fill(p.muted).radius(0.75).child(
+            el().size(4.0, 4.0)
+                .radius(2.0)
+                .fill(p.muted)
+                .absolute(knob, -1.25),
+        )
+    };
+    rune::col()
+        .size(14.0, 13.0)
+        .gap(4.0)
+        .justify_center()
+        .child(track(2.0))
+        .child(track(8.0))
+        .child(track(4.0))
+}
+
+/// An account's mark: its first letter on a gold-washed square (no pills).
+pub fn avatar(name: &str, p: &Palette) -> El {
+    let initial: String = name
+        .chars()
+        .next()
+        .map(|first| first.to_uppercase().collect())
+        .unwrap_or_default();
+    el().size(size::AVATAR, size::AVATAR)
+        .radius(radius::CONTROL)
+        .fill(p.selected)
+        .border(size::LINE, p.accent_text)
+        .center()
+        .child(text(initial).font(type_::LABEL).color(p.accent_text))
+}

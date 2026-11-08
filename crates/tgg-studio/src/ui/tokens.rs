@@ -164,6 +164,8 @@ pub mod size {
     pub const LINE_STRONG: f32 = 2.0;
     /// A status dot's side.
     pub const DOT: f32 = 6.0;
+    /// An account's mark, in a row.
+    pub const AVATAR: f32 = 22.0;
     /// A dialog asking a question, and one holding a list to look over.
     pub const DIALOG: f32 = 440.0;
     pub const DIALOG_WIDE: f32 = 560.0;

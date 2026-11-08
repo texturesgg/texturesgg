@@ -10,7 +10,7 @@ use crate::ui::tokens::{Palette, motion, radius, size, space, text};
 use crate::ui::{
     PLACE_INSET, close_glyph, icon_button, place_row, rule, sidebar_glyph, spacer, text_action,
 };
-use crate::{editor, keys, library, melee, mods, preferences, report, welcome, window};
+use crate::{editor, keys, library, melee, mods, preferences, report, signin, welcome, window};
 use rune::{Cx, El, col, el, row, text as label};
 
 /// Where the sidebar toggle sits, from the window's top left.
@@ -58,6 +58,8 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .children(mods::versions::view(app, &p))
         .children(preferences::view::view(app, &p))
         .children(report::view::view(app, &p))
+        .children(signin::view::sign_in(app, &p))
+        .children(signin::view::account(app, &p))
 }
 
 /// The places, recent edits, and Settings at the foot. Hidden, it narrows to
@@ -82,14 +84,8 @@ fn sidebar(app: &App, p: &Palette) -> El {
         .fill(p.hover)
         .motion(motion::SNAPPY)
         .absolute(0.0, index as f32 * (size::ROW + space::TIGHT));
-    // The foot: Settings for now. Signing in makes it the player's own row,
-    // with Settings in its menu.
-    let foot = col().mx(space::XS).my(space::SNUG).child(
-        place_row("Settings", None, app.preferences.open, p)
-            .key("sidebar/settings")
-            .help(keys::hint("Settings", keys::Command::Settings))
-            .on_press(preferences::actions::open),
-    );
+    // The foot: who's signed in (else Sign in), and Settings beside it.
+    let foot = signin::view::foot(app, p);
     let inner = col()
         .w(size::SIDEBAR)
         .h_full()

@@ -11,6 +11,7 @@ use crate::mods::Mods;
 use crate::nav::Nav;
 use crate::preferences::Preferences;
 use crate::report::Report;
+use crate::signin::SignIn;
 use crate::stage::Stage;
 use crate::welcome::Welcome;
 use std::path::PathBuf;
@@ -48,6 +49,8 @@ pub struct App {
     pub report: Option<Report>,
     /// A newer version of the app, when the launch check found one.
     pub update: Option<String>,
+    /// Who's signed in to textures.gg, and signing in.
+    pub signin: SignIn,
     /// tgg-melee and its mods.
     pub mods: Mods,
     /// Work off the window's thread.
@@ -73,6 +76,8 @@ impl App {
             Start::Game(references) => (Some(references), Welcome::default()),
             Start::Welcome(welcome) => (None, welcome),
         };
+        // Where the sign-in is kept when the CLI's place can't be used (tests).
+        let credentials = data.library.with_file_name("credentials.json");
         let melee = game
             .as_ref()
             .map(|references| Melee::of(references.game()))
@@ -95,6 +100,7 @@ impl App {
             preferences: Preferences::default(),
             report: None,
             update: None,
+            signin: SignIn::new(persist, credentials),
             jobs: Jobs::default(),
         }
     }

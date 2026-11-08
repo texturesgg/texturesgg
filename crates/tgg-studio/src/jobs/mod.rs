@@ -29,6 +29,8 @@ pub enum Done {
     ReportSent(Result<String, String>),
     /// A newer version of the app, if the launch check found one.
     Update(Option<String>),
+    /// Signing in: who's signed in, a code, a poll's answer, signing out.
+    SignIn(Box<crate::signin::Done>),
 }
 
 pub struct Jobs {
@@ -157,6 +159,8 @@ pub fn setup(app: &mut crate::state::App, waker: Waker) {
         if tgg_app::log::crashed_before() {
             crate::report::actions::open(app, true);
         }
+        // Who's signed in, as the site says now.
+        crate::signin::actions::check(app);
         if app.settings.check_for_updates.unwrap_or(true) {
             app.jobs.spawn("update check", || {
                 Done::Update(tgg_app::update::check(env!("CARGO_PKG_VERSION")))
@@ -174,6 +178,8 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
         changed = true;
     }
     changed |= crate::editor::external::check(app, tx);
+    // A sign-in under way asks the site whether it's confirmed, when due.
+    crate::signin::actions::tick(app);
     if let Some(picked) = app.stage.picked.take() {
         crate::editor::actions::select_picked(app, &picked, tx);
         changed = true;
@@ -189,6 +195,7 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
             } => crate::melee::actions::states_read(app, &iso, states, undoable),
             Done::Mods(done) => crate::mods::actions::done(app, *done),
             Done::ReportSent(result) => crate::report::actions::sent(app, result),
+            Done::SignIn(done) => crate::signin::actions::done(app, *done, tx),
             Done::Update(newer) => {
                 app.update = newer;
                 app.update.is_some()

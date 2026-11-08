@@ -2044,3 +2044,88 @@ fn one_mod_updates_on_its_own_and_stays_in_its_collection() {
     );
     assert!(player.update.is_some());
 }
+
+#[test]
+fn signing_in_shows_the_code_then_who_is_signed_in() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    assert!(rt.state.signin.who.is_none());
+    // Signed out, the account row says so; pressing it starts signing in.
+    rt.update(|app, _| {
+        app.signin.login = Some(crate::signin::Login {
+            code: Some("ABCD-EFGH".into()),
+            link: Some("https://textures.gg/device?code=ABCDEFGH".into()),
+            expires: None,
+            interval: std::time::Duration::from_secs(5),
+            next: None,
+            polling: true,
+            problem: None,
+            device: None,
+        });
+    });
+    settle(&mut rt);
+    assert!(
+        rt.find("signin/code").is_some() && rt.find("signin/open").is_some(),
+        "the code, and the page to confirm it on"
+    );
+    // Not yet confirmed: it waits and asks again.
+    rt.update(|app, tx| crate::signin::actions::polled(app, Ok(tgg_account::Poll::Pending), tx));
+    assert!(
+        rt.state
+            .signin
+            .login
+            .as_ref()
+            .is_some_and(|login| login.next.is_some() && !login.polling)
+    );
+    // Confirmed: signed in, the dialog closes, and the foot says who.
+    let account = tgg_account::Account {
+        handle: "ciao".into(),
+        display_name: None,
+        id: Some("1".into()),
+    };
+    rt.update(move |app, tx| {
+        crate::signin::actions::polled(app, Ok(tgg_account::Poll::Done(account.clone())), tx)
+    });
+    settle(&mut rt);
+    assert!(rt.state.signin.login.is_none());
+    assert_eq!(
+        rt.state
+            .signin
+            .who
+            .as_ref()
+            .map(|who| who.account.handle.as_str()),
+        Some("ciao")
+    );
+    assert_eq!(
+        rt.state.notice.as_ref().map(|notice| notice.text.as_str()),
+        Some("Signed in as ciao.")
+    );
+    // The account row opens who's signed in, and signing out.
+    tap(&mut rt, "sidebar/account");
+    settle(&mut rt);
+    assert!(rt.find("account/sign-out").is_some());
+}
+
+#[test]
+fn an_expired_code_says_so_and_starts_again() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    rt.update(|app, tx| {
+        app.signin.login = Some(crate::signin::Login::asking());
+        crate::signin::actions::polled(app, Ok(tgg_account::Poll::Expired), tx);
+    });
+    settle(&mut rt);
+    assert!(
+        rt.find("signin/again").is_some(),
+        "Start again, for a new code"
+    );
+    assert!(
+        rt.state
+            .signin
+            .login
+            .as_ref()
+            .is_some_and(|login| login.problem.is_some())
+    );
+    tap(&mut rt, "signin/cancel");
+    assert!(rt.state.signin.login.is_none());
+}

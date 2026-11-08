@@ -17,6 +17,7 @@ mod nav;
 mod preferences;
 mod report;
 mod shell;
+mod signin;
 mod stage;
 mod state;
 mod ui;
@@ -289,6 +290,24 @@ const SCENES: &[Scene] = &[
     }),
     ("settings", preferences::actions::open),
     ("report", |app| report::actions::open(app, false)),
+    // Signing in, its code shown (nothing is asked of the site).
+    ("signin", |app| {
+        let mut login = signin::Login::asking();
+        login.code = Some("ABCD-EFGH".into());
+        login.link = Some("https://textures.gg/device".into());
+        app.signin.login = Some(login);
+    }),
+    // Signed in, as ciao.
+    ("signed-in", |app| {
+        app.signin.who = Some(tgg_account::SignedIn {
+            account: tgg_account::Account {
+                handle: "ciao".into(),
+                display_name: None,
+                id: None,
+            },
+            verified: true,
+        });
+    }),
     ("no-sidebar", |app| app.nav.sidebar = false),
     ("paper", |app| {
         app.settings.set_appearance(settings::Appearance::Paper)

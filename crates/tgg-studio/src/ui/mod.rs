@@ -19,8 +19,8 @@ pub use controls::{
     slider, switch, tab, text_action, text_field,
 };
 pub use marks::{
-    Tone, badge, close_glyph, dot, icon_tile, pause_glyph, play_glyph, progress, sidebar_glyph,
-    skeleton, status, swatch,
+    Tone, avatar, badge, close_glyph, dot, icon_tile, pause_glyph, play_glyph, progress,
+    settings_glyph, sidebar_glyph, skeleton, status, swatch,
 };
 pub use surfaces::{
     Dialog, DialogWidth, callout, card, card_plate, dialog, page_head, pane, pane_header, pane_row,
