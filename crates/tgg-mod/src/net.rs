@@ -64,6 +64,7 @@ pub struct HttpNet {
     api: String,
     releases: String,
     agent: ureq::Agent,
+    token: Option<String>,
 }
 
 impl HttpNet {
@@ -93,7 +94,15 @@ impl HttpNet {
             api: api.trim_end_matches('/').to_owned(),
             releases: releases.trim_end_matches('/').to_owned(),
             agent,
+            token: None,
         }
+    }
+
+    /// Sends `token` as `Authorization: Bearer` to the textures.gg API (never
+    /// to the release mirror), so its requests act as the signed-in user.
+    pub fn with_token(mut self, token: impl Into<String>) -> Self {
+        self.token = Some(token.into());
+        self
     }
 
     /// A reader of `url`'s body and its length, if known.
@@ -114,7 +123,15 @@ impl HttpNet {
                 }),
             };
         }
-        match self.agent.get(url).call() {
+        let mut request = self.agent.get(url);
+        if let Some(token) = &self.token
+            && url
+                .strip_prefix(self.api.as_str())
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+        {
+            request = request.header("authorization", format!("Bearer {token}"));
+        }
+        match request.call() {
             Ok(response) => {
                 let size = response
                     .headers()

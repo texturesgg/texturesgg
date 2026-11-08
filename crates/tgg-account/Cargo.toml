@@ -1,0 +1,30 @@
+[package]
+name = "tgg-account"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["melee", "modding"]
+categories = ["authentication"]
+description = "Signing in to textures.gg: device login, the shared credentials file, and requests as the signed-in user"
+publish = false
+
+[dependencies]
+# The credentials file's folder.
+dirs = "5"
+# Opening the sign-in page for a blocking login.
+open = "5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+# Its HttpNet takes the signed-in user's token.
+tgg-mod = { path = "../tgg-mod" }
+ureq = { version = "3", default-features = false, features = ["rustls", "json"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true
