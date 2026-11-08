@@ -3,7 +3,7 @@
 //! whether netplay peers must have it too, and installing, turning on or
 //! off, or removing it. Pressing the mod again, or the pane's close, hides it.
 
-use super::{actions, count_text, size_text};
+use super::{Expand, actions, count_text, size_text};
 use crate::state::App;
 use crate::ui::tokens::{Palette, motion, radius, size, space, text};
 use crate::ui::{ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, icon_tile, rule, spacer, switch, text_action};
@@ -12,6 +12,13 @@ use tgg_mod::{Manifest, ModDetails};
 
 /// The mod's icon in the pane's head.
 const ICON: f32 = 48.0;
+
+/// How much of a long README or release history shows before "Show more":
+/// blocks (paragraphs, headings, list items) of the README, releases, and
+/// blocks of each changelog.
+const README_BLOCKS: usize = 6;
+const RELEASES_SHOWN: usize = 3;
+const CHANGELOG_BLOCKS: usize = 4;
 
 /// Whether the pane shows: on Mods, while a mod is chosen.
 pub fn shown(app: &App) -> bool {
@@ -68,8 +75,8 @@ fn body(app: &App, p: &Palette) -> Option<El> {
         .child(rule(p))
         .child(col().gap(space::SM).children(facts(app, id, p)))
         .children(page.map(|page| screenshots(mods, page, p)))
-        .children(page.and_then(|page| page.readme.as_deref()).map(|readme| section("About", markdown(readme, p), p).key("mods/details/readme")))
-        .children(page.filter(|page| !page.releases.is_empty()).map(|page| section("Releases", releases(page, p), p).key("mods/details/releases")))
+        .children(page.and_then(|page| page.readme.as_deref()).map(|readme| section("About", readme_shown(readme, mods.expanded.contains(&Expand::Readme), p), p).key("mods/details/readme")))
+        .children(page.filter(|page| !page.releases.is_empty()).map(|page| section("Releases", releases(page, mods.expanded.contains(&Expand::Releases), p), p).key("mods/details/releases")))
         .children((mods.details.get(id).is_some_and(Option::is_none)).then(|| label("Asking textures.gg for more…").font(text::SMALL).color(p.faint))))
 }
 
@@ -149,15 +156,41 @@ fn section(name: &str, body: Vec<El>, p: &Palette) -> El {
     col().gap(space::SM).child(rule(p)).child(label(name.to_owned()).font(text::LABEL).color(p.faint)).children(body)
 }
 
-/// Each release: its version and date, over its changelog.
-fn releases(page: &ModDetails, p: &Palette) -> Vec<El> {
-    page.releases.iter().map(|release| {
+/// The README's first blocks, or all of it once the player asks.
+fn readme_shown(readme: &str, all: bool, p: &Palette) -> Vec<El> {
+    let mut blocks = markdown(readme, p);
+    if !all && blocks.len() > README_BLOCKS {
+        blocks.truncate(README_BLOCKS);
+        blocks.push(more("Show more", "mods/details/readme/more", Expand::Readme, p));
+    }
+    blocks
+}
+
+/// The latest releases, or all of them once the player asks: each its
+/// version and date over its changelog, a changelog cut to its first lines
+/// until then.
+fn releases(page: &ModDetails, all: bool, p: &Palette) -> Vec<El> {
+    let shown = if all { page.releases.len() } else { RELEASES_SHOWN };
+    let mut rows: Vec<El> = page.releases.iter().take(shown).map(|release| {
+        let mut changelog = release.changelog.as_deref().map(|changelog| markdown(changelog, p)).unwrap_or_default();
+        if !all {
+            changelog.truncate(CHANGELOG_BLOCKS);
+        }
         col().gap(space::TIGHT)
             .child(row().gap(space::XS).items_end()
                 .child(label(release.version.to_string()).font(text::MONO_TEXT).color(p.ink))
                 .child(label(release.date.get(..10).unwrap_or(&release.date).to_owned()).font(text::MONO_SMALL).color(p.faint)))
-            .children(release.changelog.as_deref().map(|changelog| col().gap(space::XXS).children(markdown(changelog, p))))
-    }).collect()
+            .child(col().gap(space::XXS).children(changelog))
+    }).collect();
+    if page.releases.len() > shown {
+        rows.push(more(&format!("Show all {} releases", page.releases.len()), "mods/details/releases/more", Expand::Releases, p));
+    }
+    rows
+}
+
+/// A text action that shows the rest of a part of the details.
+fn more(words: &str, key: &str, part: Expand, p: &Palette) -> El {
+    row().ml(-TEXT_ACTION_INSET).child(text_action(words, false, p).key(key.to_owned()).on_press(move |app: &mut App| actions::expand(app, part)))
 }
 
 /// Markdown read plainly: headings as strong lines, paragraphs and list

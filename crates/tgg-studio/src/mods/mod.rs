@@ -80,6 +80,8 @@ pub struct Mods {
     pub details: HashMap<ModId, Option<ModDetails>>,
     /// Icons and screenshots by URL, filled as they arrive.
     pub images: HashMap<String, rune::Pixels>,
+    /// The parts of the chosen mod's details shown in full.
+    pub expanded: Vec<Expand>,
 }
 
 /// An older tgg-melee to go back to: its version, and how many installed
@@ -125,6 +127,7 @@ impl Default for Mods {
             listings: HashMap::new(),
             details: HashMap::new(),
             images: HashMap::new(),
+            expanded: Vec::new(),
         }
     }
 }
@@ -388,4 +391,12 @@ mod count_tests {
         assert_eq!(super::count_text(34_500), "34k");
         assert_eq!(super::count_text(1_500_000), "1.5M");
     }
+}
+
+/// A part of a mod's details that shows only its start until the player
+/// asks for the rest.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Expand {
+    Readme,
+    Releases,
 }

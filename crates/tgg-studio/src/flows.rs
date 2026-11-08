@@ -1052,3 +1052,24 @@ fn a_mod_not_built_for_this_version_is_listed_and_says_so() {
     assert!(rt.find("mods/details/unbuilt").is_some(), "its details say it waits for a build");
     assert!(rt.find("mods/details/install").is_none());
 }
+
+#[test]
+fn a_long_readme_and_release_history_show_their_start_until_asked() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    let netplay: tgg_mod::ModId = "tgg.netplay".parse().expect("an id");
+    tap(&mut rt, "mods/tab/all");
+    tap_shown(&mut rt, "mods/catalog/tgg.netplay");
+    jobs_until(&mut rt, |app| app.mods.details.get(&netplay).is_some_and(Option::is_some));
+    // Say its README and history are long.
+    rt.update(|app, _| {
+        let Some(Some(page)) = app.mods.details.get_mut(&"tgg.netplay".parse().expect("an id")) else { return };
+        page.readme = Some((0..30).map(|n| format!("Paragraph {n}.\n\n")).collect());
+        let release = page.releases[0].clone();
+        page.releases = vec![release; 12];
+    });
+    settle(&mut rt);
+    assert!(rt.find("mods/details/readme/more").is_some() && rt.find("mods/details/releases/more").is_some());
+    tap_shown(&mut rt, "mods/details/readme/more");
+    assert!(rt.find("mods/details/readme/more").is_none(), "all of it shows");
+    assert!(rt.state.mods.expanded.contains(&crate::mods::Expand::Readme));
+}

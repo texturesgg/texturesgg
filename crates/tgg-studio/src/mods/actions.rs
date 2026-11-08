@@ -162,6 +162,7 @@ pub fn show_tab(app: &mut App, tab: Tab) {
 /// show already.
 pub fn select(app: &mut App, id: &ModId) {
     app.mods.selected = if app.mods.selected.as_ref() == Some(id) { None } else { Some(id.clone()) };
+    app.mods.expanded.clear();
     if app.mods.selected.is_some() {
         request_details(app, id);
     }
@@ -596,4 +597,11 @@ fn count(n: usize, noun: &str) -> String {
 fn capitalized(line: &str) -> String {
     let mut characters = line.chars();
     characters.next().map_or_else(String::new, |first| first.to_uppercase().chain(characters).collect())
+}
+
+/// Show all of a part of the chosen mod's details.
+pub fn expand(app: &mut App, part: super::Expand) {
+    if !app.mods.expanded.contains(&part) {
+        app.mods.expanded.push(part);
+    }
 }
