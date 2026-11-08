@@ -42,11 +42,11 @@ checks everything the game and mod making need, and says how to fix what's missi
 
 ```text
 tgg mod sets                             the registry's sets, and which are installed
-tgg mod install --set NAME [-y]          install a set
+tgg mod install [--set NAME] [-y]        install a set (pick one with none named)
 tgg mod install ID[@RANGE]... [-y]       install mods, such as tgg.netplay or tgg.netplay@^0.2
 tgg mod update [--set NAME] [-y]         update installed sets and mods
 tgg mod list [--json]                    installed mods and sets (works offline)
-tgg mod on|off ID...                     turn installed mods on or off
+tgg mod on|off [ID...]                   turn installed mods on or off (pick them with none named)
 tgg mod remove ID...                     remove mods
 tgg mod remove --set NAME                remove a set and the mods only it installed
 ```
@@ -80,12 +80,30 @@ and forgets the token.
 `--api URL` (or `TGG_API`) points every command at another textures.gg API, such as a
 local one; the default is `https://api.textures.gg`.
 
+## In a terminal
+
+When tgg talks to a person at a terminal, it shows pickers, confirmations and progress
+bars, and colors versions, paths and commands. Piped, in CI (`CI` set), or with `NO_COLOR`
+or `TERM=dumb`, output is plain text and nothing asks: every choice comes from an argument
+or a flag, and a command that would pick says what to name instead.
+
+```text
+$ tgg mod install
+◆  Install which set?
+│  ● Competitive (Online rules, netplay and direct connect. · 2 mods)
+│  ○ Replays
+└
+```
+
+Errors print as one line, `Error: ...`, never a backtrace (`TGG_BACKTRACE=1` with
+`RUST_BACKTRACE=1` shows one).
+
 ## `tgg port` and `tgg sdk`
 
 ```text
 tgg port install [VERSION|latest] [--debug]   download a release of tgg-melee and install it
 tgg port list                                 the installed versions, and the one in use
-tgg port use VERSION                          use this version by default
+tgg port use [VERSION]                        use this version by default (pick one with none named)
 tgg port remove VERSION
 tgg port path [VERSION]                       the installed game's folder
 tgg port run [--version VERSION] [-v] [-- ARGS]
@@ -104,7 +122,10 @@ has only `release.json`) from `https://dl.textures.gg/tgg-melee` (`TGG_RELEASES`
 another mirror: a URL, or a folder laid out the same way), checks the game's archive
 against the SHA-256 it gives, and unpacks it to `<data>/tgg/ports/<version>/`. `latest`
 is the version `latest.json` names, or before the first release `latest-prerelease.json`.
-The first version installed becomes the one in use (`ports/current` names it).
+With no version, `port install` installs the newest and switches to it; a named
+version becomes the one in use when it is the first installed, or when you say so (in a
+terminal it asks). `ports/current` names the one in use. `port use` with no version
+lists the installed ones to pick from, with how many of your mods each lacks a build for.
 `--debug` adds the debug info gdb reads (Linux). Downloads are cached in
 `<cache>/tgg/downloads/`. `<data>` and `<cache>` are `~/.local/share` and `~/.cache`
 on Linux, `~/Library/Application Support` and `~/Library/Caches` on macOS, and
@@ -147,7 +168,7 @@ same links in a new mod's README and `src/mod.c`.
 ## `tgg doctor`
 
 `tgg doctor` checks what playing and making mods need, and prints the command that
-fixes each problem.
+fixes each problem. It exits with 1 when it finds something to fix.
 
 Playing: an installed game, a disc image, and what the game opens at runtime. On Linux
 that is glibc 2.34 or later, libvulkan and a Vulkan driver, and X11's or Wayland's

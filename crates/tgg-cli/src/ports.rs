@@ -35,8 +35,8 @@ pub enum PortCommand {
     },
     /// List the installed versions.
     List,
-    /// Use this installed version by default.
-    Use { version: String },
+    /// Use this installed version by default; with none named, pick one.
+    Use { version: Option<String> },
     /// Remove an installed version.
     Remove { version: String },
     /// Print the folder of the version in use (or VERSION).
@@ -145,22 +145,40 @@ pub fn install(version: &str, debug: bool) -> Result<Installed> {
         println!("tgg-melee {} is installed", release.version);
     } else {
         let told = AtomicBool::new(false);
+        let file = &release.files.game;
+        // A bar in a terminal; else one line.
+        let bar = crate::ui::bar(
+            format!("Downloading tgg-melee {}", release.version),
+            file.size,
+        );
         let progress = |progress: tgg_mod::Progress| {
-            if progress.step == 0 && progress.bytes > 0 && !told.swap(true, Ordering::Relaxed) {
-                println!("{}", releases::downloading(&release.files.game));
+            if progress.step != 0 || progress.bytes == 0 {
+                return;
+            }
+            match &bar {
+                Some(bar) => bar.set_position(progress.bytes),
+                None if !told.swap(true, Ordering::Relaxed) => {
+                    println!("{}", releases::downloading(file))
+                }
+                None => {}
             }
         };
-        ports::add_port(
+        let added = ports::add_port(
             mirror.net(),
             &release,
             &root,
             Some(&crate::paths::cache()?),
             &progress,
             &AtomicBool::new(false),
-        )?;
+        );
+        if let Some(bar) = &bar {
+            bar.finish_and_clear();
+        }
+        added?;
         println!(
             "Installed tgg-melee {} (game layout {})",
-            release.version, release.game_abi
+            crate::ui::ver(&release.version),
+            crate::ui::dim(&release.game_abi)
         );
     }
     let installed = Installed {
@@ -189,13 +207,28 @@ pub fn run(command: PortCommand) -> Result<()> {
     match command {
         PortCommand::Install { version, debug } => {
             let installed = install(&version, debug)?;
-            if current_version()?.as_deref() != Some(installed.version.as_str()) {
-                println!(
-                    "tgg uses {}; tgg port use {} to switch",
-                    current_version()?.unwrap_or_default(),
-                    installed.version
-                );
-                return Ok(());
+            let current = current_version()?;
+            if current.as_deref() != Some(installed.version.as_str()) {
+                let from = current.unwrap_or_default();
+                // The newest is what the player asked for; a version they
+                // named may be a side install.
+                let switch = version == "latest"
+                    || (crate::ui::interactive()
+                        && crate::ui::confirm(format!(
+                            "Switch to tgg-melee {} now?",
+                            installed.version
+                        ))?);
+                if !switch {
+                    println!(
+                        "tgg uses {}; {} to switch",
+                        crate::ui::ver(&from),
+                        crate::ui::cmd(format!("tgg port use {}", installed.version))
+                    );
+                    return Ok(());
+                }
+                set_current(&installed.version)?;
+                println!("Switched from {}", crate::ui::ver(&from));
+                warn_unbuilt(&installed.version);
             }
             crate::defaults::install(&installed)?;
             let runtime = check_runtime(&installed);
@@ -204,8 +237,8 @@ pub fn run(command: PortCommand) -> Result<()> {
             }
             match crate::config::iso_or_ask() {
                 Ok(_) if runtime.is_ok() => {
-                    println!("Ready: tgg port run");
-                    println!("Sets of mods to add: tgg mod sets");
+                    println!("Ready: {}", crate::ui::cmd("tgg port run"));
+                    println!("Sets of mods to add: {}", crate::ui::cmd("tgg mod sets"));
                 }
                 Ok(_) => {}
                 // In a terminal the question already said how to set it later.
@@ -244,9 +277,17 @@ pub fn run(command: PortCommand) -> Result<()> {
             Ok(())
         }
         PortCommand::Use { version } => {
+            let version = match version {
+                Some(version) => version,
+                None => match pick_version()? {
+                    Some(version) => version,
+                    None => return Ok(()),
+                },
+            };
             let installed = resolve(Some(&version))?;
             set_current(&installed.version)?;
-            println!("Using tgg-melee {}", installed.version);
+            println!("Using tgg-melee {}", crate::ui::ver(&installed.version));
+            warn_unbuilt(&installed.version);
             crate::defaults::install(&installed)
         }
         PortCommand::Remove { version } => {
@@ -310,7 +351,7 @@ fn print_tail(log: &std::path::Path) {
     for line in &lines[lines.len().saturating_sub(TAIL)..] {
         eprintln!("{line}");
     }
-    eprintln!("The game's full output: {}", log.display());
+    eprintln!("The game's full output: {}", crate::ui::path(log.display()));
 }
 
 /// The Microsoft C++ runtime DLLs the Windows build's libraries (Dawn, the
@@ -369,4 +410,64 @@ pub fn check_exit(status: std::process::ExitStatus) -> Result<()> {
         );
     }
     bail!("tgg-melee exited with {status}")
+}
+
+/// How many installed mods have no build for the installed `version`.
+fn unbuilt(version: &str) -> usize {
+    let Ok(ports) = crate::paths::ports() else {
+        return 0;
+    };
+    let Ok(install) = ports::installed_port(&ports, version) else {
+        return 0;
+    };
+    tgg_mod::local(&tgg_mod::default_mods_dir(), Some(&install.port()))
+        .map(|local| local.mods.iter().filter(|m| m.fits == Some(false)).count())
+        .unwrap_or(0)
+}
+
+/// Say when some of the player's mods won't load on `version`.
+fn warn_unbuilt(version: &str) {
+    let count = unbuilt(version);
+    if count > 0 {
+        println!(
+            "{} built for this one yet",
+            crate::ui::plural(count, "of your mods isn't", "of your mods aren't")
+        );
+    }
+}
+
+/// Pick an installed version, newest first; `None` when the player backs
+/// out. Outside a terminal, the error asks for one.
+fn pick_version() -> Result<Option<String>> {
+    let mut installed = installed()?;
+    installed.reverse();
+    if installed.is_empty() {
+        bail!("tgg-melee isn't installed; run tgg port install");
+    }
+    if !crate::ui::interactive() {
+        let versions: Vec<&str> = installed.iter().map(|i| i.version.as_str()).collect();
+        bail!(
+            "name a version: tgg port use VERSION (installed: {})",
+            versions.join(", ")
+        );
+    }
+    let current = current_version()?;
+    let items = installed
+        .iter()
+        .map(|port| {
+            let mut notes = Vec::new();
+            if current.as_deref() == Some(port.version.as_str()) {
+                notes.push("in use".to_owned());
+            }
+            let count = unbuilt(&port.version);
+            if count > 0 {
+                notes.push(format!(
+                    "{} built for this one yet",
+                    crate::ui::plural(count, "of your mods isn't", "of your mods aren't")
+                ));
+            }
+            (port.version.clone(), port.version.clone(), notes.join(", "))
+        })
+        .collect();
+    crate::ui::pick("Use which tgg-melee?", items, current)
 }

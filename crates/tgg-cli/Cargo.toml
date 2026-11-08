@@ -18,10 +18,13 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
+cliclack = "0.5.7"
+console = "0.16.6"
 ctrlc = { version = "3", features = ["termination"] }
 dirs = "5"
 # Unpacking tgg-melee releases, and checking them against their release.json.
 flate2 = "1"
+indicatif = "0.18.6"
 open = "5"
 semver = "1"
 serde = { version = "1", features = ["derive"] }

@@ -17,6 +17,7 @@ mod scaffold;
 mod sdks;
 mod signals;
 mod toolchain;
+mod ui;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -74,6 +75,7 @@ enum Command {
 /// Errors print as their message (and causes, but for tgg-mod's), never a
 /// backtrace, whatever `RUST_BACKTRACE` says; `TGG_BACKTRACE=1` adds it.
 fn main() -> std::process::ExitCode {
+    ui::init();
     match run(Cli::parse()) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {

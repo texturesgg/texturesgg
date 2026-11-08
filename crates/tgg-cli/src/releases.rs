@@ -56,7 +56,7 @@ impl Mirror {
 pub fn prerelease_note(release: &Release) -> Option<String> {
     release.prerelease.then(|| {
         format!(
-            "Using tgg-melee {}, the newest prerelease (there's no full release yet)",
+            "tgg-melee {} is the newest prerelease (there's no full release yet)",
             release.version
         )
     })

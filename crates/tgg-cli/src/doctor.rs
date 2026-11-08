@@ -10,7 +10,7 @@
 //! (TggMod.cmake), so CMake 3.25 or later is needed too, and Ninja (required
 //! on Windows), and git keeps a mod's history.
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -31,15 +31,53 @@ struct Report {
     play: usize,
     make: usize,
     making: bool,
+    /// ✓ ▲ ✗ in color, the fix on its own line; else plain words.
+    fancy: bool,
 }
 
+/// The width of a finding's name in the fancy report.
+const NAME_WIDTH: usize = 12;
+
 impl Report {
+    fn section(&self, title: &str) {
+        if self.fancy {
+            println!("{}", crate::ui::heading(title));
+        } else {
+            println!("{title}");
+        }
+    }
+
+    fn line(&self, kind: Kind, what: &str, detail: &str) {
+        if !self.fancy {
+            let word = match kind {
+                Kind::Ok => "ok      ",
+                Kind::Note => "note    ",
+                Kind::Problem => "problem ",
+            };
+            println!("{word} {what}: {detail}");
+            return;
+        }
+        let (explanation, fix) = crate::ui::split_fix(detail);
+        let mark = match kind {
+            Kind::Ok => crate::ui::green("✓"),
+            Kind::Note => crate::ui::yellow("▲"),
+            Kind::Problem => crate::ui::red("✗"),
+        };
+        println!(
+            "  {mark} {what:NAME_WIDTH$} {}",
+            crate::ui::dim(explanation)
+        );
+        if let Some(fix) = fix {
+            println!("  {:NAME_WIDTH$}   → {}", "", crate::ui::cmd(fix));
+        }
+    }
+
     fn ok(&self, what: &str, detail: &str) {
-        println!("ok       {what}: {detail}");
+        self.line(Kind::Ok, what, detail);
     }
 
     fn note(&self, what: &str, detail: &str) {
-        println!("note     {what}: {detail}");
+        self.line(Kind::Note, what, detail);
     }
 
     fn problem(&mut self, what: &str, detail: &str) {
@@ -48,8 +86,15 @@ impl Report {
         } else {
             self.play += 1;
         }
-        println!("problem  {what}: {detail}");
+        self.line(Kind::Problem, what, detail);
     }
+}
+
+#[derive(Clone, Copy)]
+enum Kind {
+    Ok,
+    Note,
+    Problem,
 }
 
 /// The output of `program args`, if it runs and succeeds.
@@ -413,8 +458,11 @@ fn check_glibc(report: &mut Report) {
 }
 
 pub fn run(cc: &Path) -> Result<()> {
-    let mut report = Report::default();
-    println!("Playing");
+    let mut report = Report {
+        fancy: crate::ui::interactive(),
+        ..Report::default()
+    };
+    report.section("Playing");
     match crate::releases::target() {
         None => report.problem(
             "system",
@@ -478,7 +526,8 @@ pub fn run(cc: &Path) -> Result<()> {
         &tgg_mod::ModsDir::game().root().display().to_string(),
     );
 
-    println!("\nMaking mods");
+    println!();
+    report.section("Making mods");
     report.making = true;
     if let Some((port, release)) = &installed {
         let sdk = crate::paths::sdks()?.join(&release.game_abi);
@@ -503,21 +552,36 @@ pub fn run(cc: &Path) -> Result<()> {
         report.note("gdb", "not found; only tgg mod dev --gdb needs it");
     }
 
-    let plural = |n: usize| {
-        if n == 1 {
-            "1 problem".to_owned()
-        } else {
-            format!("{n} problems")
-        }
-    };
     println!();
-    match (report.play, report.make) {
-        (0, 0) => {
-            println!("All set");
-            Ok(())
-        }
-        (0, make) => bail!("ready to play; {} for making mods", plural(make)),
-        (play, make) => bail!("{}", plural(play + make)),
+    println!("{}", summary(report.play, report.make, report.fancy));
+    if report.play + report.make > 0 {
+        // Findings aren't an error, but scripts can tell from the exit code.
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+/// The last line: plain, whatever it found.
+fn summary(play: usize, make: usize, fancy: bool) -> String {
+    let things = |n: usize| crate::ui::plural(n, "thing", "things");
+    let (ready, play_join, make_join) = if fancy {
+        ("Ready to play", " · ", " · ")
+    } else {
+        ("Ready to play", "; ", "; ")
+    };
+    let end = if fancy { "" } else { "." };
+    match (play, make) {
+        (0, 0) => format!("All set{end}"),
+        (0, make) => format!(
+            "{ready}{make_join}{} to fix for making mods{end}",
+            things(make)
+        ),
+        (play, 0) => format!("{} to fix for playing{end}", things(play)),
+        (play, make) => format!(
+            "{} to fix for playing{play_join}{} for making mods{end}",
+            things(play),
+            things(make)
+        ),
     }
 }
 
@@ -635,5 +699,27 @@ fn check_graphics(report: &mut Report) {
                 )
             ),
         ),
+    }
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::summary;
+
+    #[test]
+    fn the_summary_is_plain() {
+        assert_eq!(summary(0, 0, false), "All set.");
+        assert_eq!(
+            summary(0, 1, false),
+            "Ready to play; 1 thing to fix for making mods."
+        );
+        assert_eq!(
+            summary(0, 2, true),
+            "Ready to play · 2 things to fix for making mods"
+        );
+        assert_eq!(
+            summary(1, 2, false),
+            "1 thing to fix for playing; 2 things for making mods."
+        );
     }
 }
