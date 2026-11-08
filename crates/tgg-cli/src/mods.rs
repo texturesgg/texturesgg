@@ -99,11 +99,21 @@ pub enum ModCommand {
         #[arg(default_value = ".", value_parser = dir_arg)]
         dir: PathBuf,
     },
-    /// Tag the mod's version and push it to its repository on textures.gg,
-    /// which builds the tag: DIR is the mod's git checkout.
+    /// Build the mod as tgg mod build does, then tag its version and push it
+    /// to its repository on textures.gg, which builds the tag: DIR is the
+    /// mod's git checkout. A mod that doesn't build isn't pushed.
     Publish {
         #[arg(default_value = ".", value_parser = dir_arg)]
         dir: PathBuf,
+        /// Push without building here first; textures.gg still builds it.
+        #[arg(long)]
+        skip_build: bool,
+        /// The SDK's folder or tgg-game-sdk.json to build with [default: the
+        /// SDK of the game in use]
+        #[arg(long, env = "TGG_GAME_SDK")]
+        sdk: Option<PathBuf>,
+        #[command(flatten)]
+        cc: Cc,
     },
     /// Pack a built mod: DIR is the mod's installed folder, as the SDK's
     /// tgg_add_mod writes it (manifest.json, the library, and its folders).
@@ -301,7 +311,21 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
         ModCommand::Register { dir } => {
             crate::publish::register(Site::new(api)?.signed_in()?, &dir)
         }
-        ModCommand::Publish { dir } => crate::publish::publish(Site::new(api)?.signed_in()?, &dir),
+        ModCommand::Publish {
+            dir,
+            skip_build,
+            sdk,
+            cc,
+        } => {
+            let cc = cc.resolve();
+            let options = Options {
+                sdk: sdk.as_deref(),
+                cc: &cc,
+                debug: false,
+            };
+            let manifest = crate::publish::check(&dir, (!skip_build).then_some(&options))?;
+            crate::publish::publish(Site::new(api)?.signed_in()?, &dir, &manifest)
+        }
         ModCommand::Pack { dir, output, json } => pack(&dir, output, json),
         ModCommand::Inspect { file } => inspect(&file),
         ModCommand::Catalog { output, packages } => write_catalog(&output, &packages),

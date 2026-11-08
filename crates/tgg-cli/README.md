@@ -197,7 +197,7 @@ tgg mod build [DIR] [--debug] [--sdk SDK] [--source-zip ZIP|-] [-o OUT.zip] [--j
                                          and pack it with DIR's files/, assets/ and include/
 tgg mod dev [DIR] [--watch] [--gdb]     build it for debugging and run the game with it
 tgg mod register [DIR]                   create the mod on textures.gg from its manifest
-tgg mod publish [DIR]                    tag v<version> and push it to textures.gg, which builds it
+tgg mod publish [DIR]                    build it here, tag v<version> and push it to textures.gg (--skip-build)
 tgg mod pack DIR [-o OUT.zip] [--json]   DIR is a built mod's folder
 tgg mod inspect FILE                     a package zip, a mod library, or a game executable
 tgg mod catalog -o CATALOG.json ZIP...   list packages, with URLs relative to the catalog
