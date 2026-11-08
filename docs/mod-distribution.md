@@ -280,6 +280,71 @@ a Competitive and a Replays set, small packages, store listings of every mod
 package downloads), and a port release, so the app's flow tests drive the
 whole Mods place with no network.
 
+## Sign-in (`tgg-account`)
+
+The app and the CLI share one sign-in: `credentials.json` in the textures.gg
+config folder, one token per API base URL (`{ api: { token, name, id?,
+display_name? } }`), replaced atomically and readable only by the user. Every
+call reads the file afresh, so signing in from one shows up in the other.
+Login is the device flow: the user confirms a code on the site's /device page.
+Same style as `tgg-mod`: blocking, no UI dependencies, player-readable errors.
+
+```rust
+pub struct Credentials;           // the file; Credentials::at(path) for another
+impl Credentials {
+    pub fn default_path() -> Option<PathBuf>;
+    pub fn open_default() -> Result<Self, Error>;
+    pub fn at(path: impl Into<PathBuf>) -> Self;
+    pub fn get(&self, api: &str) -> Result<Option<Credential>, Error>;
+    pub fn set(&self, api: &str, credential: &Credential) -> Result<(), Error>;
+    pub fn remove(&self, api: &str) -> Result<Option<Credential>, Error>;
+}
+
+pub struct Account { pub handle: String, pub display_name: Option<String>, pub id: Option<String> }
+pub struct SignedIn { pub account: Account, pub verified: bool } // false: offline, as saved
+
+pub struct Site;                  // an API base URL and the sign-in saved for it
+impl Site {
+    pub fn new(api: &str, user_agent: &str) -> Result<Self, Error>;
+    pub fn with_credentials(api: &str, user_agent: &str, credentials: Credentials) -> Self;
+
+    // Device login, driven by the app: show the code, poll every `interval`
+    pub fn begin_device_login(&self) -> Result<DeviceLogin, Error>;
+    pub fn poll_device_login(&self, login: &DeviceLogin) -> Result<Poll, Error>;
+    // ...or blocking, for the CLI
+    pub fn login(&self, open_browser: bool, on_code: impl FnOnce(&DeviceLogin)) -> Result<Account, Error>;
+
+    pub fn whoami(&self) -> Result<Option<SignedIn>, Error>;
+    pub fn logout(&self) -> Result<Option<Account>, Error>; // ends the session, forgets the token
+    pub fn token(&self) -> Result<Option<String>, Error>;
+
+    // As the signed-in user
+    pub fn net(&self, net: tgg_mod::HttpNet) -> Result<tgg_mod::HttpNet, Error>;
+    pub fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T, Error>;
+    pub fn post<T: DeserializeOwned>(&self, path: &str, body: &Value) -> Result<T, Error>;
+    pub fn exists(&self, path: &str) -> Result<bool, Error>;
+    pub fn signed_in(&self) -> Result<&Self, Error>;
+}
+
+pub struct DeviceLogin {
+    pub user_code: String,        // display_code(): ABCD-EFGH
+    pub verification_uri: String,
+    pub verification_uri_complete: Option<String>, // link() prefers it
+    pub expires_at: Instant,
+    pub interval: Duration,
+}
+pub enum Poll { Pending, SlowDown /* add 5 s to the interval */, Done(Account), Expired, Denied }
+
+pub enum Error {
+    NotSignedIn, SessionExpired, Expired, Denied,
+    Offline { api, reason },      // whoami answers the saved account instead
+    // ... the rest player-readable
+}
+```
+
+`HttpNet::with_token` sends the token to URLs under the API only, never to the
+release mirror.
+
 ## Behavior
 
 - **Installing a set** installs the newest release of each listed mod that
