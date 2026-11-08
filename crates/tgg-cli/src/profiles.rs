@@ -8,10 +8,7 @@ use clap::Subcommand;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
-use tgg_mod::{
-    Catalog, Error, Fit, GameNeed, Net, Port, PortInstall, Prepared, Profile, ProfilePlan,
-    SlippiMapping,
-};
+use tgg_mod::{Error, Fit, GameNeed, Net, Prepared, Profile, ProfilePlan, SlippiMapping};
 
 #[derive(Subcommand)]
 pub enum ProfileCommand {
@@ -79,74 +76,12 @@ pub fn load(source: &Path, mapping: Option<&SlippiMapping>) -> Result<Profile> {
     })
 }
 
-fn empty_catalog() -> Catalog {
-    Catalog {
-        schema: tgg_mod::catalog::SCHEMA,
-        snapshot: None,
-        mods: Vec::new(),
-        ids: Vec::new(),
-    }
-}
-
 /// `profile` resolved against the registry, or what tgg last saw of it
 /// when textures.gg can't be reached (then the note says so).
 pub fn plan(ctx: &Ctx, profile: &Profile) -> Result<(ProfilePlan, Option<String>)> {
-    let mut offline: Option<String> = None;
-    let mapping = match tgg_mod::refresh_mapping(ctx.net, &ctx.data) {
-        Ok(mapping) => mapping,
-        Err(error @ Error::Offline(_)) => {
-            offline = Some(error.to_string());
-            tgg_mod::cached_mapping(&ctx.data).unwrap_or_else(SlippiMapping::empty)
-        }
-        Err(error) => return Err(error.into()),
-    };
-    let ports = ctx.ports();
-    let layout = match tgg_mod::profile_layout(profile, &ports) {
-        Some(layout) => Some(layout),
-        // The game it needs isn't installed and it doesn't say its layout:
-        // the release does.
-        None if offline.is_none() => {
-            let version = match profile.game.version.as_str() {
-                tgg_mod::profile::ANY => "latest",
-                version => version,
-            };
-            tgg_mod::ports::port_release(ctx.net, version)
-                .ok()
-                .map(|release| release.game_abi)
-        }
-        None => None,
-    };
-    let catalog = match &layout {
-        None => empty_catalog(),
-        Some(layout) if offline.is_some() => {
-            tgg_mod::cached_catalog(&ctx.data, layout).unwrap_or_else(empty_catalog)
-        }
-        Some(layout) => {
-            let port = Port {
-                executable: PathBuf::new(),
-                game_abi: layout.clone(),
-                name: "tgg-melee".into(),
-                target: String::new(),
-                version: String::new(),
-            };
-            match tgg_mod::refresh_catalog(ctx.net, &ctx.data, &port) {
-                Ok(catalog) => catalog,
-                Err(Error::NoCatalog(_)) => empty_catalog(),
-                Err(error @ Error::Offline(_)) => {
-                    offline = Some(error.to_string());
-                    tgg_mod::cached_catalog(&ctx.data, layout).unwrap_or_else(empty_catalog)
-                }
-                Err(error) => return Err(error.into()),
-            }
-        }
-    };
-    let current = tgg_mod::ports::installed_ports(&ports)?
-        .into_iter()
-        .find(|install| install.current);
-    let local = tgg_mod::local(&ctx.mods, current.as_ref().map(PortInstall::port).as_ref())?;
-    let trust = tgg_mod::trust(&ctx.data)?;
-    let plan = tgg_mod::resolve_profile(profile, &catalog, &mapping, &ports, &local, &trust);
-    Ok((plan, offline))
+    Ok(tgg_mod::plan_profile(
+        ctx.net, &ctx.data, &ctx.mods, profile,
+    )?)
 }
 
 fn size(bytes: u64) -> String {

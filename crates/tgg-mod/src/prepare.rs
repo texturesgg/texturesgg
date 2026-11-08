@@ -14,11 +14,14 @@
 //! ```
 
 use crate::cache::{self, tgg_dir};
+use crate::catalog::Catalog;
 use crate::error::{Error, OnProgress, Progress};
 use crate::install::ModsDir;
 use crate::net::Net;
 use crate::package::Package;
+use crate::port::Port;
 use crate::ports::{self, PortInstall, PortRelease, Running};
+use crate::profile::SlippiMapping;
 use crate::profile::{BUILTINS, GameNeed, Profile, ProfilePlan, Settings};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -117,6 +120,74 @@ fn remember_release(ports: &Path, release: &PortRelease) {
     let json = serde_json::to_vec_pretty(release).expect("a release serializes");
     let path = releases_dir(ports).join(format!("{}.json", release.version));
     let _ = cache::write_atomic(&path, &json);
+}
+
+/// `profile` resolved for the player with the mods folder `mods`: the Slippi
+/// mapping and the catalog for the game layout it needs come fresh from
+/// textures.gg and are cached in `data`. When that game isn't installed and
+/// the profile doesn't name its layout, its release on the mirror does (and
+/// is remembered, so the plan can give its download size). When textures.gg
+/// can't be reached, what tgg last saw is used and the note says why.
+pub fn plan_profile(
+    net: &dyn Net,
+    data: &Path,
+    mods: &Path,
+    profile: &Profile,
+) -> Result<(ProfilePlan, Option<String>), Error> {
+    let mut offline: Option<String> = None;
+    let mapping = match cache::refresh_mapping(net, data) {
+        Ok(mapping) => mapping,
+        Err(error @ Error::Offline(_)) => {
+            offline = Some(error.to_string());
+            cache::cached_mapping(data).unwrap_or_else(SlippiMapping::empty)
+        }
+        Err(error) => return Err(error),
+    };
+    let ports_dir = tgg_dir(data).join("ports");
+    let version = match profile.game.version.as_str() {
+        crate::profile::ANY => "latest",
+        version => version.trim_start_matches('v'),
+    };
+    let layout = crate::profile::profile_layout(profile, &ports_dir).or_else(|| {
+        if offline.is_some() {
+            return seen_release(&ports_dir, version).map(|release| release.game_abi);
+        }
+        let release = ports::port_release(net, version).ok()?;
+        remember_release(&ports_dir, &release);
+        Some(release.game_abi)
+    });
+    let catalog = match &layout {
+        None => Catalog::empty(),
+        Some(layout) if offline.is_some() => {
+            cache::cached_catalog(data, layout).unwrap_or_else(Catalog::empty)
+        }
+        Some(layout) => {
+            let port = Port {
+                executable: PathBuf::new(),
+                game_abi: layout.clone(),
+                name: "tgg-melee".into(),
+                target: String::new(),
+                version: String::new(),
+            };
+            match cache::refresh_catalog(net, data, &port) {
+                Ok(catalog) => catalog,
+                Err(Error::NoCatalog(_)) => Catalog::empty(),
+                Err(error @ Error::Offline(_)) => {
+                    offline = Some(error.to_string());
+                    cache::cached_catalog(data, layout).unwrap_or_else(Catalog::empty)
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    };
+    let current = ports::installed_ports(&ports_dir)?
+        .into_iter()
+        .find(|install| install.current);
+    let local = crate::local::local(mods, current.as_ref().map(PortInstall::port).as_ref())?;
+    let trust = crate::trust::trust(data)?;
+    let plan =
+        crate::profile::resolve_profile(profile, &catalog, &mapping, &ports_dir, &local, &trust);
+    Ok((plan, offline))
 }
 
 /// `<data>/tgg/profiles/<key>`.

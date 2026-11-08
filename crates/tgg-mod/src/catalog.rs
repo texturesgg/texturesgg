@@ -69,6 +69,16 @@ pub enum CatalogError {
 }
 
 impl Catalog {
+    /// A catalog with no mods.
+    pub fn empty() -> Self {
+        Self {
+            schema: SCHEMA,
+            snapshot: None,
+            mods: Vec::new(),
+            ids: Vec::new(),
+        }
+    }
+
     pub fn parse(json: &str) -> Result<Self, CatalogError> {
         let catalog: Self = serde_json::from_str(json)?;
         if catalog.schema != SCHEMA {
