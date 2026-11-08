@@ -52,6 +52,8 @@ pub struct App {
     pub update: Option<String>,
     /// Who's signed in to textures.gg, and signing in.
     pub signin: SignIn,
+    /// Starting a code mod on this computer.
+    pub new_mod: crate::newmod::NewMod,
     /// The player's replays, and playing them with their mods.
     pub replays: Replays,
     /// How wide the window is, as last laid out. The place is that less the
@@ -108,6 +110,7 @@ impl App {
             report: None,
             update: None,
             signin: SignIn::new(persist, credentials),
+            new_mod: crate::newmod::NewMod::default(),
             replays: Replays::default(),
             window_width: 0.0,
             jobs: Jobs::default(),

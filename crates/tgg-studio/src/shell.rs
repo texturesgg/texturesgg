@@ -11,7 +11,8 @@ use crate::ui::{
     PLACE_INSET, close_glyph, icon_button, place_row, rule, sidebar_glyph, spacer, text_action,
 };
 use crate::{
-    editor, keys, library, melee, mods, preferences, replays, report, signin, welcome, window,
+    editor, keys, library, melee, mods, newmod, preferences, replays, report, signin, welcome,
+    window,
 };
 use rune::{Cx, El, col, el, row, text as label};
 
@@ -72,6 +73,9 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .children(signin::view::sign_in(app, &p))
         .children(signin::view::account(app, &p))
         .children(replays::review::view(app, &p))
+        .children(newmod::view::view(app, &p))
+        // Its examples' menu, over it.
+        .children(newmod::view::menu(app, &p))
 }
 
 /// The places, recent edits, and Settings at the foot. Hidden, it narrows to

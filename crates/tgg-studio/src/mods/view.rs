@@ -148,13 +148,20 @@ fn tabs(mods: &Mods, p: &Palette) -> El {
             "mods/tab/installed",
         ))
         .child(spacer())
-        .children(update_all(mods, p).map(|action| {
+        .child(
             row()
                 .h(size::TAB)
                 .items_center()
+                .gap(space::XXS)
                 .mr(-TEXT_ACTION_INSET)
-                .child(action)
-        }))
+                .children(update_all(mods, p))
+                // Starting a mod of one's own, from tgg-melee's SDK.
+                .children(mods.port().is_some().then(|| {
+                    text_action("New mod…", false, p)
+                        .key("mods/new-mod")
+                        .on_press(crate::newmod::actions::open)
+                })),
+        )
 }
 
 /// The head's side: tgg-melee's version and the disc it plays, once it's

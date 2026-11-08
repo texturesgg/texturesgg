@@ -27,7 +27,7 @@ pub use marks::{
 };
 pub use surfaces::{
     Dialog, DialogWidth, callout, card, card_plate, dialog, page_head, pane, pane_header, pane_row,
-    panel, plate, rule, spacer,
+    panel, plate, rule, setting_row, setting_row_with, spacer,
 };
 
 #[cfg(test)]

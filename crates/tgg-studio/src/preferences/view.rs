@@ -3,12 +3,12 @@
 
 use super::{Menu, actions};
 use crate::state::App;
-use crate::ui::tokens::{Palette, space, text};
+use crate::ui::tokens::{Palette, space};
 use crate::ui::{
     ButtonKind, Dialog, DialogWidth, TEXT_ACTION_INSET, button, dialog, rule, select, select_item,
     select_menu, select_rule, spacer, switch, text_action, text_field,
 };
-use rune::{El, col, row, text as label};
+use rune::{El, col, row};
 use tgg_app::settings::Appearance;
 
 /// The image editor's choices and field, at their widest.
@@ -52,21 +52,7 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
 
 /// A setting: its name and a line saying what it does, then its control.
 fn setting(key: &str, name: &str, line: impl Into<String>, control: El, p: &Palette) -> El {
-    row()
-        .key(key.to_owned())
-        .px(space::LG)
-        .py(space::SM)
-        .gap(space::MD)
-        .items_center()
-        .child(
-            col()
-                .grow(1.0)
-                .min_w(0.0)
-                .gap(space::TIGHT)
-                .child(label(name.to_owned()).font(text::STRONG).color(p.ink))
-                .child(label(line.into()).font(text::SMALL).color(p.muted).wrap()),
-        )
-        .child(control)
+    crate::ui::setting_row(name, line, control, p).key(key.to_owned())
 }
 
 /// The image editor: the system's default, an app on this computer that

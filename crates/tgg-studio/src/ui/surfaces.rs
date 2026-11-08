@@ -213,6 +213,32 @@ pub fn dialog<S: 'static>(
 
 /// A panel: a flat surface holding one thing on a page (the game, a set),
 /// padded and outlined. The caller sizes it.
+/// A row of a dialog's form: what it is and a line saying more on the
+/// left, its control on the right. The caller keys it.
+pub fn setting_row(name: &str, line: impl Into<String>, control: El, p: &Palette) -> El {
+    let line = text(line.into()).font(type_::SMALL).color(p.muted).wrap();
+    setting_row_with(name, line, control, p)
+}
+
+/// [`setting_row`] with a line of the caller's own: one saying what's wrong
+/// with what's entered, in the danger color.
+pub fn setting_row_with(name: &str, line: El, control: El, p: &Palette) -> El {
+    row()
+        .px(space::LG)
+        .py(space::SM)
+        .gap(space::MD)
+        .items_center()
+        .child(
+            col()
+                .grow(1.0)
+                .min_w(0.0)
+                .gap(space::TIGHT)
+                .child(text(name.to_owned()).font(type_::STRONG).color(p.ink))
+                .child(line),
+        )
+        .child(control)
+}
+
 pub fn panel(p: &Palette) -> El {
     col()
         .px(space::MD)

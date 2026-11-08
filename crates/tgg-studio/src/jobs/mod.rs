@@ -33,6 +33,8 @@ pub enum Done {
     SignIn(Box<crate::signin::Done>),
     /// Replays: read, what textures.gg says, a replay's profile prepared.
     Replays(Box<crate::replays::Done>),
+    /// New mod: the SDK's examples and the tools found, or the mod made.
+    NewMod(Box<crate::newmod::actions::Done>),
 }
 
 pub struct Jobs {
@@ -199,6 +201,7 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
             Done::ReportSent(result) => crate::report::actions::sent(app, result),
             Done::SignIn(done) => crate::signin::actions::done(app, *done, tx),
             Done::Replays(done) => crate::replays::actions::done(app, *done),
+            Done::NewMod(done) => crate::newmod::actions::done(app, *done),
             Done::Update(newer) => {
                 app.update = newer;
                 app.update.is_some()

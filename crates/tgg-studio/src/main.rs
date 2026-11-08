@@ -14,6 +14,7 @@ mod library;
 mod melee;
 mod mods;
 mod nav;
+mod newmod;
 mod preferences;
 mod replays;
 mod report;
@@ -290,6 +291,25 @@ const SCENES: &[Scene] = &[
             app.mods.disc = mods::Disc::Found(references.game().path().to_owned());
         }
     }),
+    // New mod over Mods, filled in, CMake missing (the SDK and tools as
+    // given here, not looked for).
+    ("new-mod", |app| {
+        mods_scene(app, true);
+        new_mod_scene(app);
+        app.new_mod.name.text = "Neutral spawns".into();
+    }),
+    // A mod just started.
+    ("new-mod-created", |app| {
+        mods_scene(app, true);
+        new_mod_scene(app);
+        app.new_mod.name.text = "Neutral spawns".into();
+        app.new_mod.stage = newmod::Stage::Created(newmod::library::CreatedMod {
+            dir: app.new_mod.folder(),
+            example: newmod::TEMPLATE.into(),
+            sdk_version: "0.1.0".into(),
+            repository: newmod::library::Repository::Committed,
+        });
+    }),
     ("settings", preferences::actions::open),
     ("settings-menu", |app| {
         preferences::actions::open(app);
@@ -443,6 +463,27 @@ fn show_shared(app: &mut App, code: &str, name: &str) {
     if let Some(model) = melee_dat::SharedModel::of(character).find(|model| model.name() == name) {
         stage::actions::play_action(app, model.action());
     }
+}
+
+/// For scenes: New mod open, the SDK's examples and the tools found given
+/// rather than looked for: GCC and git installed, CMake not.
+fn new_mod_scene(app: &mut App) {
+    app.new_mod = newmod::NewMod {
+        open: true,
+        parent: PathBuf::from("/home/player/mods"),
+        example: newmod::TEMPLATE.into(),
+        examples: Some(Ok(vec![
+            newmod::TEMPLATE.into(),
+            "hello-hud".into(),
+            "neutral-spawns".into(),
+        ])),
+        tools: Some(newmod::library::Tools {
+            gcc: Some(PathBuf::from("/usr/bin/gcc")),
+            cmake: None,
+            git: Some(PathBuf::from("/usr/bin/git")),
+        }),
+        ..newmod::NewMod::default()
+    };
 }
 
 /// For scenes: Mods against a fake textures.gg, its mods and ports in a
