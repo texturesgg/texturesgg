@@ -5606,6 +5606,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "tgg-account"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "open",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tgg-mod",
+ "thiserror 2.0.20",
+ "ureq",
+]
+
+[[package]]
 name = "tgg-cli"
 version = "0.4.0"
 dependencies = [
@@ -5625,6 +5639,7 @@ dependencies = [
  "sha2",
  "tar",
  "tempfile",
+ "tgg-account",
  "tgg-mod",
  "ureq",
  "zip",
