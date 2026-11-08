@@ -914,9 +914,11 @@ fn capitalized(line: &str) -> String {
     })
 }
 
-/// Show all of a part of the chosen mod's details.
-pub fn expand(app: &mut App, part: super::Expand) {
-    if !app.mods.expanded.contains(&part) {
+/// Show all of a part of the chosen mod's details, or only its start again.
+pub fn toggle_expanded(app: &mut App, part: super::Expand) {
+    if app.mods.expanded.contains(&part) {
+        app.mods.expanded.retain(|shown| *shown != part);
+    } else {
         app.mods.expanded.push(part);
     }
 }

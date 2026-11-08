@@ -35,6 +35,20 @@ pub fn button(label: &str, kind: ButtonKind, p: &Palette) -> El {
         .child(text(label).font(type_::STRONG).color(ink))
 }
 
+/// A button that can't be pressed now (while other work runs): its shape
+/// and place kept, so nothing moves when it can be again, its words faint.
+pub fn button_off(label: &str, p: &Palette) -> El {
+    row()
+        .h(size::CONTROL)
+        .px(space::SM)
+        .items_center()
+        .radius(radius::CONTROL)
+        .border(size::LINE, p.line)
+        .role("button")
+        .label(label)
+        .child(text(label).font(type_::STRONG).color(p.faint))
+}
+
 /// A square button holding a glyph, as the title row's controls are.
 pub fn icon_button(glyph: El, label: &str, p: &Palette) -> El {
     el().size(size::CONTROL, size::CONTROL)
@@ -91,7 +105,7 @@ pub fn tab(label: &str, count: usize, chosen: bool, p: &Palette) -> El {
         .focusable(true)
         .child(
             row()
-                .h(34.0)
+                .h(size::TAB)
                 .gap(space::SNUG)
                 .items_center()
                 .child(text(label).font(type_::STRONG).color(ink))

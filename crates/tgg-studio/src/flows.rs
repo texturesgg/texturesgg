@@ -1706,20 +1706,18 @@ fn a_long_readme_and_release_history_show_their_start_until_asked() {
     });
     settle(&mut rt);
     assert!(
-        rt.find("mods/details/readme/more").is_some()
-            && rt.find("mods/details/releases/more").is_some()
+        rt.find("mods/details/readme/fold").is_some()
+            && rt.find("mods/details/releases/fold").is_some()
     );
-    tap_shown(&mut rt, "mods/details/readme/more");
+    let readme = crate::mods::Expand::Readme;
+    tap_shown(&mut rt, "mods/details/readme/fold");
+    assert!(rt.state.mods.expanded.contains(&readme), "all of it shows");
     assert!(
-        rt.find("mods/details/readme/more").is_none(),
-        "all of it shows"
+        rt.find("mods/details/readme/fold").is_some(),
+        "and can be cut short again"
     );
-    assert!(
-        rt.state
-            .mods
-            .expanded
-            .contains(&crate::mods::Expand::Readme)
-    );
+    tap_shown(&mut rt, "mods/details/readme/fold");
+    assert!(!rt.state.mods.expanded.contains(&readme));
 }
 
 #[test]

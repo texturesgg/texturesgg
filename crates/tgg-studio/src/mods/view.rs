@@ -7,9 +7,9 @@ use super::{Disc, Mods, Registry, Tab, actions, count_text, size_text};
 use crate::state::App;
 use crate::ui::tokens::{Palette, radius, size, space, text};
 use crate::ui::{
-    ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, callout, icon_tile, page_head, panel,
-    progress, rule, search_field, skeleton, spacer, split, split_list, split_page, status, switch,
-    tab, text_action,
+    ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, button_off, callout, icon_tile, page_head,
+    panel, progress, rule, search_field, skeleton, spacer, split, split_list, split_page, status,
+    switch, tab, text_action,
 };
 use rune::{El, ScrollSpec, col, el, row, text as label};
 use tgg_mod::{CatalogEntry, LocalMod, ModId, ModSummary, Set, SetStatus};
@@ -97,24 +97,28 @@ pub fn view(app: &App, p: &Palette) -> El {
         .child(page)
 }
 
-/// What stays above a tab's list: All mods' search, Installed's Update all.
+/// What stays above a tab's list: All mods' search.
 fn top(mods: &Mods, p: &Palette) -> Option<El> {
-    match mods.tab {
-        Tab::Sets => None,
-        Tab::All => Some(
-            search_field(&mods.search, "Search mods", p)
-                .key("mods/search")
-                .on_edit(|app: &mut App| &mut app.mods.search),
-        ),
-        Tab::Installed => (mods.has_updates() && mods.catalog.is_some() && mods.work.is_none())
-            .then(|| {
-                row().child(spacer()).child(
-                    button("Update all", ButtonKind::Secondary, p)
-                        .key("mods/update-all")
-                        .on_press(actions::review_updates),
-                )
-            }),
+    (mods.tab == Tab::All).then(|| {
+        search_field(&mods.search, "Search mods", p)
+            .key("mods/search")
+            .on_edit(|app: &mut App| &mut app.mods.search)
+    })
+}
+
+/// Installed's Update all, at the tabs' end while there are updates: no
+/// taller than the tabs, so the list under them never moves for it; faint
+/// while other work runs.
+fn update_all(mods: &Mods, p: &Palette) -> Option<El> {
+    if mods.tab != Tab::Installed || !mods.has_updates() || mods.catalog.is_none() {
+        return None;
     }
+    let action = text_action("Update all", false, p).key("mods/update-all");
+    Some(if mods.work.is_none() {
+        action.on_press(actions::review_updates)
+    } else {
+        action.color(p.faint)
+    })
 }
 
 fn tabs(mods: &Mods, p: &Palette) -> El {
@@ -143,6 +147,14 @@ fn tabs(mods: &Mods, p: &Palette) -> El {
             Tab::Installed,
             "mods/tab/installed",
         ))
+        .child(spacer())
+        .children(update_all(mods, p).map(|action| {
+            row()
+                .h(size::TAB)
+                .items_center()
+                .mr(-TEXT_ACTION_INSET)
+                .child(action)
+        }))
 }
 
 /// The head's side: tgg-melee's version and the disc it plays, once it's
@@ -258,7 +270,9 @@ fn notices(app: &App, p: &Palette) -> Vec<El> {
     let Some(port) = mods.port() else {
         return notices;
     };
-    if let Some(release) = mods.port_update().filter(|_| mods.work.is_none()) {
+    // Kept while other work runs, its button off, so the page doesn't move.
+    let installing_port = mods.work.as_ref().is_some_and(|work| work.target.is_none());
+    if let Some(release) = mods.port_update().filter(|_| !installing_port) {
         let words = col()
             .gap(space::TIGHT)
             .child(say(format!("tgg-melee {} is out.", release.version), false))
@@ -266,9 +280,13 @@ fn notices(app: &App, p: &Palette) -> Vec<El> {
                 waiting(mods, &release.version)
                     .map(|words| say(words, false).key("mods/update-waits")),
             );
-        let update = button("Update", ButtonKind::Secondary, p)
-            .key("mods/update-port")
-            .on_press(actions::install_port);
+        let update = if mods.work.is_none() {
+            button("Update", ButtonKind::Secondary, p)
+                .key("mods/update-port")
+                .on_press(actions::install_port)
+        } else {
+            button_off("Update", p).key("mods/update-port")
+        };
         notices.push(callout(words, Some(update), p).key("mods/update"));
     }
     notices.extend(fallback(mods, &port.version, p));
@@ -893,9 +911,11 @@ pub(super) fn update_mod(
         .gap(space::XS)
         .items_center()
         .child(badge(format!("{version} is out"), Tone::News, p))
-        .children(mods.work.is_none().then(|| {
+        .child(if mods.work.is_none() {
             button("Update", ButtonKind::Secondary, p)
                 .key(format!("{key}/update"))
                 .on_press(move |app: &mut App| actions::review_mod_update(app, &wanted))
-        }))
+        } else {
+            button_off("Update", p).key(format!("{key}/update"))
+        })
 }

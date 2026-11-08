@@ -149,20 +149,33 @@ fn body(app: &App, p: &Palette) -> Option<El> {
             .child(col().gap(space::SM).children(facts(app, id, p)))
             .children(page.map(|page| screenshots(mods, page, p)))
             .children(page.and_then(|page| page.readme.as_deref()).map(|readme| {
-                section(
-                    "About",
-                    readme_shown(readme, mods.expanded.contains(&Expand::Readme), p),
-                    p,
-                )
-                .key("mods/details/readme")
+                let all = mods.expanded.contains(&Expand::Readme);
+                let (blocks, long) = readme_shown(readme, all, p);
+                let toggle = long.then(|| {
+                    fold(
+                        all,
+                        "Show more",
+                        "mods/details/readme/fold",
+                        Expand::Readme,
+                        p,
+                    )
+                });
+                section("About", toggle, blocks, p).key("mods/details/readme")
             }))
             .children(page.filter(|page| !page.releases.is_empty()).map(|page| {
-                section(
-                    "Releases",
-                    releases(page, mods.expanded.contains(&Expand::Releases), p),
-                    p,
-                )
-                .key("mods/details/releases")
+                let all = mods.expanded.contains(&Expand::Releases);
+                let (rows, long) = releases(page, all, p);
+                let more = format!("Show all {}", page.releases.len());
+                let toggle = long.then(|| {
+                    fold(
+                        all,
+                        &more,
+                        "mods/details/releases/fold",
+                        Expand::Releases,
+                        p,
+                    )
+                });
+                section("Releases", toggle, rows, p).key("mods/details/releases")
             }))
             .children(
                 (mods.details.get(id).is_some_and(Option::is_none)).then(|| {
@@ -294,40 +307,50 @@ fn screenshots(mods: &super::Mods, page: &ModDetails, p: &Palette) -> El {
         }))
 }
 
-/// A section of the pane: its label over what's in it.
-fn section(name: &str, body: Vec<El>, p: &Palette) -> El {
+/// A section of the pane: its label (with showing more or less of it, at
+/// its right, when it's long) over what's in it.
+fn section(name: &str, toggle: Option<El>, body: Vec<El>, p: &Palette) -> El {
     col()
         .gap(space::SM)
         .child(rule(p))
-        .child(label(name.to_owned()).font(text::LABEL).color(p.faint))
+        .child(
+            row()
+                .items_center()
+                .child(label(name.to_owned()).font(text::LABEL).color(p.faint))
+                .child(spacer())
+                .children(toggle.map(|toggle| row().mr(-TEXT_ACTION_INSET).child(toggle))),
+        )
         .children(body)
 }
 
-/// The README's first blocks, or all of it once the player asks.
-fn readme_shown(readme: &str, all: bool, p: &Palette) -> Vec<El> {
+/// The README's first blocks, or all of it once the player asks; and
+/// whether it's long enough to be cut.
+fn readme_shown(readme: &str, all: bool, p: &Palette) -> (Vec<El>, bool) {
     let mut blocks = markdown(readme, p);
-    if !all && blocks.len() > README_BLOCKS {
+    let long = blocks.len() > README_BLOCKS;
+    if !all {
         blocks.truncate(README_BLOCKS);
-        blocks.push(more(
-            "Show more",
-            "mods/details/readme/more",
-            Expand::Readme,
-            p,
-        ));
     }
-    blocks
+    (blocks, long)
 }
 
 /// The latest releases, or all of them once the player asks: each its
 /// version and date over its changelog, a changelog cut to its first lines
-/// until then.
-fn releases(page: &ModDetails, all: bool, p: &Palette) -> Vec<El> {
+/// until then; and whether there's more than that to show.
+fn releases(page: &ModDetails, all: bool, p: &Palette) -> (Vec<El>, bool) {
+    let long = page.releases.len() > RELEASES_SHOWN
+        || page.releases.iter().any(|release| {
+            release
+                .changelog
+                .as_deref()
+                .is_some_and(|changelog| markdown(changelog, p).len() > CHANGELOG_BLOCKS)
+        });
     let shown = if all {
         page.releases.len()
     } else {
         RELEASES_SHOWN
     };
-    let mut rows: Vec<El> = page
+    let rows: Vec<El> = page
         .releases
         .iter()
         .take(shown)
@@ -360,24 +383,15 @@ fn releases(page: &ModDetails, all: bool, p: &Palette) -> Vec<El> {
                 .child(col().gap(space::XXS).children(changelog))
         })
         .collect();
-    if page.releases.len() > shown {
-        rows.push(more(
-            &format!("Show all {} releases", page.releases.len()),
-            "mods/details/releases/more",
-            Expand::Releases,
-            p,
-        ));
-    }
-    rows
+    (rows, long)
 }
 
-/// A text action that shows the rest of a part of the details.
-fn more(words: &str, key: &str, part: Expand, p: &Palette) -> El {
-    row().ml(-TEXT_ACTION_INSET).child(
-        text_action(words, false, p)
-            .key(key.to_owned())
-            .on_press(move |app: &mut App| actions::expand(app, part)),
-    )
+/// Showing all of a part of the details (`more` says how), or only its
+/// start again once it all shows.
+fn fold(all: bool, more: &str, key: &str, part: Expand, p: &Palette) -> El {
+    text_action(if all { "Show less" } else { more }, false, p)
+        .key(key.to_owned())
+        .on_press(move |app: &mut App| actions::toggle_expanded(app, part))
 }
 
 /// Markdown read plainly: headings as strong lines, paragraphs and list

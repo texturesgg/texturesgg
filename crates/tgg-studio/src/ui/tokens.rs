@@ -150,6 +150,9 @@ pub mod size {
     pub const SIDEBAR: f32 = 220.0;
     /// A place in the sidebar, and a row in a pane.
     pub const ROW: f32 = 32.0;
+    /// A tab's words, centered in this, over its underline; what sits at
+    /// the end of a row of tabs centers in it too.
+    pub const TAB: f32 = 34.0;
     /// A control's height.
     pub const CONTROL: f32 = 28.0;
     /// The pane column beside the stage.
