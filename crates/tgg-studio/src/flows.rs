@@ -985,3 +985,32 @@ fn checking_for_updates_moves_nothing_on_the_page() {
     jobs_until(&mut rt, |app| app.mods.registry == crate::mods::Registry::Answered);
     assert_eq!(rt.presented("mods/tab/sets").expect("the tabs show").0, before, "and once it's answered");
 }
+
+#[test]
+fn versions_install_switch_and_remove_and_an_installed_newer_one_is_still_an_update() {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let (mut rt, _disc, _data) = with_port(net.clone());
+    net.publish_port("0.6.0");
+    tap(&mut rt, "mods/refresh");
+    jobs_until(&mut rt, |app| app.mods.registry == crate::mods::Registry::Answered);
+    tap(&mut rt, "mods/versions");
+    settle(&mut rt);
+    assert!(rt.find("mods/versions/0.6.0/install").is_some(), "the newer release offers to install");
+    assert!(rt.find("mods/versions/0.5.0/use").is_none(), "the one in use has nothing to do");
+    tap(&mut rt, "mods/versions/0.6.0/install");
+    jobs_until(&mut rt, |app| app.mods.port().is_some_and(|port| port.version == "0.6.0") && app.mods.registry == crate::mods::Registry::Answered);
+    tap(&mut rt, "mods/versions/0.5.0/use");
+    settle(&mut rt);
+    assert_eq!(rt.state.mods.port().map(|port| port.version.as_str()), Some("0.5.0"));
+    tap(&mut rt, "mods/versions/done");
+    jobs_until(&mut rt, |app| app.mods.registry == crate::mods::Registry::Answered);
+    assert_eq!(rt.state.mods.port_update().map(|release| release.version), Some("0.6.0".to_owned()), "0.6.0, installed, is still newer");
+    tap(&mut rt, "mods/update-port");
+    assert!(rt.state.mods.work.is_none(), "using an installed version downloads nothing");
+    assert_eq!(rt.state.mods.port().map(|port| port.version.as_str()), Some("0.6.0"));
+    jobs_until(&mut rt, |app| app.mods.registry == crate::mods::Registry::Answered);
+    tap(&mut rt, "mods/versions");
+    settle(&mut rt);
+    tap(&mut rt, "mods/versions/0.5.0/remove");
+    assert_eq!(rt.state.mods.ports.len(), 1, "an older version can go");
+}

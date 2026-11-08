@@ -71,6 +71,7 @@ fn head_side(app: &App, p: &Palette) -> El {
             .children(disc_line(app, p));
     }
     side.child(row().mr(-TEXT_ACTION_INSET).gap(space::XXS)
+        .children(mods.port().is_some().then(|| text_action("Versions…", false, p).key("mods/versions").on_press(|app: &mut App| actions::show_versions(app, true))))
         .children(mods.port().is_some().then(|| text_action("Choose a disc…", false, p).key("mods/choose-disc").on_press_tx(actions::choose_disc)))
         .child(check))
 }

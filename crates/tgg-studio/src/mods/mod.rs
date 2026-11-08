@@ -14,6 +14,7 @@
 pub mod actions;
 pub mod details;
 pub mod review;
+pub mod versions;
 pub mod view;
 
 use rune::TextEdit;
@@ -67,6 +68,8 @@ pub struct Mods {
     /// When nothing is built for the current tgg-melee: the newest older one
     /// installed that has mods, and how many.
     pub older_with_mods: Option<(String, usize)>,
+    /// The versions of tgg-melee show, in a dialog.
+    pub versions: bool,
 }
 
 /// An older tgg-melee to go back to: its version, and how many installed
@@ -108,6 +111,7 @@ impl Default for Mods {
             fallback: None,
             next_built: None,
             older_with_mods: None,
+            versions: false,
         }
     }
 }
@@ -168,12 +172,21 @@ impl Mods {
         self.ports.iter().find(|port| port.current)
     }
 
-    /// A newer tgg-melee than every installed one, when there is one.
+    /// The newest tgg-melee newer than the one in use, when there is one: a
+    /// release textures.gg offers, or one already installed (the player went
+    /// back to an older version). Updating to an installed one switches.
     pub fn port_update(&self) -> Option<PortRelease> {
-        if self.ports.is_empty() {
-            return None;
-        }
-        tgg_mod::port_update(&self.ports, &self.releases)
+        let current = self.port()?;
+        let installed: Vec<PortRelease> = self.ports.iter().map(|port| port.release.clone()).collect();
+        let known: Vec<PortRelease> = self.releases.iter().cloned()
+            .chain(installed.into_iter().filter(|release| !self.releases.iter().any(|known| known.version == release.version)))
+            .collect();
+        tgg_mod::port_update(std::slice::from_ref(current), &known)
+    }
+
+    /// Whether tgg-melee `version` is installed already.
+    pub fn has_port(&self, version: &str) -> bool {
+        self.ports.iter().any(|port| port.version == version)
     }
 
     /// Whether anything installed has a newer version.

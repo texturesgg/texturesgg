@@ -62,6 +62,27 @@ fn fallback(folder: &Path, mods: &super::Mods) -> Option<Fallback> {
     })
 }
 
+/// Show or hide the versions of tgg-melee.
+pub fn show_versions(app: &mut App, shown: bool) {
+    app.mods.versions = shown;
+}
+
+pub fn hide_versions(app: &mut App) {
+    show_versions(app, false);
+}
+
+/// Remove the installed tgg-melee `version`, which isn't the one in use.
+pub fn remove_port(app: &mut App, version: &str) {
+    if app.mods.port().is_some_and(|port| port.version == version) {
+        return;
+    }
+    match tgg_mod::remove_port(&app.data.ports, version) {
+        Ok(()) => app.tell(format!("Removed tgg-melee {version}."), false),
+        Err(error) => app.tell(format!("Couldn't remove tgg-melee {version}: {error}."), true),
+    }
+    read_disk(app);
+}
+
 /// Make the installed tgg-melee `version` the one in use.
 pub fn use_port(app: &mut App, version: &str) {
     match tgg_mod::ports::use_port(&app.data.ports, version) {
@@ -93,8 +114,12 @@ pub fn fetch(app: &mut App) {
         let layout = port.clone().or_else(|| releases.as_ref().ok()?.first().map(|release| release.port(PathBuf::new())));
         // A newer tgg-melee with a layout of its own: what's built for it,
         // to say before updating which mods would have to wait.
-        let next = releases.as_ref().ok()
-            .and_then(|releases| tgg_mod::port_update(&installed, releases))
+        // Newer than the version in use, offered or installed already.
+        let current: Vec<tgg_mod::PortInstall> = installed.iter().filter(|install| install.current).cloned().collect();
+        let known: Vec<tgg_mod::PortRelease> = releases.as_ref().map(Clone::clone).unwrap_or_default().into_iter()
+            .chain(installed.iter().map(|install| install.release.clone()))
+            .collect();
+        let next = tgg_mod::port_update(&current, &known).filter(|_| !current.is_empty())
             .filter(|release| port.as_ref().is_some_and(|port| port.game_abi != release.game_abi))
             .map(|release| tgg_mod::catalog(&*net, &release.port(PathBuf::new())));
         let catalog = layout.map(|port| tgg_mod::catalog(&*net, &port));
@@ -255,6 +280,24 @@ pub fn install_port(app: &mut App) {
         },
         None => return,
     };
+    install_release(app, release);
+}
+
+/// Install tgg-melee `version` from textures.gg and make it the one in use;
+/// when it's installed already, just use it.
+pub fn install_version(app: &mut App, version: &str) {
+    let Some(release) = app.mods.releases.iter().find(|release| release.version == version).cloned() else { return };
+    install_release(app, release);
+}
+
+fn install_release(app: &mut App, release: tgg_mod::PortRelease) {
+    if app.mods.work.is_some() {
+        return;
+    }
+    if app.mods.has_port(&release.version) {
+        use_port(app, &release.version);
+        return;
+    }
     let (net, ports) = (app.mods.net.clone(), app.data.ports.clone());
     let work = start(app, format!("Installing tgg-melee {}", release.version));
     app.jobs.spawn("tgg-melee install", move || {

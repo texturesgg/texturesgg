@@ -39,6 +39,7 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .children(library::review::view(app, &p))
         .children(editor::view::prompt(app, &p))
         .children(mods::review::view(app, &p))
+        .children(mods::versions::view(app, &p))
 }
 
 /// The places, then the player's game at the foot. Hidden, it narrows to

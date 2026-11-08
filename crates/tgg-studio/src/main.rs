@@ -141,6 +141,16 @@ const SCENES: &[Scene] = &[
     // install under way.
     ("mods", |app| mods_scene(app, false)),
     ("mods-installed", |app| mods_scene(app, true)),
+    // tgg-melee's versions: the one installed, and a newer one offered.
+    ("mods-versions", |app| {
+        mods_scene(app, true);
+        let newer = app.mods.releases.first().cloned().map(|mut release| {
+            release.version = "0.6.0".into();
+            release
+        });
+        app.mods.releases.splice(0..0, newer);
+        mods::actions::show_versions(app, true);
+    }),
     // Before textures.gg first answers: placeholders where the collections go.
     ("mods-loading", |app| {
         mods_scene(app, true);
