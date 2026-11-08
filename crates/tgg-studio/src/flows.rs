@@ -1875,3 +1875,111 @@ fn a_recent_edit_opens_again_from_the_sidebar() {
     );
     assert_eq!(rt.state.nav.place, Place::Melee);
 }
+
+/// The fake's Competitive at version 2: without Quick start, and with a
+/// newer Legal stages published.
+fn competitive_v2(net: &tgg_mod::FakeNet) {
+    let mut set = net.set("competitive").expect("the fake's Competitive");
+    set.version = 2;
+    set.mods.retain(|m| m.id.as_str() != "tgg.quick-start");
+    net.publish_set(set);
+    net.publish_mod("tgg.legal-stages", "Legal stages", "0.1.2", &[]);
+}
+
+#[test]
+fn a_collection_update_shows_what_changes_and_removes_what_it_drops() {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let (mut rt, _disc, data) = with_port(net.clone());
+    install_set(&mut rt, "competitive");
+    competitive_v2(&net);
+    tap(&mut rt, "mods/refresh");
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered
+    });
+    tap_shown(&mut rt, "mods/set/competitive/install");
+    settle(&mut rt);
+    let review = rt
+        .state
+        .mods
+        .review
+        .as_ref()
+        .expect("the update's plan shows");
+    let legal = review
+        .plan
+        .steps
+        .iter()
+        .find(|step| step.id.as_str() == "tgg.legal-stages")
+        .expect("Legal stages");
+    assert!(
+        matches!(&legal.action, tgg_mod::Action::Update { from } if from.to_string() == "0.1.1"),
+        "an update from 0.1.1, not 'installed': {:?}",
+        legal.action
+    );
+    assert_eq!(
+        review
+            .dropped
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>(),
+        ["tgg.quick-start"]
+    );
+    assert!(rt.find("mods/review/dropped/tgg.quick-start").is_some());
+    tap(&mut rt, "mods/review/confirm");
+    jobs_until(&mut rt, |app| {
+        app.mods.work.is_none()
+            && app
+                .mods
+                .local
+                .get(&"tgg.quick-start".parse().expect("an id"))
+                .is_none()
+    });
+    assert!(
+        !data.path().join("mods/tgg.quick-start").exists(),
+        "dropped, and removed with the update"
+    );
+    let legal = rt
+        .state
+        .mods
+        .local
+        .get(&"tgg.legal-stages".parse().expect("an id"))
+        .expect("still installed");
+    assert_eq!(legal.manifest.version.to_string(), "0.1.2");
+    assert_eq!(
+        rt.state.notice.as_ref().map(|notice| notice.text.as_str()),
+        Some("Updated 1 mod and removed 1 mod.")
+    );
+}
+
+#[test]
+fn a_dropped_mod_can_stay() {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let (mut rt, _disc, _data) = with_port(net.clone());
+    install_set(&mut rt, "competitive");
+    competitive_v2(&net);
+    tap(&mut rt, "mods/refresh");
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered
+    });
+    tap_shown(&mut rt, "mods/set/competitive/install");
+    settle(&mut rt);
+    tap_shown(&mut rt, "mods/review/remove-dropped");
+    tap(&mut rt, "mods/review/confirm");
+    jobs_until(&mut rt, |app| {
+        app.mods.work.is_none()
+            && app
+                .mods
+                .local
+                .set("competitive")
+                .is_some_and(|set| set.set.version == 2)
+    });
+    let quick = rt
+        .state
+        .mods
+        .local
+        .get(&"tgg.quick-start".parse().expect("an id"))
+        .expect("kept");
+    assert!(
+        quick.sets().is_empty(),
+        "kept, no longer part of Competitive"
+    );
+}

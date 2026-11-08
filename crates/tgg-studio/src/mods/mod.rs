@@ -83,6 +83,9 @@ pub struct Mods {
     pub images: HashMap<String, rune::Pixels>,
     /// The parts of the chosen mod's details shown in full.
     pub expanded: Vec<Expand>,
+    /// Mods to remove once the install under way has applied: those an
+    /// update dropped.
+    pub removing: Vec<ModId>,
 }
 
 /// An older tgg-melee to go back to: its version, and how many installed
@@ -129,6 +132,7 @@ impl Default for Mods {
             details: HashMap::new(),
             images: HashMap::new(),
             expanded: Vec::new(),
+            removing: Vec::new(),
         }
     }
 }
@@ -358,6 +362,11 @@ impl Work {
 pub struct Review {
     pub title: String,
     pub plan: Plan,
+    /// Mods an update drops: installed only because a collection listed
+    /// them, which its newest version no longer does.
+    pub dropped: Vec<ModId>,
+    /// Whether applying it removes them too (else they stay, on their own).
+    pub remove_dropped: bool,
 }
 
 /// The disc tgg-melee plays: an unmodified one, since netplay and replays

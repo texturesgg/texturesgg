@@ -178,6 +178,22 @@ const SCENES: &[Scene] = &[
     // install under way.
     ("mods", |app| mods_scene(app, false)),
     ("mods-installed", |app| mods_scene(app, true)),
+    // Updating Competitive to a version without Quick start, Online rules
+    // newer.
+    ("mods-update-review", |app| {
+        mods_scene(app, true);
+        if let Some(set) = app
+            .mods
+            .sets
+            .iter_mut()
+            .find(|set| set.name == "competitive")
+        {
+            set.version += 1;
+            set.mods.retain(|m| m.id.as_str() != "tgg.quick-start");
+        }
+        mods::actions::read_disk(app);
+        mods::actions::review_set(app, "competitive");
+    }),
     // tgg-melee's versions: the one installed, and a newer one offered.
     ("mods-versions", |app| {
         mods_scene(app, true);

@@ -233,6 +233,8 @@ pub fn review_mod(app: &mut App, id: &ModId) {
     app.mods.review = Some(Review {
         title: format!("Install {}", app.mods.name_of(id)),
         plan,
+        dropped: Vec::new(),
+        remove_dropped: false,
     });
 }
 
@@ -265,18 +267,33 @@ pub fn done(app: &mut App, done: Done) -> bool {
             app.mods.work = None;
             match result {
                 Ok(applied) => {
+                    // Then what the update dropped, as the player chose.
+                    let mut removed = 0;
+                    for id in std::mem::take(&mut app.mods.removing) {
+                        match tgg_mod::uninstall(&app.data.mods, &id) {
+                            Ok(()) => removed += 1,
+                            Err(error) => tgg_app::log(&format!("removing {id}: {error}")),
+                        }
+                    }
                     let (new, updated) = (applied.installed.len(), applied.updated.len());
-                    app.tell(
-                        match (new, updated) {
-                            (0, 0) => "Your mods are up to date.".to_owned(),
-                            (new, 0) => format!("Installed {}.", count(new, "mod")),
-                            (0, updated) => format!("Updated {}.", count(updated, "mod")),
-                            (new, updated) => {
-                                format!("Installed {} and updated {updated}.", count(new, "mod"))
-                            }
-                        },
-                        false,
-                    );
+                    let mut parts = Vec::new();
+                    if new > 0 {
+                        parts.push(format!("installed {}", count(new, "mod")));
+                    }
+                    if updated > 0 {
+                        parts.push(format!("updated {}", count(updated, "mod")));
+                    }
+                    if removed > 0 {
+                        parts.push(format!("removed {}", count(removed, "mod")));
+                    }
+                    let said = match parts.split_last() {
+                        None => "Your mods are up to date.".to_owned(),
+                        Some((last, [])) => format!("{}.", capitalized(last)),
+                        Some((last, rest)) => {
+                            format!("{} and {last}.", capitalized(&rest.join(", ")))
+                        }
+                    };
+                    app.tell(said, false);
                 }
                 Err(Error::Cancelled) => app.tell(
                     "Stopped installing; each mod is as it was or fully installed.",
@@ -284,6 +301,8 @@ pub fn done(app: &mut App, done: Done) -> bool {
                 ),
                 Err(error) => app.tell(format!("Couldn't install: {error}."), true),
             }
+            // Stopped or failed: what it dropped stays.
+            app.mods.removing.clear();
             read_disk(app);
         }
         Done::Disc(found) => app.mods.disc = found.map_or(Disc::Missing, Disc::Found),
@@ -502,15 +521,24 @@ pub fn review_set(app: &mut App, name: &str) {
     ) else {
         return;
     };
-    let plan = tgg_mod::plan_set(set, catalog, &app.mods.local);
-    let verb = if app.mods.local.set(name).is_some() {
-        "Update"
+    let mods = &app.mods;
+    // Installed, it updates: against its newest version and the newest
+    // releases, not as an install that leaves fitting versions be.
+    let (verb, plan) = if mods.local.lock.set(name).is_some() {
+        match tgg_mod::plan_set_update(name, &mods.sets, catalog, &mods.local) {
+            Ok(plan) => ("Update", plan),
+            Err(error) => return app.tell(format!("Couldn't plan the update: {error}."), true),
+        }
     } else {
-        "Install"
+        ("Install", tgg_mod::plan_set(set, catalog, &mods.local))
     };
+    let title = format!("{verb} {}", set.title);
+    let dropped = dropped(mods, Some(name));
     app.mods.review = Some(Review {
-        title: format!("{verb} {}", set.title),
+        title,
         plan,
+        dropped,
+        remove_dropped: true,
     });
 }
 
@@ -520,10 +548,47 @@ pub fn review_updates(app: &mut App) {
         return;
     };
     let plan = tgg_mod::plan_updates(&app.mods.sets, catalog, &app.mods.local);
+    let dropped = dropped(&app.mods, None);
     app.mods.review = Some(Review {
         title: "Update your mods".into(),
         plan,
+        dropped,
+        remove_dropped: true,
     });
+}
+
+/// The mods an update of the installed collection `only` (or of every one)
+/// drops: installed for collections whose newest versions no longer list
+/// them, and not on their own or for a collection that still does.
+fn dropped(mods: &super::Mods, only: Option<&str>) -> Vec<ModId> {
+    let newest = |name: &str| mods.sets.iter().find(|set| set.name == name);
+    let lists = |name: &str, id: &ModId| {
+        newest(name)
+            .or_else(|| mods.local.lock.set(name))
+            .is_some_and(|set| set.mods.iter().any(|m| m.id == *id))
+    };
+    mods.local
+        .lock
+        .mods
+        .iter()
+        .filter(|(_, entry)| !entry.direct && !entry.sets.is_empty())
+        .filter(|(_, entry)| only.is_none_or(|name| entry.sets.iter().any(|set| set == name)))
+        // Only collections being updated drop mods; the rest keep theirs.
+        .filter(|(id, entry)| {
+            entry.sets.iter().all(|set| {
+                let updated = only.is_none_or(|name| name == set);
+                updated && newest(set).is_some() && !lists(set, id)
+            })
+        })
+        .map(|(id, _)| id.clone())
+        .collect()
+}
+
+/// Remove the mods an update drops along with it, or keep them.
+pub fn set_remove_dropped(app: &mut App, remove: bool) {
+    if let Some(review) = &mut app.mods.review {
+        review.remove_dropped = remove;
+    }
 }
 
 pub fn cancel_review(app: &mut App) {
@@ -540,6 +605,11 @@ pub fn confirm_review(app: &mut App) {
     };
     let (net, mods) = (app.mods.net.clone(), app.data.mods.clone());
     let plan: Plan = review.plan;
+    app.mods.removing = if review.remove_dropped {
+        review.dropped
+    } else {
+        Vec::new()
+    };
     let work = start(app, review.title);
     app.jobs.spawn("mods install", move || {
         let report = reporter(&work);
