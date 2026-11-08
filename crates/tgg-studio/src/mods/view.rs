@@ -45,7 +45,7 @@ fn tabs(mods: &Mods, p: &Palette) -> El {
         tab(name, count, mods.tab == which, p).key(key.to_owned()).on_press(move |app: &mut App| actions::show_tab(app, which))
     };
     row().gap(space::LG)
-        .child(tab_for("Sets", mods.sets.len(), Tab::Sets, "mods/tab/sets"))
+        .child(tab_for("Collections", mods.sets.len(), Tab::Sets, "mods/tab/sets"))
         .child(tab_for("All mods", mods.offered().len(), Tab::All, "mods/tab/all"))
         .child(tab_for("Installed", mods.local.mods.len(), Tab::Installed, "mods/tab/installed"))
 }
@@ -138,7 +138,7 @@ fn note(mods: &Mods, p: &Palette) -> Option<El> {
 /// The sets textures.gg offers, as cards.
 fn sets(mods: &Mods, p: &Palette) -> El {
     let empty = (mods.sets.is_empty() && mods.registry == Registry::Answered)
-        .then(|| label("textures.gg has no sets yet.").key("mods/no-sets").font(text::BODY).color(p.muted));
+        .then(|| label("textures.gg has no collections yet.").key("mods/no-sets").font(text::BODY).color(p.muted));
     col().gap(space::SM)
         .children(note(mods, p))
         .children(empty)
@@ -250,7 +250,7 @@ fn installed(mods: &Mods, p: &Palette) -> El {
     let update_all = (mods.has_updates() && mods.catalog.is_some() && mods.work.is_none())
         .then(|| button("Update all", ButtonKind::Secondary, p).key("mods/update-all").on_press(actions::review_updates));
     let empty = mods.local.mods.is_empty()
-        .then(|| label("Nothing installed yet. Install a set, or any mod from All mods.").key("mods/installed/empty").font(text::BODY).color(p.muted));
+        .then(|| label("Nothing installed yet. Install a collection, or any mod from All mods.").key("mods/installed/empty").font(text::BODY).color(p.muted));
     let rows = mods.local.mods.iter().map(|m| mod_row(mods, m, p));
     col().key("mods/installed").max_w(COLUMN).gap(space::SM)
         .children(update_all.map(|update_all| row().child(spacer()).child(update_all)))

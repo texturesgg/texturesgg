@@ -46,7 +46,7 @@ fn body(app: &App, p: &Palette) -> Option<El> {
     }
     let sets = mods.sets_with(id);
     if !sets.is_empty() {
-        facts.push(fact("In sets", sets.join(", "), p));
+        facts.push(fact("In collections", sets.join(", "), p));
     }
     if let Some(license) = &manifest.license {
         facts.push(fact("License", license.clone(), p));
