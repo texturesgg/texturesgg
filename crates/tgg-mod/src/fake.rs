@@ -7,7 +7,9 @@ use crate::manifest::Manifest;
 use crate::net::{Net, NetError};
 use crate::package::{self, Package};
 use crate::ports::{self, PortRelease, ReleaseFile, ReleaseFiles, Toolchain};
-use crate::registry::{Image, ModDetails, ModPage, ModRelease, ModSummary, Set, SetMod, System};
+use crate::registry::{
+    Image, ModDetails, ModPage, ModRelease, ModSummary, Publisher, Set, SetMod, System,
+};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
@@ -307,7 +309,8 @@ impl FakeNet {
         state.latest = Some(version.into());
     }
 
-    /// Every mod's summary, most installed first, as the registry lists them.
+    /// Every mod's summary, official first, then most installed, as the
+    /// registry lists them.
     fn summaries(state: &State) -> Vec<ModSummary> {
         let mut newest: BTreeMap<&str, &CatalogEntry> = BTreeMap::new();
         for entry in &state.catalog {
@@ -328,7 +331,11 @@ impl FakeNet {
                     id: entry.manifest.id.clone(),
                     name: entry.manifest.name.clone(),
                     description: entry.manifest.description.clone(),
-                    author: "textures.gg".into(),
+                    author: "texturesgg".into(),
+                    publisher: Publisher {
+                        name: "textures.gg".into(),
+                        official: true,
+                    },
                     icon: Some(Image {
                         url: icon_url(&bytes),
                         width: size,
@@ -349,7 +356,11 @@ impl FakeNet {
                 }
             })
             .collect();
-        summaries.sort_by(|a, b| b.installs.cmp(&a.installs).then_with(|| a.id.cmp(&b.id)));
+        summaries.sort_by(|a, b| {
+            (b.publisher.official, b.installs)
+                .cmp(&(a.publisher.official, a.installs))
+                .then_with(|| a.id.cmp(&b.id))
+        });
         summaries
     }
 

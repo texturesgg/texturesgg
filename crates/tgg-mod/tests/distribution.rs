@@ -722,6 +722,14 @@ fn the_store_lists_every_mod_and_details_one() {
     assert_eq!(stages.version.to_string(), "0.1.1");
     assert_eq!(stages.tags, ["competitive", "netplay"]);
     assert_eq!(stages.sets, ["competitive"]);
+    // First-party mods are published by textures.gg, which vouches for them.
+    assert_eq!(
+        stages.publisher,
+        tgg_mod::Publisher {
+            name: "textures.gg".into(),
+            official: true
+        }
+    );
     let icon = stages.icon.as_ref().expect("an icon");
     assert_eq!((icon.width, icon.height), (64, 64));
     let png = net.get(&icon.url, 1 << 20).expect("the icon");

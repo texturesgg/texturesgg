@@ -86,8 +86,8 @@ pub use ports::{
     port_update, remove_port,
 };
 pub use registry::{
-    Image, ModDetails, ModPage, ModRelease, ModSummary, Set, SetMod, System, catalog, mod_details,
-    mods, sets,
+    Image, ModDetails, ModPage, ModRelease, ModSummary, Publisher, Set, SetMod, System, catalog,
+    mod_details, mods, sets,
 };
 pub use sdk::Sdk;
 pub use symbols::Symbols;
