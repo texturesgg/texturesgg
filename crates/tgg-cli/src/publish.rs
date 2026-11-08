@@ -2,7 +2,7 @@
 //! versions to its repository there, which the registry builds.
 
 use crate::account::Site;
-use crate::build::{mod_source, read_manifest};
+use crate::build::{self, Options, mod_source, read_manifest};
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 use serde_json::json;
@@ -50,15 +50,12 @@ pub fn register(site: &Site, dir: &Path) -> Result<()> {
     create(site, &manifest)
 }
 
-/// Tag `v<version>` at HEAD (or reuse that tag if it is already there) and
-/// push HEAD and the tag, creating the mod on textures.gg first if it isn't
-/// there yet. The registry builds every tag pushed to it.
-pub fn publish(site: &Site, dir: &Path) -> Result<()> {
-    #[derive(Deserialize)]
-    struct PushAccess {
-        remote: String,
-        token: String,
-    }
+/// Check the mod in `dir` can be published, before anything reaches
+/// textures.gg: its source is committed, and it builds here as `tgg mod
+/// build` builds it with `build` (`None`: `--skip-build`). A push that
+/// doesn't build would only fail on textures.gg, and count toward the
+/// author's daily builds there. Returns its manifest.
+pub fn check(dir: &Path, build: Option<&Options>) -> Result<Manifest> {
     let manifest = read_manifest(dir)?;
     mod_source(dir)?;
     ensure!(
@@ -70,9 +67,28 @@ pub fn publish(site: &Site, dir: &Path) -> Result<()> {
         git(dir, &["status", "--porcelain"])?.is_empty(),
         "commit your changes first; the registry builds what is committed"
     );
+    if let Some(options) = build {
+        build::build(dir, options).context(
+            "the mod doesn't build here, so it wasn't published (--skip-build publishes anyway)",
+        )?;
+        println!("Built {} {}", manifest.id, manifest.version);
+    }
+    Ok(manifest)
+}
+
+/// Tag `v<version>` at HEAD (or reuse that tag if it is already there) and
+/// push HEAD and the tag, creating the mod on textures.gg first if it isn't
+/// there yet. The registry builds every tag pushed to it. `manifest` is
+/// what `check` read.
+pub fn publish(site: &Site, dir: &Path, manifest: &Manifest) -> Result<()> {
+    #[derive(Deserialize)]
+    struct PushAccess {
+        remote: String,
+        token: String,
+    }
     let head = git(dir, &["rev-parse", "HEAD"])?;
     if !site.exists(&format!("/api/code-mods/{}", manifest.id))? {
-        create(site, &manifest)?;
+        create(site, manifest)?;
     }
     let tag = format!("v{}", manifest.version);
     match git(
@@ -122,4 +138,67 @@ pub fn publish(site: &Site, dir: &Path) -> Result<()> {
         manifest.id, manifest.version
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    /// A committed mod in a fresh git repository: `files` maps paths to contents.
+    fn repo(files: &[(&str, &str)]) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("temp dir");
+        for (path, contents) in files {
+            let path = dir.path().join(path);
+            fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+            fs::write(path, contents).expect("write");
+        }
+        for args in [
+            &["init", "-q"][..],
+            &["add", "-A"],
+            &[
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@example.com",
+                "commit",
+                "-qm",
+                "mod",
+            ],
+        ] {
+            git(dir.path(), args).expect("git");
+        }
+        dir
+    }
+
+    const MANIFEST: &str =
+        r#"{"api":"tgg-melee/0","id":"me.check","name":"Check","version":"1.0.0"}"#;
+
+    #[test]
+    fn a_mod_that_doesnt_build_isnt_published() {
+        let dir = repo(&[("manifest.json", MANIFEST), ("src/mod.c", "this isn't C\n")]);
+        let missing = dir.path().join("no-sdk");
+        let options = Options {
+            sdk: Some(&missing),
+            cc: Path::new("gcc"),
+            debug: false,
+        };
+        let error = check(dir.path(), Some(&options)).expect_err("refused");
+        assert!(format!("{error:#}").contains("--skip-build"), "{error:#}");
+        // --skip-build leaves the build to textures.gg.
+        let manifest = check(dir.path(), None).expect("skipped");
+        assert_eq!(manifest.version.to_string(), "1.0.0");
+    }
+
+    #[test]
+    fn a_mod_without_sources_builds_without_an_sdk() {
+        let dir = repo(&[("manifest.json", MANIFEST), ("assets/readme.txt", "hi")]);
+        let missing = dir.path().join("no-sdk");
+        let options = Options {
+            sdk: Some(&missing),
+            cc: Path::new("gcc"),
+            debug: false,
+        };
+        check(dir.path(), Some(&options)).expect("packs");
+    }
 }
