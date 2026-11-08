@@ -108,7 +108,7 @@ pub fn sign_in(app: &App, p: &Palette) -> Option<El> {
     };
     let parts = Dialog {
         title: "Sign in to textures.gg".into(),
-        line: "Confirm this code on textures.gg to connect the app to your account. It signs in the tgg command too.".into(),
+        line: "Confirm this code on textures.gg to connect the app to your account.".into(),
         body: Some(body),
         buttons: vec![
             button("Cancel", ButtonKind::Secondary, p).key("signin/cancel").on_press(actions::cancel),
@@ -134,7 +134,7 @@ pub fn account(app: &App, p: &Palette) -> Option<El> {
         .as_ref()
         .filter(|_| app.signin.account_open)?;
     let line = if who.verified {
-        "Signed in to textures.gg, here and in the tgg command.".to_owned()
+        "Signed in to textures.gg.".to_owned()
     } else {
         "Signed in to textures.gg. The site couldn't be reached to check just now.".to_owned()
     };

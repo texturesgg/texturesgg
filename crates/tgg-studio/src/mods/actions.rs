@@ -322,6 +322,10 @@ pub fn done(app: &mut App, done: Done) -> bool {
         }
         Done::GameEnded(result) => {
             app.mods.playing = None;
+            // A profile game's folder goes once nothing runs on it.
+            if let Err(error) = tgg_mod::finish_profile(&app.data.tgg) {
+                tgg_app::log(&format!("finishing profile games: {error}"));
+            }
             if let Err(why) = result {
                 app.tell(why, true);
             }
@@ -814,16 +818,20 @@ pub fn play(app: &mut App) {
         std::iter::empty::<&str>(),
         Some(&log),
     );
-    let mut running = match running {
-        Ok(running) => running,
-        Err(error) => {
-            app.tell(format!("tgg-melee couldn't start: {error}."), true);
-            return;
+    match running {
+        Ok(running) => {
+            watch(app, running);
+            app.tell(format!("tgg-melee {version} is running."), false);
         }
-    };
+        Err(error) => app.tell(format!("tgg-melee couldn't start: {error}."), true),
+    }
+}
+
+/// Watch the game `running` until it ends or Stop ends it: Play becomes
+/// Stop meanwhile, from wherever it was started (here, or a replay).
+pub fn watch(app: &mut App, mut running: tgg_mod::Running) {
     let stop = Arc::new(AtomicBool::new(false));
     app.mods.playing = Some(Playing { stop: stop.clone() });
-    app.tell(format!("tgg-melee {version} is running."), false);
     app.jobs.spawn("tgg-melee", move || {
         let ended = loop {
             if stop.load(Ordering::Relaxed) {
