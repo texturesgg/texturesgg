@@ -106,9 +106,11 @@ carry it. Every field but `format` and `game` may be left out.
     { "why": "unknown", "id": "tgg.example" },
     { "why": "not-built", "id": "tgg.example2", "version": "1.0.0" },
     { "why": "unapproved", "id": "tgg.example3", "version": "0.3.0" },
-    { "why": "no-mod-for", "code": "0x801D24FC" }
+    { "why": "no-mod-for", "code": "0x801D24FC" },
+    { "why": "no-mod-for", "code": "0x801239A8", "minor": true }
   ],
-  "slippi": { "version": "3.18.0", "codes": ["0x8016E510", "0x801D45EC", "frozen-stadium"] }
+  "slippi": { "version": "3.18.0", "stage": 3,
+              "codes": ["0x8016E510", "0x801D45EC", "frozen-stadium"] }
 }
 ```
 
@@ -129,9 +131,10 @@ carry it. Every field but `format` and `game` may be left out.
   its text).
 - `missing[].why`: `unknown` (no such mod), `not-built` (not built for the profile's game;
   `version` is the version or range asked for), `unapproved` (no approved release at that
-  version), `no-mod-for` (a Slippi code nothing reproduces).
-- `slippi`: the facts read from a Slippi replay: its Slippi version and every code its
-  console ran, as the mapping names codes (below). `resolve_profile` maps these again
+  version), `no-mod-for` (a Slippi code nothing reproduces; `minor` when the mapping lists
+  it as rarely changing a replay).
+- `slippi`: the facts read from a Slippi replay: its Slippi version, its stage and every
+  code its console ran, as the mapping names codes (below). `resolve_profile` maps these again
   with the mapping it's given, so a profile read with an old mapping (or none) resolves
   with the newest. Mods mapped from codes are listed in `mods` as well, for display.
 
@@ -174,36 +177,58 @@ means on, left out means off), with no settings.
       "id": "tgg.neutral-spawns", "range": "^0.1" },
     { "code": "0x801D45EC", "name": "Preload Stadium Transformations", "versions": "<3.19",
       "id": "tgg.stadium-preload", "range": "^0.1" },
-    { "code": "0x800908F4", "name": "UCF 0.8 (Logic)", "versions": "*",
+    { "code": "0x800908F4", "name": "UCF 0.8", "versions": ">=3.9", "unless": ["0x8006B460"],
       "id": "tgg.ucf-legacy", "range": "^0.1", "game": { "tgg.ucf": false } },
     { "code": "0x8006B460", "name": "UCF 0.84", "versions": "*", "game": { "tgg.ucf": true } },
+    { "code": "0x801C65C8", "name": "Stadium (3.19)", "versions": ">=3.19", "stages": [3] },
     { "code": "frozen-stadium", "name": "Frozen Pokémon Stadium", "versions": "*",
-      "id": "tgg.frozen-stadium", "range": "^0.1" }
+      "id": "tgg.frozen-stadium", "range": "^0.1" },
+    { "code": "ucf-off", "name": "No UCF", "versions": "*", "game": { "tgg.ucf": false } }
+  ],
+  "minor": [
+    { "code": "0x801239A8", "name": "Freeze glitch fix", "versions": "*" }
   ],
   "ignore": [
+    { "code": "0x800908F4", "name": "UCF 0.84", "versions": ">=3.16" },
     { "code": "0x801A50AC", "name": "…", "versions": "*" }
   ]
 }
 ```
 
-- `codes[].code`: a code's address, `0x` and eight upper-case hex digits (the address a
-  `C2` inject or an `04`/`06`/`00`-`03` write names), or a Game Start fact:
-  `frozen-stadium` (the frozen Stadium flag on, on Pokémon Stadium) or `ucf-off` (every
-  player's dashback and shield-drop fix off).
-- `versions`: the Slippi versions the entry holds for, as a semver requirement
-  (`*`, `<3.19`, `>=3.9, <3.17`). The first entry for a code whose `versions` match the
-  replay's Slippi version wins.
-- `id`, `range`: the mod and the releases that reproduce the code; left out when the game
-  itself does (`game` alone). `settings`: counted settings of that mod the code implies
-  (optional). `game`: built-in module states the code implies (optional).
-- `ignore`: codes that don't change gameplay (display, netcode, menus); `versions` as above.
-  A code a replay ran that no `codes` or `ignore` entry matches is `missing` as
-  `no-mod-for`.
+- `code`: a code's address, `0x` and eight upper-case hex digits (the address a `C2`
+  inject or an `04`/`06`/`00`-`03` write names), or a Game Start fact: `frozen-stadium`
+  (frozen Pokémon Stadium: Game Start's flag, or, from Slippi 3.18 on, which records
+  Stadium's transformations, a Stadium game with none) or `ucf-off` (every player's
+  dashback and shield-drop fix off).
+- `versions` (every list): the Slippi versions the entry holds for, as a semver
+  requirement (`*`, `<3.19`, `>=3.9, <3.17`).
+- `stages` (`codes` and `minor`, optional): the stage ids (Game Start's) the code matters
+  on. On any other stage the code is ignored.
+- `unless` (`codes`, optional): codes whose presence keeps the entry from holding. UCF
+  0.84 runs UCF 0.8's addresses too, so the legacy entries name 0.84's pad-buffer code.
+- `id`, `range`: the mod and the releases that reproduce the code. Without them, the
+  entry's `game` says what the game does itself; an entry with neither is a gameplay
+  code nothing reproduces yet (`no-mod-for`), useful with `stages`. `settings`: counted
+  settings of that mod the code implies (optional). `game`: built-in module states the
+  code implies (optional).
+- `minor`: gameplay codes nothing reproduces yet that change a replay only in rare
+  situations. They're `missing` as `no-mod-for` with `"minor": true`, which a front end
+  shows as "likely plays as is" rather than "won't match".
+- `ignore`: codes that don't change gameplay (display, netcode, menus).
+- For each code a replay ran, the first `codes` entry that holds (versions, stages,
+  unless) wins, then the first `minor` entry, then `ignore`. A code that only has entries
+  for other stages is ignored. Anything else is `missing` as `no-mod-for`.
 - `format` 1; `snapshot` names this state of the mapping. 404 reads as an empty mapping.
 
 The registry builds `codes` from the `slippi` field of each approved release's manifest
 (each release's id and the range of its releases that declare the code), plus entries for
-what the game does itself; `ignore` is kept by the registry's admins.
+what the game does itself; `minor` and `ignore` are kept by the registry's admins.
+
+Reading a replay touches its head (Event Payloads, Game Start, the gecko list) and its
+tail (`metadata`), not its frames, with one exception: a Pokémon Stadium game recorded
+by a Slippi that records transformations (the size table names event `0x41`) and whose
+Game Start flag isn't set is read on until its first transformation, which comes early;
+a frozen one is read to its end (a few MB).
 
 ### Catalog entries
 
