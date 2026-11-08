@@ -79,3 +79,10 @@ pub fn progress(fraction: f32, p: &Palette) -> El {
     row().h(BAR).w_full().radius(BAR / 2.0).fill(p.line_strong).clip_rounded(BAR / 2.0)
         .child(el().w_frac(fraction).min_w(0.0).h(BAR).fill(p.accent).motion(super::tokens::motion::DEFAULT))
 }
+
+/// A placeholder for a line of text still on its way: a muted bar, this
+/// fraction of its container wide. Still, never pulsing: nothing loops.
+pub fn skeleton(fraction: f32, p: &Palette) -> El {
+    const LINE: f32 = 10.0;
+    el().w_frac(fraction.clamp(0.0, 1.0)).h(LINE).radius(LINE / 2.0).fill(p.raise)
+}

@@ -951,7 +951,7 @@ fn a_newer_tgg_melee_says_which_mods_wait_and_the_older_one_stays_to_go_back_to(
     assert_eq!(rt.state.mods.fallback, None, "every mod here fits 0.6.0");
     // Say some didn't: the way back is one press.
     rt.update(|app, _| app.mods.fallback = Some(crate::mods::Fallback { version: "0.5.0".into(), unfit: 2 }));
-    rt.frame(FRAME);
+    settle(&mut rt);
     tap(&mut rt, "mods/use-fallback");
     assert_eq!(rt.state.mods.port().map(|port| port.version.as_str()), Some("0.5.0"));
     assert_eq!(rt.state.mods.fallback, None);
@@ -972,4 +972,16 @@ fn the_details_pane_is_the_window_tall_and_takes_the_window_controls() {
     tap(&mut rt, "mods/details/close");
     settle(&mut rt);
     assert_eq!(rt.state.mods.selected, None);
+}
+
+#[test]
+fn checking_for_updates_moves_nothing_on_the_page() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    let before = rt.presented("mods/tab/sets").expect("the tabs show").0;
+    tap(&mut rt, "mods/refresh");
+    settle(&mut rt);
+    assert!(rt.find("mods/checking").is_some(), "the action says it's checking, in place");
+    assert_eq!(rt.presented("mods/tab/sets").expect("the tabs show").0, before, "while it asks");
+    jobs_until(&mut rt, |app| app.mods.registry == crate::mods::Registry::Answered);
+    assert_eq!(rt.presented("mods/tab/sets").expect("the tabs show").0, before, "and once it's answered");
 }

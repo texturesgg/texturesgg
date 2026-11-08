@@ -141,6 +141,13 @@ const SCENES: &[Scene] = &[
     // install under way.
     ("mods", |app| mods_scene(app, false)),
     ("mods-installed", |app| mods_scene(app, true)),
+    // Before textures.gg first answers: placeholders where the collections go.
+    ("mods-loading", |app| {
+        mods_scene(app, true);
+        app.mods.sets.clear();
+        app.mods.catalog = None;
+        app.mods.registry = mods::Registry::Asking;
+    }),
     ("mods-installed-tab", |app| {
         mods_scene(app, true);
         mods::actions::show_tab(app, mods::Tab::Installed);

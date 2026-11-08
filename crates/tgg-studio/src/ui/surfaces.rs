@@ -121,3 +121,13 @@ pub fn dialog<S: 'static>(key: &str, role: &'static str, width: DialogWidth, par
 pub fn panel(p: &Palette) -> El {
     col().px(space::MD).py(space::MD).gap(space::SM).fill(p.surface).border(size::LINE, p.line).radius(radius::CONTROL)
 }
+
+/// A notice in a slim row: what needs the player (an update, a version to
+/// go back to, a missing disc), and the one action for it at its end. The
+/// caller passes the words and the action already built.
+pub fn callout(words: El, action: Option<El>, p: &Palette) -> El {
+    row().min_h(size::CONTROL + 2.0 * space::XS).px(space::SM).py(space::XS).gap(space::SM).items_center()
+        .fill(p.surface).border(size::LINE, p.line).radius(radius::CONTROL)
+        .child(col().grow(1.0).min_w(0.0).child(words))
+        .children(action)
+}

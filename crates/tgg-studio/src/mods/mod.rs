@@ -160,7 +160,7 @@ impl Mods {
     pub fn name_of(&self, id: &ModId) -> String {
         self.local.get(id).map(|m| m.manifest.name.clone())
             .or_else(|| self.newest(id).map(|entry| entry.manifest.name.clone()))
-            .unwrap_or_else(|| id.to_string())
+            .unwrap_or_else(|| readable(id))
     }
 
     /// The tgg-melee version in use.
@@ -292,5 +292,24 @@ mod tests {
         assert_eq!(size_text(840_000), "840 KB");
         assert_eq!(size_text(12_400_000), "12.4 MB");
         assert_eq!(size_text(2_500_000_000), "2.50 GB");
+    }
+}
+
+/// A name for the mod `id` when nothing textures.gg sent names it: its last
+/// part, dashes as spaces, capitalized ("tgg.neutral-spawns" reads
+/// "Neutral spawns").
+pub fn readable(id: &ModId) -> String {
+    let id = id.to_string();
+    let last = id.rsplit('.').next().unwrap_or(&id).replace(['-', '_'], " ");
+    let mut characters = last.chars();
+    characters.next().map_or_else(String::new, |first| first.to_uppercase().chain(characters).collect())
+}
+
+#[cfg(test)]
+mod readable_tests {
+    #[test]
+    fn an_id_reads_as_a_name() {
+        let id = "tgg.neutral-spawns".parse().expect("an id");
+        assert_eq!(super::readable(&id), "Neutral spawns");
     }
 }

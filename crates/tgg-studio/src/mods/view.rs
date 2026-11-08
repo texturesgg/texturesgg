@@ -1,39 +1,43 @@
-//! The Mods page: the game (tgg-melee, and the disc it plays), then the
-//! sets, every mod, or what's installed, a tab each; a mod's details slide
-//! in beside them.
+//! The Mods page: its head (with tgg-melee's version and the disc it plays
+//! at its side), a notice when something needs the player, then the
+//! collections, every mod, or what's installed, a tab each; a mod's details
+//! slide in at the window's right.
 
 use super::{Disc, Mods, Registry, Tab, actions, size_text};
 use crate::state::App;
 use crate::ui::tokens::{Palette, radius, space, text};
 use crate::ui::{
-    ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, page_head, panel, progress, rule, search_field, spacer, status,
-    switch, tab, text_action,
+    ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, callout, page_head, panel, progress, rule, search_field, skeleton,
+    spacer, status, switch, tab, text_action,
 };
 use rune::{El, ScrollSpec, col, el, row, text as label};
 use tgg_mod::{CatalogEntry, LocalMod, ModId, Set, SetStatus};
 
-/// A set's card: wide enough for its description to read as a line or two.
+/// A collection's card: wide enough for its description to read as a line
+/// or two.
 const SET_CARD: f32 = 300.0;
-/// The game's panel, and the lists, read best no wider than this.
+/// The notices and the lists read best no wider than this.
 const COLUMN: f32 = 720.0;
+/// The head's side, where tgg-melee's version and disc are, at its widest.
+const HEAD_SIDE: f32 = 420.0;
+/// Placeholder cards and rows while textures.gg first answers.
+const PLACEHOLDERS: usize = 4;
 
 pub fn view(app: &App, p: &Palette) -> El {
     let mods = &app.mods;
-    let head = row().items_end().gap(space::SM)
-        .child(col().grow(1.0).child(page_head("Mods", "From textures.gg, for tgg-melee: Melee with mods built in.", p)))
-        .children((mods.registry != Registry::Asking).then(|| {
-            text_action("Check for updates", false, p).key("mods/refresh").on_press(actions::fetch)
-        }));
+    let head = row().items_end().gap(space::LG)
+        .child(col().grow(1.0).min_w(0.0).child(page_head("Mods", "From textures.gg, for tgg-melee: Melee with mods built in.", p)))
+        .child(head_side(app, p));
     let list = match mods.tab {
         Tab::Sets => sets(mods, p),
         Tab::All => all(mods, p),
         Tab::Installed => installed(mods, p),
     };
+    let notices: Vec<El> = notices(app, p);
     let page = col().px(space::LG + 4.0).pt(space::XS).pb(space::XL).gap(space::LG)
         .child(head)
-        .children(registry_line(mods, p))
-        .children(mods.problem.as_ref().map(|problem| label(problem.clone()).key("mods/problem").font(text::BODY).color(p.danger)))
-        .child(game(app, p))
+        .children((!notices.is_empty()).then(|| col().max_w(COLUMN).gap(space::XS).children(notices)))
+        .children(first_run(mods, p))
         .child(col().gap(space::MD).child(col().child(tabs(mods, p)).child(rule(p))).child(list));
     col().key("mods/scroll").grow(1.0).min_h(0.0).scroll(ScrollSpec { stick_bottom: false }).child(page)
 }
@@ -48,74 +52,108 @@ fn tabs(mods: &Mods, p: &Palette) -> El {
         .child(tab_for("Installed", mods.local.mods.len(), Tab::Installed, "mods/tab/installed"))
 }
 
-/// Whether textures.gg is being asked, or couldn't be.
-fn registry_line(mods: &Mods, p: &Palette) -> Option<El> {
-    let (words, danger) = match &mods.registry {
-        Registry::Asking => ("Checking textures.gg…".to_owned(), false),
-        Registry::Offline => ("Can't reach textures.gg. What's installed still works.".to_owned(), true),
-        Registry::Failed(why) => (why.clone(), true),
-        Registry::NotAsked | Registry::Answered => return None,
+/// The head's side: tgg-melee's version and the disc it plays, once it's
+/// installed, then choosing another disc and checking for updates. Asking
+/// textures.gg changes the action's words in place, so nothing moves.
+fn head_side(app: &App, p: &Palette) -> El {
+    let mods = &app.mods;
+    let check = if mods.registry == Registry::Asking {
+        text_action("Checking…", false, p).key("mods/checking")
+    } else {
+        text_action("Check for updates", false, p).key("mods/refresh").on_press(actions::fetch)
     };
-    Some(label(words).key("mods/registry").font(text::BODY).color(if danger { p.danger } else { p.muted }))
+    let mut side = col().key("mods/game").items_end().gap(space::TIGHT).max_w(HEAD_SIDE).min_w(0.0);
+    if let Some(port) = mods.port() {
+        side = side
+            .child(row().gap(space::XS).items_end()
+                .child(label("tgg-melee").font(text::STRONG).color(p.ink))
+                .child(label(port.version.clone()).font(text::MONO_SMALL).color(p.muted)))
+            .children(disc_line(app, p));
+    }
+    side.child(row().mr(-TEXT_ACTION_INSET).gap(space::XXS)
+        .children(mods.port().is_some().then(|| text_action("Choose a disc…", false, p).key("mods/choose-disc").on_press_tx(actions::choose_disc)))
+        .child(check))
 }
 
-/// tgg-melee: installing it, or the version in use, its update, and the
-/// disc it plays; the install's progress while one runs.
-fn game(app: &App, p: &Palette) -> El {
+/// The disc tgg-melee plays, in a line; a missing one is a notice instead.
+fn disc_line(app: &App, p: &Palette) -> Option<El> {
+    let words = match &app.mods.disc {
+        Disc::Unknown | Disc::Looking => "Looking for an unmodified disc…".to_owned(),
+        Disc::Found(path) => {
+            let name = path.file_name().map_or_else(|| path.display().to_string(), |name| name.to_string_lossy().into_owned());
+            format!("Plays {name}")
+        }
+        Disc::Missing => return None,
+    };
+    Some(label(words).key("mods/disc").font(text::SMALL).color(p.muted).truncate_middle().min_w(0.0))
+}
+
+/// What needs the player, each in a slim row: textures.gg unreachable,
+/// what's installed unreadable, an install under way, a newer tgg-melee, a
+/// version to go back to, a missing disc.
+fn notices(app: &App, p: &Palette) -> Vec<El> {
     let mods = &app.mods;
-    let mut body = panel(p).key("mods/game").max_w(COLUMN);
-    match mods.port() {
-        None => {
-            body = body
-                .child(label("tgg-melee").font(text::H3).color(p.ink))
-                .child(label("Melee, rebuilt to run on your computer with a mod loader built in. Mods install into it; your disc stays as it is.")
-                    .font(text::BODY).color(p.muted).wrap());
-            if let Some(release) = mods.releases.first().filter(|_| mods.work.is_none()) {
-                let words = format!("Install tgg-melee {} · {}", release.version, size_text(release.size()));
-                body = body.child(row().child(button(&words, ButtonKind::Primary, p).key("mods/install-port").on_press(actions::install_port)));
-            }
-        }
-        Some(port) => {
-            let update = mods.port_update().filter(|_| mods.work.is_none()).map(|release| {
-                row().gap(space::XS).items_center()
-                    .child(badge(format!("{} is out", release.version), Tone::News, p))
-                    .child(button("Update", ButtonKind::Secondary, p).key("mods/update-port").on_press(actions::install_port))
-            });
-            body = body
-                .child(row().gap(space::XS).items_center()
-                    .child(label("tgg-melee").font(text::H3).color(p.ink))
-                    .child(label(port.version.clone()).font(text::MONO_TEXT).color(p.muted))
-                    .child(spacer())
-                    .children(update))
-                .children(waiting(mods, p))
-                .children(fallback(mods, &port.version, p))
-                .child(disc(app, p));
-        }
+    let mut notices = Vec::new();
+    let say = |words: String, danger: bool| label(words).font(text::SMALL).color(if danger { p.danger } else { p.muted }).wrap();
+    match &mods.registry {
+        Registry::Offline => notices.push(callout(say("Can't reach textures.gg. What's installed still works.".into(), true), None, p).key("mods/registry")),
+        Registry::Failed(why) => notices.push(callout(say(why.clone(), true), None, p).key("mods/registry")),
+        Registry::NotAsked | Registry::Asking | Registry::Answered => {}
+    }
+    if let Some(problem) = &mods.problem {
+        notices.push(callout(say(problem.clone(), true), None, p).key("mods/problem"));
     }
     if let Some(work) = &mods.work {
-        body = body.child(working(work, p));
+        notices.push(working(work, p));
     }
-    body
+    let Some(port) = mods.port() else { return notices };
+    if let Some(release) = mods.port_update().filter(|_| mods.work.is_none()) {
+        let words = col().gap(space::TIGHT)
+            .child(say(format!("tgg-melee {} is out.", release.version), false))
+            .children(waiting(mods, &release.version).map(|words| say(words, false).key("mods/update-waits")));
+        let update = button("Update", ButtonKind::Secondary, p).key("mods/update-port").on_press(actions::install_port);
+        notices.push(callout(words, Some(update), p).key("mods/update"));
+    }
+    notices.extend(fallback(mods, &port.version, p));
+    if app.mods.disc == Disc::Missing {
+        let choose = button("Choose a disc…", ButtonKind::Secondary, p).key("mods/choose-missing-disc").on_press_tx(actions::choose_disc);
+        notices.push(callout(say("Play needs an unmodified Melee disc: netplay and replays want the same game files on every side.".into(), true), Some(choose), p)
+            .key("mods/disc-missing"));
+    }
+    notices
+}
+
+/// Before tgg-melee is installed: what it is, and installing it.
+fn first_run(mods: &Mods, p: &Palette) -> Option<El> {
+    if mods.port().is_some() || mods.work.is_some() {
+        return None;
+    }
+    let install = mods.releases.first().map(|release| {
+        let words = format!("Install tgg-melee {} · {}", release.version, size_text(release.size()));
+        row().child(button(&words, ButtonKind::Primary, p).key("mods/install-port").on_press(actions::install_port))
+    });
+    Some(panel(p).key("mods/first-run").max_w(COLUMN)
+        .child(label("tgg-melee").font(text::H3).color(p.ink))
+        .child(label("Melee, rebuilt to run on your computer with a mod loader built in. Mods install into it; your disc stays as it is.")
+            .font(text::BODY).color(p.muted).wrap())
+        .children(install))
 }
 
 /// Before updating: what the newer tgg-melee has no build of yet. Nothing
 /// at all, or the installed mods that would wait for one.
-fn waiting(mods: &Mods, p: &Palette) -> Option<El> {
-    let release = mods.port_update().filter(|_| mods.work.is_none())?;
+fn waiting(mods: &Mods, version: &str) -> Option<String> {
     let built = mods.next_built.as_ref()?;
-    let words = if built.is_empty() {
-        format!("No mods are built for {} yet. Update later to keep playing with mods.", release.version)
-    } else {
-        let names = mods.unbuilt_for_update();
-        let first = names.first()?;
-        let who = match names.len() {
-            1 => first.clone(),
-            n => format!("{first} and {} others", n - 1),
-        };
-        let verb = if names.len() == 1 { "isn't" } else { "aren't" };
-        format!("{who} {verb} built for {} yet. Update now and they wait; or update later.", release.version)
+    if built.is_empty() {
+        return Some(format!("No mods are built for {version} yet. Update later to keep playing with mods."));
+    }
+    let names = mods.unbuilt_for_update();
+    let first = names.first()?;
+    let who = match names.len() {
+        1 => first.clone(),
+        n => format!("{first} and {} others", n - 1),
     };
-    Some(label(words).key("mods/update-waits").font(text::SMALL).color(p.muted).wrap())
+    let verb = if names.len() == 1 { "isn't" } else { "aren't" };
+    Some(format!("{who} {verb} built for {version} yet. Update now and they wait; or update later."))
 }
 
 /// After an update: what isn't built for the version in use (installed
@@ -127,42 +165,40 @@ fn fallback(mods: &Mods, current: &str, p: &Palette) -> Option<El> {
             let count = if fallback.unfit == 1 { "1 of your mods isn't".to_owned() } else { format!("{} of your mods aren't", fallback.unfit) };
             (format!("{count} built for {current} yet."), fallback.version.clone())
         }
-        (None, Some((version, count))) => {
-            (format!("No mods are built for {current} yet; {version} has {}.", mod_count(*count)), version.clone())
-        }
+        (None, Some((version, count))) => (format!("No mods are built for {current} yet; {version} has {}.", mod_count(*count)), version.clone()),
         (None, None) => return None,
     };
-    Some(row().key("mods/fallback").gap(space::XS).items_center()
-        .child(label(words).font(text::SMALL).color(p.danger).wrap().shrink().min_w(0.0))
-        .child(spacer())
-        .child(button(&format!("Use {version} for now"), ButtonKind::Secondary, p).key("mods/use-fallback")
-            .on_press(move |app: &mut App| actions::use_port(app, &version))))
-}
-
-/// The disc tgg-melee plays, and choosing another.
-fn disc(app: &App, p: &Palette) -> El {
-    let (words, found) = match &app.mods.disc {
-        Disc::Unknown | Disc::Looking => ("Looking for an unmodified Melee disc…".to_owned(), true),
-        Disc::Found(path) => {
-            let name = path.file_name().map_or_else(|| path.display().to_string(), |name| name.to_string_lossy().into_owned());
-            (format!("Plays {name}"), true)
-        }
-        Disc::Missing => ("Needs an unmodified Melee disc: netplay and replays want the same game files on every side.".to_owned(), false),
-    };
-    row().gap(space::XS).items_center()
-        .child(label(words).key("mods/disc").font(text::SMALL).color(if found { p.muted } else { p.danger }).wrap().shrink().min_w(0.0))
-        .child(spacer())
-        .child(text_action("Choose a disc…", false, p).key("mods/choose-disc").on_press_tx(actions::choose_disc))
+    let back = button(&format!("Use {version} for now"), ButtonKind::Secondary, p).key("mods/use-fallback")
+        .on_press(move |app: &mut App| actions::use_port(app, &version));
+    Some(callout(label(words).font(text::SMALL).color(p.danger).wrap(), Some(back), p).key("mods/fallback"))
 }
 
 /// An install's step and progress, and stopping it.
 fn working(work: &super::Work, p: &Palette) -> El {
-    col().key("mods/work").gap(space::XS)
-        .child(row().gap(space::XS).items_center()
-            .child(label(work.label()).font(text::SMALL).color(p.muted).truncate().shrink().min_w(0.0))
-            .child(spacer())
-            .child(text_action("Stop", false, p).key("mods/stop-work").on_press(actions::cancel_work)))
-        .child(progress(work.fraction(), p))
+    let words = col().gap(space::XS)
+        .child(label(work.label()).font(text::SMALL).color(p.muted).truncate())
+        .child(progress(work.fraction(), p));
+    callout(words, Some(text_action("Stop", false, p).key("mods/stop-work").on_press(actions::cancel_work)), p).key("mods/work")
+}
+
+/// Placeholder cards for the collections, while textures.gg first answers.
+fn placeholder_cards(p: &Palette) -> impl Iterator<Item = El> + '_ {
+    (0..PLACEHOLDERS / 2).map(move |_| {
+        panel(p).w(SET_CARD)
+            .child(skeleton(0.45, p))
+            .child(col().gap(space::XS).child(skeleton(1.0, p)).child(skeleton(0.8, p)))
+            .child(skeleton(0.3, p))
+    })
+}
+
+/// Placeholder rows for every mod, while textures.gg first answers.
+fn placeholder_rows(p: &Palette) -> impl Iterator<Item = El> + '_ {
+    (0..PLACEHOLDERS).map(move |_| col().py(space::SM).gap(space::XS).child(skeleton(0.3, p)).child(skeleton(0.6, p)))
+}
+
+/// Whether textures.gg hasn't answered yet this session.
+fn loading(mods: &Mods) -> bool {
+    matches!(mods.registry, Registry::NotAsked | Registry::Asking) && mods.sets.is_empty() && mods.catalog.is_none()
 }
 
 /// Why a list can't install yet, or has nothing: tgg-melee isn't installed,
@@ -171,7 +207,8 @@ fn note(mods: &Mods, p: &Palette) -> Option<El> {
     let note = if mods.port().is_none() {
         Some("Install tgg-melee first; then mods install in one step.".to_owned())
     } else {
-        mods.no_mods.clone()
+        // When an older version has mods, the notice above says so.
+        mods.no_mods.clone().filter(|_| mods.older_with_mods.is_none())
     };
     note.map(|note| label(note).key("mods/note").font(text::SMALL).color(p.muted))
 }
@@ -183,7 +220,8 @@ fn sets(mods: &Mods, p: &Palette) -> El {
     col().gap(space::SM)
         .children(note(mods, p))
         .children(empty)
-        .child(row().flex_wrap().gap(space::MD).children(mods.sets.iter().map(|set| set_card(mods, set, p))))
+        .child(row().flex_wrap().gap(space::MD).children(mods.sets.iter().map(|set| set_card(mods, set, p)))
+            .children(loading(mods).then(|| placeholder_cards(p)).into_iter().flatten()))
 }
 
 /// A set: its title, what it's for, the mods in it, whether it's
@@ -230,7 +268,7 @@ fn set_card(mods: &Mods, set: &Set, p: &Palette) -> El {
 /// with a search.
 fn all(mods: &Mods, p: &Palette) -> El {
     let found = mods.found();
-    let empty = found.is_empty().then(|| {
+    let empty = (found.is_empty() && !loading(mods)).then(|| {
         let words = if mods.offered().is_empty() { "textures.gg has no mods for this tgg-melee yet." } else { "No mod matches that." };
         label(words).key("mods/all/empty").font(text::BODY).color(p.muted)
     });
@@ -239,7 +277,7 @@ fn all(mods: &Mods, p: &Palette) -> El {
         .child(search_field(&mods.search, "Search mods", p).key("mods/search").on_edit(|app: &mut App| &mut app.mods.search))
         .children(note(mods, p).filter(|_| mods.port().is_none()))
         .children(empty)
-        .child(list(rows, p))
+        .child(list(rows.chain(loading(mods).then(|| placeholder_rows(p)).into_iter().flatten()), p))
 }
 
 /// Rows between rules.
