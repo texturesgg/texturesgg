@@ -33,6 +33,10 @@ pub struct Settings {
     pub external_editor: Option<String>,
     /// The player's Melee NTSC 1.02 ISO, chosen or found before.
     pub iso_path: Option<PathBuf>,
+    /// The unmodified Melee NTSC 1.02 ISO tgg-melee plays, when the player
+    /// chose one. Netplay and replays want the same game files on every
+    /// side, so it isn't the one skins go into.
+    pub play_iso: Option<PathBuf>,
     /// Folders the player keeps Melee ISOs in, beyond the ones Slippi uses.
     pub game_folders: Vec<PathBuf>,
     /// The sidebar shows beside the player's places (default: shown).
@@ -120,6 +124,7 @@ impl Settings {
             highlight_selection,
             external_editor,
             iso_path,
+            play_iso,
             game_folders,
             sidebar,
             recent,
@@ -148,6 +153,7 @@ impl Settings {
             external_editor,
         );
         take(&mut self.iso_path, &before.iso_path, iso_path);
+        take(&mut self.play_iso, &before.play_iso, play_iso);
         take(&mut self.game_folders, &before.game_folders, game_folders);
         take(&mut self.sidebar, &before.sidebar, sidebar);
         take(&mut self.recent, &before.recent, recent);

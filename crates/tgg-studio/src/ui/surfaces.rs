@@ -115,3 +115,17 @@ pub fn dialog<S: 'static>(key: &str, role: &'static str, width: DialogWidth, par
     dialog = dialog.child(row().px(space::LG).py(space::MD).gap(space::XS).items_center().children(parts.buttons));
     el().key(format!("{key}/scrim")).absolute(0.0, 0.0).w_full().h_full().fill(p.scrim).center().child(dialog)
 }
+
+/// A panel: a flat surface holding one thing on a page (the game, a set),
+/// padded and outlined. The caller sizes it.
+pub fn panel(p: &Palette) -> El {
+    col().px(space::MD).py(space::MD).gap(space::SM).fill(p.surface).border(size::LINE, p.line).radius(radius::CONTROL)
+}
+
+/// A section's label on a page, with its count when it has one: what the
+/// rows or cards under it are.
+pub fn section_label(title: &str, count: Option<usize>, p: &Palette) -> El {
+    row().gap(space::SNUG).items_center()
+        .child(text(title).font(type_::LABEL).color(p.faint))
+        .children(count.map(|count| text(count.to_string()).font(type_::MONO_SMALL).color(p.faint)))
+}

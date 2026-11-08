@@ -19,6 +19,8 @@ pub enum Done {
     /// What each slot of the game at `iso` holds, and which have an install
     /// to undo.
     States { iso: PathBuf, states: HashMap<MeleeSlot, SlotState>, undoable: HashSet<MeleeSlot> },
+    /// Mods' work: what textures.gg offers, an install, the game ending.
+    Mods(Box<crate::mods::Done>),
 }
 
 pub struct Jobs {
@@ -71,6 +73,26 @@ impl Jobs {
             .expect("start the slot states thread");
     }
 
+    /// Run `work` on a thread named `name`, and send what it returns back.
+    pub fn spawn(&self, name: &str, work: impl FnOnce() -> Done + Send + 'static) {
+        let (done, waker) = (self.done.clone(), self.waker.clone());
+        std::thread::Builder::new()
+            .name(name.into())
+            .spawn(move || {
+                if done.send(work()).is_ok()
+                    && let Some(waker) = waker
+                {
+                    waker();
+                }
+            })
+            .expect("start a job's thread");
+    }
+
+    /// What wakes the window, for work that reports progress as it goes.
+    pub fn waker(&self) -> Option<Waker> {
+        self.waker.clone()
+    }
+
     /// The results that have arrived.
     pub fn take(&self) -> Vec<Done> {
         self.results.try_iter().collect()
@@ -113,9 +135,12 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
         crate::editor::actions::select_picked(app, &picked, tx);
         changed = true;
     }
+    // An install reports progress by waking the window.
+    changed |= app.mods.work.is_some();
     for done in app.jobs.take() {
         changed |= match done {
             Done::States { iso, states, undoable } => crate::melee::actions::states_read(app, &iso, states, undoable),
+            Done::Mods(done) => crate::mods::actions::done(app, *done),
         };
     }
     changed

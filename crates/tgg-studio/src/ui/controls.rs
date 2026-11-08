@@ -92,3 +92,20 @@ pub fn slider(fraction: f32, p: &Palette) -> El {
         .child(el().size(KNOB, KNOB).radius(KNOB / 2.0).fill(p.ink).border(size::LINE, p.line_strong))
         .child(el().grow(1.0).min_w(0.0).h(3.0).radius(1.5).fill(p.line_strong))
 }
+
+/// An on/off switch: a short track, gold while on, its knob gliding to the
+/// side it's on. Square-cornered like every control (no pills). The caller
+/// keys it (the knob's motion follows the key), labels it, and makes
+/// pressing it flip.
+pub fn switch(key: &str, on: bool, p: &Palette) -> El {
+    const TRACK: (f32, f32) = (30.0, 16.0);
+    const KNOB: f32 = 12.0;
+    const INSET: f32 = (TRACK.1 - KNOB) / 2.0;
+    let knob = el().key(format!("{key}/knob")).size(KNOB, KNOB).radius(radius::CONTROL / 2.0)
+        .fill(if on { p.on_ink } else { p.muted }).motion(super::tokens::motion::SNAPPY)
+        .absolute(if on { TRACK.0 - KNOB - INSET } else { INSET }, INSET);
+    el().key(key).size(TRACK.0, TRACK.1).radius(radius::CONTROL - 1.0)
+        .fill(if on { p.accent } else { p.line_strong }).cursor(rune::Cursor::Pointer)
+        .role("switch").checked(on).focusable(true)
+        .child(knob)
+}

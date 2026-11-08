@@ -135,7 +135,26 @@ const SCENES: &[Scene] = &[
         editor::colors::apply(app);
         editor::actions::leave(app, &mut rune::Tx::default());
     }),
-    ("mods", |app| nav::actions::go(app, nav::Place::Mods)),
+    // Mods against a fake textures.gg, in a folder of its own: nothing
+    // installed; tgg-melee and Competitive installed, a mod turned off and
+    // one with an update; the review before installing Replays; and an
+    // install under way.
+    ("mods", |app| mods_scene(app, false)),
+    ("mods-installed", |app| mods_scene(app, true)),
+    ("mods-review", |app| {
+        mods_scene(app, true);
+        mods::actions::review_set(app, "replays");
+    }),
+    ("mods-installing", |app| {
+        mods_scene(app, false);
+        // The work alone, with nothing downloading: the picture is of the bar.
+        let progress = tgg_mod::Progress { step: 0, steps: 1, label: "Downloading tgg-melee 0.5.0".into(), bytes: 4, total: Some(10) };
+        app.mods.work = Some(mods::Work {
+            doing: "Installing tgg-melee 0.5.0".into(),
+            progress: std::sync::Arc::new(std::sync::Mutex::new(Some(progress))),
+            cancel: std::sync::Arc::default(),
+        });
+    }),
     ("no-sidebar", |app| app.nav.sidebar = false),
     ("paper", |app| app.settings.set_appearance(settings::Appearance::Paper)),
 ];
@@ -213,4 +232,42 @@ fn show_shared(app: &mut App, code: &str, name: &str) {
     if let Some(model) = melee_dat::SharedModel::of(character).find(|model| model.name() == name) {
         stage::actions::play_action(app, model.action());
     }
+}
+
+/// For scenes: Mods against a fake textures.gg, its mods and ports in a
+/// scratch folder, filled in place so nothing arrives mid-snapshot. With
+/// `installed`, tgg-melee and Competitive are installed, Quick start turned
+/// off, and textures.gg has a newer Online rules.
+fn mods_scene(app: &mut App, installed: bool) {
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
+    let folder = std::env::temp_dir().join("tgg-studio-scene-mods");
+    let _ = std::fs::remove_dir_all(&folder);
+    app.data.mods = folder.join("mods");
+    app.data.ports = folder.join("ports");
+    let net = Arc::new(tgg_mod::FakeNet::new());
+    let releases = tgg_mod::port_releases(&*net).unwrap_or_default();
+    let never = AtomicBool::new(false);
+    if installed && let Some(release) = releases.first() {
+        let _ = tgg_mod::install_port(&*net, release, &app.data.ports, &tgg_mod::no_progress, &never);
+    }
+    let port = tgg_mod::installed_ports(&app.data.ports).ok().and_then(|ports| ports.into_iter().find(|port| port.current));
+    let sets = tgg_mod::sets(&*net).unwrap_or_default();
+    let catalog = port.as_ref().and_then(|port| tgg_mod::catalog(&*net, &port.port()).ok());
+    if let (Some(catalog), Some(competitive)) = (&catalog, sets.iter().find(|set| set.name == "competitive")) {
+        let plan = tgg_mod::plan_set(competitive, catalog, &tgg_mod::Local::empty());
+        let _ = tgg_mod::apply(&*net, &plan, &app.data.mods, &tgg_mod::no_progress, &never);
+        if let Ok(id) = "tgg.quick-start".parse() {
+            let _ = tgg_mod::set_enabled(&app.data.mods, &id, false);
+        }
+        net.publish_mod("tgg.online-rules", "Online rules", "0.1.1", &[]);
+    }
+    let catalog = port.as_ref().and_then(|port| tgg_mod::catalog(&*net, &port.port()).ok());
+    app.mods.net = net;
+    app.mods.releases = releases;
+    app.mods.sets = sets;
+    app.mods.catalog = catalog;
+    app.mods.registry = mods::Registry::Answered;
+    app.mods.disc = app.game.as_ref().map_or(mods::Disc::Missing, |references| mods::Disc::Found(references.game().path().to_owned()));
+    nav::actions::go(app, nav::Place::Mods);
 }

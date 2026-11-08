@@ -18,7 +18,7 @@ fn runtime() -> (Runtime<App>, tempfile::TempDir) {
     let game = tgg_app::Game::open(&iso).expect("a clean Melee NTSC 1.02 disc");
     let start = Start::Game(tgg_app::game_references(game).expect("references"));
     let folder = tempfile::tempdir().expect("temp dir");
-    let data = Data { library: folder.path().join("library"), history: folder.path().join("games") };
+    let data = Data::in_folder(folder.path());
     let mut rt = Runtime::new(App::new(start, Settings::default(), data, false), shell::view, (1280.0, 800.0), Env::new(true, 2.0));
     rt.frame(0.0);
     (rt, folder)

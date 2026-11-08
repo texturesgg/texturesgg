@@ -7,6 +7,7 @@ use crate::jobs::Jobs;
 use crate::jobs::renders::Renders;
 use crate::library::Page as LibraryPage;
 use crate::melee::Melee;
+use crate::mods::Mods;
 use crate::nav::Nav;
 use crate::stage::Stage;
 use crate::welcome::Welcome;
@@ -39,6 +40,8 @@ pub struct App {
     pub editor: Option<Document>,
     /// Pictures of costumes and stages, shared by every place.
     pub renders: Renders,
+    /// tgg-melee and its mods.
+    pub mods: Mods,
     /// Work off the window's thread.
     pub jobs: Jobs,
 }
@@ -77,6 +80,7 @@ impl App {
             stage: Stage::default(),
             editor: None,
             renders: Renders::default(),
+            mods: Mods::default(),
             jobs: Jobs::default(),
         }
     }
@@ -91,19 +95,35 @@ impl App {
     }
 }
 
-/// Where the player's library and install history are kept.
+/// Where the player's library, install history, mods and ports are kept.
 #[derive(Clone, Debug)]
 pub struct Data {
     pub library: PathBuf,
     pub history: PathBuf,
+    /// The folder tgg-melee loads mods from.
+    pub mods: PathBuf,
+    /// The folder tgg-melee's versions are installed in.
+    pub ports: PathBuf,
 }
 
 impl Data {
-    /// The app's data folder, where tgg-editor keeps them too.
+    /// The app's data folder, where tgg-editor keeps them too, and the
+    /// folders the game and the `tgg` CLI use for mods and ports.
     pub fn of_player() -> Self {
         let root = tgg_app::library::Library::default_root();
         let history = root.parent().map_or_else(|| root.join("games"), |data| data.join("games"));
-        Self { library: root, history }
+        Self { library: root, history, mods: tgg_mod::default_mods_dir(), ports: tgg_mod::default_ports_dir() }
+    }
+
+    /// Everything in `folder`; for tests.
+    #[cfg(test)]
+    pub fn in_folder(folder: &std::path::Path) -> Self {
+        Self {
+            library: folder.join("library"),
+            history: folder.join("games"),
+            mods: folder.join("mods"),
+            ports: folder.join("ports"),
+        }
     }
 
     /// The install history kept here.

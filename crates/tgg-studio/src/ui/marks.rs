@@ -49,3 +49,33 @@ pub fn srgb([r, g, b, _]: [u8; 4]) -> Color {
     let channel = |value: u8| rune::color::srgb_decode(f32::from(value) / 255.0);
     Color { r: channel(r), g: channel(g), b: channel(b), a: 1.0 }
 }
+
+/// What a badge says about something: that it's the player's, that there's
+/// news (an update), that something's wrong, or just a fact.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tone {
+    Plain,
+    Mine,
+    News,
+    Danger,
+}
+
+/// A badge: a word or two in a thin outline ("Installed", "Update 0.2.0").
+pub fn badge(words: impl Into<String>, tone: Tone, p: &Palette) -> El {
+    let (ink, edge, fill) = match tone {
+        Tone::Plain => (p.muted, p.line_strong, Color::TRANSPARENT),
+        Tone::Mine => (p.accent_text, p.accent_text, p.selected),
+        Tone::News => (p.ink, p.line_strong, p.raise),
+        Tone::Danger => (p.danger, p.danger, Color::TRANSPARENT),
+    };
+    text(words.into()).font(type_::LABEL).color(ink)
+        .px(space::SNUG).py(1.0).radius(radius::CONTROL).fill(fill).border(size::LINE, edge)
+}
+
+/// How far along long work is: a thin track filled in gold to `fraction`.
+pub fn progress(fraction: f32, p: &Palette) -> El {
+    const BAR: f32 = 3.0;
+    let fraction = fraction.clamp(0.0, 1.0);
+    row().h(BAR).w_full().radius(BAR / 2.0).fill(p.line_strong).clip_rounded(BAR / 2.0)
+        .child(el().w_frac(fraction).min_w(0.0).h(BAR).fill(p.accent).motion(super::tokens::motion::DEFAULT))
+}

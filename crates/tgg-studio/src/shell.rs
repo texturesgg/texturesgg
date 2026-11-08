@@ -36,6 +36,7 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         // Dialogs, over everything.
         .children(library::review::view(app, &p))
         .children(editor::view::prompt(app, &p))
+        .children(mods::review::view(app, &p))
 }
 
 /// The places, then the player's game at the foot. Hidden, it narrows to
@@ -130,6 +131,7 @@ fn title_actions(app: &App, p: &Palette) -> Option<El> {
     }
     match app.nav.place {
         Place::Melee => melee::subject::title_actions(app, p),
-        Place::Library | Place::Mods => None,
+        Place::Mods => mods::view::title_actions(app, p),
+        Place::Library => None,
     }
 }

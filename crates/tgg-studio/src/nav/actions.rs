@@ -10,8 +10,10 @@ pub fn go(app: &mut App, place: Place) {
         app.notice = None;
     }
     app.nav.place = place;
-    if place == Place::Library {
-        crate::library::actions::request_renders(app);
+    match place {
+        Place::Library => crate::library::actions::request_renders(app),
+        Place::Mods => crate::mods::actions::opened(app),
+        Place::Melee => {}
     }
 }
 

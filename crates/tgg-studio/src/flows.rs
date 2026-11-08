@@ -20,7 +20,7 @@ const FRAME: f64 = 1.0 / 60.0;
 /// own that lasts as long as the returned guard.
 fn runtime(start: Start) -> (Runtime<App>, TempDir) {
     let folder = tempfile::tempdir().expect("temp dir");
-    let data = Data { library: folder.path().join("library"), history: folder.path().join("games") };
+    let data = Data::in_folder(folder.path());
     let app = App::new(start, Settings::default(), data, false);
     let mut rt = Runtime::new(app, shell::view, WINDOW, Env::new(true, 2.0));
     // As `main` wires the window.
@@ -165,7 +165,7 @@ fn the_roster_shows_the_games_fighters_and_whats_changed_once_its_read() {
     let data = tempfile::tempdir().expect("temp dir");
     rt.state.jobs.read_states(&iso, &data.path().join("library"), &data.path().join("games"));
     let done = rt.state.jobs.wait(std::time::Duration::from_secs(10)).expect("the states arrive");
-    let crate::jobs::Done::States { iso: read, states, undoable } = done;
+    let crate::jobs::Done::States { iso: read, states, undoable } = done else { panic!("the slot states arrive first") };
     assert!(undoable.is_empty(), "nothing's been installed");
     assert!(crate::melee::actions::states_read(&mut rt.state, &read, states, undoable));
     let falco = &rt.state.melee.fighters[0];
@@ -321,7 +321,7 @@ fn add_through_review(rt: &mut Runtime<App>, file: PathBuf) {
 /// Wait for what every slot holds to be read again, and take it.
 fn reread(rt: &mut Runtime<App>) {
     let done = rt.state.jobs.wait(std::time::Duration::from_secs(10)).expect("the states arrive");
-    let crate::jobs::Done::States { iso, states, undoable } = done;
+    let crate::jobs::Done::States { iso, states, undoable } = done else { panic!("the slot states arrive first") };
     rt.update(|app, _| {
         crate::melee::actions::states_read(app, &iso, states, undoable);
     });
@@ -723,4 +723,151 @@ fn cancelling_a_color_change_leaves_the_costume_alone() {
     assert!(rt.find("editor/pick").is_none());
     assert_eq!(first_color(&rt), [96, 224, 96, 255]);
     assert!(!rt.state.editor.as_ref().expect("editing").modified());
+}
+
+/// The app on Mods, against a fake textures.gg, once its first answers are
+/// in. The fake is handed back to publish to as a test goes.
+fn on_mods(net: std::sync::Arc<tgg_mod::FakeNet>) -> (Runtime<App>, TempDir, TempDir) {
+    let (disc, iso) = melee_iso();
+    let (mut rt, data) = runtime(game_at(&iso));
+    rt.state.mods.net = net;
+    tap(&mut rt, Place::Mods.key());
+    jobs_until(&mut rt, |app| app.mods.registry != crate::mods::Registry::Asking && app.mods.disc != crate::mods::Disc::Looking);
+    (rt, disc, data)
+}
+
+/// Hand finished jobs to the app until `done` holds, for up to 20 seconds.
+fn jobs_until(rt: &mut Runtime<App>, done: impl Fn(&App) -> bool) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while !done(&rt.state) {
+        assert!(std::time::Instant::now() < deadline, "the jobs finished in time");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        poll(rt);
+    }
+    settle(rt);
+}
+
+/// On Mods with tgg-melee installed from the fake.
+fn with_port(net: std::sync::Arc<tgg_mod::FakeNet>) -> (Runtime<App>, TempDir, TempDir) {
+    let (mut rt, disc, data) = on_mods(net);
+    tap(&mut rt, "mods/install-port");
+    jobs_until(&mut rt, |app| app.mods.port().is_some() && app.mods.catalog.is_some());
+    (rt, disc, data)
+}
+
+/// Scroll the element keyed `key` into view, then tap it.
+fn tap_shown(rt: &mut Runtime<App>, key: &str) {
+    let owned = key.to_owned();
+    rt.update(move |_, tx| tx.scroll_into_view(owned.clone()));
+    settle(rt);
+    tap(rt, key);
+}
+
+/// Install the set `name` through its review.
+fn install_set(rt: &mut Runtime<App>, name: &str) {
+    tap_shown(rt, &format!("mods/set/{name}/install"));
+    settle(rt);
+    tap(rt, "mods/review/confirm");
+    jobs_until(rt, |app| app.mods.work.is_none() && app.mods.local.set(name).is_some());
+}
+
+#[test]
+fn mods_offers_tgg_melee_then_its_sets() {
+    let (mut rt, _disc, _data) = on_mods(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    assert_eq!(rt.state.mods.registry, crate::mods::Registry::Answered);
+    assert!(rt.find("mods/install-port").is_some(), "tgg-melee offers to install");
+    assert!(rt.find("mods/set/competitive").is_some() && rt.find("mods/set/replays").is_some(), "the sets show before it's installed");
+    assert!(rt.find("mods/set/competitive/install").is_none(), "but install once tgg-melee is there");
+    assert!(rt.find("mods/sets-note").is_some());
+    tap(&mut rt, "mods/install-port");
+    assert!(rt.find("mods/work").is_some(), "the install shows its progress");
+    jobs_until(&mut rt, |app| app.mods.port().is_some() && app.mods.catalog.is_some());
+    assert_eq!(rt.state.mods.port().map(|port| port.version.as_str()), Some(tgg_mod::FakeNet::PORT_VERSION));
+    assert!(rt.find("mods/install-port").is_none() && rt.find("mods/work").is_none());
+    assert!(rt.find("mods/set/competitive/install").is_some(), "a set installs now");
+    assert!(rt.find("mods/play").is_none(), "the test disc isn't unmodified, so nothing to play yet");
+    assert_eq!(rt.state.mods.disc, crate::mods::Disc::Missing);
+}
+
+#[test]
+fn a_set_is_reviewed_then_installed() {
+    let (mut rt, _disc, data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    tap(&mut rt, "mods/set/competitive/install");
+    settle(&mut rt);
+    let review = rt.state.mods.review.as_ref().expect("the plan shows first");
+    assert_eq!(review.plan.steps.len(), 7);
+    assert!(rt.find("mods/review/tgg.direct-connect").is_some());
+    assert!(rt.state.mods.local.mods.is_empty(), "nothing installs until the player says");
+    tap(&mut rt, "mods/review/confirm");
+    jobs_until(&mut rt, |app| app.mods.work.is_none() && !app.mods.local.mods.is_empty());
+    assert_eq!(rt.state.mods.local.mods.len(), 7);
+    assert_eq!(rt.state.mods.local.set("competitive").map(|set| set.status), Some(tgg_mod::SetStatus::Complete));
+    assert!(data.path().join("mods/tgg.netplay").is_dir(), "into the mods folder");
+    assert!(rt.find("mods/installed").is_some() && rt.find("mods/mod/tgg.netplay").is_some());
+    assert!(rt.find("mods/set/competitive/install").is_none(), "an installed set doesn't offer to install");
+    assert_eq!(rt.state.notice.as_ref().map(|notice| notice.text.as_str()), Some("Installed 7 mods."));
+}
+
+#[test]
+fn a_mod_switched_off_customizes_its_set_and_back() {
+    let (mut rt, _disc, data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    install_set(&mut rt, "competitive");
+    tap_shown(&mut rt, "mods/mod/tgg.quick-start/switch");
+    assert!(data.path().join("mods/.tgg.quick-start").is_dir(), "a turned-off mod's folder is hidden from the game");
+    assert_eq!(rt.state.mods.local.set("competitive").map(|set| set.status), Some(tgg_mod::SetStatus::Customized));
+    tap_shown(&mut rt, "mods/mod/tgg.quick-start/switch");
+    assert_eq!(rt.state.mods.local.set("competitive").map(|set| set.status), Some(tgg_mod::SetStatus::Complete));
+}
+
+#[test]
+fn update_all_installs_what_textures_gg_has_newer() {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let (mut rt, _disc, _data) = with_port(net.clone());
+    install_set(&mut rt, "replays");
+    assert!(rt.find("mods/update-all").is_none(), "nothing's newer yet");
+    net.publish_mod("tgg.replay-recorder", "Replay recorder", "0.1.1", &[]);
+    tap(&mut rt, "mods/refresh");
+    jobs_until(&mut rt, |app| app.mods.registry == crate::mods::Registry::Answered);
+    assert!(rt.state.mods.has_updates());
+    tap_shown(&mut rt, "mods/update-all");
+    settle(&mut rt);
+    tap(&mut rt, "mods/review/confirm");
+    jobs_until(&mut rt, |app| app.mods.work.is_none() && !app.mods.has_updates());
+    let recorder = rt.state.mods.local.mods.iter().find(|m| m.manifest.id.as_str() == "tgg.replay-recorder").expect("still installed");
+    assert_eq!(recorder.manifest.version.to_string(), "0.1.1");
+    assert_eq!(rt.state.notice.as_ref().map(|notice| notice.text.as_str()), Some("Updated 1 mod."));
+}
+
+#[test]
+fn a_set_removed_takes_its_mods() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    install_set(&mut rt, "replays");
+    tap(&mut rt, "mods/set/replays/remove");
+    assert!(rt.state.mods.local.mods.is_empty());
+    assert!(rt.find("mods/installed").is_none());
+}
+
+#[test]
+fn offline_mods_says_so_and_keeps_what_is_installed() {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    net.set_offline(true);
+    let (rt, _disc, _data) = on_mods(net);
+    assert_eq!(rt.state.mods.registry, crate::mods::Registry::Offline);
+    assert!(rt.find("mods/registry").is_some());
+}
+
+#[test]
+fn play_starts_tgg_melee_and_stop_ends_it() {
+    let (mut rt, _disc, data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    // The test disc has a costume of its own; choose it to play anyway.
+    let iso = rt.state.game.as_ref().expect("a game").game().path().to_owned();
+    rt.update(|app, _| crate::mods::actions::use_disc(app, iso.clone()));
+    rt.frame(FRAME);
+    tap(&mut rt, "mods/play");
+    assert!(rt.state.mods.playing.is_some());
+    assert!(tgg_mod::game_running(&data.path().join("mods")), "other tgg's see the game running");
+    assert!(rt.find("mods/stop").is_some());
+    tap(&mut rt, "mods/stop");
+    jobs_until(&mut rt, |app| app.mods.playing.is_none());
+    assert!(rt.find("mods/play").is_some());
 }
