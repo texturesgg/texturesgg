@@ -593,15 +593,18 @@ impl Running {
 
 /// Start `port` with the disc image `iso`, loading mods from `mods`.
 pub fn launch(port: &PortInstall, iso: &Path, mods: &Path) -> Result<Running, Error> {
-    launch_with_args(port, iso, mods, std::iter::empty::<&OsStr>())
+    launch_with_args(port, iso, mods, std::iter::empty::<&OsStr>(), None)
 }
 
-/// [`launch`], passing `args` on to the game after the disc image.
+/// [`launch`], passing `args` on to the game after the disc image, and
+/// writing the game's output (stdout and stderr) to the file `log` instead
+/// of passing it through, when there is one.
 pub fn launch_with_args<I, S>(
     port: &PortInstall,
     iso: &Path,
     mods: &Path,
     args: I,
+    log: Option<&Path>,
 ) -> Result<Running, Error>
 where
     I: IntoIterator<Item = S>,
@@ -611,12 +614,17 @@ where
         return Err(Error::GameRunning);
     }
     let executable = port.executable();
-    let child = std::process::Command::new(&executable)
-        .arg(iso)
-        .args(args)
-        .env("TGG_MODS_DIR", mods)
-        .spawn()
-        .map_err(Error::io(&executable))?;
+    let mut command = std::process::Command::new(&executable);
+    command.arg(iso).args(args).env("TGG_MODS_DIR", mods);
+    if let Some(log) = log {
+        if let Some(folder) = log.parent() {
+            std::fs::create_dir_all(folder).map_err(Error::io(folder))?;
+        }
+        let file = std::fs::File::create(log).map_err(Error::io(log))?;
+        let copy = file.try_clone().map_err(Error::io(log))?;
+        command.stdout(file).stderr(copy);
+    }
+    let child = command.spawn().map_err(Error::io(&executable))?;
     let pid_file = lock::write_pid_file(mods, child.id(), &executable)?;
     Ok(Running { child, pid_file })
 }

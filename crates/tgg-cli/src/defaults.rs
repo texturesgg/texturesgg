@@ -107,7 +107,7 @@ pub fn install(installed: &Installed) -> Result<()> {
         println!("Updated {} mods: {}", updated.len(), updated.join(", "));
     }
     if !added.is_empty() || !updated.is_empty() {
-        println!("tgg mod list shows them; tgg mod disable <id> turns one off");
+        println!("tgg mod list shows them; tgg mod off <id> turns one off");
     }
     Ok(())
 }
