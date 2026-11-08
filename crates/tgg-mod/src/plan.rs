@@ -59,7 +59,10 @@ pub enum Action {
 /// What stops part of a plan, or a mod in it, from working.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Problem {
-    /// No release in range has a build for this game.
+    /// The registry has no mod with this id.
+    Unknown { id: ModId },
+    /// The registry has the mod, but no release in `ranges` has a build for
+    /// this game (none at all when every range is `*`).
     Unavailable { id: ModId, ranges: Vec<Range> },
     /// The mod replaces a function another turned-on mod replaces.
     Conflict { id: ModId, conflict: Conflict },
@@ -70,16 +73,22 @@ pub enum Problem {
 impl fmt::Display for Problem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Problem::Unavailable { id, ranges } if ranges.is_empty() => {
-                write!(f, "{id} has no build for this game")
-            }
+            Problem::Unknown { id } => write!(f, "textures.gg has no mod {id}"),
             Problem::Unavailable { id, ranges } => {
-                let ranges: Vec<&str> = ranges.iter().map(Range::as_str).collect();
-                write!(
-                    f,
-                    "{id} has no build for this game at {}",
-                    ranges.join(" and ")
-                )
+                let ranges: Vec<&str> = ranges
+                    .iter()
+                    .map(Range::as_str)
+                    .filter(|range| *range != "*")
+                    .collect();
+                if ranges.is_empty() {
+                    write!(f, "{id} isn't built for this game yet")
+                } else {
+                    write!(
+                        f,
+                        "{id} isn't built for this game at {} yet",
+                        ranges.join(" and ")
+                    )
+                }
             }
             Problem::Conflict { id, conflict } => write!(
                 f,
@@ -116,69 +125,157 @@ impl Plan {
 }
 
 /// One mod a plan wants.
+#[derive(Default)]
 struct Want {
     ranges: Vec<Range>,
     sets: Vec<String>,
     direct: bool,
+    /// Wanted by the caller, not only as another planned mod's dependency.
+    asked: bool,
+}
+
+impl Want {
+    fn asked(ranges: Vec<Range>, sets: Vec<String>, direct: bool) -> Self {
+        Self {
+            ranges,
+            sets,
+            direct,
+            asked: true,
+        }
+    }
+}
+
+/// What a step leaves installed, and how.
+type Choice = (Manifest, Action, Option<PackageRef>);
+
+/// The release `want` gets: an installed one that fits, else the newest in
+/// the catalog that fits (with `newest`, the newest even over an installed
+/// one that fits).
+fn choose(
+    id: &ModId,
+    want: &Want,
+    catalog: &Catalog,
+    local: &Local,
+    newest: bool,
+) -> Option<Choice> {
+    let fitting = |manifest: &Manifest| {
+        want.ranges
+            .iter()
+            .all(|range| range.matches(&manifest.version))
+            && local.port.as_ref().is_none_or(|port| fits(manifest, port))
+    };
+    let best = catalog
+        .mods
+        .iter()
+        .filter(|entry| entry.manifest.id == *id && fitting(&entry.manifest))
+        .max_by(|a, b| a.manifest.version.cmp(&b.manifest.version));
+    let installed = local.get(id);
+    let keep = installed.is_some_and(|m| {
+        m.dev
+            || (m.fits != Some(false)
+                && fitting(&m.manifest)
+                && !(newest && best.is_some_and(|best| best.manifest.version > m.manifest.version)))
+    });
+    match (installed, best) {
+        (Some(m), _) if keep => Some((m.manifest.clone(), Action::Keep, None)),
+        (_, Some(best)) => Some((
+            best.manifest.clone(),
+            match installed {
+                Some(m) => Action::Update {
+                    from: m.manifest.version.clone(),
+                },
+                None => Action::Install,
+            },
+            Some(best.package.clone()),
+        )),
+        (_, None) => None,
+    }
+}
+
+/// Whether the registry has the mod `id`: by the catalog's `ids` when it
+/// gives them; otherwise a mod with a build in the catalog, one a set
+/// lists, or one installed counts as known.
+fn known(id: &ModId, want: &Want, catalog: &Catalog, local: &Local) -> bool {
+    catalog.mods.iter().any(|entry| entry.manifest.id == *id)
+        || if catalog.ids.is_empty() {
+            !want.sets.is_empty() || local.get(id).is_some()
+        } else {
+            catalog.ids.contains(id)
+        }
 }
 
 fn resolve(
-    wants: BTreeMap<ModId, Want>,
+    mut wants: BTreeMap<ModId, Want>,
     catalog: &Catalog,
     local: &Local,
     newest: bool,
     sets: Vec<Set>,
 ) -> Plan {
+    // Pull in what the chosen releases depend on, until nothing changes. A
+    // dependency takes the origin of the mods that need it. Wants and their
+    // ranges only grow, from the finitely many in the catalog and the
+    // folder, so this ends.
+    let chosen = loop {
+        let chosen: BTreeMap<ModId, Option<Choice>> = wants
+            .iter()
+            .map(|(id, want)| (id.clone(), choose(id, want, catalog, local, newest)))
+            .collect();
+        let mut adds: Vec<(ModId, Range, Vec<String>, bool)> = Vec::new();
+        for (id, choice) in &chosen {
+            let Some((manifest, _, _)) = choice else {
+                continue;
+            };
+            let want = &wants[id];
+            for (dep, range) in &manifest.depends {
+                let needed = match wants.get(dep) {
+                    Some(have) => !have.ranges.contains(range),
+                    None => !local.get(dep).is_some_and(|m| {
+                        m.enabled && m.fits != Some(false) && range.matches(&m.manifest.version)
+                    }),
+                };
+                if needed {
+                    adds.push((dep.clone(), range.clone(), want.sets.clone(), want.direct));
+                }
+            }
+        }
+        if adds.is_empty() {
+            break chosen;
+        }
+        for (dep, range, sets, direct) in adds {
+            let want = wants.entry(dep).or_default();
+            if !want.ranges.contains(&range) {
+                want.ranges.push(range);
+            }
+            for set in sets {
+                if !want.sets.contains(&set) {
+                    want.sets.push(set);
+                }
+            }
+            want.direct |= direct;
+        }
+    };
+
     let mut steps = Vec::new();
     let mut problems = Vec::new();
-    for (id, want) in wants {
-        let fitting = |manifest: &Manifest| {
-            want.ranges
-                .iter()
-                .all(|range| range.matches(&manifest.version))
-                && local.port.as_ref().is_none_or(|port| fits(manifest, port))
-        };
-        let best = catalog
-            .mods
-            .iter()
-            .filter(|entry| entry.manifest.id == id && fitting(&entry.manifest))
-            .max_by(|a, b| a.manifest.version.cmp(&b.manifest.version));
-        let installed = local.get(&id);
-        let keep = installed.is_some_and(|m| {
-            m.dev
-                || (m.fits != Some(false)
-                    && fitting(&m.manifest)
-                    && !(newest
-                        && best.is_some_and(|best| best.manifest.version > m.manifest.version)))
-        });
-        let (manifest, action, download) = match (installed, best) {
-            (Some(m), _) if keep => (m.manifest.clone(), Action::Keep, None),
-            (_, Some(best)) => (
-                best.manifest.clone(),
-                match installed {
-                    Some(m) => Action::Update {
-                        from: m.manifest.version.clone(),
-                    },
-                    None => Action::Install,
-                },
-                Some(best.package.clone()),
-            ),
-            (_, None) => {
-                problems.push(Problem::Unavailable {
-                    id,
-                    ranges: want.ranges,
-                });
-                continue;
-            }
-        };
-        steps.push(Step {
-            id,
-            manifest,
-            action,
-            download,
-            sets: want.sets,
-            direct: want.direct,
-        });
+    for (id, choice) in chosen {
+        let want = wants.remove(&id).expect("a choice per want");
+        match choice {
+            Some((manifest, action, download)) => steps.push(Step {
+                id,
+                manifest,
+                action,
+                download,
+                sets: want.sets,
+                direct: want.direct,
+            }),
+            // A dependency that can't be had shows as its dependent's Unmet.
+            None if !want.asked => {}
+            None if !known(&id, &want, catalog, local) => problems.push(Problem::Unknown { id }),
+            None => problems.push(Problem::Unavailable {
+                id,
+                ranges: want.ranges,
+            }),
+        }
     }
 
     // The folder as it will be, to check each planned mod against.
@@ -219,7 +316,7 @@ fn resolve(
 
 /// Installing `set`: the newest release of each mod it lists that fits the
 /// set's range and the game, leaving alone a mod installed at a fitting
-/// version.
+/// version, and what they depend on.
 pub fn plan_set(set: &Set, catalog: &Catalog, local: &Local) -> Plan {
     let wants = set
         .mods
@@ -227,11 +324,7 @@ pub fn plan_set(set: &Set, catalog: &Catalog, local: &Local) -> Plan {
         .map(|m| {
             (
                 m.id.clone(),
-                Want {
-                    ranges: vec![m.range.clone()],
-                    sets: vec![set.name.clone()],
-                    direct: false,
-                },
+                Want::asked(vec![m.range.clone()], vec![set.name.clone()], false),
             )
         })
         .collect();
@@ -239,15 +332,13 @@ pub fn plan_set(set: &Set, catalog: &Catalog, local: &Local) -> Plan {
 }
 
 /// Installing mods on their own, each at the newest release in its range
-/// that fits the game.
+/// that fits the game, and what they depend on.
 pub fn plan_mods(want: &[(ModId, Range)], catalog: &Catalog, local: &Local) -> Plan {
     let mut wants: BTreeMap<ModId, Want> = BTreeMap::new();
     for (id, range) in want {
-        let entry = wants.entry(id.clone()).or_insert(Want {
-            ranges: Vec::new(),
-            sets: Vec::new(),
-            direct: true,
-        });
+        let entry = wants
+            .entry(id.clone())
+            .or_insert_with(|| Want::asked(Vec::new(), Vec::new(), true));
         entry.ranges.push(range.clone());
     }
     resolve(wants, catalog, local, false, Vec::new())
@@ -259,34 +350,55 @@ pub fn plan_mods(want: &[(ModId, Range)], catalog: &Catalog, local: &Local) -> P
 /// that origin), and each mod installed on its own updated to its newest
 /// fitting release.
 pub fn plan_updates(sets: &[Set], catalog: &Catalog, local: &Local) -> Plan {
+    updates(sets, catalog, local, None)
+}
+
+/// Updating the installed set `name` alone, as [`plan_updates`] updates
+/// each set. [`Error::SetNotInstalled`] when it isn't installed.
+pub fn plan_set_update(
+    name: &str,
+    sets: &[Set],
+    catalog: &Catalog,
+    local: &Local,
+) -> Result<Plan, Error> {
+    if local.lock.set(name).is_none() {
+        return Err(Error::SetNotInstalled(name.to_owned()));
+    }
+    Ok(updates(sets, catalog, local, Some(name)))
+}
+
+/// The updates of every installed set and mod installed on its own, or of
+/// the set `only`.
+fn updates(sets: &[Set], catalog: &Catalog, local: &Local, only: Option<&str>) -> Plan {
     let mut wants: BTreeMap<ModId, Want> = BTreeMap::new();
     let mut planned_sets = Vec::new();
     for installed in &local.lock.sets {
+        if only.is_some_and(|name| name != installed.name) {
+            continue;
+        }
         let set = sets
             .iter()
             .find(|set| set.name == installed.name && set.version >= installed.version)
             .unwrap_or(installed);
         for m in &set.mods {
-            let want = wants.entry(m.id.clone()).or_insert(Want {
-                ranges: Vec::new(),
-                sets: Vec::new(),
-                direct: false,
-            });
+            let want = wants
+                .entry(m.id.clone())
+                .or_insert_with(|| Want::asked(Vec::new(), Vec::new(), false));
             want.ranges.push(m.range.clone());
             want.sets.push(set.name.clone());
         }
         planned_sets.push(set.clone());
     }
-    for (id, entry) in &local.lock.mods {
-        if !entry.direct || local.get(id).is_none() {
-            continue;
+    if only.is_none() {
+        for (id, entry) in &local.lock.mods {
+            if !entry.direct || local.get(id).is_none() {
+                continue;
+            }
+            let want = wants
+                .entry(id.clone())
+                .or_insert_with(|| Want::asked(Vec::new(), Vec::new(), true));
+            want.direct = true;
         }
-        let want = wants.entry(id.clone()).or_insert(Want {
-            ranges: Vec::new(),
-            sets: Vec::new(),
-            direct: true,
-        });
-        want.direct = true;
     }
     resolve(wants, catalog, local, true, planned_sets)
 }
@@ -342,7 +454,12 @@ pub fn apply(
             None => lock.sets.push(set.clone()),
         }
         for (id, entry) in &mut lock.mods {
-            if set.range(id).is_none() {
+            // A mod the set dropped loses it; a dependency planned for it keeps it.
+            let planned = plan
+                .steps
+                .iter()
+                .any(|step| step.id == *id && step.sets.contains(&set.name));
+            if set.range(id).is_none() && !planned {
                 entry.sets.retain(|name| *name != set.name);
             }
         }

@@ -71,13 +71,19 @@ enum Command {
     Config(config::ConfigCommand),
 }
 
-/// Errors print as their message and causes, never a backtrace, whatever
-/// `RUST_BACKTRACE` says; `TGG_BACKTRACE=1` adds the backtrace.
+/// Errors print as their message (and causes, but for tgg-mod's), never a
+/// backtrace, whatever `RUST_BACKTRACE` says; `TGG_BACKTRACE=1` adds it.
 fn main() -> std::process::ExitCode {
     match run(Cli::parse()) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("Error: {error:#}");
+            // tgg-mod's errors read whole on their own; their sources (such
+            // as why textures.gg can't be reached) are detail.
+            if error.downcast_ref::<tgg_mod::Error>().is_some() {
+                eprintln!("Error: {error}");
+            } else {
+                eprintln!("Error: {error:#}");
+            }
             if std::env::var_os("TGG_BACKTRACE").is_some_and(|value| value == "1") {
                 eprintln!("\n{}", error.backtrace());
             }

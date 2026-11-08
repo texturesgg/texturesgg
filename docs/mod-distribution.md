@@ -57,7 +57,8 @@ competitive` and `tgg port run`. Mod makers keep `tgg mod publish`.
 - **Plan**: what an install will do, resolved against one registry snapshot and
   one port: for each mod, the exact release and build (with its SHA-256), the
   download size, and whether it's new, an update, or already there. Plus the
-  problems found (no build for this port, conflicts, missing dependencies). A
+  problems found (a mod the registry lacks, one not built for this port,
+  conflicts, missing dependencies). A
   plan records the catalog snapshot it came from.
 - **Lock**: `mods.lock.json` in the mods folder. For each installed mod: id,
   version, build SHA-256, and its origin (a set and that set's version, a
@@ -90,9 +91,11 @@ in-game browser will read it directly.
 - `GET /api/registry/catalog?layout=<game_abi>`: the `tgg_mod::catalog::Catalog`
   for one layout: every approved release with a build for it (manifest,
   netplay class, package URL, SHA-256, size), plus `snapshot`, an id for this
-  state of the catalog.
+  state of the catalog, and `ids`, every mod id the registry has (built for
+  this layout or not). 404 when the layout has no builds: the crate says
+  "textures.gg has no mods for tgg-melee X yet".
 - `GET /api/registry/sets`: every set: `{name, title, description, version,
-  mods: [{id, range}]}`.
+  mods: [{id, range}]}`. 404 reads as no sets.
 - Package URLs are content-addressed (by SHA-256) and immutable.
 
 Builds: the builder builds each approved release for every active layout,
@@ -123,7 +126,8 @@ pub struct HttpNet { /* base URL (TGG_API_URL overrides), ureq agent */ }
 pub struct FakeNet { /* canned catalog, sets, packages, port releases */ }
 
 pub enum Error {
-    Offline(NetError),            // the app shows "offline, here's what's installed"
+    Offline(NetError),            // "can't reach textures.gg; what's installed still works"; why is its source()
+    NoCatalog(String),            // "textures.gg has no mods for tgg-melee {0} yet"
     Busy,                         // another tgg (CLI or app) holds the mods folder
     GameRunning,                  // apply/set_enabled/uninstall while launch's game runs
     Cancelled,
@@ -159,9 +163,17 @@ pub fn catalog(net: &dyn Net, port: &Port) -> Result<Catalog, Error>;
 
 // Planning: no network, no writes
 pub fn plan_set(set: &Set, catalog: &Catalog, local: &Local) -> Plan;
-pub fn plan_mods(want: &[(ModId, VersionReq)], catalog: &Catalog, local: &Local) -> Plan;
+pub fn plan_mods(want: &[(ModId, Range)], catalog: &Catalog, local: &Local) -> Plan;
 pub fn plan_updates(sets: &[Set], catalog: &Catalog, local: &Local) -> Plan;
+pub fn plan_set_update(name: &str, sets: &[Set], catalog: &Catalog, local: &Local)
+    -> Result<Plan, Error>;                 // one installed set; SetNotInstalled otherwise
 impl Plan { pub fn size(&self) -> u64; pub fn problems(&self) -> &[Problem]; }
+pub enum Problem {
+    Unknown { id },               // the registry has no such mod
+    Unavailable { id, ranges },   // it has it, but nothing in range is built for this port
+    Conflict { id, conflict },
+    Unmet { id, missing },        // dependencies or imports nothing meets
+}
 
 // Applying: network and disk
 pub fn apply(net: &dyn Net, plan: &Plan, mods: &Path,
@@ -197,14 +209,20 @@ app's flow tests drive the whole Mods place with no network.
 
 - **Installing a set** installs the newest release of each listed mod that
   fits the set's range and has a build for the port. A mod already installed
-  at a fitting version is left alone. The lock records the set's name and
+  at a fitting version is left alone. What the chosen releases depend on (their
+  manifests' `depends`) comes along, and takes the origin of the mods that need
+  it; a dependency that can't be had shows as its dependent's `Unmet`. Installing
+  mods on their own resolves dependencies the same way. A mod with no build in
+  the catalog is `Unknown` unless the catalog's `ids` name it (without `ids`: a
+  set lists it, or it is installed), and `Unavailable` otherwise. The lock records the set's name and
   version.
 - **On and off** are per mod. Turning a set's mod off keeps it installed and
   the set shows as `Customized`; turning it on again restores the set.
 - **Updating** a set re-plans it against the newest set and catalog: new mods in
   the set are installed, newer fitting releases replace older ones, and a mod
   dropped from the set stays installed and loses that origin. The app shows the
-  plan before applying it.
+  plan before applying it. `plan_set_update` updates one set alone;
+  `plan_updates` every set and every mod installed on its own.
 - **Uninstalling** a mod removes its folder and lock entry. Uninstalling a set
   removes the mods it installed that no other installed set lists and that
   weren't installed on their own.

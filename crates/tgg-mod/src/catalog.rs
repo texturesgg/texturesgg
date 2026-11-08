@@ -1,7 +1,7 @@
 //! The list of packages a registry offers: each package's manifest, where to
 //! download it, and the SHA-256 it must have.
 
-use crate::manifest::Manifest;
+use crate::manifest::{Manifest, ModId};
 use crate::netplay::Netplay;
 use serde::{Deserialize, Serialize};
 
@@ -16,6 +16,11 @@ pub struct Catalog {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snapshot: Option<String>,
     pub mods: Vec<CatalogEntry>,
+    /// Every mod id the registry has, whether or not it has a build in
+    /// this catalog, so a plan can tell a mod not built for this game from
+    /// one that doesn't exist. Empty when the registry doesn't say.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ids: Vec<ModId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

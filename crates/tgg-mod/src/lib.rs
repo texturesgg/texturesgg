@@ -76,7 +76,9 @@ pub use manifest::{Manifest, ModId};
 pub use net::{HttpNet, Net, NetError};
 pub use netplay::Netplay;
 pub use package::Package;
-pub use plan::{Action, Applied, Plan, Problem, Step, apply, plan_mods, plan_set, plan_updates};
+pub use plan::{
+    Action, Applied, Plan, Problem, Step, apply, plan_mods, plan_set, plan_set_update, plan_updates,
+};
 pub use port::Port;
 pub use ports::{
     PortInstall, PortRelease, Running, install_port, installed_ports, launch, port_releases,

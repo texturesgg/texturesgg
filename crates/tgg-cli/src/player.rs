@@ -10,8 +10,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use tgg_mod::{
-    Action, Catalog, Local, LocalMod, ModId, Net, Plan, Port, Problem, Progress, Range, SetStatus,
-    netplay,
+    Action, Local, LocalMod, ModId, Net, Plan, Port, Problem, Progress, Range, SetStatus, netplay,
 };
 
 /// Where a command's output goes: the terminal, or a buffer in tests.
@@ -172,27 +171,24 @@ impl Player<'_> {
             }
             None => tgg_mod::plan_mods(&want, &catalog, &local),
         };
-        self.carry_out(&plan, &catalog, "Install")
+        self.carry_out(&plan, "Install")
     }
 
     /// Update every set and mod tgg installed, or the set `set`.
     pub fn update(&self, set: Option<&str>) -> Result<()> {
         let port = self.port()?;
-        let mut local = self.local()?;
-        if let Some(name) = set {
-            if local.set(name).is_none() {
-                return Err(tgg_mod::Error::SetNotInstalled(name.to_owned()).into());
-            }
-            // Plan the one set: the others, and mods installed on their own,
-            // out of the picture.
-            local.lock.sets.retain(|set| set.name == name);
-            for entry in local.lock.mods.values_mut() {
-                entry.direct = false;
-            }
+        let local = self.local()?;
+        if let Some(name) = set
+            && local.set(name).is_none()
+        {
+            return Err(tgg_mod::Error::SetNotInstalled(name.to_owned()).into());
         }
         let sets = tgg_mod::sets(self.net)?;
         let catalog = tgg_mod::catalog(self.net, port)?;
-        let plan = tgg_mod::plan_updates(&sets, &catalog, &local);
+        let plan = match set {
+            Some(name) => tgg_mod::plan_set_update(name, &sets, &catalog, &local)?,
+            None => tgg_mod::plan_updates(&sets, &catalog, &local),
+        };
         for planned in &plan.sets {
             if let Some(have) = local.set(&planned.name)
                 && have.set.version < planned.version
@@ -203,7 +199,7 @@ impl Player<'_> {
                 ));
             }
         }
-        self.carry_out(&plan, &catalog, "Update")?;
+        self.carry_out(&plan, "Update")?;
         if set.is_none() {
             self.port_update();
         }
@@ -229,12 +225,8 @@ impl Player<'_> {
     }
 
     /// Show `plan`, ask, and apply it.
-    fn carry_out(&self, plan: &Plan, catalog: &Catalog, verb: &str) -> Result<()> {
-        let problems: Vec<String> = plan
-            .problems()
-            .iter()
-            .map(|problem| self.problem(problem, catalog))
-            .collect();
+    fn carry_out(&self, plan: &Plan, verb: &str) -> Result<()> {
+        let problems: Vec<String> = plan.problems().iter().map(Problem::to_string).collect();
         let rows: Vec<(&str, String, String, &str)> = plan
             .steps
             .iter()
@@ -317,18 +309,6 @@ impl Player<'_> {
         }
         self.out.line(format_args!("Done: {}.", done.join(", ")));
         Ok(())
-    }
-
-    fn problem(&self, problem: &Problem, catalog: &Catalog) -> String {
-        match problem {
-            Problem::Unavailable { id, .. }
-                if !catalog.mods.iter().any(|entry| entry.manifest.id == *id) =>
-            {
-                let version = self.port.as_ref().map_or("", |port| port.version.as_str());
-                format!("textures.gg has no {id} for tgg-melee {version}")
-            }
-            problem => problem.to_string(),
-        }
     }
 
     /// The installed mods and sets.
@@ -621,11 +601,9 @@ mod tests {
             .expect("install");
         let out = player.out.take();
         assert!(out.contains("install tgg.legal-stages   0.1.0"), "{out}");
-        // Its dependency isn't planned, so the plan says so.
-        assert!(
-            out.contains("! tgg.direct-connect needs tgg.netplay"),
-            "{out}"
-        );
+        // Its dependency comes along.
+        assert!(out.contains("install tgg.netplay        0.2.0"), "{out}");
+        assert!(!out.contains('!'), "{out}");
         let local = setup.local();
         assert!(
             local
@@ -642,7 +620,7 @@ mod tests {
             player
                 .out
                 .take()
-                .contains("! textures.gg has no nobody.nothing for tgg-melee 0.5.0")
+                .contains("! textures.gg has no mod nobody.nothing")
         );
         assert!(parse_spec("tgg.netplay@^x").is_err());
     }
@@ -808,7 +786,7 @@ mod tests {
         ] {
             assert_eq!(
                 error.to_string(),
-                "can't reach textures.gg (no connection); what's installed still works"
+                "can't reach textures.gg; what's installed still works"
             );
         }
     }

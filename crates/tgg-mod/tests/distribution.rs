@@ -369,7 +369,11 @@ fn offline_the_registry_fails_and_local_state_still_reads() {
     net.set_offline(true);
     let error = tgg_mod::sets(&net).expect_err("offline");
     assert!(matches!(error, Error::Offline(_)));
-    assert!(error.to_string().starts_with("can't reach textures.gg"));
+    assert_eq!(
+        error.to_string(),
+        "can't reach textures.gg; what's installed still works"
+    );
+    assert!(std::error::Error::source(&error).is_some());
     assert!(matches!(
         tgg_mod::port_releases(&net),
         Err(Error::Offline(_))
@@ -520,4 +524,185 @@ fn a_stale_pid_file_doesnt_block() {
     )
     .expect("pid file");
     assert!(tgg_mod::game_running(&player.mods));
+}
+
+#[test]
+fn updating_one_set_leaves_the_others_and_mods_installed_on_their_own() {
+    let net = FakeNet::new();
+    let player = player();
+    let port = install_port(&net, &player);
+    install_set(&net, &player, &port, "competitive");
+    install_set(&net, &player, &port, "replays");
+    let catalog = tgg_mod::catalog(&net, &port.port()).expect("catalog");
+    let plan = tgg_mod::plan_mods(
+        &[(id("tgg.legal-stages"), "0.1.0".parse().expect("range"))],
+        &catalog,
+        &local(&player, &port),
+    );
+    assert!(plan.problems().is_empty());
+
+    net.publish_mod("tgg.netplay", "Netplay", "0.2.1", &[]);
+    net.publish_mod("tgg.replay-player", "Replay player", "0.2.1", &[]);
+    let sets = tgg_mod::sets(&net).expect("sets");
+    let catalog = tgg_mod::catalog(&net, &port.port()).expect("catalog");
+    let state = local(&player, &port);
+    let plan = tgg_mod::plan_set_update("replays", &sets, &catalog, &state).expect("plan");
+    let changes: Vec<&ModId> = plan
+        .steps
+        .iter()
+        .filter(|step| step.action != Action::Keep)
+        .map(|step| &step.id)
+        .collect();
+    assert_eq!(changes, [&id("tgg.replay-player")]);
+    assert_eq!(plan.sets.len(), 1);
+    assert!(matches!(
+        tgg_mod::plan_set_update("nothing", &sets, &catalog, &state),
+        Err(Error::SetNotInstalled(_))
+    ));
+}
+
+#[test]
+fn a_mod_the_registry_lacks_is_unknown_and_one_not_built_is_unavailable() {
+    let net = FakeNet::new();
+    let player = player();
+    let port = install_port(&net, &player);
+    let state = local(&player, &port);
+    let want = [
+        (id("nobody.nothing"), "*".parse().expect("range")),
+        (id("tgg.netplay"), "*".parse().expect("range")),
+    ];
+    let unknown = Problem::Unknown {
+        id: id("nobody.nothing"),
+    };
+
+    // Another layout's catalog has no builds, but names every mod.
+    let mut other = port.port();
+    other.game_abi = "other-layout".into();
+    let mut catalog = tgg_mod::catalog(&net, &other).expect("catalog");
+    let plan = tgg_mod::plan_mods(&want, &catalog, &state);
+    assert_eq!(plan.problems().len(), 2);
+    assert!(plan.problems().contains(&unknown));
+    let unavailable = Problem::Unavailable {
+        id: id("tgg.netplay"),
+        ranges: vec!["*".parse().expect("range")],
+    };
+    assert!(plan.problems().contains(&unavailable));
+    assert_eq!(
+        unavailable.to_string(),
+        "tgg.netplay isn't built for this game yet"
+    );
+    assert_eq!(unknown.to_string(), "textures.gg has no mod nobody.nothing");
+
+    // Without the registry's ids, a mod a set lists is known.
+    catalog.ids.clear();
+    let set = net.set("replays").expect("set");
+    let plan = tgg_mod::plan_set(&set, &catalog, &state);
+    assert!(
+        plan.problems()
+            .iter()
+            .all(|p| matches!(p, Problem::Unavailable { .. }))
+    );
+    let plan = tgg_mod::plan_mods(&want, &catalog, &state);
+    assert!(
+        plan.problems()
+            .iter()
+            .all(|p| matches!(p, Problem::Unknown { .. }))
+    );
+}
+
+#[test]
+fn plans_bring_what_their_mods_depend_on() {
+    let net = FakeNet::new();
+    let player = player();
+    let port = install_port(&net, &player);
+    let catalog = tgg_mod::catalog(&net, &port.port()).expect("catalog");
+    let state = local(&player, &port);
+
+    let plan = tgg_mod::plan_mods(
+        &[(id("tgg.direct-connect"), "*".parse().expect("range"))],
+        &catalog,
+        &state,
+    );
+    assert!(plan.problems().is_empty(), "{:?}", plan.problems());
+    let netplay = plan
+        .steps
+        .iter()
+        .find(|step| step.id == id("tgg.netplay"))
+        .expect("netplay comes along");
+    assert!(netplay.direct);
+
+    // A set that lists a mod but not what it needs.
+    let mut set = net.set("competitive").expect("set");
+    set.name = "connect".into();
+    set.mods.retain(|m| m.id == id("tgg.direct-connect"));
+    let plan = tgg_mod::plan_set(&set, &catalog, &state);
+    assert_eq!(plan.steps.len(), 2);
+    tgg_mod::apply(&net, &plan, &player.mods, &no_progress, &go()).expect("apply");
+    let state = local(&player, &port);
+    assert_eq!(
+        state.get(&id("tgg.netplay")).expect("installed").sets(),
+        ["connect"]
+    );
+    assert!(state.unmet.is_empty());
+    tgg_mod::uninstall_set(&player.mods, "connect").expect("uninstall");
+    assert!(local(&player, &port).mods.is_empty());
+
+    // Mods that need each other, and one that needs what isn't there.
+    net.publish_mod("test.a", "A", "0.1.0", &[("test.b", "^0.1")]);
+    net.publish_mod("test.b", "B", "0.1.0", &[("test.a", "^0.1")]);
+    net.publish_mod("test.c", "C", "0.1.0", &[("test.a", "^9")]);
+    let catalog = tgg_mod::catalog(&net, &port.port()).expect("catalog");
+    let state = local(&player, &port);
+    let plan = tgg_mod::plan_mods(
+        &[(id("test.a"), "*".parse().expect("range"))],
+        &catalog,
+        &state,
+    );
+    assert_eq!(plan.steps.len(), 2);
+    assert!(plan.problems().is_empty());
+    let plan = tgg_mod::plan_mods(
+        &[(id("test.c"), "*".parse().expect("range"))],
+        &catalog,
+        &state,
+    );
+    assert_eq!(
+        plan.problems(),
+        [Problem::Unmet {
+            id: id("test.c"),
+            missing: vec!["test.a ^9".into()],
+        }]
+    );
+}
+
+/// A registry that answers 404 to everything.
+struct Empty;
+
+impl Net for Empty {
+    fn get(&self, url: &str, _: u64) -> Result<Vec<u8>, tgg_mod::NetError> {
+        Err(tgg_mod::NetError::NotFound { url: url.into() })
+    }
+
+    fn api_url(&self) -> &str {
+        "https://empty.textures.gg"
+    }
+
+    fn releases_url(&self) -> &str {
+        "https://empty.textures.gg/tgg-melee"
+    }
+}
+
+#[test]
+fn a_registry_with_nothing_yet_says_so() {
+    let net = FakeNet::new();
+    let player = player();
+    let port = install_port(&net, &player);
+    assert!(tgg_mod::sets(&Empty).expect("no sets").is_empty());
+    let error = tgg_mod::catalog(&Empty, &port.port()).expect_err("no catalog");
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "textures.gg has no mods for tgg-melee {} yet",
+            FakeNet::PORT_VERSION
+        )
+    );
 }
