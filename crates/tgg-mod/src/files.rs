@@ -1,9 +1,12 @@
-//! Game files a mod ships: its `files/` folder, which mirrors the game disc.
+//! The files a mod ships beside its library: `files/`, which mirrors the game
+//! disc, `assets/`, new files the game serves at `/mods/<id>/`, and
+//! `include/`, headers for mods that build on this one.
 //!
 //! `files/PlMrNr.dat` takes the place of the disc's `/PlMrNr.dat`; a path the
 //! disc lacks adds a file. Paths are written without the leading slash, keep
 //! the case they were written in, and compare without case, as the disc's
-//! own lookup does. Two mods shipping the same path conflict.
+//! own lookup does. When two mods ship the same path, the one that loads
+//! later wins.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -29,15 +32,13 @@ pub type Files = BTreeMap<String, Vec<u8>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum FileError {
-    #[error(
-        "files/{0} is not a disc path: use '/' between non-empty names, none starting with '.'"
-    )]
+    #[error("{0} is not a disc path: use '/' between non-empty names, none starting with '.'")]
     Path(String),
-    #[error("files/{0} has a path of {PATH_LIMIT} bytes or more")]
+    #[error("{0} has a path of {PATH_LIMIT} bytes or more")]
     PathTooLong(String),
-    #[error("files/{0} is 4 GiB or larger")]
+    #[error("{0} is 4 GiB or larger")]
     TooLarge(String),
-    #[error("files/{0} and files/{1} are the same path; disc paths compare without case")]
+    #[error("{0} and {1} are the same path; disc paths compare without case")]
     SameCase(String, String),
     #[error("{0}: a name that isn't UTF-8")]
     Name(String),
@@ -45,10 +46,10 @@ pub enum FileError {
     Io(String, std::io::Error),
 }
 
-/// Check one disc path.
-pub fn check_path(path: &str) -> Result<(), FileError> {
+/// Check one disc path of the folder `folder` (`files` or `assets`).
+pub fn check_path(folder: &str, path: &str) -> Result<(), FileError> {
     if path.len() >= PATH_LIMIT {
-        return Err(FileError::PathTooLong(path.to_owned()));
+        return Err(FileError::PathTooLong(format!("{folder}/{path}")));
     }
     let valid = !path.is_empty()
         && !path.contains(['\\', '\0'])
@@ -58,7 +59,7 @@ pub fn check_path(path: &str) -> Result<(), FileError> {
     if valid {
         Ok(())
     } else {
-        Err(FileError::Path(path.to_owned()))
+        Err(FileError::Path(format!("{folder}/{path}")))
     }
 }
 
@@ -67,16 +68,20 @@ pub fn path_key(path: &str) -> String {
     path.to_ascii_lowercase()
 }
 
-/// Check every path and size, and that no two paths differ only in case.
-pub fn check(files: &Files) -> Result<(), FileError> {
+/// Check every path and size of the folder `folder`, and that no two paths
+/// differ only in case.
+pub fn check(folder: &str, files: &Files) -> Result<(), FileError> {
     let mut seen: BTreeMap<String, &str> = BTreeMap::new();
     for (path, bytes) in files {
-        check_path(path)?;
+        check_path(folder, path)?;
         if bytes.len() as u64 >= FILE_LIMIT {
-            return Err(FileError::TooLarge(path.clone()));
+            return Err(FileError::TooLarge(format!("{folder}/{path}")));
         }
         if let Some(other) = seen.insert(path_key(path), path) {
-            return Err(FileError::SameCase(other.to_owned(), path.clone()));
+            return Err(FileError::SameCase(
+                format!("{folder}/{other}"),
+                format!("{folder}/{path}"),
+            ));
         }
     }
     Ok(())
@@ -94,9 +99,11 @@ pub fn list(files: &Files) -> Vec<ModFile> {
         .collect()
 }
 
-/// Read a mod's `files/` folder: every regular file under it, skipping any
-/// name that starts with '.'. A missing folder has no files.
-pub fn read_dir(root: &Path) -> Result<Files, FileError> {
+/// Read one of a mod's folders under `dir` (`files`, `assets` or `include`):
+/// every regular file under it, skipping any name that starts with '.'. A
+/// missing folder has no files.
+pub fn read_dir(dir: &Path, folder: &str) -> Result<Files, FileError> {
+    let root = dir.join(folder);
     let mut files = Files::new();
     let mut pending = vec![String::new()];
     while let Some(relative) = pending.pop() {
@@ -134,7 +141,7 @@ pub fn read_dir(root: &Path) -> Result<Files, FileError> {
             }
         }
     }
-    check(&files)?;
+    check(folder, &files)?;
     Ok(files)
 }
 
@@ -145,7 +152,7 @@ mod tests {
     #[test]
     fn disc_paths() {
         for good in ["PlMrNr.dat", "Sd/Custom.dat", "a/b/c"] {
-            assert!(check_path(good).is_ok(), "{good}");
+            assert!(check_path("files", good).is_ok(), "{good}");
         }
         for bad in [
             "",
@@ -156,9 +163,9 @@ mod tests {
             "a\\b",
             "x/",
         ] {
-            assert!(check_path(bad).is_err(), "{bad}");
+            assert!(check_path("files", bad).is_err(), "{bad}");
         }
-        assert!(check_path(&"a".repeat(PATH_LIMIT)).is_err());
+        assert!(check_path("files", &"a".repeat(PATH_LIMIT)).is_err());
     }
 
     #[test]
@@ -167,7 +174,10 @@ mod tests {
             ("PlMrNr.dat".to_owned(), vec![1]),
             ("plmrnr.dat".to_owned(), vec![2]),
         ]);
-        assert!(matches!(check(&files), Err(FileError::SameCase(..))));
+        assert!(matches!(
+            check("files", &files),
+            Err(FileError::SameCase(..))
+        ));
     }
 
     #[test]
@@ -180,15 +190,11 @@ mod tests {
         std::fs::write(root.join("Sd/Custom.dat"), b"stage").expect("write");
         std::fs::write(root.join(".DS_Store"), b"junk").expect("write");
         std::fs::write(root.join(".git/HEAD"), b"junk").expect("write");
-        let files = read_dir(&root).expect("read");
+        let files = read_dir(dir.path(), "files").expect("read");
         assert_eq!(
             files.keys().collect::<Vec<_>>(),
             ["PlMrNr.dat", "Sd/Custom.dat"]
         );
-        assert!(
-            read_dir(&dir.path().join("missing"))
-                .expect("read")
-                .is_empty()
-        );
+        assert!(read_dir(dir.path(), "missing").expect("read").is_empty());
     }
 }

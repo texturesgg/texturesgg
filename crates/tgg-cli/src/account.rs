@@ -58,6 +58,21 @@ impl Site {
         self.read(self.authorize(request)?.call(), path)
     }
 
+    /// Whether a path of the API answers the signed-in user with something,
+    /// rather than 404.
+    pub fn exists(&self, path: &str) -> Result<bool> {
+        let request = self.agent.get(format!("{}{path}", self.api));
+        let response = self
+            .authorize(request)?
+            .call()
+            .with_context(|| format!("reaching {}", self.api))?;
+        if response.status() == 404 {
+            return Ok(false);
+        }
+        self.read::<Value>(Ok(response), path)?;
+        Ok(true)
+    }
+
     /// POST JSON to a path of the API as the signed-in user.
     pub fn post<T: DeserializeOwned>(&self, path: &str, body: &Value) -> Result<T> {
         let request = self.agent.post(format!("{}{path}", self.api));

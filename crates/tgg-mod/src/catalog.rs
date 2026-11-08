@@ -2,6 +2,7 @@
 //! download it, and the SHA-256 it must have.
 
 use crate::manifest::Manifest;
+use crate::netplay::Netplay;
 use serde::{Deserialize, Serialize};
 
 /// The catalog format this crate reads and writes.
@@ -10,6 +11,10 @@ pub const SCHEMA: u32 = 1;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Catalog {
     pub schema: u32,
+    /// An id for this state of a registry's catalog; absent in a catalog
+    /// written by hand or by `tgg mod catalog`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<String>,
     pub mods: Vec<CatalogEntry>,
 }
 
@@ -17,6 +22,8 @@ pub struct Catalog {
 pub struct CatalogEntry {
     #[serde(flatten)]
     pub manifest: Manifest,
+    /// The class the package's contents give it.
+    pub netplay: Netplay,
     pub package: PackageRef,
 }
 

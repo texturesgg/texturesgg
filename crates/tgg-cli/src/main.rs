@@ -1,7 +1,22 @@
 //! `tgg`: the textures.gg command line.
 
 mod account;
+mod build;
+mod config;
+mod defaults;
+mod dev;
+mod docs;
+mod doctor;
 mod mods;
+mod paths;
+mod player;
+mod ports;
+mod publish;
+mod releases;
+mod scaffold;
+mod sdks;
+mod signals;
+mod toolchain;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -31,16 +46,55 @@ enum Command {
     },
     /// Sign out of textures.gg.
     Logout,
-    /// Code mods for tgg-mod-runtime: build, publish, install.
+    /// Install, pick and run released builds of tgg-melee.
+    #[command(subcommand)]
+    Port(ports::PortCommand),
+    /// The SDK mods build against.
+    #[command(subcommand)]
+    Sdk(sdks::SdkCommand),
+    /// Code mods for tgg-melee: build, publish, install.
     #[command(subcommand)]
     Mod(mods::ModCommand),
+    /// Open the mod docs for the installed game (offline, the SDK's copy).
+    Docs {
+        /// A page, such as writing-mods or hooks [default: the index]
+        page: Option<String>,
+    },
+    /// Check this machine can build and run mods, and say how to fix what's
+    /// missing.
+    Doctor {
+        #[command(flatten)]
+        cc: mods::Cc,
+    },
+    /// Settings, such as your disc image.
+    #[command(subcommand)]
+    Config(config::ConfigCommand),
 }
 
-fn main() -> Result<()> {
-    let cli = Cli::parse();
+/// Errors print as their message and causes, never a backtrace, whatever
+/// `RUST_BACKTRACE` says; `TGG_BACKTRACE=1` adds the backtrace.
+fn main() -> std::process::ExitCode {
+    match run(Cli::parse()) {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("Error: {error:#}");
+            if std::env::var_os("TGG_BACKTRACE").is_some_and(|value| value == "1") {
+                eprintln!("\n{}", error.backtrace());
+            }
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Login { no_browser } => account::login(&cli.api, !no_browser),
         Command::Logout => account::logout(&cli.api),
+        Command::Port(command) => ports::run(command),
+        Command::Sdk(command) => sdks::run(command),
         Command::Mod(command) => mods::run(command, &cli.api),
+        Command::Config(command) => config::run(command),
+        Command::Doctor { cc } => doctor::run(&cc.resolve()),
+        Command::Docs { page } => docs::run(page.as_deref()),
     }
 }
