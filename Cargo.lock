@@ -5595,13 +5595,16 @@ dependencies = [
 name = "tgg-mod"
 version = "0.1.0"
 dependencies = [
+ "flate2",
  "object",
  "semver",
  "serde",
  "serde_json",
  "sha2",
+ "tar",
  "tempfile",
  "thiserror 2.0.20",
+ "ureq",
  "zip",
 ]
 
