@@ -620,3 +620,44 @@ fn poll(rt: &mut Runtime<App>) {
     });
     rt.frame(FRAME);
 }
+
+#[test]
+fn a_texture_edited_in_the_image_editor_comes_back_with_each_save() {
+    let (mut rt, _disc, _data) = editing();
+    // A command that starts and exits, standing in for the player's editor.
+    rt.state.settings.external_editor = Some("true".into());
+    tap(&mut rt, "editor/external");
+    let path = {
+        let document = rt.state.editor.as_ref().expect("editing");
+        document.external.watched.get(&0).expect("the selected texture is watched").path.clone()
+    };
+    let exported = std::fs::read(&path).expect("its PNG is written");
+    assert!(!rt.state.editor.as_ref().expect("editing").modified(), "opening it there changes nothing yet");
+
+    // The player paints it red and saves.
+    let red = image::RgbaImage::from_pixel(8, 8, image::Rgba([255, 0, 0, 255]));
+    red.save(&path).expect("save");
+    let later = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
+    std::fs::File::options().write(true).open(&path).expect("open").set_modified(later).expect("touch");
+    poll(&mut rt);
+    assert!(rt.state.editor.as_ref().expect("editing").modified(), "the save came back as an edit");
+    assert!(!rt.state.stage.shown.as_ref().expect("on stage").edited.is_empty(), "and shows on the model");
+
+    // Undo puts the PNG back as the document has it, without importing it again.
+    command(&mut rt, 'z', false);
+    assert!(!rt.state.editor.as_ref().expect("editing").modified());
+    assert_eq!(std::fs::read(&path).expect("still there"), exported, "the PNG matches the document again");
+    assert!(rt.state.editor.as_ref().expect("editing").external.watched[&0].saved().is_none(), "the rewrite isn't a save");
+
+    tap(&mut rt, "editor/done");
+    assert!(!path.exists(), "leaving the costume deletes its PNG");
+}
+
+#[test]
+fn ctrl_shift_e_opens_the_selected_texture_in_the_image_editor() {
+    let (mut rt, _disc, _data) = editing();
+    rt.state.settings.external_editor = Some("true".into());
+    command(&mut rt, 'e', true);
+    assert!(rt.state.editor.as_ref().expect("editing").external.watched.contains_key(&0));
+    tap(&mut rt, "editor/done");
+}

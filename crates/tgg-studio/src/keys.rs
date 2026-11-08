@@ -19,6 +19,8 @@ pub enum Command {
     Redo,
     Save,
     SaveAndInstall,
+    /// Open the selected texture in the player's image editor.
+    EditExternally,
 }
 
 /// Where a binding applies, most particular last.
@@ -68,6 +70,7 @@ pub const BINDINGS: &[Binding] = &[
     bind(Press::Command('z'), true, false, Command::Redo, Scope::Editor),
     bind(Press::Command('s'), false, false, Command::Save, Scope::Editor),
     bind(Press::Command('s'), false, true, Command::SaveAndInstall, Scope::Editor),
+    bind(Press::Command('e'), true, false, Command::EditExternally, Scope::Editor),
 ];
 
 impl Chord {
@@ -146,6 +149,7 @@ pub fn run(app: &mut App, command: Command, tx: &mut Tx) -> bool {
         Command::Redo => editor::redo(app),
         Command::Save => editor::save(app, false, None, tx),
         Command::SaveAndInstall => editor::save(app, true, None, tx),
+        Command::EditExternally => crate::editor::external::edit(app),
     }
     true
 }

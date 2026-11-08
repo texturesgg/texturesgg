@@ -8,6 +8,7 @@
 //! `files` takes textures in and out, and `view` draws it.
 
 pub mod actions;
+pub mod external;
 pub mod files;
 pub mod view;
 
@@ -26,6 +27,8 @@ pub struct Document {
     /// What the player asked for while edits were unsaved: the prompt
     /// shows until they answer.
     pub pending: Option<Pending>,
+    /// Its textures open in the player's image editor.
+    pub external: external::External,
 }
 
 /// What waits on the unsaved-changes prompt.

@@ -109,6 +109,8 @@ fn main() {
         .init(move || App::new(start(iso.as_deref()), settings::load(), Data::of_player(), true))
         .compositor(stage::viewport::Viewport::default())
         .run();
+    // The PNGs opened in the player's image editor go with the app.
+    tgg_app::external::remove_temporary_directory();
 }
 
 /// The app as a plain launch finds it, for Rune's tooling.

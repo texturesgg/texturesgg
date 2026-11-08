@@ -1,7 +1,7 @@
 //! The editor's screen: the stage with the textures beside it, the title
 //! row's breadcrumbs, saved state and saves, and the unsaved-changes prompt.
 
-use super::{Document, actions, files};
+use super::{Document, actions, external, files};
 use crate::keys::{Command, hint};
 use crate::stage::view as stage_view;
 use crate::state::App;
@@ -83,7 +83,8 @@ fn textures(document: &Document, p: &Palette) -> El {
     pane(header, Some(col().key("editor/textures").max_h(360.0).scroll(ScrollSpec { stick_bottom: false }).children(rows)), p)
 }
 
-/// The selected texture, large, with what it is.
+/// The selected texture: what it is and what can be done with it, then the
+/// picture large, so the actions stay in view on a short window.
 fn texture(document: &Document, p: &Palette) -> Option<El> {
     let index = document.selected?;
     let Ok(open) = &document.listing.document else { return None };
@@ -95,13 +96,16 @@ fn texture(document: &Document, p: &Palette) -> Option<El> {
         picture = picture.pixels_fit(pixels, rune::SurfaceFit::Fit);
     }
     let body = col().px(space::SM).py(space::SM).gap(space::SM)
-        .child(row().w_full().justify_center().child(picture))
         .child(col().gap(2.0)
             .child(label(document.listing.name(index)).font(text::STRONG).color(p.ink))
             .child(label(texture_detail(entry)).font(text::MONO_SMALL).color(p.faint)))
-        .child(row().gap(space::XS)
+        .child(row().gap(space::XS).flex_wrap()
+            .child(button("Edit in your image editor", ButtonKind::Secondary, p).key("editor/external")
+                .help(hint("Opens it there; each save there updates it here", Command::EditExternally))
+                .on_press(external::edit))
             .child(button("Replace with a PNG…", ButtonKind::Secondary, p).key("editor/import").on_press_tx(files::choose_import))
-            .child(button("Export…", ButtonKind::Secondary, p).key("editor/export").on_press_tx(files::choose_export)));
+            .child(button("Export…", ButtonKind::Secondary, p).key("editor/export").on_press_tx(files::choose_export)))
+        .child(row().w_full().justify_center().child(picture));
     Some(pane(pane_header("Texture", None, false, p).key("editor/pane/texture"), Some(body), p))
 }
 

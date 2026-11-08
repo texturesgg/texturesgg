@@ -9,6 +9,7 @@
 pub mod costumes;
 pub mod disk;
 pub mod error;
+pub mod external;
 pub mod game;
 pub mod ids;
 pub mod install;

@@ -29,7 +29,7 @@ pub fn open(app: &mut App) {
         return app.tell(format!("Its textures couldn't be read: {error}"), true);
     }
     let thumbnails = pictures(&listing);
-    app.editor = Some(Document { slot, listing, thumbnails, selected: None, pending: None });
+    app.editor = Some(Document { slot, listing, thumbnails, selected: None, pending: None, external: Default::default() });
     select(app, (app.editor.as_ref().is_some_and(|document| document.texture_count() > 0)).then_some(0));
 }
 
@@ -149,6 +149,7 @@ fn step(app: &mut App, back: bool) {
         Some(Ok(Undone::Texture(restored))) => {
             show_pixels(app, restored.texture.0, &restored.decoded);
             select(app, Some(restored.texture.0));
+            super::external::resync(app, restored.texture.0);
         }
         // Colors change the model itself: show it afresh from the document.
         Some(Ok(Undone::Colors)) => {
@@ -253,7 +254,8 @@ fn go_on(app: &mut App, then: Pending, tx: &mut Tx) {
 
 /// Close the document, and show its slot as the game holds it.
 fn close(app: &mut App) {
-    let Some(document) = app.editor.take() else { return };
+    let Some(mut document) = app.editor.take() else { return };
+    super::external::forget(&mut document);
     if app.stage.shown.is_some()
         && let Err(problem) = stage::show(app, document.slot)
     {

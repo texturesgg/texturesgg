@@ -3,7 +3,7 @@
 //! how many texels the texture's format couldn't hold exactly, and what
 //! happened to a palette.
 
-use super::actions;
+use super::{Document, actions};
 use crate::state::App;
 use dat_edit::{PaletteLock, PaletteOutcome, TextureEdit, TextureIndex, UseIndex};
 use rune::{FileDialogOptions, Tx};
@@ -86,16 +86,22 @@ pub fn choose_export(app: &mut App, tx: &mut Tx) {
     });
 }
 
+/// `texture`, as the game decodes it, as a PNG.
+pub fn texture_png(document: &Document, texture: usize) -> Result<Vec<u8>, String> {
+    let open = document.listing.document.as_ref().map_err(|error| error.to_string())?;
+    let entry = open.textures().get(texture).ok_or("there's no such texture")?;
+    let (width, height) = texture_size(entry);
+    let rgba = open.pixels(TextureIndex(texture), UseIndex(0)).map_err(|error| error.to_string())?;
+    let image = image::RgbaImage::from_raw(width, height, rgba).ok_or("its pixels don't match its size")?;
+    let mut png = Vec::new();
+    image.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).map_err(|error| error.to_string())?;
+    Ok(png)
+}
+
 /// Write `texture`, as the game decodes it, to `path` as a PNG.
 pub fn export_to(app: &mut App, texture: usize, path: &Path) {
     let Some(document) = &app.editor else { return };
-    let Ok(open) = &document.listing.document else { return };
-    let (width, height) = texture_size(&open.textures()[texture]);
-    let written = open
-        .pixels(TextureIndex(texture), UseIndex(0))
-        .map_err(|error| error.to_string())
-        .and_then(|rgba| image::RgbaImage::from_raw(width, height, rgba).ok_or_else(|| "its pixels don't match its size".to_owned()))
-        .and_then(|image| image.save_with_format(path, image::ImageFormat::Png).map_err(|error| error.to_string()));
+    let written = texture_png(document, texture).and_then(|png| std::fs::write(path, png).map_err(|error| error.to_string()));
     let name = path.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned());
     match written {
         Ok(()) => app.tell(format!("Exported {name}."), false),

@@ -108,6 +108,7 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
         app.tell(refused, true);
         changed = true;
     }
+    changed |= crate::editor::external::check(app, tx);
     if let Some(picked) = app.stage.picked.take() {
         crate::editor::actions::select_picked(app, &picked, tx);
         changed = true;
