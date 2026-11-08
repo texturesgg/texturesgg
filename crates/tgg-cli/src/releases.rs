@@ -24,16 +24,10 @@ impl Mirror {
         &self.net
     }
 
-    /// `version`'s release for this system, or the newest for `latest`.
+    /// `version`'s release for this system, or the newest for `latest`
+    /// ([`prerelease_note`] says when that is a prerelease).
     pub fn release(&self, version: &str) -> Result<Release> {
-        let release = ports::port_release(&self.net, version)?;
-        if release.prerelease {
-            eprintln!(
-                "tgg-melee has no release yet; using the newest prerelease, {}",
-                release.version
-            );
-        }
-        Ok(release)
+        Ok(ports::port_release(&self.net, version)?)
     }
 
     /// `file` of `release`, from the downloads cache when a copy with the
@@ -56,6 +50,16 @@ impl Mirror {
         )?;
         Ok(bytes)
     }
+}
+
+/// What tgg says when `latest` found only a prerelease.
+pub fn prerelease_note(release: &Release) -> Option<String> {
+    release.prerelease.then(|| {
+        format!(
+            "Using tgg-melee {}, the newest prerelease (there's no full release yet)",
+            release.version
+        )
+    })
 }
 
 /// What tgg says when it starts downloading `file`.

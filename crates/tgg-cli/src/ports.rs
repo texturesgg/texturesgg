@@ -46,6 +46,11 @@ pub enum PortCommand {
         /// The installed version to run [default: the one in use]
         #[arg(long)]
         version: Option<String>,
+        /// Show the game's own output as it runs. Otherwise it goes to
+        /// game.log in tgg's data folder, and its end is shown if the game
+        /// fails.
+        #[arg(short, long)]
+        verbose: bool,
         /// Arguments for the game.
         #[arg(last = true)]
         args: Vec<String>,
@@ -131,6 +136,10 @@ fn set_current(version: &str) -> Result<()> {
 pub fn install(version: &str, debug: bool) -> Result<Installed> {
     let mirror = Mirror::new();
     let release = mirror.release(version)?;
+    // On stdout: PowerShell shows a program's stderr as an error.
+    if let Some(note) = releases::prerelease_note(&release) {
+        println!("{note}");
+    }
     let root = crate::paths::ports()?;
     if ports::installed_port(&root, &release.version).is_ok() {
         println!("tgg-melee {} is installed", release.version);
@@ -138,7 +147,7 @@ pub fn install(version: &str, debug: bool) -> Result<Installed> {
         let told = AtomicBool::new(false);
         let progress = |progress: tgg_mod::Progress| {
             if progress.step == 0 && progress.bytes > 0 && !told.swap(true, Ordering::Relaxed) {
-                eprintln!("{}", releases::downloading(&release.files.game));
+                println!("{}", releases::downloading(&release.files.game));
             }
         };
         ports::add_port(
@@ -194,7 +203,10 @@ pub fn run(command: PortCommand) -> Result<()> {
                 println!("{error:#}");
             }
             match crate::config::iso_or_ask() {
-                Ok(_) if runtime.is_ok() => println!("Ready: tgg port run"),
+                Ok(_) if runtime.is_ok() => {
+                    println!("Ready: tgg port run");
+                    println!("Sets of mods to add: tgg mod sets");
+                }
                 Ok(_) => {}
                 // In a terminal the question already said how to set it later.
                 Err(error) if !std::io::IsTerminal::is_terminal(&std::io::stdin()) => {
@@ -252,22 +264,53 @@ pub fn run(command: PortCommand) -> Result<()> {
             println!("{}", resolve(version.as_deref())?.folder.display());
             Ok(())
         }
-        PortCommand::Run { version, args } => {
+        PortCommand::Run {
+            version,
+            verbose,
+            args,
+        } => {
             let installed = resolve(version.as_deref())?;
             check_runtime(&installed)?;
             let iso = crate::config::iso_or_ask()?;
             let install = ports::installed_port(&crate::paths::ports()?, &installed.version)?;
+            let log = crate::paths::state()?.join(GAME_LOG);
+            println!("Starting tgg-melee {}", installed.version);
             let signals = crate::signals::handle()?;
-            let mut running =
-                ports::launch_with_args(&install, &iso, &tgg_mod::default_mods_dir(), &args)?;
+            let mut running = ports::launch_with_args(
+                &install,
+                &iso,
+                &tgg_mod::default_mods_dir(),
+                &args,
+                (!verbose).then_some(log.as_path()),
+            )?;
             signals.set_game(Some(running.id()));
             let status = running.wait();
             signals.set_game(None);
             let status =
                 status.with_context(|| format!("running {}", installed.executable().display()))?;
+            if !status.success() && !verbose && !signals.stopping() {
+                print_tail(&log);
+            }
             check_exit(status)
         }
     }
+}
+
+/// The game's output from the last `tgg port run`, in tgg's data folder.
+const GAME_LOG: &str = "game.log";
+/// The lines of it shown when the game fails.
+const TAIL: usize = 20;
+
+/// Show the end of the game's log, and where the rest is.
+fn print_tail(log: &std::path::Path) {
+    let Ok(text) = std::fs::read_to_string(log) else {
+        return;
+    };
+    let lines: Vec<&str> = text.lines().collect();
+    for line in &lines[lines.len().saturating_sub(TAIL)..] {
+        eprintln!("{line}");
+    }
+    eprintln!("The game's full output: {}", log.display());
 }
 
 /// The Microsoft C++ runtime DLLs the Windows build's libraries (Dawn, the

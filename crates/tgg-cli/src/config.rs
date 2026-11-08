@@ -73,8 +73,9 @@ pub fn iso_or_ask() -> Result<PathBuf> {
     if !std::io::stdin().is_terminal() || std::env::var_os("TGG_MELEE_ISO").is_some() {
         return Err(error);
     }
+    println!("The game runs from your Melee disc image (NTSC 1.02). tgg asks once.");
     loop {
-        print!("Your Melee disc image (NTSC 1.02, .iso), or Enter to skip: ");
+        print!("Path to the .iso (or Enter to skip): ");
         std::io::stdout().flush()?;
         let mut line = String::new();
         if std::io::stdin().read_line(&mut line)? == 0 {

@@ -28,13 +28,41 @@ builds it instead.
 ## Playing
 
 ```text
-tgg port install    the game, and the mods it comes with
-tgg port run        play
+tgg port install                    the game, and the mods it comes with
+tgg port run                        play
+tgg mod sets                        the sets of mods on textures.gg
+tgg mod install --set competitive   install one
 ```
 
 `port install` asks once for your Melee disc image (NTSC 1.02) and remembers it. The
 game runs on Linux (x86-64), Windows (x86-64) and macOS (Apple silicon). `tgg doctor`
 checks everything the game and mod making need, and says how to fix what's missing.
+
+## Mods from textures.gg
+
+```text
+tgg mod sets                             the registry's sets, and which are installed
+tgg mod install --set NAME [-y]          install a set
+tgg mod install ID[@RANGE]... [-y]       install mods, such as tgg.netplay or tgg.netplay@^0.2
+tgg mod update [--set NAME] [-y]         update installed sets and mods
+tgg mod list [--json]                    installed mods and sets (works offline)
+tgg mod on|off ID...                     turn installed mods on or off
+tgg mod remove ID...                     remove mods
+tgg mod remove --set NAME                remove a set and the mods only it installed
+```
+
+A set is a named list of mods on textures.gg, such as Competitive. `install` and `update`
+fetch the sets and the catalog for the game in use, show what they'll install or update
+and the download size, and ask before going ahead (only in a terminal; `-y` skips it).
+Each download is checked against the catalog's SHA-256. A mod is installed at the newest
+release that fits its range and has a build for the game in use; one already installed
+at a fitting version is kept. `update` also says when there's a newer tgg-melee.
+
+`list` reads only the mods folder and its `mods.lock.json`, which records each mod's
+version and the sets that installed it. A set shows as complete, customized (a mod turned
+off), has updates, or incomplete (a mod missing or not built for the game). Turning a
+set's mod off keeps it installed; `on` brings the set back to complete. Changes wait while
+the game runs, and while another tgg (or the app) is changing the mods folder.
 
 ## Signing in
 
@@ -60,7 +88,8 @@ tgg port list                                 the installed versions, and the on
 tgg port use VERSION                          use this version by default
 tgg port remove VERSION
 tgg port path [VERSION]                       the installed game's folder
-tgg port run [--version VERSION] [-- ARGS]    run the game with your disc image
+tgg port run [--version VERSION] [-v] [-- ARGS]
+                                              run the game with your disc image
 tgg sdk install [VERSION | --port EXE]        the SDK mods build against
 tgg sdk list
 tgg sdk path [VERSION | --port EXE]           its folder, for cmake -DTGG_SDK=$(tgg sdk path)
@@ -86,7 +115,10 @@ A release comes with mods for players, built mod folders in the game's
 `default-mods/`. Installing or switching to a version installs those the mods folder
 lacks, and replaces older builds of them, keeping each one on or off. A mod tgg
 installed this way once and you removed stays removed (`<data>/tgg/default-mods.json`
-lists them). `tgg mod disable <id>` turns one off.
+lists them). `tgg mod off <id>` turns one off.
+
+`port run` writes the game's output to `game.log` in `<data>/tgg/`, and shows its last
+lines when the game fails; `-v` shows it as the game runs.
 
 On Windows the game needs Microsoft's Visual C++ runtime (`msvcp140.dll`,
 `msvcp140_atomic_wait.dll`, `vcruntime140.dll`, `vcruntime140_1.dll`); `port install` and
@@ -148,10 +180,12 @@ tgg mod publish [DIR]                    tag v<version> and push it to textures.
 tgg mod pack DIR [-o OUT.zip] [--json]   DIR is a built mod's folder
 tgg mod inspect FILE                     a package zip, a mod library, or a game executable
 tgg mod catalog -o CATALOG.json ZIP...   list packages, with URLs relative to the catalog
-tgg mod list [--json]                    the installed mods, and whether each counts for netplay
-tgg mod install [--port EXE] ZIP...      install packages, refusing another game layout or a conflict
-tgg mod enable|disable|remove ID...
+tgg mod install [--port EXE] ZIP...      install package zips, refusing another game layout or a conflict
 ```
+
+`tgg mod list --json` gives each installed mod's manifest, whether it's on, its netplay
+class, the sets that installed it, and whether it fits the game. `enable` and `disable`
+are `on` and `off`.
 
 `new` copies the SDK's `examples/template/` (or `--example`'s) into `DIR`, which may
 already hold dotfiles, a README, a license and a Nix flake (it keeps those, and adds the

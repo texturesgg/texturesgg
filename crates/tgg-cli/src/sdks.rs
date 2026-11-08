@@ -44,7 +44,12 @@ impl Which {
         match (&self.version, &self.port) {
             (Some(version), _) => {
                 let mirror = Mirror::new();
-                for_release(&mirror, &mirror.release(version)?)
+                let release = mirror.release(version)?;
+                // stderr, so `tgg sdk path latest` prints only the folder.
+                if let Some(note) = releases::prerelease_note(&release) {
+                    eprintln!("{note}");
+                }
+                for_release(&mirror, &release)
             }
             (None, Some(executable)) => for_executable(executable),
             (None, None) => for_installed(&ports::resolve(None)?),

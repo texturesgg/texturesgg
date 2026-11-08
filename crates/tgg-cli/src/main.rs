@@ -9,6 +9,7 @@ mod docs;
 mod doctor;
 mod mods;
 mod paths;
+mod player;
 mod ports;
 mod publish;
 mod releases;
@@ -70,8 +71,22 @@ enum Command {
     Config(config::ConfigCommand),
 }
 
-fn main() -> Result<()> {
-    let cli = Cli::parse();
+/// Errors print as their message and causes, never a backtrace, whatever
+/// `RUST_BACKTRACE` says; `TGG_BACKTRACE=1` adds the backtrace.
+fn main() -> std::process::ExitCode {
+    match run(Cli::parse()) {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("Error: {error:#}");
+            if std::env::var_os("TGG_BACKTRACE").is_some_and(|value| value == "1") {
+                eprintln!("\n{}", error.backtrace());
+            }
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Login { no_browser } => account::login(&cli.api, !no_browser),
         Command::Logout => account::logout(&cli.api),

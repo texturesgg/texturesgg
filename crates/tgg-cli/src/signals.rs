@@ -52,6 +52,12 @@ impl Signals {
         self.stop.load(Ordering::SeqCst)
     }
 
+    /// The flag set when tgg is told to stop, for work that takes a cancel
+    /// flag.
+    pub fn stop_flag(&self) -> &AtomicBool {
+        &self.stop
+    }
+
     /// The game now running, or none (`None` after it ends).
     pub fn set_game(&self, pid: Option<u32>) {
         self.game.store(pid.unwrap_or(0), Ordering::SeqCst);
