@@ -72,6 +72,33 @@ const SCENES: &[Scene] = &[
             }
         }
     }),
+    // Changing the costume's first color outside its textures.
+    ("fox-colors", |app| {
+        if let Some(fox) = melee_dat::Character::from_code("Fx") {
+            melee::actions::open_fighter(app, fox);
+            editor::actions::open(app);
+            editor::actions::select(app, None);
+            editor::colors::pick_swatch(app, 0, 0, &mut rune::Tx::default());
+        }
+    }),
+    // Pokémon Stadium with every vertex-colored group turned a third of the
+    // way round the hue circle: its teal sky goes magenta, the model drawn
+    // afresh from the file. (Fox's colors are materials his textures
+    // replace, so changing them shows nothing.)
+    ("stadium-recolored", |app| {
+        let Some(stage) = app.melee.stages.iter().copied().find(|stage| stage.name() == "Pokemon Stadium") else { return };
+        melee::actions::open_stage(app, stage);
+        editor::actions::open(app);
+        editor::actions::select(app, None);
+        let groups = app.editor.as_ref().map_or(0, |document| document.colors.len());
+        for group in 0..groups {
+            if app.editor.as_ref().is_some_and(|document| document.colors[group].shifts_hue()) {
+                editor::colors::pick_hue(app, group, &mut rune::Tx::default());
+                editor::colors::set_hue(app, 120.0);
+                editor::colors::apply(app);
+            }
+        }
+    }),
     ("fox-moves", |app| {
         if let Some(fox) = melee_dat::Character::from_code("Fx") {
             melee::actions::open_fighter(app, fox);

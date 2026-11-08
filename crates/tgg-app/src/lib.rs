@@ -6,6 +6,7 @@
 //! Copied from tgg-editor, which keeps its own copies while both apps exist;
 //! a change to one of these modules there is carried here by hand.
 
+pub mod colors;
 pub mod costumes;
 pub mod disk;
 pub mod error;

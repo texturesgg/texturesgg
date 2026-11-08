@@ -137,3 +137,21 @@ pub fn text_action(label: &str, danger: bool, p: &Palette) -> El {
     text(label).font(type_::LABEL).color(if danger { p.danger } else { p.muted })
         .role("button").label(label).focusable(true).hover(p.hover).cursor(rune::Cursor::Pointer).px(4.0).py(2.0).radius(radius::CONTROL)
 }
+
+/// A slider's track at `fraction` of the way along: a filled run, a knob,
+/// and the rest. The caller keys it, labels it, and gives it its range,
+/// drag and steps. The knob's width is kept free at the end, so at the
+/// far end it sits inside the track.
+pub fn slider(fraction: f32, p: &Palette) -> El {
+    let fraction = fraction.clamp(0.0, 1.0);
+    row().h(18.0).w_full().pr(12.0).items_center().cursor(rune::Cursor::Pointer).role("slider")
+        .child(el().w_frac(fraction).min_w(0.0).h(3.0).radius(1.5).fill(p.accent))
+        .child(el().size(12.0, 12.0).radius(6.0).fill(p.ink).border(1.0, p.line_strong))
+        .child(el().grow(1.0).min_w(0.0).h(3.0).radius(1.5).fill(p.line_strong))
+}
+
+/// A color as the game stores it (sRGB bytes), to fill with.
+pub fn srgb([r, g, b, _]: [u8; 4]) -> rune::Color {
+    let channel = |value: u8| rune::color::srgb_decode(f32::from(value) / 255.0);
+    rune::Color { r: channel(r), g: channel(g), b: channel(b), a: 1.0 }
+}

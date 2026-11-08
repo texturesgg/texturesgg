@@ -1,13 +1,18 @@
 //! Edit: one costume open as a document, on the same stage Melee showed it
 //! on. Its textures list in a pane beside the stage, the one selected tints
-//! the surfaces that draw it, and every edit shows on the model as it's
-//! made: a texture can be replaced with a PNG, or exported as one. Undo and
-//! redo step through them; Save keeps the costume in the library as an
-//! edited skin, and Save and install also writes it into the slot it came
-//! from. Leaving with edits unsaved asks first. `actions` changes it,
-//! `files` takes textures in and out, and `view` draws it.
+//! the surfaces that draw it, and a click on the model selects what it
+//! landed on. Every edit shows on the model as it's made: a texture can be
+//! replaced with a PNG, exported as one, or edited in the player's image
+//! editor, and the colors outside its textures changed. Undo and redo step
+//! through them; Save keeps the costume in the library as an edited skin,
+//! and Save and install also writes it into the slot it came from. Leaving
+//! with edits unsaved asks first. `actions` changes it, `files` takes
+//! textures in and out, `external` round-trips them through the image
+//! editor, `colors` changes its colors, and `view` and `colors_view` draw it.
 
 pub mod actions;
+pub mod colors;
+pub mod colors_view;
 pub mod external;
 pub mod files;
 pub mod view;
@@ -29,6 +34,10 @@ pub struct Document {
     pub pending: Option<Pending>,
     /// Its textures open in the player's image editor.
     pub external: external::External,
+    /// The colors it draws with that aren't in its textures, by group.
+    pub colors: Vec<tgg_app::colors::ColorGroup>,
+    /// The color change being made, before it's applied.
+    pub color_pick: Option<colors::ColorPick>,
 }
 
 /// What waits on the unsaved-changes prompt.

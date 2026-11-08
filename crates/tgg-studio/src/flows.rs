@@ -661,3 +661,66 @@ fn ctrl_shift_e_opens_the_selected_texture_in_the_image_editor() {
     assert!(rt.state.editor.as_ref().expect("editing").external.watched.contains_key(&0));
     tap(&mut rt, "editor/done");
 }
+
+fn first_color(rt: &Runtime<App>) -> [u8; 4] {
+    rt.state.editor.as_ref().expect("editing").colors[0].swatches[0].rgba
+}
+
+#[test]
+fn a_color_changed_in_the_colors_pane_shows_on_the_model_and_undoes() {
+    let (mut rt, _iso, _data) = editing();
+    assert_eq!(first_color(&rt), [96, 224, 96, 255], "the costume's green vertices");
+    let generation = rt.state.stage.shown.as_ref().expect("on stage").generation;
+    tap(&mut rt, "editor/color/0/0");
+    settle(&mut rt);
+    assert!(rt.find("editor/pick").is_some(), "its sliders open");
+    // Drag red to its far end.
+    let (x, y) = rt.find("editor/pick/R").expect("the red slider");
+    rt.pointer_down(x, y);
+    rt.pointer_move(x + 400.0, y);
+    rt.pointer_up(x + 400.0, y);
+    rt.frame(FRAME);
+    tap(&mut rt, "editor/pick/apply");
+    // Its vertices keep 5 bits of red, so full red reads back as 248.
+    assert_eq!(first_color(&rt), [248, 224, 96, 255], "every vertex of that color changed, as the game reads it");
+    assert!(rt.state.editor.as_ref().expect("editing").modified());
+    assert!(rt.state.editor.as_ref().expect("editing").color_pick.is_none(), "the sliders close");
+    assert_ne!(rt.state.stage.shown.as_ref().expect("on stage").generation, generation, "the model is drawn afresh");
+    assert!(rt.state.notice.as_ref().is_some_and(|notice| notice.text.contains("#60E060 to #FFE060")), "{:?}", rt.state.notice);
+
+    command(&mut rt, 'z', false);
+    assert_eq!(first_color(&rt), [96, 224, 96, 255], "undone, the list reads the green again");
+    assert!(!rt.state.editor.as_ref().expect("editing").modified());
+}
+
+#[test]
+fn shifting_a_groups_hue_turns_all_its_colors() {
+    let (mut rt, _iso, _data) = editing();
+    let before: Vec<[u8; 4]> = rt.state.editor.as_ref().expect("editing").colors[0].swatches.iter().map(|swatch| swatch.rgba).collect();
+    tap(&mut rt, "editor/hue/0");
+    settle(&mut rt);
+    rt.update(|app, _| crate::editor::colors::set_hue(app, 120.0));
+    rt.frame(FRAME);
+    tap(&mut rt, "editor/pick/apply");
+    let after: Vec<[u8; 4]> = rt.state.editor.as_ref().expect("editing").colors[0].swatches.iter().map(|swatch| swatch.rgba).collect();
+    let mut expected: Vec<[u8; 4]> = before.iter().map(|&rgba| tgg_app::colors::turn_hue(rgba, 120.0)).collect();
+    let mut sorted = after.clone();
+    expected.sort_unstable();
+    sorted.sort_unstable();
+    // Within what the vertices' 5- and 6-bit channels keep.
+    let close = sorted.iter().zip(&expected).all(|(got, want)| got.iter().zip(want).all(|(a, b)| a.abs_diff(*b) <= 8));
+    assert!(close, "each color turned a third of the way round: {sorted:?}, wanted about {expected:?}");
+}
+
+#[test]
+fn cancelling_a_color_change_leaves_the_costume_alone() {
+    let (mut rt, _iso, _data) = editing();
+    tap(&mut rt, "editor/color/0/0");
+    settle(&mut rt);
+    rt.update(|app, _| crate::editor::colors::set_channel(app, 0, 0.0));
+    rt.frame(FRAME);
+    tap(&mut rt, "editor/pick/cancel");
+    assert!(rt.find("editor/pick").is_none());
+    assert_eq!(first_color(&rt), [96, 224, 96, 255]);
+    assert!(!rt.state.editor.as_ref().expect("editing").modified());
+}

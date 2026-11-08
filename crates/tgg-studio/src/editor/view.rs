@@ -1,7 +1,7 @@
 //! The editor's screen: the stage with the textures beside it, the title
 //! row's breadcrumbs, saved state and saves, and the unsaved-changes prompt.
 
-use super::{Document, actions, external, files};
+use super::{Document, actions, colors_view, external, files};
 use crate::keys::{Command, hint};
 use crate::stage::view as stage_view;
 use crate::state::App;
@@ -21,7 +21,8 @@ pub fn view(app: &App, document: &Document, p: &Palette) -> El {
     let panes = col().key("editor/panes").w(size::PANE_COLUMN).h_full().gap(space::SM)
         .scroll(ScrollSpec { stick_bottom: false })
         .child(textures(document, p))
-        .children(texture(document, p));
+        .children(texture(document, p))
+        .children(colors_view::pane_view(document, p));
     row().key("editor").grow(1.0).min_h(0.0).w_full().px(space::MD).pb(space::MD).gap(space::MD)
         .child(stage)
         .child(panes)

@@ -29,7 +29,9 @@ pub fn open(app: &mut App) {
         return app.tell(format!("Its textures couldn't be read: {error}"), true);
     }
     let thumbnails = pictures(&listing);
-    app.editor = Some(Document { slot, listing, thumbnails, selected: None, pending: None, external: Default::default() });
+    let mut document = Document { slot, listing, thumbnails, selected: None, pending: None, external: Default::default(), colors: Vec::new(), color_pick: None };
+    super::colors::read(&mut document);
+    app.editor = Some(document);
     select(app, (app.editor.as_ref().is_some_and(|document| document.texture_count() > 0)).then_some(0));
 }
 
@@ -154,6 +156,9 @@ fn step(app: &mut App, back: bool) {
         // Colors change the model itself: show it afresh from the document.
         Some(Ok(Undone::Colors)) => {
             let bytes = open.bytes().to_vec();
+            if let Some(document) = &mut app.editor {
+                super::colors::read(document);
+            }
             if let Err(problem) = stage::replace(app, &bytes) {
                 app.tell(problem, true);
             }
