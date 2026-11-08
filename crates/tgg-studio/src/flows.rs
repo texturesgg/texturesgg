@@ -2250,3 +2250,34 @@ fn a_replay_that_needs_mods_is_reviewed_then_plays_in_its_own_setup() {
     tap(&mut rt, "mods/stop");
     jobs_until(&mut rt, |app| app.mods.playing.is_none());
 }
+
+#[test]
+fn a_sign_out_elsewhere_shows_when_the_window_is_back_and_the_link_shows_to_copy() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    // Signed in, as last checked; then signed out with `tgg` (no saved sign-in).
+    rt.update(|app, _| {
+        app.signin.who = Some(tgg_account::SignedIn {
+            account: tgg_account::Account {
+                handle: "ciao".into(),
+                display_name: None,
+                id: None,
+            },
+            verified: true,
+        });
+    });
+    rt.update(|app, tx| crate::signin::actions::focused(app, true, tx));
+    assert!(
+        rt.state.signin.who.is_none(),
+        "coming back to the window, the sign-out shows"
+    );
+    // Signing in shows the page's link, to copy when the browser doesn't open.
+    rt.update(|app, _| {
+        let mut login = crate::signin::Login::asking();
+        login.code = Some("ABCD-EFGH".into());
+        login.link = Some("https://textures.gg/device?code=ABCDEFGH".into());
+        app.signin.login = Some(login);
+    });
+    settle(&mut rt);
+    assert!(rt.find("signin/link").is_some() && rt.find("signin/copy-link").is_some());
+}

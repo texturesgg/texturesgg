@@ -90,6 +90,35 @@ pub fn sign_in(app: &App, p: &Palette) -> Option<El> {
                     )
                 }),
             ))
+            // The page's link, to open by hand when the browser doesn't.
+            .children(login.link.clone().map(|link| {
+                col()
+                    .gap(space::TIGHT)
+                    .child(
+                        label("If your browser doesn't open, open this link in it:")
+                            .font(text::SMALL)
+                            .color(p.muted),
+                    )
+                    .child(
+                        row()
+                            .gap(space::XS)
+                            .items_center()
+                            .child(
+                                label(link)
+                                    .key("signin/link")
+                                    .font(text::MONO_SMALL)
+                                    .color(p.ink)
+                                    .truncate_middle()
+                                    .shrink()
+                                    .min_w(0.0),
+                            )
+                            .child(
+                                text_action("Copy link", false, p)
+                                    .key("signin/copy-link")
+                                    .on_press_tx(actions::copy_link),
+                            ),
+                    )
+            }))
             .child(
                 label(status)
                     .key("signin/status")

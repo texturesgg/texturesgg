@@ -344,6 +344,8 @@ fn main() {
             borderless: cfg!(not(target_os = "macos")),
             ..Default::default()
         })
+        // Coming back to the window: a sign-in or sign-out made with `tgg` shows.
+        .on_focus(signin::actions::focused)
         .init(move || {
             let mut app = App::new(
                 start(iso.as_deref()),

@@ -61,6 +61,34 @@ pub fn copy_code(app: &mut App, tx: &mut Tx) {
     }
 }
 
+/// The window gained focus: the player may have signed in or out with the
+/// `tgg` command meanwhile. Only the saved sign-in on disk is read; the
+/// site is asked only when it changed.
+pub fn focused(app: &mut App, focused: bool, _: &mut Tx) {
+    if focused {
+        follow_saved(app);
+    }
+}
+
+/// Follow a sign-in or sign-out made elsewhere (the CLI shares the saved
+/// sign-in): a sign-in finishes one under way here. True when it changed.
+fn follow_saved(app: &mut App) -> bool {
+    let saved = app.signin.site.token().ok().flatten().is_some();
+    match (saved, app.signin.who.is_some()) {
+        (true, false) => {
+            app.signin.login = None;
+            check(app);
+            true
+        }
+        (false, true) => {
+            app.signin.who = None;
+            app.signin.account_open = false;
+            true
+        }
+        _ => false,
+    }
+}
+
 /// Before each frame: ask whether the code's confirmed, when it's time.
 pub fn tick(app: &mut App) {
     let Some(login) = &mut app.signin.login else {
@@ -70,6 +98,13 @@ pub fn tick(app: &mut App) {
     if !due || login.polling {
         return;
     }
+    // Signed in meanwhile with the `tgg` command: that's the sign-in.
+    if follow_saved(app) {
+        return;
+    }
+    let Some(login) = &mut app.signin.login else {
+        return;
+    };
     let Some(device) = login.device.clone() else {
         return;
     };
@@ -198,4 +233,17 @@ fn sentence(error: &Error) -> String {
         out.push('.');
     }
     out
+}
+
+/// Copy the page's link, to open it by hand when the browser didn't.
+pub fn copy_link(app: &mut App, tx: &mut Tx) {
+    if let Some(link) = app
+        .signin
+        .login
+        .as_ref()
+        .and_then(|login| login.link.clone())
+    {
+        tx.copy(link);
+        app.tell("Copied the sign-in link.", false);
+    }
 }
