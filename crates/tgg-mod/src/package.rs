@@ -66,8 +66,54 @@ pub enum PackageError {
     Empty,
     #[error("{0} in the package is too large")]
     TooLarge(String),
+    #[error("assets/{0} isn't a PNG of at most {MAX_IMAGE_SIDE} pixels a side and {limit} KiB", limit = .1 / 1024)]
+    Image(String, usize),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+}
+
+/// The largest icon, in bytes.
+pub const MAX_ICON_BYTES: usize = 512 * 1024;
+/// The largest screenshot, in bytes.
+pub const MAX_SCREENSHOT_BYTES: usize = 4 * 1024 * 1024;
+/// The most pixels an icon or screenshot has on a side.
+pub const MAX_IMAGE_SIDE: u32 = 4096;
+
+/// Check that the manifest's icon and screenshots are PNGs among `assets`,
+/// as the registry does when it records a release.
+fn check_images(manifest: &Manifest, assets: &Files) -> Result<(), PackageError> {
+    let images = manifest
+        .icon
+        .iter()
+        .map(|path| (path, MAX_ICON_BYTES))
+        .chain(
+            manifest
+                .screenshots
+                .iter()
+                .map(|path| (path, MAX_SCREENSHOT_BYTES)),
+        );
+    for (path, limit) in images {
+        let bytes = assets
+            .get(path)
+            .ok_or_else(|| PackageError::MissingFile(format!("assets/{path}")))?;
+        let fits = bytes.len() <= limit
+            && png_size(bytes).is_some_and(|(w, h)| w <= MAX_IMAGE_SIDE && h <= MAX_IMAGE_SIDE);
+        if !fits {
+            return Err(PackageError::Image(path.clone(), limit));
+        }
+    }
+    Ok(())
+}
+
+/// A PNG's width and height from its header, or `None` if it isn't one.
+pub fn png_size(bytes: &[u8]) -> Option<(u32, u32)> {
+    const SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+    if bytes.len() < 24 || !bytes.starts_with(SIGNATURE) || &bytes[12..16] != b"IHDR" {
+        return None;
+    }
+    let width = u32::from_be_bytes(bytes[16..20].try_into().ok()?);
+    let height = u32::from_be_bytes(bytes[20..24].try_into().ok()?);
+    (width > 0 && height > 0).then_some((width, height))
 }
 
 impl Package {
@@ -82,8 +128,10 @@ impl Package {
         include: Files,
     ) -> Result<Self, PackageError> {
         manifest.validate()?;
+        manifest.check_listing()?;
         files::check("files", &files)?;
         files::check("assets", &assets)?;
+        check_images(&manifest, &assets)?;
         files::check("include", &include)?;
         manifest.files = files::list(&files);
         manifest.assets = files::list(&assets);
@@ -391,5 +439,60 @@ mod tests {
             Package::from_zip(&swapped.to_zip()),
             Err(PackageError::FilesMismatch("assets"))
         ));
+    }
+
+    #[test]
+    fn a_store_listing_names_pngs_the_package_ships() {
+        let icon = crate::fake::png(64, 64, [1, 2, 3]);
+        let assets = Files::from([
+            ("icon.png".to_owned(), icon.clone()),
+            ("shot.png".to_owned(), crate::fake::png(320, 240, [0, 0, 0])),
+            ("notes.png".to_owned(), b"not a png".to_vec()),
+        ]);
+        let pack = |edit: &dyn Fn(&mut Manifest)| {
+            let mut manifest = manifest();
+            edit(&mut manifest);
+            Package::pack(manifest, None, Files::new(), assets.clone(), Files::new())
+        };
+        let package = pack(&|m| {
+            m.icon = Some("icon.png".into());
+            m.screenshots = vec!["shot.png".into()];
+            m.tags = vec!["visual".into(), "quality-of-life".into()];
+            m.homepage = Some("https://example.com/mod".into());
+        })
+        .expect("pack");
+        assert_eq!(Package::from_zip(&package.to_zip()).expect("open"), package);
+        assert_eq!(png_size(&icon), Some((64, 64)));
+
+        assert!(matches!(
+            pack(&|m| m.icon = Some("missing.png".into())),
+            Err(PackageError::MissingFile(_))
+        ));
+        assert!(matches!(
+            pack(&|m| m.icon = Some("notes.png".into())),
+            Err(PackageError::Image(..))
+        ));
+        for (edit, what) in [
+            (
+                &(|m: &mut Manifest| m.icon = Some("../icon.png".into())) as &dyn Fn(&mut Manifest),
+                "icon outside assets",
+            ),
+            (&|m| m.screenshots = vec!["shot.jpg".into()], "not .png"),
+            (&|m| m.tags = vec!["speedrun".into()], "unknown tag"),
+            (
+                &|m| m.tags = vec!["visual".into(), "visual".into()],
+                "tag twice",
+            ),
+            (
+                &|m| m.homepage = Some("ftp://example.com".into()),
+                "not http",
+            ),
+            (&|m| m.homepage = Some("https://".into()), "no host"),
+        ] {
+            assert!(
+                matches!(pack(edit), Err(PackageError::Manifest(_))),
+                "{what}"
+            );
+        }
     }
 }
