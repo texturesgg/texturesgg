@@ -59,6 +59,8 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .children(mods::review::view(app, &p))
         .children(mods::versions::view(app, &p))
         .children(preferences::view::view(app, &p))
+        // A select's menu, over Settings.
+        .children(preferences::view::menu(app, &p))
         .children(report::view::view(app, &p))
         .children(signin::view::sign_in(app, &p))
         .children(signin::view::account(app, &p))

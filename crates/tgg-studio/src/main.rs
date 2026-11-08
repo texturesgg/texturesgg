@@ -291,6 +291,10 @@ const SCENES: &[Scene] = &[
         }
     }),
     ("settings", preferences::actions::open),
+    ("settings-menu", |app| {
+        preferences::actions::open(app);
+        preferences::actions::toggle_menu(app, preferences::Menu::ImageEditor);
+    }),
     ("report", |app| report::actions::open(app, false)),
     // Signing in, its code shown (nothing is asked of the site).
     ("signin", |app| {

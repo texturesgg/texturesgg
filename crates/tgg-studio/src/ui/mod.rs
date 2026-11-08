@@ -16,7 +16,7 @@ pub mod tokens;
 
 pub use controls::{
     ButtonKind, PLACE_INSET, TEXT_ACTION_INSET, button, chip, icon_button, place_row, search_field,
-    slider, switch, tab, text_action, text_field,
+    select, select_item, select_menu, select_rule, slider, switch, tab, text_action, text_field,
 };
 pub use marks::{
     Tone, avatar, badge, close_glyph, dot, icon_tile, pause_glyph, play_glyph, progress,

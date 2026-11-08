@@ -1,12 +1,12 @@
 //! The Settings dialog: a row per setting, its name and what it does on
 //! the left, its control on the right, and help at the end.
 
-use super::actions;
+use super::{Menu, actions};
 use crate::state::App;
 use crate::ui::tokens::{Palette, space, text};
 use crate::ui::{
-    ButtonKind, Dialog, DialogWidth, TEXT_ACTION_INSET, button, chip, dialog, rule, spacer, switch,
-    text_action, text_field,
+    ButtonKind, Dialog, DialogWidth, TEXT_ACTION_INSET, button, dialog, rule, select, select_item,
+    select_menu, select_rule, spacer, switch, text_action, text_field,
 };
 use rune::{El, col, row, text as label};
 use tgg_app::settings::Appearance;
@@ -70,29 +70,12 @@ fn setting(key: &str, name: &str, line: impl Into<String>, control: El, p: &Pale
 }
 
 /// The image editor: the system's default, an app on this computer that
-/// opens PNGs, or another (a command typed, or a program browsed for).
+/// opens PNGs, or another (a command typed, or a program browsed for), in a
+/// select; another's field and Browse under it.
 fn image_editor(app: &App, p: &Palette) -> El {
     let preferences = &app.preferences;
-    let kept = app.settings.external_editor.as_deref();
-    let default = chip("System default", kept.is_none() && !preferences.other, p)
-        .key("settings/image-editor/default")
-        .role("radio")
-        .on_press(|app: &mut App| actions::choose_editor(app, None));
-    let apps = preferences.apps.iter().enumerate().map(|(index, known)| {
-        let command = known.command.clone();
-        chip(
-            &known.name,
-            !preferences.other && kept == Some(command.as_str()),
-            p,
-        )
-        .key(format!("settings/image-editor/app/{index}"))
-        .role("radio")
-        .on_press(move |app: &mut App| actions::choose_editor(app, Some(command.clone())))
-    });
-    let other = chip("Other…", preferences.other, p)
-        .key("settings/image-editor/other")
-        .role("radio")
-        .on_press(actions::choose_other);
+    let open = preferences.menu == Some(Menu::ImageEditor);
+    let value = editor_value(app);
     let field = preferences.other.then(|| {
         col()
             .gap(space::XXS)
@@ -109,53 +92,129 @@ fn image_editor(app: &App, p: &Palette) -> El {
                 ),
             )
     });
-    let choices = col()
+    let control = col()
         .w(CHOICES)
         .gap(space::XS)
         .child(
-            row()
-                .flex_wrap()
-                .gap(space::SNUG)
-                .child(default)
-                .children(apps)
-                .child(other),
+            select(&value, open, p)
+                .key("settings/image-editor")
+                .label("Image editor")
+                .on_press(|app: &mut App| actions::toggle_menu(app, Menu::ImageEditor)),
         )
         .children(field);
     setting(
-        "settings/image-editor",
+        "settings/image-editor/row",
         "Image editor",
         "Where Edit in your image editor opens a texture.",
-        choices,
+        control,
         p,
     )
 }
 
+/// What the image editor select says: the app's name, the system's
+/// default, or Other.
+fn editor_value(app: &App) -> String {
+    if app.preferences.other {
+        return "Other…".into();
+    }
+    match app.settings.external_editor.as_deref() {
+        None => "System default".into(),
+        Some(command) => app
+            .preferences
+            .apps
+            .iter()
+            .find(|known| known.command == command)
+            .map_or_else(|| command.to_owned(), |known| known.name.clone()),
+    }
+}
+
 fn appearance(app: &App, p: &Palette) -> El {
-    let now = app.settings.appearance();
-    let choice = |name: &str, appearance: Appearance, key: &str| {
-        chip(name, now == appearance, p)
-            .key(key.to_owned())
-            .role("radio")
-            .on_press(move |app: &mut App| actions::set_appearance(app, appearance))
-    };
+    let open = app.preferences.menu == Some(Menu::Appearance);
+    let value = appearance_name(app.settings.appearance());
     setting(
-        "settings/appearance",
+        "settings/appearance/row",
         "Appearance",
-        "Gallery is dark; Paper is light.",
-        row()
-            .gap(space::SNUG)
-            .child(choice(
-                "Gallery",
-                Appearance::Gallery,
-                "settings/appearance/gallery",
-            ))
-            .child(choice(
-                "Paper",
-                Appearance::Paper,
-                "settings/appearance/paper",
-            )),
+        "How the app looks.",
+        select(value, open, p)
+            .key("settings/appearance")
+            .label("Appearance")
+            .on_press(|app: &mut App| actions::toggle_menu(app, Menu::Appearance)),
         p,
     )
+}
+
+/// The palettes, by the name they show.
+const APPEARANCES: [(Appearance, &str); 2] = [
+    (Appearance::Gallery, "Gallery (dark)"),
+    (Appearance::Paper, "Paper (light)"),
+];
+
+fn appearance_name(appearance: Appearance) -> &'static str {
+    APPEARANCES
+        .iter()
+        .find(|(known, _)| *known == appearance)
+        .map_or("Gallery (dark)", |(_, name)| name)
+}
+
+/// The open select's menu, at the window's root over Settings.
+pub fn menu(app: &App, p: &Palette) -> Option<El> {
+    if !app.preferences.open {
+        return None;
+    }
+    match app.preferences.menu? {
+        Menu::ImageEditor => {
+            let preferences = &app.preferences;
+            let kept = app.settings.external_editor.as_deref();
+            let mut items = vec![
+                select_item("System default", kept.is_none() && !preferences.other, p)
+                    .key("settings/image-editor/default")
+                    .on_press(|app: &mut App| actions::choose_editor(app, None)),
+            ];
+            items.extend(preferences.apps.iter().enumerate().map(|(index, known)| {
+                let command = known.command.clone();
+                select_item(
+                    &known.name,
+                    !preferences.other && kept == Some(command.as_str()),
+                    p,
+                )
+                .key(format!("settings/image-editor/app/{index}"))
+                .on_press(move |app: &mut App| actions::choose_editor(app, Some(command.clone())))
+            }));
+            items.push(select_rule(p));
+            items.push(
+                select_item("Other…", preferences.other, p)
+                    .key("settings/image-editor/other")
+                    .on_press(actions::choose_other),
+            );
+            Some(select_menu(
+                "settings/image-editor",
+                items,
+                actions::close_menu,
+                p,
+            ))
+        }
+        Menu::Appearance => {
+            let now = app.settings.appearance();
+            let items = APPEARANCES
+                .iter()
+                .map(|(appearance, name)| {
+                    let appearance = *appearance;
+                    select_item(name, now == appearance, p)
+                        .key(format!(
+                            "settings/appearance/{}",
+                            name.split(' ').next().unwrap_or(name).to_lowercase()
+                        ))
+                        .on_press(move |app: &mut App| actions::set_appearance(app, appearance))
+                })
+                .collect();
+            Some(select_menu(
+                "settings/appearance",
+                items,
+                actions::close_menu,
+                p,
+            ))
+        }
+    }
 }
 
 fn updates(app: &App, p: &Palette) -> El {

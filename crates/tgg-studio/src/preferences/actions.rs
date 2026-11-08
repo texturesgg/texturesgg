@@ -33,6 +33,7 @@ pub fn close(app: &mut App) {
 
 /// Open textures in `command`'s app, or the system's default for PNGs.
 pub fn choose_editor(app: &mut App, command: Option<String>) {
+    app.preferences.menu = None;
     app.preferences.other = false;
     app.preferences.editor.text = command.clone().unwrap_or_default();
     app.change_settings(move |settings| settings.external_editor = command.clone());
@@ -40,6 +41,7 @@ pub fn choose_editor(app: &mut App, command: Option<String>) {
 
 /// Open textures in an app not on the list: its command in the field.
 pub fn choose_other(app: &mut App) {
+    app.preferences.menu = None;
     app.preferences.other = true;
 }
 
@@ -68,6 +70,7 @@ pub fn report_problem(app: &mut App) {
 
 /// Draw in `appearance`'s palette, and remember it.
 pub fn set_appearance(app: &mut App, appearance: Appearance) {
+    app.preferences.menu = None;
     app.change_settings(move |settings| settings.set_appearance(appearance));
 }
 
@@ -99,4 +102,18 @@ pub fn choose_game(app: &mut App, tx: &mut Tx) {
         Ok(None) => {}
         Err(error) => app.tell(format!("The file dialog couldn't open: {error}"), true),
     });
+}
+
+/// Open `menu`, or close it when it's open.
+pub fn toggle_menu(app: &mut App, menu: super::Menu) {
+    let preferences = &mut app.preferences;
+    preferences.menu = if preferences.menu == Some(menu) {
+        None
+    } else {
+        Some(menu)
+    };
+}
+
+pub fn close_menu(app: &mut App) {
+    app.preferences.menu = None;
 }

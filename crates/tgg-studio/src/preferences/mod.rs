@@ -19,4 +19,13 @@ pub struct Preferences {
     pub other: bool,
     /// That app's command, as the player types it or browses for it.
     pub editor: TextEdit,
+    /// The select whose menu is open.
+    pub menu: Option<Menu>,
+}
+
+/// Settings' selects.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Menu {
+    ImageEditor,
+    Appearance,
 }

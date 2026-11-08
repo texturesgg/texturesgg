@@ -235,3 +235,111 @@ pub fn text_field(edit: &rune::TextEdit, placeholder: &str, p: &Palette) -> El {
 pub fn search_field(edit: &rune::TextEdit, placeholder: &str, p: &Palette) -> El {
     text_field(edit, placeholder, p)
 }
+
+/// A select: the value chosen and a chevron, outlined as a control. The
+/// caller keys it (its menu anchors to that key), labels it, and makes
+/// pressing it open `select_menu`.
+pub fn select(value: &str, open: bool, p: &Palette) -> El {
+    let chevron = rune::canvas(rune::Shape::new().view_box(10.0, 10.0).stroke(
+        [[1.5, 3.5], [5.0, 7.0], [8.5, 3.5]],
+        1.5,
+        p.muted,
+    ))
+    .size(10.0, 10.0);
+    row()
+        .h(size::CONTROL)
+        .min_w(SELECT_WIDTH)
+        .px(space::SM)
+        .gap(space::XS)
+        .items_center()
+        .radius(radius::CONTROL)
+        .fill(if open { p.hover } else { p.sunk })
+        .border(size::LINE, if open { p.accent_text } else { p.line_strong })
+        .hover(p.hover)
+        .cursor(rune::Cursor::Pointer)
+        .role("combobox")
+        .checked(open)
+        .focusable(true)
+        .child(
+            text(value)
+                .font(type_::BODY)
+                .color(p.ink)
+                .truncate()
+                .grow(1.0)
+                .min_w(0.0),
+        )
+        .child(chevron)
+}
+
+/// A select's narrowest.
+pub const SELECT_WIDTH: f32 = 200.0;
+
+/// A select's menu: `items` (each a `select_item`, or `select_rule`) in a
+/// raised list under the select keyed `anchor`, flipping above it when
+/// there's no room, and scrolling when it's taller than the window allows.
+/// Attach it at the window's root, after the select, so it draws over what
+/// follows. It's modal: Escape or a click outside runs `dismiss`.
+pub fn select_menu<S: 'static>(
+    anchor: &str,
+    items: Vec<El>,
+    dismiss: impl Fn(&mut S) + 'static,
+    p: &Palette,
+) -> El {
+    let (y, blur) = super::tokens::elevation::DIALOG;
+    col()
+        .key(format!("{anchor}/menu"))
+        .min_w(SELECT_WIDTH)
+        .py(space::XXS)
+        .fill(p.raise)
+        .border(size::LINE, p.line_strong)
+        .radius(radius::CONTROL)
+        .shadow(y / 2.0, blur / 2.0, p.shadow)
+        .role("listbox")
+        .modal(true, dismiss)
+        .anchored_fit(anchor, rune::Side::Bottom, rune::Align::Start, space::XXS)
+        .child(
+            col()
+                .shrink()
+                .min_h(0.0)
+                .scroll(rune::ScrollSpec {
+                    stick_bottom: false,
+                })
+                .children(items),
+        )
+}
+
+/// A choice in a select's menu: its words, with a gold mark while it's the
+/// one chosen. The caller keys it and makes pressing it choose.
+pub fn select_item(label: &str, chosen: bool, p: &Palette) -> El {
+    let mark = el()
+        .size(size::DOT, size::DOT)
+        .radius(size::DOT / 2.0)
+        .fill(if chosen {
+            p.accent
+        } else {
+            rune::Color::TRANSPARENT
+        });
+    row()
+        .h(size::ROW)
+        .px(space::SM)
+        .gap(space::XS)
+        .items_center()
+        .hover(p.hover)
+        .cursor(rune::Cursor::Pointer)
+        .role("option")
+        .checked(chosen)
+        .label(label)
+        .focusable(true)
+        .child(mark)
+        .child(
+            text(label)
+                .font(type_::BODY)
+                .color(if chosen { p.ink } else { p.muted })
+                .truncate(),
+        )
+}
+
+/// A rule between groups of a select's choices.
+pub fn select_rule(p: &Palette) -> El {
+    el().h(size::LINE).w_full().my(space::XXS).fill(p.line)
+}

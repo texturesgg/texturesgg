@@ -1763,6 +1763,8 @@ fn settings_keep_each_change_and_the_image_editor_when_closed() {
     rt.frame(FRAME);
     assert!(rt.state.preferences.open, "Ctrl , opens Settings");
     settle(&mut rt);
+    tap(&mut rt, "settings/appearance");
+    settle(&mut rt);
     tap(&mut rt, "settings/appearance/paper");
     assert_eq!(
         rt.state.settings.appearance(),
@@ -1771,7 +1773,14 @@ fn settings_keep_each_change_and_the_image_editor_when_closed() {
     tap(&mut rt, "settings/updates/switch");
     assert_eq!(rt.state.settings.check_for_updates, Some(false));
     // Another app, by its command.
+    tap(&mut rt, "settings/image-editor");
+    settle(&mut rt);
+    assert!(
+        rt.find("settings/image-editor/menu").is_some(),
+        "the select opens its menu"
+    );
     tap(&mut rt, "settings/image-editor/other");
+    assert!(rt.state.preferences.menu.is_none(), "choosing closes it");
     settle(&mut rt);
     assert!(
         rt.find("settings/image-editor/field").is_some(),
@@ -1789,6 +1798,8 @@ fn settings_keep_each_change_and_the_image_editor_when_closed() {
     tap(&mut rt, "sidebar/settings");
     settle(&mut rt);
     assert!(rt.state.preferences.other);
+    tap(&mut rt, "settings/image-editor");
+    settle(&mut rt);
     tap(&mut rt, "settings/image-editor/default");
     assert_eq!(rt.state.settings.external_editor, None);
     assert!(rt.find("settings/image-editor/field").is_none());
@@ -1806,6 +1817,8 @@ fn an_app_that_opens_pngs_is_one_press() {
             command: "aseprite".into(),
         }]
     });
+    settle(&mut rt);
+    tap(&mut rt, "settings/image-editor");
     settle(&mut rt);
     tap(&mut rt, "settings/image-editor/app/0");
     assert_eq!(
