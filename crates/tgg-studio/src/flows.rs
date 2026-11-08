@@ -1138,7 +1138,7 @@ fn a_recent_edit_opens_again_from_the_sidebar() {
     assert_eq!(rt.state.settings.recent.first(), Some(&slot), "remembered as it opened");
     let key = format!("sidebar/recent/{}", slot.file_name());
     assert!(rt.find(&key).is_some());
-    rt.update(|app, tx| crate::editor::actions::leave(app, tx));
+    rt.update(crate::editor::actions::leave);
     tap(&mut rt, Place::Library.key());
     assert!(rt.state.editor.is_none());
     tap(&mut rt, &key);
