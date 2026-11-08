@@ -5,13 +5,15 @@ use super::{Document, actions, colors_view, external, files};
 use crate::keys::{Command, hint};
 use crate::stage::view as stage_view;
 use crate::state::App;
-use crate::ui::tokens::{Palette, radius, size, space, text};
-use crate::ui::{ButtonKind, button, pane, pane_header, pane_row, plate, rule};
+use crate::ui::tokens::{Palette, size, space, text};
+use crate::ui::{ButtonKind, Dialog, DialogWidth, button, dialog, dot, pane, pane_header, pane_row, plate, spacer};
 use rune::{El, ScrollSpec, col, el, row, text as label};
 use tgg_app::textures::texture_detail;
 
 /// The selected texture's preview, in points a side at most.
 const PREVIEW: f32 = 240.0;
+/// The textures list's tallest, in points; longer lists scroll.
+const TEXTURES_HEIGHT: f32 = 360.0;
 
 pub fn view(app: &App, document: &Document, p: &Palette) -> El {
     let matched = app.melee.subject.map(|subject| subject.plate_id()).unwrap_or_default();
@@ -41,8 +43,8 @@ pub fn crumbs(document: &Document, p: &Palette) -> El {
         crumbs = crumbs.child(label("/").font(text::BODY).color(p.faint)).child(label(color).font(text::STRONG).color(p.ink));
     }
     if document.modified() {
-        crumbs = crumbs.child(row().key("editor/edited").ml(space::XS).gap(6.0).items_center()
-            .child(el().size(6.0, 6.0).radius(3.0).fill(p.accent))
+        crumbs = crumbs.child(row().key("editor/edited").ml(space::XS).gap(space::SNUG).items_center()
+            .child(dot(p.accent))
             .child(label("Edited").font(text::LABEL).color(p.accent_text)));
     }
     crumbs
@@ -66,7 +68,7 @@ pub fn actions(document: &Document, p: &Palette) -> El {
 fn textures(document: &Document, p: &Palette) -> El {
     let Ok(open) = &document.listing.document else { return el() };
     let rows = open.textures().iter().enumerate().map(|(index, texture)| {
-        let mut thumb = plate(p).size(32.0, 32.0);
+        let mut thumb = plate(p).size(size::THUMBNAIL, size::THUMBNAIL);
         if let Some(pixels) = document.thumbnails.get(index) {
             thumb = thumb.pixels_fit(pixels, rune::SurfaceFit::Fit);
         }
@@ -81,7 +83,7 @@ fn textures(document: &Document, p: &Palette) -> El {
             .on_press(move |app: &mut App| actions::select(app, Some(index)))
     });
     let header = pane_header("Textures", Some(open.textures().len()), false, p).key("editor/pane/textures");
-    pane(header, Some(col().key("editor/textures").max_h(360.0).scroll(ScrollSpec { stick_bottom: false }).children(rows)), p)
+    pane(header, Some(col().key("editor/textures").max_h(TEXTURES_HEIGHT).scroll(ScrollSpec { stick_bottom: false }).children(rows)), p)
 }
 
 /// The selected texture: what it is and what can be done with it, then the
@@ -97,7 +99,7 @@ fn texture(document: &Document, p: &Palette) -> Option<El> {
         picture = picture.pixels_fit(pixels, rune::SurfaceFit::Fit);
     }
     let body = col().px(space::SM).py(space::SM).gap(space::SM)
-        .child(col().gap(2.0)
+        .child(col().gap(space::TIGHT)
             .child(label(document.listing.name(index)).font(text::STRONG).color(p.ink))
             .child(label(texture_detail(entry)).font(text::MONO_SMALL).color(p.faint)))
         .child(row().gap(space::XS).flex_wrap()
@@ -115,18 +117,16 @@ pub fn prompt(app: &App, p: &Palette) -> Option<El> {
     let document = app.editor.as_ref()?;
     document.pending?;
     let place = tgg_app::costumes::slot_label(Some(document.slot));
-    let dialog = col().key("editor/prompt").w(440.0).fill(p.raise).border(1.0, p.line_strong).radius(radius::CONTROL)
-        .shadow(24.0, 60.0, rune::Color::BLACK.alpha(0.55))
-        .role("alertdialog").label("Unsaved changes")
-        .modal(true, actions::answer_cancel)
-        .child(col().px(space::LG).pt(space::LG).pb(space::MD).gap(6.0)
-            .child(label("Save your changes?").font(text::H3).color(p.ink))
-            .child(label(format!("Your edits to {place} go to your library as a skin. Without saving, they're lost.")).font(text::BODY).color(p.muted).wrap()))
-        .child(rule(p))
-        .child(row().px(space::LG).py(space::MD).gap(space::XS).items_center()
-            .child(button("Cancel", ButtonKind::Secondary, p).key("prompt/cancel").on_press(actions::answer_cancel))
-            .child(el().grow(1.0))
-            .child(button("Don't save", ButtonKind::Secondary, p).key("prompt/discard").on_press_tx(actions::answer_discard))
-            .child(button("Save", ButtonKind::Primary, p).key("prompt/save").on_press_tx(actions::answer_save)));
-    Some(el().key("prompt/scrim").absolute(0.0, 0.0).w_full().h_full().fill(rune::Color::BLACK.alpha(0.6)).center().child(dialog))
+    let parts = Dialog {
+        title: "Save your changes?".into(),
+        line: format!("Your edits to {place} go to your library as a skin. Without saving, they're lost."),
+        body: None,
+        buttons: vec![
+            button("Cancel", ButtonKind::Secondary, p).key("prompt/cancel").on_press(actions::answer_cancel),
+            spacer(),
+            button("Don't save", ButtonKind::Secondary, p).key("prompt/discard").on_press_tx(actions::answer_discard),
+            button("Save", ButtonKind::Primary, p).key("prompt/save").on_press_tx(actions::answer_save),
+        ],
+    };
+    Some(dialog("editor/prompt", "alertdialog", DialogWidth::Narrow, parts, actions::answer_cancel, p))
 }

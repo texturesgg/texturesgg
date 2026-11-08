@@ -5,16 +5,20 @@ use super::colors::{self, ColorPick};
 use super::Document;
 use crate::state::App;
 use crate::ui::tokens::{Palette, radius, space, text};
-use crate::ui::{ButtonKind, button, pane, pane_header, slider, srgb, text_action};
+use crate::ui::{self, ButtonKind, button, pane, pane_header, slider, text_action};
 use rune::{Drag, El, ScrollSpec, Tx, col, el, row, text as label};
 use tgg_app::colors::{Change, ColorGroup, Source, hex};
 
 /// The most swatches a group shows; the rest are reached by a hue shift.
 const SHOWN: usize = 24;
-/// A swatch's side, in points.
-const SWATCH: f32 = 20.0;
 /// The pane's tallest list, in points.
 const LIST_HEIGHT: f32 = 300.0;
+/// The before and after chips' width, in points; they're a swatch tall.
+const CHIP_WIDTH: f32 = 28.0;
+/// A slider's name before it and value after, in points: room for "A" and
+/// for "255" or "+180°".
+const SLIDER_NAME: f32 = 28.0;
+const SLIDER_VALUE: f32 = 36.0;
 
 /// The pane, when the costume has colors outside its textures.
 pub fn pane_view(document: &Document, p: &Palette) -> Option<El> {
@@ -47,8 +51,7 @@ fn group_view(document: &Document, index: usize, p: &Palette) -> El {
         Change::Hue(_) => None,
     });
     let swatches = group.swatches.iter().enumerate().take(SHOWN).map(|(swatch_index, swatch)| {
-        el().key(format!("editor/color/{index}/{swatch_index}")).size(SWATCH, SWATCH).radius(radius::CONTROL / 2.0)
-            .fill(srgb(swatch.rgba)).border(if picked_swatch == Some(swatch_index) { 2.0 } else { 1.0 }, if picked_swatch == Some(swatch_index) { p.accent_text } else { p.line_strong })
+        ui::swatch(swatch.rgba, picked_swatch == Some(swatch_index), p).key(format!("editor/color/{index}/{swatch_index}"))
             .cursor(rune::Cursor::Pointer).role("button").label(hex(swatch.rgba)).help(hex(swatch.rgba)).focusable(true)
             .on_press_tx(move |app: &mut App, tx| colors::pick_swatch(app, index, swatch_index, tx))
     });
@@ -72,7 +75,7 @@ fn pick_view(group: &ColorGroup, pick: ColorPick, p: &Palette) -> El {
     match pick.change {
         Change::Swatch { index, rgba } => {
             let Some(swatch) = group.swatches.get(index) else { return el() };
-            let chip = |rgba: [u8; 4]| el().size(28.0, SWATCH).radius(radius::CONTROL / 2.0).fill(srgb(rgba)).border(1.0, p.line_strong);
+            let chip = |rgba: [u8; 4]| ui::swatch(rgba, false, p).w(CHIP_WIDTH);
             let uses = match &swatch.source {
                 Source::Vertices(_) => format!("{} vertices", swatch.uses),
                 Source::Diffuse(_) => "material".to_owned(),
@@ -115,7 +118,7 @@ fn pick_view(group: &ColorGroup, pick: ColorPick, p: &Palette) -> El {
 /// A slider with its name before it and its value after.
 fn slider_row(name: &str, track: El, value: String, p: &Palette) -> El {
     row().gap(space::XS).items_center()
-        .child(label(name.to_owned()).font(text::MONO_SMALL).color(p.muted).w(28.0))
+        .child(label(name.to_owned()).font(text::MONO_SMALL).color(p.muted).w(SLIDER_NAME))
         .child(col().grow(1.0).min_w(0.0).child(track))
-        .child(label(value).font(text::MONO_SMALL).color(p.muted).w(36.0))
+        .child(label(value).font(text::MONO_SMALL).color(p.muted).w(SLIDER_VALUE))
 }

@@ -5,15 +5,12 @@ use super::{Filter, actions};
 use crate::jobs::renders::RenderKey;
 use crate::state::App;
 use crate::ui::tokens::{Palette, space, text};
-use crate::ui::{ButtonKind, button, page_head, plate, rule, tab, text_action};
+use crate::ui::{self, ButtonKind, TEXT_ACTION_INSET, button, card_plate, page_head, rule, tab, text_action};
 use melee_dat::MeleeSlot;
-use rune::{El, ScrollSpec, col, el, row, text as label};
+use rune::{El, ScrollSpec, col, row, text as label};
 use tgg_app::costumes::{EFFECTS_FILE, FIGHTER_FILE, fighters};
 use tgg_app::install::SlotState;
 use tgg_app::library::Skin;
-
-/// A plate's width in the grid, in points; its height follows at 4:5.
-const PLATE_WIDTH: f32 = 148.0;
 
 pub fn view(app: &App, p: &Palette) -> El {
     let skins = app.library.skins();
@@ -84,7 +81,7 @@ fn groups(app: &App) -> Vec<(String, Vec<&Skin>)> {
 /// A skin: its picture, its name, where it goes, whether it's in the game,
 /// and installing or removing it.
 fn card(app: &App, skin: &Skin, p: &Palette) -> El {
-    let mut picture = plate(p).w(PLATE_WIDTH).aspect_ratio(4.0 / 5.0);
+    let mut picture = card_plate(p);
     if let Some(pixels) = app.renders.get(RenderKey::Skin(skin.id)) {
         picture = picture.pixels_fit(pixels, rune::SurfaceFit::Fill);
     }
@@ -98,17 +95,14 @@ fn card(app: &App, skin: &Skin, p: &Palette) -> El {
     };
     let in_game = installed(app, skin);
     let id = skin.id;
-    let status = row().gap(6.0).items_center()
-        .children(in_game.then(|| el().size(6.0, 6.0).radius(3.0).fill(p.accent)))
-        .child(label(if in_game { format!("{goes} · in your game") } else { goes }).font(text::SMALL).color(if in_game { p.muted } else { p.faint }).truncate());
+    let status = ui::status(if in_game { format!("{goes} · in your game") } else { goes }, in_game, p);
     let install = skin.slot.filter(|_| !in_game && app.game.is_some()).map(|slot| {
         text_action("Install", false, p).key(format!("library/install/{}", skin.id))
             .on_press(move |app: &mut App| actions::install(app, id, slot))
     });
     let remove = text_action("Remove", true, p).key(format!("library/remove/{}", skin.id))
         .on_press(move |app: &mut App| actions::remove(app, id));
-    col().key(format!("library/skin/{}", skin.id)).w(PLATE_WIDTH).gap(6.0)
-        .child(picture)
-        .child(col().gap(1.0).child(label(skin.name.clone()).font(text::STRONG).color(p.ink).truncate()).child(status))
-        .child(row().gap(space::XXS).ml(-4.0).children(install).child(remove))
+    // The actions pull back their own padding, so their words line up with the name's.
+    ui::card(picture, &skin.name, status, p).key(format!("library/skin/{}", skin.id))
+        .child(row().gap(space::XXS).ml(-TEXT_ACTION_INSET).children(install).child(remove))
 }

@@ -4,12 +4,9 @@ use super::{Melee, Subject, Tab, actions};
 use crate::jobs::renders::RenderKey;
 use crate::state::App;
 use crate::ui::tokens::{Palette, space, text};
-use crate::ui::{page_head, plate, rule, tab};
+use crate::ui::{self, card_plate, page_head, rule, tab};
 use melee_dat::MeleeSlot;
-use rune::{El, ScrollSpec, col, el, row, text as label};
-
-/// A plate's width in the grid, in points; its height follows at 4:5.
-const PLATE_WIDTH: f32 = 148.0;
+use rune::{El, ScrollSpec, col, row, text as label};
 
 pub fn view(app: &App, p: &Palette) -> El {
     let melee = &app.melee;
@@ -65,18 +62,13 @@ fn status(melee: &Melee, changed: usize) -> Option<(String, bool)> {
 fn card(app: &App, subject: Subject, picture: Option<MeleeSlot>, status: Option<(String, bool)>, p: &Palette) -> El {
     let name = subject.name();
     let pixels = picture.and_then(|slot| app.renders.get(RenderKey::Slot(slot)));
-    let mut plate = plate(p).w(PLATE_WIDTH).aspect_ratio(4.0 / 5.0).matched(subject.plate_id());
+    let mut plate = card_plate(p).matched(subject.plate_id());
     if let Some(pixels) = pixels {
         // Square renders fill the 4:5 plate, trimming the empty sides.
         plate = plate.pixels_fit(pixels, rune::SurfaceFit::Fill);
     }
-    let line = match status {
-        Some((words, mine)) => row().gap(6.0).items_center()
-            .children(mine.then(|| el().size(6.0, 6.0).radius(3.0).fill(p.accent)))
-            .child(label(words).font(text::SMALL).color(if mine { p.muted } else { p.faint })),
-        None => row().child(label(" ").font(text::SMALL)),
-    };
-    col().w(PLATE_WIDTH).gap(6.0).cursor(rune::Cursor::Pointer).role("button").label(name).focusable(true)
-        .child(plate)
-        .child(col().gap(1.0).child(label(name).font(text::STRONG).color(p.ink).truncate()).child(line))
+    // Without a status, a blank line keeps the cards' names level.
+    let (words, mine) = status.unwrap_or_else(|| (" ".to_owned(), false));
+    ui::card(plate, name, ui::status(words, mine, p), p)
+        .cursor(rune::Cursor::Pointer).role("button").label(name).focusable(true)
 }

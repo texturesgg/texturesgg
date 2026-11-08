@@ -3,14 +3,19 @@
 
 use super::actions;
 use crate::state::App;
-use crate::ui::tokens::{Palette, size, space, text};
+use crate::ui::tokens::{Palette, radius, size, space, text};
 use crate::ui::{ButtonKind, button};
 use rune::{El, col, el, row, text as label};
 use tgg_app::GameChoice;
 
+/// The column Welcome reads in, in points.
+const WIDTH: f32 = 520.0;
+/// A found game's row: its name over its folder, in points.
+const GAME_ROW: f32 = 48.0;
+
 pub fn view(app: &App, p: &Palette) -> El {
     let welcome = &app.welcome;
-    let mut body = col().w(520.0).gap(space::MD)
+    let mut body = col().w(WIDTH).gap(space::MD)
         .child(label("textures.gg").font(text::WORDMARK).color(p.faint))
         .child(label("Find your Melee").font(text::H1).color(p.ink))
         .child(label("textures.gg works on your own copy of Super Smash Bros. Melee, NTSC 1.02. Pick one found in your game folders, or choose its ISO.")
@@ -36,7 +41,7 @@ fn games(games: &[GameChoice], p: &Palette) -> El {
         let name = game.path.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned());
         let folder = game.path.parent().map_or_else(String::new, |folder| folder.display().to_string());
         let note = if game.slippi_plays { "Slippi plays this one" } else { "" };
-        row().key(format!("welcome/game/{index}")).h(48.0).px(space::SM).gap(space::SM).items_center()
+        row().key(format!("welcome/game/{index}")).h(GAME_ROW).px(space::SM).gap(space::SM).items_center()
             .fill(p.surface).hover(p.hover).cursor(rune::Cursor::Pointer).role("button").label(name.clone()).focusable(true)
             .child(col().grow(1.0).min_w(0.0)
                 .child(label(name).font(text::STRONG).color(p.ink).truncate())
@@ -44,7 +49,7 @@ fn games(games: &[GameChoice], p: &Palette) -> El {
             .child(label(note).font(text::SMALL).color(p.muted))
             .on_press(move |app: &mut App| actions::use_game_at(app, &path))
     });
-    col().border(1.0, p.line_strong).radius(4.0).clip_rounded(4.0).children(rows)
+    col().border(size::LINE, p.line_strong).radius(radius::CONTROL).clip_rounded(radius::CONTROL).children(rows)
 }
 
 /// The band across the top that moves the window, with its controls.

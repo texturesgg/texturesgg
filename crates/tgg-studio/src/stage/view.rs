@@ -3,9 +3,16 @@
 
 use super::{FRAME_COUNT_SPACE, VIEWPORT, actions};
 use crate::state::App;
-use crate::ui::tokens::{Palette, radius, space, text};
+use crate::ui::tokens::{Palette, radius, size, space, text};
 use crate::ui::{pause_glyph, plate as plate_frame, play_glyph};
 use rune::{El, effect, el, row, text as label};
+
+/// The timeline's height, its play button's side, its track's height (the
+/// room to grab it in), and the playhead's, in points.
+const TIMELINE: f32 = 44.0;
+const PLAY: f32 = 26.0;
+const TRACK: f32 = 20.0;
+const PLAYHEAD: f32 = 16.0;
 
 /// The plate with the model drawn on it. Dragging across it turns the
 /// camera (with Shift, moves it), and the wheel moves it in and out. `matched` names it to the roster's plate it opens from.
@@ -25,17 +32,18 @@ pub fn timeline(app: &App, p: &Palette) -> El {
     if !shown.model.is_animated() {
         return el();
     }
-    let toggle = el().key("stage/play").size(26.0, 26.0).radius(radius::CONTROL).fill(p.ink).center()
+    let toggle = el().key("stage/play").size(PLAY, PLAY).radius(radius::CONTROL).fill(p.ink).center()
         .role("button").label(if shown.playing { "Pause" } else { "Play" }).focusable(true).cursor(rune::Cursor::Pointer)
         .child(if shown.playing { pause_glyph(p.on_ink) } else { play_glyph(p.on_ink) })
         .on_press(actions::toggle_playback);
     let move_label = shown.move_label().unwrap_or_default();
-    let track = el().key("stage/track").grow(1.0).h(20.0).cursor(rune::Cursor::ResizeColumn)
+    // The track's line and the playhead sit centered in its height.
+    let track = el().key("stage/track").grow(1.0).h(TRACK).cursor(rune::Cursor::ResizeColumn)
         .on_drag(actions::scrub)
-        .child(el().w_full().h(2.0).fill(p.line_strong).absolute(0.0, 9.0))
-        .child(el().size(2.0, 16.0).fill(p.accent).absolute(0.0, 2.0).live_offset(&app.stage.playhead));
-    row().key("stage/timeline").h(44.0).px(space::SM).gap(space::SM).items_center()
-        .fill(p.surface).border(1.0, p.line_strong).radius(radius::CONTROL)
+        .child(el().w_full().h(size::LINE_STRONG).fill(p.line_strong).absolute(0.0, (TRACK - size::LINE_STRONG) / 2.0))
+        .child(el().size(size::LINE_STRONG, PLAYHEAD).fill(p.accent).absolute(0.0, (TRACK - PLAYHEAD) / 2.0).live_offset(&app.stage.playhead));
+    row().key("stage/timeline").h(TIMELINE).px(space::SM).gap(space::SM).items_center()
+        .fill(p.surface).border(size::LINE, p.line_strong).radius(radius::CONTROL)
         .child(toggle)
         .child(label(move_label).font(text::STRONG).color(p.ink))
         .child(track)

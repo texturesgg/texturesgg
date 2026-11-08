@@ -46,6 +46,10 @@ pub struct Palette {
     pub selected: Color,
     /// Behind a model on the stage: hsd-render clears to this.
     pub plate: Color,
+    /// Over the window behind a dialog.
+    pub scrim: Color,
+    /// A dialog's shadow.
+    pub shadow: Color,
 }
 
 impl Palette {
@@ -77,6 +81,8 @@ impl Palette {
             hover: rgb(0xFFF8E6).alpha(0.035),
             selected: rgb(0xF5C84B).alpha(0.12),
             plate: rgb(0x050509),
+            scrim: Color::BLACK.alpha(0.6),
+            shadow: Color::BLACK.alpha(0.55),
         }
     }
 
@@ -100,13 +106,22 @@ impl Palette {
             hover: rgb(0x1C1B19).alpha(0.04),
             selected: rgb(0xF5C84B).alpha(0.2),
             plate: rgb(0x050509),
+            // As Gallery's for now: Paper's dialogs are yet to be designed.
+            scrim: Color::BLACK.alpha(0.6),
+            shadow: Color::BLACK.alpha(0.55),
         }
     }
 }
 
-/// Spacing in points (`space`).
+/// Spacing in points (`space`). `TIGHT` and `SNUG` are the desktop's
+/// half-steps, for parts of one thing: lines of an item stacked, and a dot
+/// beside its words.
 pub mod space {
+    /// Between stacked lines of one item: a name over its detail.
+    pub const TIGHT: f32 = 2.0;
     pub const XXS: f32 = 4.0;
+    /// Between inline parts of one thing: a dot and its words, chips.
+    pub const SNUG: f32 = 6.0;
     pub const XS: f32 = 8.0;
     pub const SM: f32 = 12.0;
     pub const MD: f32 = 16.0;
@@ -132,6 +147,29 @@ pub mod size {
     pub const CONTROL: f32 = 28.0;
     /// The pane column beside the stage.
     pub const PANE_COLUMN: f32 = 320.0;
+    /// A card's width: a fighter's, a stage's, a skin's. Its plate is 4:5.
+    pub const CARD: f32 = 148.0;
+    /// A texture's thumbnail in a list.
+    pub const THUMBNAIL: f32 = 32.0;
+    /// A color swatch's side.
+    pub const SWATCH: f32 = 20.0;
+    /// A rule, a border, an outline.
+    pub const LINE: f32 = 1.0;
+    /// An emphasized outline: the chosen swatch.
+    pub const LINE_STRONG: f32 = 2.0;
+    /// A status dot's side.
+    pub const DOT: f32 = 6.0;
+    /// A dialog asking a question, and one holding a list to look over.
+    pub const DIALOG: f32 = 440.0;
+    pub const DIALOG_WIDE: f32 = 560.0;
+    /// The tallest a dialog grows; what it holds scrolls past that.
+    pub const DIALOG_MOST_HEIGHT: f32 = 640.0;
+}
+
+/// Shadows: how far below and how blurred, in points.
+pub mod elevation {
+    /// A dialog over the window.
+    pub const DIALOG: (f32, f32) = (24.0, 60.0);
 }
 
 const SANS: Family = Family::Named("Schibsted Grotesk");

@@ -6,8 +6,8 @@
 
 use crate::nav::{Place, actions as nav};
 use crate::state::App;
-use crate::ui::tokens::{Palette, motion, size, space, text};
-use crate::ui::{close_glyph, icon_button, place_row, sidebar_glyph};
+use crate::ui::tokens::{Palette, motion, radius, size, space, text};
+use crate::ui::{PLACE_INSET, close_glyph, icon_button, place_row, rule, sidebar_glyph, spacer};
 use crate::{editor, keys, library, melee, mods, welcome, window};
 use rune::{Cx, El, col, el, row, text as label};
 
@@ -49,27 +49,28 @@ fn sidebar(app: &App, p: &Palette) -> El {
     });
     // One marker glides between places, so the move from one to the next shows.
     let index = Place::ALL.iter().position(|place| *place == app.nav.place).unwrap_or(0);
-    let marker = el().key("sidebar/marker").w(size::SIDEBAR - 16.0).h(size::ROW).radius(4.0)
+    let marker = el().key("sidebar/marker").w(size::SIDEBAR - 2.0 * space::XS).h(size::ROW).radius(radius::CONTROL)
         .fill(p.hover).motion(motion::SNAPPY)
-        .absolute(0.0, index as f32 * (size::ROW + 2.0));
+        .absolute(0.0, index as f32 * (size::ROW + space::TIGHT));
     let foot = app.game.as_ref().map(|references| {
         let file = references.game().path().file_name()
             .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-        col().px(18.0).py(space::SM).gap(2.0)
+        // In line with the places' words above it.
+        col().px(space::XS + PLACE_INSET).py(space::SM).gap(space::TIGHT)
             .child(label("Melee NTSC 1.02").font(text::LABEL).color(p.muted))
             .child(label(file).font(text::MONO_SMALL).color(p.faint).truncate_middle())
     });
     let inner = col().w(size::SIDEBAR).h_full()
         .child(row().h(size::TITLE_ROW).pl(TITLE_CLEARANCE).items_center().window_drag()
             .child(label("textures.gg").font(text::WORDMARK).color(p.ink)))
-        .child(col().mx(8.0).my(6.0).gap(2.0).child(marker).children(places))
-        .child(el().grow(1.0))
-        .child(el().h(1.0).w_full().fill(p.line))
+        .child(col().mx(space::XS).my(space::SNUG).gap(space::TIGHT).child(marker).children(places))
+        .child(spacer())
+        .child(rule(p))
         .children(foot);
-    row().key("shell/sidebar").w(if shown { size::SIDEBAR + 1.0 } else { 0.0 }).h_full()
+    row().key("shell/sidebar").w(if shown { size::SIDEBAR + size::LINE } else { 0.0 }).h_full()
         .motion(motion::DEFAULT).clip_rounded(0.0).fill(p.sunk)
         .child(inner)
-        .child(el().w(1.0).h_full().fill(p.line))
+        .child(el().w(size::LINE).h_full().fill(p.line))
 }
 
 /// Where the player is and what the place can do; empty on a top-level
