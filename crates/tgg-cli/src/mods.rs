@@ -127,31 +127,54 @@ pub enum ModCommand {
         #[arg(required = true)]
         packages: Vec<PathBuf>,
     },
-    /// List the installed mods, by id.
+    /// List the installed mods and sets. Works offline.
     List {
         #[arg(long)]
         json: bool,
     },
-    /// Install package zips, replacing installed versions.
+    /// The sets of mods on textures.gg.
+    Sets,
+    /// Install mods from textures.gg (ID, or ID@RANGE such as
+    /// tgg.netplay@^0.2), a set of them (--set), or package zips.
     Install {
+        /// A set from tgg mod sets, such as competitive.
+        #[arg(long, conflicts_with = "mods")]
+        set: Option<String>,
+        /// Don't ask before installing.
+        #[arg(short, long)]
+        yes: bool,
         #[command(flatten)]
         port: PortArg,
-        #[arg(required = true)]
-        packages: Vec<PathBuf>,
+        #[arg(required_unless_present = "set", value_name = "ID[@RANGE]|ZIP")]
+        mods: Vec<String>,
+    },
+    /// Update the sets and mods installed from textures.gg, and say when
+    /// there's a newer tgg-melee.
+    Update {
+        /// Only this installed set.
+        #[arg(long)]
+        set: Option<String>,
+        /// Don't ask before updating.
+        #[arg(short, long)]
+        yes: bool,
     },
     /// Turn installed mods on.
-    Enable {
+    #[command(visible_alias = "enable")]
+    On {
         #[arg(required = true)]
         ids: Vec<ModId>,
     },
     /// Turn installed mods off; the game skips them.
-    Disable {
+    #[command(visible_alias = "disable")]
+    Off {
         #[arg(required = true)]
         ids: Vec<ModId>,
     },
-    /// Remove installed mods.
+    /// Remove installed mods, or a set and the mods only it installed.
     Remove {
-        #[arg(required = true)]
+        #[arg(long, conflicts_with = "ids")]
+        set: Option<String>,
+        #[arg(required_unless_present = "set")]
         ids: Vec<ModId>,
     },
 }
@@ -173,7 +196,7 @@ impl Cc {
     }
 }
 
-#[derive(Args)]
+#[derive(Args, Default)]
 pub struct PortArg {
     /// The game's executable, to refuse packages built for another game
     /// layout [default: the tgg-melee in use, if one is installed]
@@ -190,6 +213,21 @@ impl PortArg {
             None if crate::ports::current_version()?.is_some() => {
                 Ok(Some(crate::ports::resolve(None)?.port()?))
             }
+            None => Ok(None),
+        }
+    }
+
+    /// The game mods are fetched for: `--port`'s executable, else the
+    /// tgg-melee in use as its release names it, if one is installed.
+    fn game(&self) -> Result<Option<Port>> {
+        if self.port.is_some() {
+            return self.open();
+        }
+        let ports = crate::paths::ports()?;
+        match tgg_mod::ports::current_port(&ports)? {
+            Some(version) => Ok(Some(
+                tgg_mod::ports::installed_port(&ports, &version)?.port(),
+            )),
             None => Ok(None),
         }
     }
@@ -264,20 +302,81 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
         ModCommand::Pack { dir, output, json } => pack(&dir, output, json),
         ModCommand::Inspect { file } => inspect(&file),
         ModCommand::Catalog { output, packages } => write_catalog(&output, &packages),
-        ModCommand::List { json } => list(&ModsDir::game(), json),
-        ModCommand::Install { port, packages } => {
-            install(&ModsDir::game(), port.open()?.as_ref(), &packages)
+        ModCommand::List { json } => {
+            // Offline and without a game too.
+            let port = PortArg::default().game().ok().flatten();
+            with_player(api, port, true, |player| player.list(json))
         }
-        ModCommand::Enable { ids } => set_enabled(&ModsDir::game(), &ids, true),
-        ModCommand::Disable { ids } => set_enabled(&ModsDir::game(), &ids, false),
-        ModCommand::Remove { ids } => {
-            let mods = ModsDir::game();
-            for id in &ids {
-                mods.remove(id).with_context(|| format!("removing {id}"))?;
+        ModCommand::Sets => {
+            let port = PortArg::default().game().ok().flatten();
+            with_player(api, port, true, |player| player.sets())
+        }
+        ModCommand::Install {
+            set,
+            yes,
+            port,
+            mods,
+        } => {
+            let packages: Vec<PathBuf> = mods
+                .iter()
+                .filter(|arg| is_package(arg))
+                .map(PathBuf::from)
+                .collect();
+            if !packages.is_empty() {
+                ensure!(
+                    packages.len() == mods.len(),
+                    "install package zips and mods from textures.gg in separate commands"
+                );
+                return install(&ModsDir::game(), port.open()?.as_ref(), &packages);
             }
-            Ok(())
+            with_player(api, port.game()?, yes, |player| {
+                player.install(set.as_deref(), &mods)
+            })
+        }
+        ModCommand::Update { set, yes } => with_player(api, PortArg::default().game()?, yes, |p| {
+            p.update(set.as_deref())
+        }),
+        ModCommand::On { ids } => with_player(api, None, true, |p| p.set_enabled(&ids, true)),
+        ModCommand::Off { ids } => with_player(api, None, true, |p| p.set_enabled(&ids, false)),
+        ModCommand::Remove { set, ids } => {
+            let port = PortArg::default().game().ok().flatten();
+            with_player(api, port, true, |p| p.remove(set.as_deref(), &ids))
         }
     }
+}
+
+/// Whether `arg` of `tgg mod install` names a package zip rather than a mod
+/// on textures.gg.
+fn is_package(arg: &str) -> bool {
+    arg.to_ascii_lowercase().ends_with(".zip") || Path::new(arg).is_file()
+}
+
+/// Run `work` as the player, in the game's mods folder, against the API
+/// `api`. Ctrl-C cancels a download between mods, leaving each mod old or
+/// new.
+fn with_player(
+    api: &str,
+    port: Option<Port>,
+    yes: bool,
+    work: impl FnOnce(&crate::player::Player) -> Result<()>,
+) -> Result<()> {
+    let releases = std::env::var("TGG_RELEASES")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| tgg_mod::net::DEFAULT_RELEASES.to_owned());
+    let net =
+        tgg_mod::HttpNet::with_urls(concat!("tgg/", env!("CARGO_PKG_VERSION")), api, &releases);
+    let signals = crate::signals::handle()?;
+    let player = crate::player::Player {
+        net: &net,
+        mods: tgg_mod::default_mods_dir(),
+        ports: crate::paths::ports()?,
+        port,
+        out: crate::player::Out::stdout(),
+        ask: !yes && std::io::IsTerminal::is_terminal(&std::io::stdin()),
+        cancel: signals.stop_flag(),
+    };
+    work(&player)
 }
 
 fn open_package(path: &Path) -> Result<(Package, Vec<u8>)> {
@@ -419,47 +518,6 @@ fn write_catalog(output: &Path, packages: &[PathBuf]) -> Result<()> {
     Ok(())
 }
 
-/// How `tgg mod list` names a netplay class.
-fn netplay_label(class: tgg_mod::Netplay) -> &'static str {
-    match class {
-        tgg_mod::Netplay::Code => "counts for netplay: code",
-        tgg_mod::Netplay::Files => "counts for netplay: files",
-        tgg_mod::Netplay::Costumes => "counts for netplay unless its costumes only change looks",
-        tgg_mod::Netplay::Data => "free for netplay",
-    }
-}
-
-fn list(mods: &ModsDir, json: bool) -> Result<()> {
-    let installed = mods.list()?;
-    if json {
-        print_json(&json!(
-            installed
-                .iter()
-                .map(|mod_| json!({
-                    "enabled": mod_.enabled,
-                    "netplay": netplay::classify(&mod_.manifest),
-                    "manifest": mod_.manifest,
-                }))
-                .collect::<Vec<_>>()
-        ));
-        return Ok(());
-    }
-    if installed.is_empty() {
-        println!("No mods in {}", mods.root().display());
-    }
-    for mod_ in &installed {
-        let manifest = &mod_.manifest;
-        let off = if mod_.enabled { "" } else { ", off" };
-        println!(
-            "{} {} ({}{off})",
-            manifest.id,
-            manifest.version,
-            netplay_label(netplay::classify(manifest))
-        );
-    }
-    Ok(())
-}
-
 /// Install each package in order, refusing one built for another game layout
 /// than `port`'s or one that replaces a function a turned-on mod already
 /// replaces. A file another mod also ships is a warning naming the mod whose
@@ -510,14 +568,6 @@ fn install(mods: &ModsDir, port: Option<&Port>, packages: &[PathBuf]) -> Result<
                 missing.join(", ")
             );
         }
-    }
-    Ok(())
-}
-
-fn set_enabled(mods: &ModsDir, ids: &[ModId], enabled: bool) -> Result<()> {
-    for id in ids {
-        mods.set_enabled(id, enabled)
-            .with_context(|| format!("turning {id} {}", if enabled { "on" } else { "off" }))?;
     }
     Ok(())
 }

@@ -9,6 +9,7 @@ mod docs;
 mod doctor;
 mod mods;
 mod paths;
+mod player;
 mod ports;
 mod publish;
 mod releases;
