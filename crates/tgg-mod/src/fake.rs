@@ -7,6 +7,7 @@ use crate::manifest::Manifest;
 use crate::net::{Net, NetError};
 use crate::package::{self, Package};
 use crate::ports::{self, PortRelease, ReleaseFile, ReleaseFiles, Toolchain};
+use crate::profile::{SlippiCode, SlippiIgnore, SlippiMapping};
 use crate::registry::{
     Image, ModDetails, ModPage, ModRelease, ModSummary, Publisher, Set, SetMod, System,
 };
@@ -34,6 +35,8 @@ use std::sync::Mutex;
 ///   `netplay` (Competitive) or `replays` and `quality-of-life`
 ///   (Replays), a README, a changelog per release, and as many installs as
 ///   its packages have been downloaded from it.
+/// - the Slippi mapping [`slippi_mapping`] (`/api/registry/slippi`), whose
+///   mods [`FakeNet::publish_slippi_mods`] publishes.
 /// - tgg-melee [`FakeNet::PORT_VERSION`] for this system, whose game is a
 ///   shell script that runs for `$TGG_FAKE_GAME_SECONDS` (default 30)
 ///   seconds, so it launches on Linux and macOS.
@@ -59,6 +62,7 @@ struct State {
     tags: BTreeMap<String, Vec<String>>,
     /// Each mod's package downloads, by id.
     installs: BTreeMap<String, u64>,
+    mapping: Option<SlippiMapping>,
 }
 
 impl Default for FakeNet {
@@ -153,7 +157,40 @@ impl FakeNet {
             &replays,
         ));
         net.publish_port(Self::PORT_VERSION);
+        net.publish_mapping(slippi_mapping());
         net
+    }
+
+    /// Publish 0.1.0 of each mod [`slippi_mapping`] maps a code to.
+    pub fn publish_slippi_mods(&self) {
+        for code in slippi_mapping().codes {
+            if let Some(id) = code.id {
+                let published = self
+                    .state()
+                    .catalog
+                    .iter()
+                    .any(|entry| entry.manifest.id == id);
+                if !published {
+                    self.publish_mod(id.as_str(), &code.name, "0.1.0", &[]);
+                }
+            }
+        }
+    }
+
+    /// Serve `mapping` as the registry's Slippi mapping.
+    pub fn publish_mapping(&self, mapping: SlippiMapping) {
+        self.state().mapping = Some(mapping);
+    }
+
+    /// Give every release of the mod `id` the publisher `publisher`.
+    pub fn set_publisher(&self, id: &str, publisher: Publisher) {
+        let mut state = self.state();
+        for entry in &mut state.catalog {
+            if entry.manifest.id.as_str() == id {
+                entry.publisher = Some(publisher.clone());
+            }
+        }
+        state.revision += 1;
     }
 
     /// Make every request fail as if there were no connection, or stop.
@@ -203,6 +240,11 @@ impl FakeNet {
                 size: zip.len() as u64,
                 signature: None,
             },
+            publisher: Some(Publisher {
+                name: "textures.gg".into(),
+                official: true,
+            }),
+            changes_game: true,
         });
         state.revision += 1;
     }
@@ -571,6 +613,11 @@ impl Net for FakeNet {
         }
         let body = if url == format!("{}/api/registry/sets", Self::API) {
             serde_json::to_vec_pretty(&state.sets).expect("sets serialize")
+        } else if url == format!("{}/api/registry/slippi", Self::API) {
+            match &state.mapping {
+                Some(mapping) => serde_json::to_vec_pretty(mapping).expect("a mapping serializes"),
+                None => return Err(NetError::NotFound { url: url.into() }),
+            }
         } else if let Some(layout) =
             url.strip_prefix(&format!("{}/api/registry/catalog?layout=", Self::API))
         {
@@ -617,5 +664,123 @@ impl Net for FakeNet {
 
     fn releases_url(&self) -> &str {
         Self::RELEASES
+    }
+}
+
+/// The Slippi mapping [`FakeNet`] serves, seeded from the replay harness's
+/// `rules.py`: the gecko codes of Slippi's online rule set that tgg-melee
+/// mods reproduce, UCF (0.84 is built into the port; 0.8 from Slippi 3.9
+/// to 3.16 is `tgg.ucf-legacy`, with the built-in one off) and frozen
+/// Stadium.
+pub fn slippi_mapping() -> SlippiMapping {
+    let req = |text: &str| semver::VersionReq::parse(text).expect("a requirement");
+    let code = |code: &str, name: &str, versions: &str, id: Option<&str>| SlippiCode {
+        code: code.into(),
+        name: name.into(),
+        versions: req(versions),
+        stages: Vec::new(),
+        unless: Vec::new(),
+        id: id.map(|id| id.parse().expect("a valid id")),
+        range: id.map(|_| "^0.1".parse().expect("a range")),
+        settings: Default::default(),
+        game: Default::default(),
+    };
+    let ucf = |on: bool| BTreeMap::from([("tgg.ucf".to_owned(), on)]);
+    let mut codes = vec![
+        code(
+            "0x8016E510",
+            "Neutral spawns",
+            "*",
+            Some("tgg.neutral-spawns"),
+        ),
+        code(
+            "0x8006A880",
+            "Brawl offscreen damage",
+            "*",
+            Some("tgg.offscreen-damage"),
+        ),
+        code(
+            "0x800D4C1C",
+            "Freeze dead-up-fall physics",
+            "*",
+            Some("tgg.freeze-dead-up-fall"),
+        ),
+        code(
+            "0x801D24FC",
+            "Stadium camera-independent monitor",
+            "*",
+            Some("tgg.stadium-monitor"),
+        ),
+        code(
+            "0x801D45EC",
+            "Preload Stadium transformations",
+            "<3.19",
+            Some("tgg.stadium-preload"),
+        ),
+        code(
+            "0x8008653C",
+            "Whispy blow direction fix",
+            "*",
+            Some("tgg.whispy-blow-dir-fix"),
+        ),
+        code(
+            crate::profile::FROZEN_STADIUM,
+            "Frozen Pokémon Stadium",
+            "*",
+            Some("tgg.frozen-stadium"),
+        ),
+    ];
+    for address in ["0x800908F4", "0x800C9A44", "0x800998A4"] {
+        let mut legacy = code(address, "UCF 0.8", ">=3.9", Some("tgg.ucf-legacy"));
+        legacy.unless = vec!["0x8006B460".into()];
+        legacy.game = ucf(false);
+        codes.push(legacy);
+    }
+    let mut modern = code("0x8006B460", "UCF 0.84", "*", None);
+    modern.game = ucf(true);
+    codes.push(modern);
+    let mut off = code(crate::profile::UCF_OFF, "No UCF", "*", None);
+    off.game = ucf(false);
+    codes.push(off);
+    // Slippi 3.19's Pokémon Stadium changes: no mod yet, and they matter on
+    // Stadium alone.
+    for address in ["0x800165AC", "0x801C65C8", "0x801D4760"] {
+        let mut stadium = code(address, "Stadium (3.19)", ">=3.19", None);
+        stadium.stages = vec![3];
+        codes.push(stadium);
+    }
+    // No mod yet, and they change a replay only in rare situations.
+    let minor = [
+        ("0x801239A8", "Freeze glitch fix"),
+        ("0x8008F090", "Prevent wobbling"),
+        ("0x800DB880", "Prevent wobbling"),
+        ("0x800DBBD4", "Prevent wobbling"),
+        ("0x800DA9DC", "Prevent wobbling"),
+        ("0x800AC5B8", "Nana determinism"),
+    ]
+    .into_iter()
+    .map(|(address, name)| SlippiIgnore {
+        code: address.into(),
+        name: name.into(),
+        versions: req("*"),
+        stages: Vec::new(),
+    })
+    .collect();
+    // UCF 0.84 (from Slippi 3.16) runs UCF 0.8's addresses too.
+    let ignore = ["0x800908F4", "0x800C9A44", "0x800998A4"]
+        .into_iter()
+        .map(|address| SlippiIgnore {
+            code: address.into(),
+            name: "UCF 0.84".into(),
+            versions: req(">=3.16"),
+            stages: Vec::new(),
+        })
+        .collect();
+    SlippiMapping {
+        format: crate::profile::FORMAT,
+        snapshot: Some("fake-slippi-1".into()),
+        codes,
+        ignore,
+        minor,
     }
 }

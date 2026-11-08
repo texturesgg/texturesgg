@@ -3,6 +3,7 @@
 
 use crate::manifest::{Manifest, ModId};
 use crate::netplay::Netplay;
+use crate::registry::Publisher;
 use serde::{Deserialize, Serialize};
 
 /// The catalog format this crate reads and writes.
@@ -30,6 +31,22 @@ pub struct CatalogEntry {
     /// The class the package's contents give it.
     pub netplay: Netplay,
     pub package: PackageRef,
+    /// Who publishes the mod, as the registry's mods list gives it; absent
+    /// in a catalog that doesn't say (an unofficial mod by "unknown").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publisher: Option<Publisher>,
+    /// Whether the build changes how the game plays. The registry will fill
+    /// it from each build's synctest results; absent reads as `true`.
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    pub changes_game: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

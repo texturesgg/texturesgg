@@ -541,6 +541,8 @@ fn write_catalog(output: &Path, packages: &[PathBuf]) -> Result<()> {
                 size: bytes.len() as u64,
                 signature: None,
             },
+            publisher: None,
+            changes_game: true,
         });
     }
     mods.sort_by(|a, b| a.manifest.id.cmp(&b.manifest.id));

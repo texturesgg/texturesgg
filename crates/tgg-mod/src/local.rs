@@ -9,9 +9,11 @@ use crate::install::{self, Conflict, Installed, ModsDir, Overlap};
 use crate::lock::{self, Lock, LockEntry};
 use crate::manifest::{Manifest, ModId};
 use crate::port::Port;
+use crate::profile::Settings;
 use crate::registry::Set;
 use semver::Version;
-use std::path::Path;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 /// A mods folder's state.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,6 +34,29 @@ pub struct Local {
     pub unmet: Vec<(ModId, Vec<String>)>,
     /// The lock as read.
     pub lock: Lock,
+    /// The settings the player saved, by mod id: the game's `settings.json`
+    /// ([`settings_file`]).
+    pub settings: BTreeMap<String, Settings>,
+}
+
+/// The settings file the game reads beside the mods folder `mods`: the
+/// game's own (`settings.json` in [`install::game_data_dir`]) for its
+/// default mods folder, else `settings.json` in `mods` (as in a profile's
+/// folder).
+pub fn settings_file(mods: &Path) -> PathBuf {
+    let game = install::game_data_dir();
+    if mods == game.join("mods") || mods == ModsDir::game().root() {
+        game.join(crate::prepare::SETTINGS_FILE)
+    } else {
+        mods.join(crate::prepare::SETTINGS_FILE)
+    }
+}
+
+fn read_settings(path: &Path) -> BTreeMap<String, Settings> {
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -111,6 +136,7 @@ impl Local {
             overlaps: Vec::new(),
             unmet: Vec::new(),
             lock: Lock::default(),
+            settings: BTreeMap::new(),
         }
     }
 
@@ -262,6 +288,7 @@ pub fn local(mods: &Path, port: Option<&Port>) -> Result<Local, Error> {
         overlaps,
         unmet,
         lock,
+        settings: read_settings(&settings_file(mods)),
     };
     local.statuses();
     Ok(local)

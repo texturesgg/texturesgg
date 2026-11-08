@@ -10,16 +10,13 @@ use crate::local::{Local, fits};
 use crate::lock::{self, Lock, LockEntry};
 use crate::manifest::{Manifest, ModId};
 use crate::net::Net;
-use crate::package::{self, Package};
+use crate::package::Package;
 use crate::registry::Set;
 use semver::Version;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-
-/// The largest package downloaded.
-const PACKAGE_LIMIT: u64 = 1024 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Plan {
@@ -413,11 +410,27 @@ pub struct Applied {
 /// Carry out `plan` in the mods folder `mods`: download each package,
 /// check it against the plan's SHA-256, and install it, one mod at a time,
 /// each atomically. The lock is written last, also when a step fails or the
-/// work is cancelled, so it matches what is on disk.
+/// work is cancelled, so it matches what is on disk. Packages come from the
+/// package cache in [`crate::default_data_dir`] when it has them right, and
+/// are kept there.
 pub fn apply(
     net: &dyn Net,
     plan: &Plan,
     mods: &Path,
+    progress: OnProgress,
+    cancel: &AtomicBool,
+) -> Result<Applied, Error> {
+    let packages = crate::cache::packages_dir(&crate::default_data_dir());
+    apply_cached(net, plan, mods, Some(&packages), progress, cancel)
+}
+
+/// [`apply`] with the package cache `packages` (`<data>/tgg/packages`), or
+/// none.
+pub fn apply_cached(
+    net: &dyn Net,
+    plan: &Plan,
+    mods: &Path,
+    packages: Option<&Path>,
     progress: OnProgress,
     cancel: &AtomicBool,
 ) -> Result<Applied, Error> {
@@ -429,7 +442,9 @@ pub fn apply(
     let steps = downloads.len();
     let mut result = Ok(());
     for (index, (step, package)) in downloads.iter().enumerate() {
-        result = install_step(net, &dir, step, package, index, steps, progress, cancel);
+        result = install_step(
+            net, &dir, step, package, packages, index, steps, progress, cancel,
+        );
         if result.is_err() {
             break;
         }
@@ -476,6 +491,7 @@ fn install_step(
     dir: &ModsDir,
     step: &Step,
     package: &PackageRef,
+    packages: Option<&Path>,
     index: usize,
     steps: usize,
     progress: OnProgress,
@@ -496,20 +512,14 @@ fn install_step(
         })
     };
     report(&label, 0);
-    let bytes = net
-        .download(
-            &package.url,
-            package.size.min(PACKAGE_LIMIT),
-            &mut |bytes, _| report(&label, bytes),
-            cancel,
-        )
-        .map_err(Error::from_net)?;
-    if bytes.len() as u64 != package.size || package::sha256_hex(&bytes) != package.sha256 {
-        return Err(Error::Checksum {
-            id: step.id.clone(),
-            expected: package.sha256.clone(),
-        });
-    }
+    let bytes = crate::cache::fetch_package(
+        net,
+        packages,
+        &step.id,
+        package,
+        &mut |bytes, _| report(&label, bytes),
+        cancel,
+    )?;
     let opened = Package::from_zip(&bytes).map_err(|source| Error::Package {
         id: step.id.clone(),
         source,
