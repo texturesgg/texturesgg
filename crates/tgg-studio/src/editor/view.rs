@@ -65,7 +65,11 @@ pub fn crumbs(document: &Document, p: &Palette) -> El {
     let mut crumbs = row()
         .gap(space::XS)
         .items_center()
-        .child(label("Melee").font(text::STRONG).color(p.muted))
+        .child(
+            label(crate::nav::Place::Melee.label())
+                .font(text::STRONG)
+                .color(p.muted),
+        )
         .child(label("/").font(text::BODY).color(p.faint))
         .child(label(fighter).font(text::STRONG).color(if color.is_some() {
             p.muted

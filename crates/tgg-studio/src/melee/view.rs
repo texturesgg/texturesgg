@@ -81,8 +81,8 @@ pub fn view(app: &App, p: &Palette) -> El {
                 .items_end()
                 .gap(space::LG)
                 .child(col().grow(1.0).min_w(0.0).child(page_head(
-                    "Melee",
-                    "What's in your game, and what you've changed.",
+                    crate::nav::Place::Melee.label(),
+                    "What's in the ISO you play on Slippi or Dolphin, and what you've changed.",
                     p,
                 )))
                 .children(game(app, p)),
@@ -165,7 +165,7 @@ fn game(app: &App, p: &Palette) -> Option<El> {
             )
             .child(
                 row().mr(-ui::TEXT_ACTION_INSET).child(
-                    ui::text_action("Choose another game…", false, p)
+                    ui::text_action("Choose another ISO…", false, p)
                         .key("melee/choose-game")
                         .on_press_tx(crate::preferences::actions::choose_game),
                 ),

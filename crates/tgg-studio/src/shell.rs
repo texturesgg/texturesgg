@@ -4,7 +4,7 @@
 //! keeps one place at the top left whether it shows or not. Drawing only: what
 //! it shows comes from the app's state, and pressing calls `nav::actions`.
 
-use crate::nav::{Place, actions as nav};
+use crate::nav::{Group, Place, actions as nav};
 use crate::state::App;
 use crate::ui::tokens::{Palette, motion, radius, size, space, text};
 use crate::ui::{
@@ -82,16 +82,43 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
 /// nothing on the default spring rather than vanishing.
 fn sidebar(app: &App, p: &Palette) -> El {
     let shown = app.nav.sidebar;
-    let places = Place::ALL.into_iter().map(|place| {
-        place_row(place.label(), None, app.nav.place == place, p)
-            .key(place.key())
-            .on_press_tx(move |app: &mut App, tx| editor::actions::go(app, place, tx))
-    });
+    // The places under their groups' names (your ISO, tgg-melee), so which
+    // game a place is about shows. Every row has a fixed height, so the
+    // marker's offset is their sum.
+    let mut places = Vec::new();
+    let mut at = 0.0;
+    let mut marked = 0.0;
+    for (n, group) in Group::ALL.into_iter().enumerate() {
+        let head = if n == 0 {
+            size::GROUP_HEAD
+        } else {
+            size::GROUP_HEAD + space::SM
+        };
+        places.push(
+            row()
+                .key(format!("sidebar/group/{n}"))
+                .h(head)
+                .items_end()
+                .px(PLACE_INSET)
+                .child(label(group.label()).font(text::LABEL).color(p.faint)),
+        );
+        at += head + space::TIGHT;
+        for place in Place::ALL
+            .into_iter()
+            .filter(|place| place.group() == group)
+        {
+            if app.nav.place == place {
+                marked = at;
+            }
+            places.push(
+                place_row(place.label(), None, app.nav.place == place, p)
+                    .key(place.key())
+                    .on_press_tx(move |app: &mut App, tx| editor::actions::go(app, place, tx)),
+            );
+            at += size::ROW + space::TIGHT;
+        }
+    }
     // One marker glides between places, so the move from one to the next shows.
-    let index = Place::ALL
-        .iter()
-        .position(|place| *place == app.nav.place)
-        .unwrap_or(0);
     let marker = el()
         .key("sidebar/marker")
         .w(size::SIDEBAR - 2.0 * space::XS)
@@ -99,7 +126,7 @@ fn sidebar(app: &App, p: &Palette) -> El {
         .radius(radius::CONTROL)
         .fill(p.hover)
         .motion(motion::SNAPPY)
-        .absolute(0.0, index as f32 * (size::ROW + space::TIGHT));
+        .absolute(0.0, marked);
     // The foot: who's signed in (else Sign in), and Settings beside it.
     let foot = signin::view::foot(app, p);
     let inner = col()

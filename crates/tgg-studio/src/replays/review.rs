@@ -181,7 +181,7 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
             .to_owned()
     };
     let parts = Dialog {
-        title: "Play this replay".into(),
+        title: "Watch this replay".into(),
         line,
         body: Some(list),
         buttons: vec![
@@ -190,7 +190,7 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
                 .on_press(actions::cancel_review),
             spacer(),
             button(
-                if fetch { "Get and play" } else { "Play" },
+                if fetch { "Get and watch" } else { "Watch" },
                 ButtonKind::Primary,
                 p,
             )

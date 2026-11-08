@@ -872,7 +872,7 @@ pub fn title_actions(app: &App, p: &Palette) -> Option<El> {
         );
     }
     matches!(mods.disc, Disc::Found(_)).then(|| {
-        button("Play", ButtonKind::Primary, p)
+        button("Play tgg-melee", ButtonKind::Primary, p)
             .key("mods/play")
             .on_press(actions::play)
     })

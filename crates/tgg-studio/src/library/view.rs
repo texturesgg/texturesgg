@@ -22,7 +22,7 @@ pub fn view(app: &App, p: &Palette) -> El {
         .gap(space::SM)
         .child(col().grow(1.0).child(page_head(
             "Library",
-            &format!("{} skins, {in_game} in your game.", skins.len()),
+            &format!("{} skins, {in_game} in your ISO.", skins.len()),
             p,
         )))
         .child(
@@ -155,7 +155,7 @@ fn card(app: &App, skin: &Skin, p: &Palette) -> El {
     let id = skin.id;
     let status = ui::status(
         if in_game {
-            format!("{goes} · in your game")
+            format!("{goes} · in your ISO")
         } else {
             goes
         },

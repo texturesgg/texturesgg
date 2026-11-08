@@ -242,7 +242,7 @@ pub fn play(app: &mut App, path: &Path) {
     }
     let Disc::Found(_) = &app.mods.disc else {
         return app.tell(
-            "Playing a replay needs an unmodified Melee disc; choose one on the Mods page.",
+            "Watching a replay needs an unmodified Melee disc; choose one on the Mods page.",
             true,
         );
     };
@@ -360,7 +360,7 @@ fn started(app: &mut App, running: Result<tgg_mod::Running, tgg_mod::Error>) {
     match running {
         Ok(running) => {
             crate::mods::actions::watch(app, running);
-            app.tell("Playing the replay in tgg-melee.", false);
+            app.tell("Watching the replay in tgg-melee.", false);
         }
         Err(error) => app.tell(format!("The replay couldn't start: {error}."), true),
     }

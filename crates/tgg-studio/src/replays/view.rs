@@ -37,7 +37,7 @@ pub fn view(app: &App, p: &Palette) -> El {
         .gap(space::LG)
         .child(col().grow(1.0).min_w(0.0).child(page_head(
             "Replays",
-            "Your Slippi and tgg-melee replays, each played with the mods its game had.",
+            "Your Slippi and tgg-melee replays. All of them play back in tgg-melee, with the mods each game had.",
             p,
         )))
         .child(row().mr(-TEXT_ACTION_INSET).child(refresh));
@@ -291,13 +291,13 @@ fn replay_row(app: &App, replays: &Replays, item: &Item, p: &Palette) -> El {
         .child(end)
 }
 
-/// Play, while a replay can be played: not one that can't be read or needs
+/// Watch, while a replay can be played: not one that can't be read or needs
 /// a game that can't be had, and not while a game runs or a replay's mods
 /// are on their way. The caller keys it and makes pressing it play.
 pub fn play_button(app: &App, item: &Item, p: &Palette) -> Option<El> {
     let playable = !matches!(item.status, Status::Unreadable(_) | Status::NoGame(_));
     (playable && app.mods.playing.is_none() && app.replays.preparing.is_none())
-        .then(|| button("Play", ButtonKind::Secondary, p))
+        .then(|| button("Watch", ButtonKind::Secondary, p))
 }
 
 /// What a replay needs, as a badge.
