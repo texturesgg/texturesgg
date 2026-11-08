@@ -139,6 +139,10 @@ in-game browser will read it directly.
   newest first: `{version, date, changelog}`, the changelog being that
   version's CHANGELOG.md section or null) and `depends` (`[{id, range}]` of
   the newest release). 404 for a mod it doesn't list.
+- `GET /api/registry/slippi`: the Slippi mapping, which mods reproduce the gecko
+  codes a Slippi replay ran; its shape is in [mod profiles](mod-profiles.md#the-slippi-mapping-get-apiregistryslippi).
+  Catalog entries also carry `publisher` and `changes_game` for profiles
+  ([catalog entries](mod-profiles.md#catalog-entries)).
 - `GET /api/registry/images/<sha256>.png`: an icon or screenshot.
 - Package and image URLs are content-addressed (by SHA-256) and immutable.
   Lists and catalogs may be a minute old.

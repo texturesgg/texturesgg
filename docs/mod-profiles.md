@@ -79,6 +79,192 @@ profile is the mods mapped from its codes, plus the settings its Game Start impl
 (frozen Stadium, UCF version), with every unmapped gameplay code under `missing`. This
 replaces `rules.py` in the replay harness, which becomes a client of the same mapping.
 
+## Formats
+
+### Profile files
+
+The full form of a profile, as `profile.json`, the netplay hello and `metadata.tgg.profile`
+carry it. Every field but `format` and `game` may be left out.
+
+```json
+{
+  "format": 1,
+  "label": "Slippi 3.18 online",
+  "game": {
+    "name": "tgg-melee",
+    "version": "0.1.0-rc.9",
+    "layout": "a1b2c3d4e5f60718",
+    "settings": { "tgg.ucf": true, "tgg.unlocks": true }
+  },
+  "mods": [
+    { "id": "tgg.neutral-spawns", "version": "0.1.2", "sha256": "9f86d0…" },
+    { "id": "tgg.competitive-rules", "version": "0.1.2",
+      "settings": { "stocks": 4, "stock-time": 8, "items": "Off" } },
+    { "id": "tgg.stadium-preload", "range": "^0.1" }
+  ],
+  "missing": [
+    { "why": "unknown", "id": "tgg.example" },
+    { "why": "not-built", "id": "tgg.example2", "version": "1.0.0" },
+    { "why": "unapproved", "id": "tgg.example3", "version": "0.3.0" },
+    { "why": "no-mod-for", "code": "0x801D24FC" }
+  ],
+  "slippi": { "version": "3.18.0", "codes": ["0x8016E510", "0x801D45EC", "frozen-stadium"] }
+}
+```
+
+- `format`: 1. A reader refuses a larger number.
+- `game.name`: `tgg-melee`. `game.version`: a release, or `any` (the player's current
+  port). `game.layout`: the game layout id (`Port::game_abi`) when the source knows it, so
+  a front end can fetch the catalog the profile's mods are built for before that port is
+  installed.
+- `game.settings`: the on/off state of the port's built-in modules, by module id
+  (`tgg.ucf`, `tgg.unlocks`); a module left out runs as the port defaults (on). A module
+  that is off is started with its environment variable off (`TGG_UCF=0`,
+  `TGG_UNLOCK_ALL=0`).
+- `mods[].version` is exact. A mod may give `range` instead (one of the ranges a manifest's
+  `depends` takes): the newest approved release in it. Profiles from a Slippi replay do,
+  since the mapping names ranges. `sha256` is the package for the platform the profile was
+  written on; another platform ignores it.
+- `mods[].settings`: counted settings by key, as `settings.json` holds them (a choice is
+  its text).
+- `missing[].why`: `unknown` (no such mod), `not-built` (not built for the profile's game;
+  `version` is the version or range asked for), `unapproved` (no approved release at that
+  version), `no-mod-for` (a Slippi code nothing reproduces).
+- `slippi`: the facts read from a Slippi replay: its Slippi version and every code its
+  console ran, as the mapping names codes (below). `resolve_profile` maps these again
+  with the mapping it's given, so a profile read with an old mapping (or none) resolves
+  with the newest. Mods mapped from codes are listed in `mods` as well, for display.
+
+A replay's profile also names `tgg.replay-player` (`"range": "*"`) when its source
+doesn't, since playing the replay takes it.
+
+### `metadata.tgg.profile` in a .slp
+
+`tgg.replay-recorder` writes the game's profile into the replay's UBJSON `metadata`, beside
+the `game`, `modSetId` and `mods` it writes today:
+
+```text
+metadata: {
+  ..., "playedOn": "tgg-melee",
+  "tgg": { "game": "tgg-melee 0.1.0-rc.9 a1b2c3d4e5f60718",
+           "modSetId": "…", "mods": ["tgg.ucf 0.84.0", "tgg.neutral-spawns 0.1.2"],
+           "profile": { …the profile as JSON… } }
+}
+```
+
+`profile` is a UBJSON object holding exactly the JSON above (objects `{`, arrays `[`,
+strings `S`, integers `i`/`U`/`I`/`l`/`L`, `T`/`F`, `Z`); a UBJSON string holding the
+JSON text is read too. The recorder writes: `format` 1, `game` with `name`, `version`,
+`layout` and the built-in modules' state as `settings`, and every mod that counts toward
+the mod-set id (built-in modules aside) with its exact `version`, its package `sha256`
+when it has one, and its counted `settings`. No `missing`, `slippi` or `label`.
+
+Without `profile`, a tgg-melee replay's profile is read from `game` (`"<name> <version>
+<layout>"`) and `mods` (`"<id> <version>"`, built-in modules giving `game.settings`: listed
+means on, left out means off), with no settings.
+
+### The Slippi mapping: `GET /api/registry/slippi`
+
+```json
+{
+  "format": 1,
+  "snapshot": "2026-11-07T18:00:00Z",
+  "codes": [
+    { "code": "0x8016E510", "name": "Neutral spawns", "versions": "*",
+      "id": "tgg.neutral-spawns", "range": "^0.1" },
+    { "code": "0x801D45EC", "name": "Preload Stadium Transformations", "versions": "<3.19",
+      "id": "tgg.stadium-preload", "range": "^0.1" },
+    { "code": "0x800908F4", "name": "UCF 0.8 (Logic)", "versions": "*",
+      "id": "tgg.ucf-legacy", "range": "^0.1", "game": { "tgg.ucf": false } },
+    { "code": "0x8006B460", "name": "UCF 0.84", "versions": "*", "game": { "tgg.ucf": true } },
+    { "code": "frozen-stadium", "name": "Frozen Pokémon Stadium", "versions": "*",
+      "id": "tgg.frozen-stadium", "range": "^0.1" }
+  ],
+  "ignore": [
+    { "code": "0x801A50AC", "name": "…", "versions": "*" }
+  ]
+}
+```
+
+- `codes[].code`: a code's address, `0x` and eight upper-case hex digits (the address a
+  `C2` inject or an `04`/`06`/`00`-`03` write names), or a Game Start fact:
+  `frozen-stadium` (the frozen Stadium flag on, on Pokémon Stadium) or `ucf-off` (every
+  player's dashback and shield-drop fix off).
+- `versions`: the Slippi versions the entry holds for, as a semver requirement
+  (`*`, `<3.19`, `>=3.9, <3.17`). The first entry for a code whose `versions` match the
+  replay's Slippi version wins.
+- `id`, `range`: the mod and the releases that reproduce the code; left out when the game
+  itself does (`game` alone). `settings`: counted settings of that mod the code implies
+  (optional). `game`: built-in module states the code implies (optional).
+- `ignore`: codes that don't change gameplay (display, netcode, menus); `versions` as above.
+  A code a replay ran that no `codes` or `ignore` entry matches is `missing` as
+  `no-mod-for`.
+- `format` 1; `snapshot` names this state of the mapping. 404 reads as an empty mapping.
+
+The registry builds `codes` from the `slippi` field of each approved release's manifest
+(each release's id and the range of its releases that declare the code), plus entries for
+what the game does itself; `ignore` is kept by the registry's admins.
+
+### Catalog entries
+
+Two optional fields on each `GET /api/registry/catalog` entry, beside `netplay` and
+`package`:
+
+- `publisher`: `{ "name", "official" }`, as the mods list gives it. Without it a mod is
+  unofficial and published by "unknown".
+- `changes_game`: whether the build changes how the game plays. Absent means `true`. The
+  registry fills it from each build's synctest results later; until then every mod changes
+  the game, so a replay plays as installed only when the installed mods are exactly its
+  own.
+
+### `tgg profile prepare <profile.json|replay.slp> --machine`
+
+JSON lines on stdout, one object each, told apart by `event`:
+
+```json
+{"event":"plan","key":"3f9a…","fit":"needs-profile","game":{"version":"0.1.0-rc.8","state":"available","size":18000000},"mods":[{"id":"tgg.neutral-spawns","name":"Neutral spawns","version":"0.1.2","publisher":{"name":"textures.gg","official":true},"cached":false,"size":4096,"needs_trust":false}],"missing":[{"why":"no-mod-for","code":"0x801D24FC"}]}
+{"event":"needs-trust","publishers":[{"name":"someone","mods":["someone.mod"]}]}
+{"event":"progress","step":0,"steps":3,"label":"Downloading Neutral spawns","bytes":4096,"total":4096}
+{"event":"done","fit":"needs-profile","folder":"/home/me/.local/share/tgg/profiles/3f9a…","settings":"/home/me/.local/share/tgg/profiles/3f9a…/settings.json","port":{"version":"0.1.0-rc.8","executable":"/home/me/.local/share/tgg/ports/0.1.0-rc.8/tgg-melee"},"env":{"TGG_MODS_DIR":"…","TGG_SETTINGS":"…","TGG_UCF":"0"}}
+{"event":"error","message":"can't reach textures.gg; what's installed still works"}
+```
+
+- `plan` comes first. `game.state` is `installed`, `available` (`size` in bytes, or null
+  when tgg hasn't seen that release) or `unavailable`. `fit` is `as-installed` or
+  `needs-profile`.
+- `needs-trust` ends the run (exit 0) when a mod needs the player's yes and its publisher
+  wasn't allowed: the caller asks, then runs again with `--trust <publisher>` for each yes
+  (`--remember` also stores the answers, as `remember_trust` does).
+- `progress` lines follow while packages and the port download.
+- `done` ends a run that worked. With `fit` `as-installed`, `folder` and `settings` are
+  null and `port` is the current port: no restart needed. Otherwise `env` is what to start
+  `port.executable` with (the disc image as its argument, as usual).
+- `error` ends a run that failed (exit 1).
+
+### On disk
+
+Under `<data>/tgg/` (`<data>` is `$XDG_DATA_HOME`, `~/.local/share`, `~/Library/Application
+Support` or `%LOCALAPPDATA%`, the folder `ports/` is in):
+
+- `packages/<sha256>.zip`: the package cache.
+- `cache/catalog-<layout>.json`, `cache/slippi.json`: the last catalog per layout and the
+  last mapping, as served (with their `snapshot`).
+- `profiles/<key>/`: a profile's mods folder: a folder per mod, `profile.json` (the
+  resolved profile, with each package's `sha256`) and `settings.json` (its counted
+  settings, laid out as the port's `settings.json`).
+- `running.json`: `[{ "pid", "executable", "key", "folder" }]`, the profile games running.
+- `trust.json`: `{ "publishers": { "<name>": true|false } }`.
+
+### What the port reads
+
+`launch_profile` starts the port with `TGG_MODS_DIR` set to the profile's folder,
+`TGG_SETTINGS` to its `settings.json`, the built-in module variables for modules that are
+off, and `TGG_REPLAY_PLAYER_FILE` for a replay. The port reads its settings from
+`<data>/tgg-melee/settings.json` alone today: it needs to take `TGG_SETTINGS` as that
+path when set (`host_settings_path`, as `host_mods_dir` takes `TGG_MODS_DIR`), so a profile
+game reads and saves its own settings. Until it does, `launch_profile` also passes the
+profile's settings as `TGG_SET`, which the port applies for the run without saving.
+
 ## The `tgg-mod` API
 
 Blocking, like the rest of the crate; front ends run it on their own threads. Typed data
