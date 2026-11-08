@@ -1,6 +1,5 @@
 //! The Settings dialog: a row per setting, its name and what it does on
-//! the left, its control on the right; then where the player's files are,
-//! and help.
+//! the left, its control on the right, and help at the end.
 
 use super::actions;
 use crate::state::App;
@@ -24,7 +23,6 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
         appearance(app, p),
         updates(app, p),
         game(app, p),
-        files(app, p),
         help(p),
     ];
     let body = col().children(rows.into_iter().enumerate().flat_map(|(index, row)| {
@@ -175,44 +173,24 @@ fn updates(app: &App, p: &Palette) -> El {
 
 /// The game skins install into, and choosing another.
 fn game(app: &App, p: &Palette) -> El {
-    let path = app
-        .game
-        .as_ref()
-        .map(|references| references.game().path().display().to_string())
-        .unwrap_or_default();
+    let path = app.game.as_ref().map(|references| references.game().path());
+    let file = path
+        .and_then(|path| path.file_name())
+        .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+    // The file's name says which; its whole path is a hover away.
     setting(
         "settings/game",
         "Game",
-        format!("Skins install into {path}."),
+        format!("Skins install into {file}."),
         text_action("Choose another…", false, p)
             .key("settings/choose-game")
             .on_press_tx(actions::choose_game),
         p,
     )
-}
-
-/// Where the app keeps the player's files: shown, not changed here.
-fn files(app: &App, p: &Palette) -> El {
-    let place = |name: &str, path: &std::path::Path| {
-        col()
-            .gap(space::TIGHT)
-            .child(label(name.to_owned()).font(text::SMALL).color(p.muted))
-            .child(
-                label(path.display().to_string())
-                    .font(text::MONO_SMALL)
-                    .color(p.faint)
-                    .wrap(),
-            )
-    };
-    col()
-        .key("settings/files")
-        .px(space::LG)
-        .py(space::SM)
-        .gap(space::XS)
-        .child(label("Your files").font(text::STRONG).color(p.ink))
-        .child(place("Skins", &app.data.library))
-        .child(place("Mods", &app.data.mods))
-        .child(place("tgg-melee", &app.data.ports))
+    .help(
+        path.map(|path| path.display().to_string())
+            .unwrap_or_default(),
+    )
 }
 
 /// Help: reporting a problem, the community, and what's running.
