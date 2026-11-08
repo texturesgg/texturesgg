@@ -14,6 +14,8 @@ use rune::{Drag, Phase, Tx, WheelEvent};
 const ORBIT_PER_POINT: f64 = 0.01;
 /// How far the wheel moves the camera, per point scrolled.
 const ZOOM_PER_POINT: f64 = 0.002;
+/// How far a press may move, in points, and still be a click.
+const CLICK_SLOP: f32 = 4.0;
 /// A notched wheel's step, in the points tgg-editor's rate is per: gpui
 /// counts a line as 20, where Rune hands it over as 40.
 const LINE_POINTS: f32 = 20.0;
@@ -42,6 +44,7 @@ pub fn show(app: &mut App, slot: MeleeSlot) -> Result<(), String> {
         model,
         orbit,
         gesture: None,
+        pick: None,
         playing,
         animation,
         moves,
@@ -118,7 +121,14 @@ pub fn orbit(app: &mut App, drag: &mut Drag, tx: &mut Tx) {
                 Orbit { yaw: orbit.yaw - dx * ORBIT_PER_POINT, pitch: orbit.pitch + dy * ORBIT_PER_POINT, ..orbit }
             };
         }
-        Phase::Up => shown.gesture = None,
+        Phase::Up => {
+            shown.gesture = None;
+            // A press that barely moved is a click: in the editor, it picks.
+            let still = drag.dx.abs() <= CLICK_SLOP && drag.dy.abs() <= CLICK_SLOP;
+            if still && !drag.cancelled() && app.editor.is_some() && drag.w > 0.0 && drag.h > 0.0 {
+                shown.pick = Some([drag.x / drag.w, drag.y / drag.h]);
+            }
+        }
     }
 }
 

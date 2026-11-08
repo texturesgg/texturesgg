@@ -61,6 +61,17 @@ const SCENES: &[Scene] = &[
             editor::actions::select(app, Some(1));
         }
     }),
+    // A click on the middle of the model, as the player would to pick its texture.
+    ("fox-edit-pick", |app| {
+        if let Some(fox) = melee_dat::Character::from_code("Fx") {
+            melee::actions::open_fighter(app, fox);
+            editor::actions::open(app);
+            editor::actions::select(app, None);
+            if let Some(shown) = &mut app.stage.shown {
+                shown.pick = Some([0.5, 0.45]);
+            }
+        }
+    }),
     ("fox-moves", |app| {
         if let Some(fox) = melee_dat::Character::from_code("Fx") {
             melee::actions::open_fighter(app, fox);

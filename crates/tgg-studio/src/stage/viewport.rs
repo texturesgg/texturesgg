@@ -11,9 +11,9 @@ use super::spawns::Spawns;
 use super::{Shown, VIEWPORT};
 use crate::state::App;
 use dat_parser::descriptor::jobj::flags::BILLBOARD_FIELD;
-use dat_parser::hsd::scene::HsdTextureIndex;
+use dat_parser::hsd::scene::{HsdTextureIndex, HsdTextureSourceId};
 use dat_parser::math::Mat4;
-use hsd_render::{HsdRenderer, ModelId, Orbit, PreparedGeometry, neutral_preview_lighting};
+use hsd_render::{HsdRenderer, ModelId, Orbit, PendingPick, PickReadback, PreparedGeometry, neutral_preview_lighting};
 use rune::compose::{Compositor, DeviceKey, Frame};
 use rune::render::KIND_EFFECT;
 
@@ -31,6 +31,19 @@ pub struct Viewport {
     playing: bool,
     /// Edits the renderer refused this frame, for the stage to say.
     refused: Vec<String>,
+    /// The one pick in flight. Rune submits a frame's work after the
+    /// compositor returns, so a pick encoded this frame starts reading back
+    /// on the next.
+    pick: Pick,
+}
+
+/// Where the pick in flight is.
+#[derive(Default)]
+enum Pick {
+    #[default]
+    None,
+    Encoded(PickReadback),
+    Reading(PendingPick),
 }
 
 /// What lives on Rune's device: the renderer with the model and what its
@@ -76,6 +89,8 @@ impl Viewport {
             let copy = Copy::new(device);
             let target = copy.target(device, size);
             let spawns = Spawns::new(shown.shared.clone());
+            // A pick on the old renderer never resolves, or names its packets.
+            self.pick = Pick::None;
             self.gpu = Some(Gpu { key, generation: shown.generation, renderer, model, spawns, posed_orbit: None, target, copy });
             shown.posed = true;
             // A new renderer starts from the file's pixels and no tint: show every edit again.
@@ -113,7 +128,48 @@ impl Viewport {
             gpu.renderer.set_highlight(queue, gpu.model, &shown.highlight)?;
         }
         gpu.renderer.encode(f.encoder, &gpu.target.view);
+        // Pick in the same submission, so it sees this frame's pose. One at a
+        // time: a click made meanwhile waits, and a newer one replaces it.
+        if matches!(self.pick, Pick::None)
+            && let Some([across, down]) = shown.pick.take()
+        {
+            let at = ((across * size.0 as f32) as u32, (down * size.1 as f32) as u32);
+            if at.0 < size.0 && at.1 < size.1 {
+                // A pick that fails is logged, never fatal to the stage.
+                match gpu.renderer.encode_pick(device, f.encoder, at) {
+                    Ok(readback) => self.pick = Pick::Encoded(readback),
+                    Err(error) => tgg_app::log(&format!("pick failed: {error}")),
+                }
+            }
+        }
         Ok(())
+    }
+
+    /// Move the pick along: start reading back last frame's, or collect
+    /// one that's arrived and say what it landed on.
+    fn poll_pick(&mut self, f: &mut Frame<'_, App>) {
+        self.pick = match std::mem::take(&mut self.pick) {
+            Pick::None => Pick::None,
+            Pick::Encoded(readback) => Pick::Reading(readback.map()),
+            Pick::Reading(pending) => {
+                if let Err(error) = f.device.poll(wgpu::PollType::Poll) {
+                    tgg_app::log(&format!("pick poll failed: {error}"));
+                }
+                match pending.take() {
+                    None => Pick::Reading(pending),
+                    Some(Err(error)) => {
+                        tgg_app::log(&format!("pick failed: {error}"));
+                        Pick::None
+                    }
+                    Some(Ok(picked)) => {
+                        if let (Some(gpu), Some(shown)) = (&self.gpu, &f.rt.state.stage.shown) {
+                            f.rt.state.stage.picked = Some(picked_textures(gpu, shown, picked));
+                        }
+                        Pick::None
+                    }
+                }
+            }
+        };
     }
 
     /// Move the timeline's playhead and frame count to the model's frame.
@@ -128,6 +184,18 @@ impl Viewport {
         }
         stage.frame_count.set(format!("F {} / {}", frame.floor() as u32, end.floor() as u32));
     }
+}
+
+/// What a pick landed on: for each texture the picked surface draws, most
+/// defining first, the scene's ids for it. Nothing when it missed the
+/// model (the background, or a shot its move spawned).
+fn picked_textures(gpu: &Gpu, shown: &Shown, picked: Option<hsd_render::PickId>) -> Vec<Vec<HsdTextureSourceId>> {
+    let packet = picked.and_then(|pick| gpu.renderer.resolve_pick(pick)).filter(|(model, _)| *model == gpu.model);
+    let Some((_, packet)) = packet else { return Vec::new() };
+    let scene = shown.model.scene();
+    gpu.renderer.packet_textures(gpu.model, packet).unwrap_or_default().into_iter()
+        .map(|texture| texture.scene_textures.iter().filter_map(|index| Some(scene.textures.get(index.0)?.id)).collect())
+        .collect()
 }
 
 /// Advance the model and what it spawns by the ticks due since the last
@@ -188,16 +256,19 @@ fn pose(shown: &mut Shown, gpu: &mut Gpu, device: &wgpu::Device, queue: &wgpu::Q
 
 impl Compositor<App> for Viewport {
     fn animating(&self) -> bool {
-        self.playing
+        // A pick in flight needs frames to arrive on.
+        self.playing || !matches!(self.pick, Pick::None)
     }
 
     fn render(&mut self, f: &mut Frame<'_, App>) {
+        self.poll_pick(f);
         if let Some([_, _, w, h]) = Self::slot(f) {
             let size = ((w.round() as u32).max(1), (h.round() as u32).max(1));
             if let Err(error) = self.draw(f, size) {
                 tgg_app::log(&format!("viewport: {error}"));
                 f.rt.state.stage.shown = None;
                 self.gpu = None;
+                self.pick = Pick::None;
             }
             Self::report(f);
             f.rt.state.stage.rejected.append(&mut self.refused);

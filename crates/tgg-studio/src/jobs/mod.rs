@@ -102,10 +102,14 @@ pub fn setup(app: &mut crate::state::App, waker: Waker) {
 
 /// Before each frame: hand what's arrived to the actions that own it.
 /// True when anything that shows changed.
-pub fn poll(app: &mut crate::state::App, _: f64, _: &mut rune::Tx) -> bool {
+pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
     let mut changed = false;
     for refused in std::mem::take(&mut app.stage.rejected) {
         app.tell(refused, true);
+        changed = true;
+    }
+    if let Some(picked) = app.stage.picked.take() {
+        crate::editor::actions::select_picked(app, &picked, tx);
         changed = true;
     }
     for done in app.jobs.take() {

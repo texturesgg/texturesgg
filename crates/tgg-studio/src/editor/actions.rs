@@ -60,6 +60,51 @@ pub fn select(app: &mut App, texture: Option<usize>) {
     stage::set_highlight(app, &uses);
 }
 
+/// Select the texture a click on the model landed on (`textures`, each the
+/// scene's ids for one texture the surface draws, most defining first). A
+/// surface can blend several: clicking one whose texture is selected moves
+/// to the next, and past the last unselects. The list scrolls to the one
+/// chosen.
+pub fn select_picked(app: &mut App, textures: &[Vec<HsdTextureSourceId>], tx: &mut Tx) {
+    let Some(document) = &app.editor else { return };
+    let Ok(open) = &document.listing.document else { return };
+    let mut candidates: Vec<usize> = Vec::new();
+    for ids in textures {
+        let found = open.textures().iter().position(|texture| ids.iter().any(|id| texture.uses.contains(id)));
+        if let Some(index) = found
+            && !candidates.contains(&index)
+        {
+            candidates.push(index);
+        }
+    }
+    if candidates.is_empty() {
+        if !textures.is_empty() {
+            app.tell("That surface's texture isn't in the list.", false);
+        }
+        return;
+    }
+    let at = document.selected.and_then(|selected| candidates.iter().position(|&index| index == selected));
+    let place = match at {
+        Some(at) if at + 1 == candidates.len() => {
+            select(app, None);
+            app.tell("Selection cleared", false);
+            return;
+        }
+        Some(at) => at + 1,
+        None => 0,
+    };
+    let next = candidates[place];
+    let name = document.listing.name(next);
+    let text = if candidates.len() > 1 {
+        format!("{name}: {} of {} on this surface; click again for the next", place + 1, candidates.len())
+    } else {
+        name
+    };
+    select(app, Some(next));
+    tx.scroll_into_view(format!("editor/texture/{next}"));
+    app.tell(text, false);
+}
+
 /// Replace `texture`'s pixels with the RGBA8 image `rgba`, its size: one undo
 /// step, shown on the model and in the panes. A CI texture that owns its
 /// palette gets one rebuilt for the new pixels; otherwise they map to the

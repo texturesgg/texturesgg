@@ -549,3 +549,74 @@ fn a_texture_exports_as_the_game_draws_it() {
     let image = image::open(&out).expect("a PNG").to_rgba8();
     assert_eq!(image.dimensions(), (8, 8));
 }
+
+/// The scene's ids for the open costume's texture `index`, as a pick reports
+/// a surface drawing it.
+fn drawn(rt: &Runtime<App>, index: usize) -> Vec<dat_parser::hsd::scene::HsdTextureSourceId> {
+    let document = rt.state.editor.as_ref().expect("editing");
+    document.listing.document.as_ref().expect("readable").textures()[index].uses.clone()
+}
+
+#[test]
+fn a_click_on_the_model_asks_to_pick_and_a_drag_doesnt() {
+    let (mut rt, _iso, _data) = editing();
+    let (x, y) = rt.find("stage/viewport").expect("the stage shows");
+    rt.pointer_down(x, y);
+    rt.pointer_move(x + 2.0, y + 1.0);
+    rt.pointer_up(x + 2.0, y + 1.0);
+    rt.frame(FRAME);
+    let pick = rt.state.stage.shown.as_ref().expect("on the stage").pick.expect("a click picks");
+    assert!(pick.iter().all(|fraction| (0.0..=1.0).contains(fraction)), "{pick:?} is on the plate");
+
+    rt.state.stage.shown.as_mut().expect("on the stage").pick = None;
+    rt.pointer_down(x, y);
+    rt.pointer_move(x + 40.0, y);
+    rt.pointer_up(x + 40.0, y);
+    rt.frame(FRAME);
+    assert!(rt.state.stage.shown.as_ref().expect("on the stage").pick.is_none(), "a drag turns the camera instead");
+}
+
+#[test]
+fn off_the_editor_a_click_on_the_model_picks_nothing() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    tap(&mut rt, "melee/fighter/Falco");
+    settle(&mut rt);
+    tap(&mut rt, "stage/viewport");
+    assert!(rt.state.stage.shown.as_ref().expect("on the stage").pick.is_none());
+}
+
+#[test]
+fn picking_a_surface_selects_its_texture_and_picking_it_again_clears_it() {
+    let (mut rt, _iso, _data) = editing();
+    let texture = drawn(&rt, 0);
+    rt.update(|app, _| crate::editor::actions::select(app, None));
+    // A surface blending the texture twice offers it once.
+    rt.state.stage.picked = Some(vec![texture.clone(), texture.clone()]);
+    poll(&mut rt);
+    assert_eq!(rt.state.editor.as_ref().expect("editing").selected, Some(0));
+    assert!(!rt.state.stage.shown.as_ref().expect("on the stage").highlight.is_empty(), "the model shows where it draws");
+
+    rt.state.stage.picked = Some(vec![texture]);
+    poll(&mut rt);
+    assert_eq!(rt.state.editor.as_ref().expect("editing").selected, None, "the selected one again clears it");
+    assert_eq!(rt.state.notice.as_ref().map(|notice| notice.text.as_str()), Some("Selection cleared"));
+}
+
+#[test]
+fn a_click_that_misses_the_model_changes_nothing() {
+    let (mut rt, _iso, _data) = editing();
+    let before = rt.state.editor.as_ref().expect("editing").selected;
+    rt.state.stage.picked = Some(Vec::new());
+    poll(&mut rt);
+    assert_eq!(rt.state.editor.as_ref().expect("editing").selected, before);
+}
+
+/// Run the app's poll as the window does between frames: it hands on what
+/// the viewport read back.
+fn poll(rt: &mut Runtime<App>) {
+    rt.update(|app, tx| {
+        crate::jobs::poll(app, FRAME, tx);
+    });
+    rt.frame(FRAME);
+}

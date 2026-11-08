@@ -11,7 +11,7 @@ pub mod view;
 pub mod viewport;
 
 use hsd_render::Orbit;
-use dat_parser::hsd::scene::HsdTextureIndex;
+use dat_parser::hsd::scene::{HsdTextureIndex, HsdTextureSourceId};
 use melee_dat::{MeleeModel, MeleeReferenceStore, MeleeSlot, SharedModel};
 use rune::{Live, LiveText};
 use std::collections::BTreeMap;
@@ -27,6 +27,10 @@ pub struct Stage {
     pub shown_count: u64,
     /// Edits the viewport couldn't show, in the player's words, to say so.
     pub rejected: Vec<String>,
+    /// What a click on the model landed on, once the viewport has read it
+    /// back: for each texture the surface draws, most defining first, the
+    /// scene's ids for it. Empty when the click missed the model.
+    pub picked: Option<Vec<Vec<HsdTextureSourceId>>>,
     /// Where the timeline's playhead sits along its track, in points; the
     /// viewport writes it each frame, so the view needn't rebuild.
     pub playhead: Live<[f32; 2]>,
@@ -36,7 +40,7 @@ pub struct Stage {
 
 impl Default for Stage {
     fn default() -> Self {
-        Self { shown: None, shown_count: 0, rejected: Vec::new(), playhead: Live::new([0.0, 0.0]), frame_count: LiveText::new(FRAME_COUNT_SPACE) }
+        Self { shown: None, shown_count: 0, rejected: Vec::new(), picked: None, playhead: Live::new([0.0, 0.0]), frame_count: LiveText::new(FRAME_COUNT_SPACE) }
     }
 }
 
@@ -52,6 +56,9 @@ pub struct Shown {
     /// A drag across the stage's travel since its press, as last heard;
     /// `None` between drags.
     pub gesture: Option<[f32; 2]>,
+    /// A click on the model waiting for the viewport to pick what it landed
+    /// on, as a fraction of the plate across and down.
+    pub pick: Option<[f32; 2]>,
     pub playing: bool,
     /// The move playing, if one was chosen; the idle otherwise.
     pub animation: Option<usize>,
