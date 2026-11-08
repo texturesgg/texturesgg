@@ -3641,6 +3641,7 @@ dependencies = [
  "sha2",
  "tempfile",
  "tgg-app",
+ "tgg-mod",
  "wgpu",
 ]
 
