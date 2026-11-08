@@ -282,11 +282,13 @@ fn dragging_across_the_stage_turns_the_camera_by_how_far_it_went() {
     let after = above;
 
     let mut wheel = rune::WheelEvent::default();
-    (wheel.x, wheel.y, wheel.dy) = (x, y, 100.0);
+    // One notch of a mouse wheel (Rune's 40-point line) moves it as one does
+    // in tgg-editor: 4%.
+    (wheel.x, wheel.y, wheel.dy) = (x, y, 40.0);
     rt.wheel_event(wheel);
     rt.frame(FRAME);
     let zoomed = rt.state.stage.shown.as_ref().expect("still on the stage").orbit;
-    assert!(zoomed.zoom < after.zoom, "the wheel brings the camera in: {} → {}", after.zoom, zoomed.zoom);
+    assert!((zoomed.zoom - after.zoom * (-0.04f64).exp()).abs() < 1e-9, "one notch brings it in 4%: {} → {}", after.zoom, zoomed.zoom);
 }
 
 #[test]

@@ -14,6 +14,10 @@ use rune::{Drag, Phase, Tx, WheelEvent};
 const ORBIT_PER_POINT: f64 = 0.01;
 /// How far the wheel moves the camera, per point scrolled.
 const ZOOM_PER_POINT: f64 = 0.002;
+/// A notched wheel's step, in the points tgg-editor's rate is per: gpui
+/// counts a line as 20, where Rune hands it over as 40.
+const LINE_POINTS: f32 = 20.0;
+const RUNE_LINE_POINTS: f32 = 40.0;
 
 /// Show what `slot` of the player's game holds. A costume of the fighter
 /// already showing keeps the camera and the move; anything else starts
@@ -121,7 +125,8 @@ pub fn orbit(app: &mut App, drag: &mut Drag, tx: &mut Tx) {
 /// The wheel over the stage moves the camera in and out.
 pub fn zoom(app: &mut App, wheel: WheelEvent, _: &mut Tx) -> bool {
     let Some(shown) = &mut app.stage.shown else { return false };
-    shown.orbit.zoom *= (-f64::from(wheel.dy) * ZOOM_PER_POINT).exp();
+    let points = if wheel.precise { wheel.dy } else { wheel.dy / RUNE_LINE_POINTS * LINE_POINTS };
+    shown.orbit.zoom *= (-f64::from(points) * ZOOM_PER_POINT).exp();
     true
 }
 
