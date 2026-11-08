@@ -561,6 +561,8 @@ pub fn remove_port(ports: &Path, version: &str) -> Result<(), Error> {
 pub struct Running {
     child: std::process::Child,
     pid_file: PathBuf,
+    /// A profile game's data folder and pid, to clear its mark when it ends.
+    pub(crate) profile: Option<(PathBuf, u32)>,
 }
 
 impl Running {
@@ -572,15 +574,22 @@ impl Running {
     pub fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
         let status = self.child.try_wait()?;
         if status.is_some() {
-            let _ = std::fs::remove_file(&self.pid_file);
+            self.ended();
         }
         Ok(status)
+    }
+
+    fn ended(&mut self) {
+        let _ = std::fs::remove_file(&self.pid_file);
+        if let Some((data, pid)) = self.profile.take() {
+            crate::prepare::finished(&data, pid);
+        }
     }
 
     /// Wait for the game to end.
     pub fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
         let status = self.child.wait()?;
-        let _ = std::fs::remove_file(&self.pid_file);
+        self.ended();
         Ok(status)
     }
 
@@ -613,9 +622,46 @@ where
     if lock::game_running(mods) {
         return Err(Error::GameRunning);
     }
+    spawn(port, iso, mods, args, &[], log)
+}
+
+/// [`launch_with_args`] with the variables `env` set for the game too.
+pub fn launch_with_env<I, S>(
+    port: &PortInstall,
+    iso: &Path,
+    mods: &Path,
+    args: I,
+    env: &[(String, std::ffi::OsString)],
+    log: Option<&Path>,
+) -> Result<Running, Error>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    if lock::game_running(mods) {
+        return Err(Error::GameRunning);
+    }
+    spawn(port, iso, mods, args, env, log)
+}
+
+/// Start `port` with `iso`, `args` and the environment `env` beside
+/// `TGG_MODS_DIR`, and write its pid file into `mods`.
+pub(crate) fn spawn<I, S>(
+    port: &PortInstall,
+    iso: &Path,
+    mods: &Path,
+    args: I,
+    env: &[(String, std::ffi::OsString)],
+    log: Option<&Path>,
+) -> Result<Running, Error>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
     let executable = port.executable();
     let mut command = std::process::Command::new(&executable);
     command.arg(iso).args(args).env("TGG_MODS_DIR", mods);
+    command.envs(env.iter().map(|(name, value)| (name, value)));
     if let Some(log) = log {
         if let Some(folder) = log.parent() {
             std::fs::create_dir_all(folder).map_err(Error::io(folder))?;
@@ -626,7 +672,11 @@ where
     }
     let child = command.spawn().map_err(Error::io(&executable))?;
     let pid_file = lock::write_pid_file(mods, child.id(), &executable)?;
-    Ok(Running { child, pid_file })
+    Ok(Running {
+        child,
+        pid_file,
+        profile: None,
+    })
 }
 
 #[cfg(test)]

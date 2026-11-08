@@ -106,6 +106,8 @@ pub struct Player<'a> {
     pub mods: PathBuf,
     /// The ports folder, to say when there is a newer tgg-melee.
     pub ports: PathBuf,
+    /// The package cache.
+    pub packages: PathBuf,
     /// The game in use, if one is installed.
     pub port: Option<Port>,
     pub out: Out,
@@ -289,7 +291,14 @@ impl Player<'_> {
         }
         if changes == 0 {
             // Nothing to download; the lock still records the set or mods.
-            tgg_mod::apply(self.net, plan, &self.mods, &|_| {}, self.cancel)?;
+            tgg_mod::apply_cached(
+                self.net,
+                plan,
+                &self.mods,
+                Some(&self.packages),
+                &|_| {},
+                self.cancel,
+            )?;
             self.out.line(if verb == "Update" {
                 "Everything is up to date."
             } else {
@@ -302,10 +311,11 @@ impl Player<'_> {
             self.out.line("Nothing changed.");
             return Ok(());
         }
-        let applied = tgg_mod::apply(
+        let applied = tgg_mod::apply_cached(
             self.net,
             plan,
             &self.mods,
+            Some(&self.packages),
             &|progress| self.out.progress(&progress),
             self.cancel,
         );
@@ -608,6 +618,7 @@ mod tests {
                 net: &self.net,
                 mods: self.root.path().join("mods"),
                 ports: self.root.path().join("ports"),
+                packages: self.root.path().join("packages"),
                 port: Some(self.port.clone()),
                 out: Out::buffer(),
                 ask: false,

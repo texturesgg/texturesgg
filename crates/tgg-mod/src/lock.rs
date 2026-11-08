@@ -138,9 +138,15 @@ impl Lock {
     }
 }
 
-/// Whether the game is running from `mods`, by its pid file. A pid file
-/// whose game has ended is removed.
+/// Whether the game is running from `mods`, by its pid file, or a profile
+/// game is running (`running.json` in [`crate::default_data_dir`]). A pid
+/// file whose game has ended is removed.
 pub fn game_running(mods: &Path) -> bool {
+    game_running_from(mods) || !crate::prepare::profile_games(&crate::default_data_dir()).is_empty()
+}
+
+/// Whether the game is running from `mods`, by its pid file alone.
+pub(crate) fn game_running_from(mods: &Path) -> bool {
     let path = mods.join(PID_FILE);
     let Ok(text) = std::fs::read_to_string(&path) else {
         return false;

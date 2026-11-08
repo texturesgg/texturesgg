@@ -38,7 +38,12 @@
 //! - [`local`]: what a mods folder holds, turning mods on and off, and
 //!   uninstalling.
 //! - [`lock`]: `mods.lock.json` and the busy and pid files.
+//! - [`profile`], [`prepare`], [`trust`], [`cache`]: mod profiles, the exact
+//!   mods a replay or a netplay host needs: reading them ([`slp`] for
+//!   replays), resolving, preparing and launching them; and the package
+//!   cache.
 
+pub mod cache;
 pub mod catalog;
 pub mod decls;
 pub mod depends;
@@ -55,11 +60,19 @@ pub mod package;
 pub mod plan;
 pub mod port;
 pub mod ports;
+pub mod prepare;
 mod process;
+pub mod profile;
 pub mod registry;
 pub mod sdk;
+pub mod slp;
 pub mod symbols;
+pub mod trust;
 
+pub use cache::{
+    cached_catalog, cached_mapping, packages_dir, prune_packages, refresh_catalog, refresh_mapping,
+    save_catalog, save_mapping,
+};
 pub use catalog::{Catalog, CatalogEntry, PackageRef};
 pub use decls::{Declarations, Hooks};
 pub use depends::Range;
@@ -78,19 +91,31 @@ pub use net::{HttpNet, Net, NetError};
 pub use netplay::Netplay;
 pub use package::Package;
 pub use plan::{
-    Action, Applied, Plan, Problem, Step, apply, plan_mods, plan_set, plan_set_update, plan_updates,
+    Action, Applied, Plan, Problem, Step, apply, apply_cached, plan_mods, plan_set,
+    plan_set_update, plan_updates,
 };
 pub use port::Port;
 pub use ports::{
     PortInstall, PortRelease, Running, install_port, installed_ports, launch, port_releases,
     port_update, remove_port,
 };
+pub use prepare::{
+    Prepared, RunningProfile, finish_profile, launch_profile, prepare_profile, profile_folder,
+    profile_games,
+};
+pub use profile::{
+    Fit, GameNeed, Missing, Profile, ProfileEntry, ProfileGame, ProfileMod, ProfilePlan, Settings,
+    SlippiCode, SlippiFacts, SlippiIgnore, SlippiMapping, profile_from_file, profile_from_local,
+    profile_from_slp, profile_layout, resolve_profile, slippi_mapping,
+};
 pub use registry::{
     Image, ModDetails, ModPage, ModRelease, ModSummary, Publisher, Set, SetMod, System, catalog,
     mod_details, mods, sets,
 };
 pub use sdk::Sdk;
+pub use slp::{ReplayInfo, ReplayPlayer, replay_info};
 pub use symbols::Symbols;
+pub use trust::{Trust, remember_trust, trust};
 
 use std::path::PathBuf;
 
@@ -103,10 +128,16 @@ pub fn default_mods_dir() -> PathBuf {
     ModsDir::game().root().to_owned()
 }
 
-/// The folder tgg installs ports into: `tgg/ports` in the user's local data
-/// folder (`$XDG_DATA_HOME`, else `~/.local/share` on Linux;
-/// `~/Library/Application Support` on macOS; `%LOCALAPPDATA%` on Windows).
+/// The folder tgg installs ports into: `tgg/ports` in [`default_data_dir`].
 pub fn default_ports_dir() -> PathBuf {
+    default_data_dir().join("tgg").join("ports")
+}
+
+/// The user's local data folder, which tgg keeps its own folder `tgg/` in
+/// (ports, the package cache, profiles): `$XDG_DATA_HOME`, else
+/// `~/.local/share` on Linux; `~/Library/Application Support` on macOS;
+/// `%LOCALAPPDATA%` on Windows. The `data` the profile functions take.
+pub fn default_data_dir() -> PathBuf {
     let env = |name: &str| std::env::var_os(name).filter(|value| !value.is_empty());
     let home = || {
         PathBuf::from(
@@ -115,7 +146,7 @@ pub fn default_ports_dir() -> PathBuf {
                 .unwrap_or_else(|| ".".into()),
         )
     };
-    let data = if cfg!(windows) {
+    if cfg!(windows) {
         env("LOCALAPPDATA")
             .map(PathBuf::from)
             .unwrap_or_else(|| home().join("AppData/Local"))
@@ -126,6 +157,5 @@ pub fn default_ports_dir() -> PathBuf {
             .map(PathBuf::from)
             .filter(|path| path.is_absolute())
             .unwrap_or_else(|| home().join(".local/share"))
-    };
-    data.join("tgg").join("ports")
+    }
 }

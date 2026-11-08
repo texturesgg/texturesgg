@@ -78,6 +78,21 @@ pub enum Error {
     ReleaseApi { version: String, api: String },
     #[error("tgg-melee {0} isn't installed")]
     PortNotInstalled(String),
+    /// A profile file names a format newer than this tgg reads.
+    #[error("{path} is a profile of format {format}; this tgg reads format {ours}; update tgg", ours = crate::profile::FORMAT)]
+    ProfileFormat { path: PathBuf, format: u32 },
+    /// A profile file isn't one.
+    #[error("{path} isn't a mod profile: {why}")]
+    BadProfile { path: PathBuf, why: String },
+    /// A replay file can't be read.
+    #[error("{path} isn't a replay tgg can read: {why}")]
+    BadReplay { path: PathBuf, why: String },
+    /// A profile's mod needs the player's yes before it's fetched.
+    #[error("{name} by {publisher} needs your yes before it's fetched")]
+    NeedsTrust { name: String, publisher: String },
+    /// The game version a profile needs isn't one tgg can get.
+    #[error("tgg-melee {0} can't be had for this system")]
+    GameUnavailable(String),
     #[error("{path}: {source}")]
     Io {
         path: PathBuf,
