@@ -2294,3 +2294,55 @@ fn a_sign_out_elsewhere_shows_when_the_window_is_back_and_the_link_shows_to_copy
     settle(&mut rt);
     assert!(rt.find("signin/link").is_some() && rt.find("signin/copy-link").is_some());
 }
+
+#[test]
+fn a_replays_details_slide_in_with_its_players_and_stats() {
+    let replays = tempfile::tempdir().expect("temp");
+    let path = tgg_replay_in(replays.path());
+    let (mut rt, _disc, _data) = on_replays(replays.path());
+    tap_shown(&mut rt, &format!("replays/{}", path.display()));
+    jobs_until(&mut rt, |app| {
+        app.replays.stats.get(&path).is_some_and(Option::is_some)
+    });
+    assert!(
+        rt.find("replays/details/body").is_some(),
+        "its details show"
+    );
+    assert!(
+        rt.find("replays/details/player/0").is_some()
+            && rt.find("replays/details/player/1").is_some()
+    );
+    assert!(
+        rt.find("replays/details/stats").is_some(),
+        "its stats, or why they couldn't be read"
+    );
+    tap(&mut rt, "replays/details/close");
+    assert!(rt.state.replays.selected.is_none());
+}
+
+#[test]
+fn replays_filter_by_a_search_and_by_where_they_came_from() {
+    let replays = tempfile::tempdir().expect("temp");
+    tgg_replay_in(replays.path());
+    let (mut rt, _disc, _data) = on_replays(replays.path());
+    assert_eq!(rt.state.replays.shown().len(), 1);
+    rt.update(|app, _| app.replays.search.text = "krowten".into());
+    assert_eq!(
+        rt.state.replays.shown().len(),
+        1,
+        "a player's name finds it"
+    );
+    rt.update(|app, _| app.replays.search.text = "pokémon stadium".into());
+    assert_eq!(rt.state.replays.shown().len(), 1, "so does its stage");
+    rt.update(|app, _| app.replays.search.text = "zelda".into());
+    assert!(rt.state.replays.shown().is_empty());
+    rt.update(|app, _| app.replays.search.text.clear());
+    rt.frame(FRAME);
+    tap(&mut rt, "replays/source/all");
+    assert_eq!(rt.state.replays.shown().len(), 1);
+    rt.update(|app, _| app.replays.source = Some("Slippi".into()));
+    assert!(
+        rt.state.replays.shown().is_empty(),
+        "it came from tgg-melee's folder"
+    );
+}

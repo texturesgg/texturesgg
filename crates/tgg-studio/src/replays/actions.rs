@@ -132,6 +132,7 @@ pub fn done(app: &mut App, done: Done) -> bool {
                 })
                 .collect();
             resolve_all(app);
+            request_renders(app);
         }
         Done::Refreshed { mapping, catalogs } => {
             app.replays.refreshing = false;
@@ -143,6 +144,9 @@ pub fn done(app: &mut App, done: Done) -> bool {
                 app.replays.catalogs.push((layout, catalog));
             }
             resolve_all(app);
+        }
+        Done::Stats { path, result } => {
+            app.replays.stats.insert(path, Some(result));
         }
         Done::Prepared { path, result } => {
             app.replays.preparing = None;
@@ -375,5 +379,80 @@ fn started(app: &mut App, running: Result<tgg_mod::Running, tgg_mod::Error>) {
             app.tell("Playing the replay in tgg-melee.", false);
         }
         Err(error) => app.tell(format!("The replay couldn't start: {error}."), true),
+    }
+}
+
+/// Show the replay at `path`'s details beside the list, or hide them when
+/// they show already; its stats are read the first time.
+pub fn select(app: &mut App, path: &Path) {
+    if app.replays.selected.as_deref() == Some(path) {
+        app.replays.selected = None;
+        return;
+    }
+    app.replays.selected = Some(path.to_owned());
+    if !app.replays.stats.contains_key(path) {
+        app.replays.stats.insert(path.to_owned(), None);
+        let owned = path.to_owned();
+        app.jobs.spawn("replay stats", move || {
+            let result = tgg_app::replay_stats::replay_stats(&owned);
+            Job::Replays(Box::new(Done::Stats {
+                path: owned,
+                result,
+            }))
+        });
+    }
+}
+
+pub fn close_details(app: &mut App) {
+    app.replays.selected = None;
+}
+
+/// Show only the replays from the folder named `source`, or all.
+pub fn set_source(app: &mut App, source: Option<String>) {
+    app.replays.source = source;
+}
+
+/// The costume `costume` (Slippi's number, the game's color order) of
+/// `character`, as a slot of the player's game.
+pub fn costume_slot(
+    app: &App,
+    character: melee_dat::Character,
+    costume: u8,
+) -> Option<melee_dat::MeleeSlot> {
+    let fighter = app
+        .melee
+        .fighters
+        .iter()
+        .find(|fighter| fighter.character == character)?;
+    let costume = fighter
+        .costumes
+        .get(usize::from(costume))
+        .or_else(|| fighter.costumes.first())?;
+    Some(costume.slot(fighter))
+}
+
+/// Ask for a picture of each fighter's costume and each stage the replays
+/// show, once each.
+fn request_renders(app: &mut App) {
+    let Some(references) = &app.game else { return };
+    let iso = references.game().path().to_owned();
+    let mut slots: Vec<melee_dat::MeleeSlot> = Vec::new();
+    for item in &app.replays.items {
+        let Some(info) = &item.info else { continue };
+        slots.extend(
+            info.stage
+                .and_then(tgg_app::replays::stage)
+                .map(melee_dat::MeleeSlot::Stage),
+        );
+        for player in &info.players {
+            if let Some(character) = player.character.and_then(tgg_app::replays::character) {
+                slots.extend(costume_slot(app, character, player.costume.unwrap_or(0)));
+            }
+        }
+    }
+    slots.sort();
+    slots.dedup();
+    for slot in slots {
+        app.renders.request(&iso, slot);
     }
 }

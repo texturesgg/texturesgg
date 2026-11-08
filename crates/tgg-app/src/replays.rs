@@ -202,3 +202,60 @@ mod id_tests {
         assert_eq!(super::character(99), None);
     }
 }
+
+/// The versus stage Slippi's stage id `id` is, by the file the game loads.
+pub fn stage(id: u16) -> Option<melee_dat::Stage> {
+    let file = match id {
+        2 => "GrIz.dat",
+        3 => "GrPs.dat",
+        4 => "GrCs.dat",
+        5 => "GrKg.dat",
+        6 => "GrZe.dat",
+        7 => "GrCn.dat",
+        8 => "GrSt.dat",
+        9 => "GrOt.dat",
+        10 => "GrMc.dat",
+        11 => "GrRc.dat",
+        12 => "GrGd.dat",
+        13 => "GrGb.dat",
+        14 => "GrSh.dat",
+        15 => "GrKr.dat",
+        16 => "GrYt.dat",
+        17 => "GrGr.dat",
+        18 => "GrFs.dat",
+        19 => "GrI1.dat",
+        20 => "GrI2.dat",
+        22 => "GrVe.dat",
+        23 => "GrPu.dat",
+        24 => "GrBb.dat",
+        25 => "GrIm.dat",
+        27 => "GrFz.dat",
+        28 => "GrOp.dat",
+        29 => "GrOy.dat",
+        30 => "GrOk.dat",
+        31 => "GrNBa.dat",
+        32 => "GrNLa.dat",
+        _ => return None,
+    };
+    melee_dat::Stage::from_file_name(file)
+}
+
+#[cfg(test)]
+mod stage_tests {
+    #[test]
+    fn every_slippi_stage_id_is_a_stage_of_the_game() {
+        for id in [
+            2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 23, 24, 25, 27,
+            28, 29, 30, 31, 32,
+        ] {
+            assert!(
+                super::stage(id).is_some(),
+                "stage id {id} names no stage file the game has"
+            );
+        }
+        assert_eq!(
+            super::stage(31).map(|stage| stage.name()),
+            Some("Battlefield")
+        );
+    }
+}

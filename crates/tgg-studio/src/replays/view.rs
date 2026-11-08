@@ -1,12 +1,16 @@
-//! The Replays page: the player's replays, newest first, a row each: when,
-//! who played as whom, where, who won, where it came from, and whether it
-//! plays as is or what it needs; Play.
+//! The Replays page: the player's replays, newest first, filtered by a
+//! search and where they came from; a row each: the two fighters as the
+//! player's game draws them, who played and who won, where and how long,
+//! whether it plays as is or what it needs, and Play. Pressing a row shows
+//! its details beside the list.
 
 use super::{Item, Replays, Status, actions};
+use crate::jobs::renders::RenderKey;
 use crate::state::App;
-use crate::ui::tokens::{Palette, space, text};
+use crate::ui::tokens::{Palette, radius, space, text};
 use crate::ui::{
-    ButtonKind, Tone, badge, button, page_head, progress, rule, skeleton, text_action,
+    ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, chip, icon_tile, page_head, progress, rule,
+    search_field, skeleton, text_action,
 };
 use rune::{El, ScrollSpec, col, row, text as label};
 
@@ -16,14 +20,11 @@ const COLUMN: f32 = 860.0;
 const INLINE_PROGRESS: f32 = 80.0;
 /// Placeholder rows while the replays are first read.
 const PLACEHOLDERS: usize = 6;
+/// A fighter's picture in a row.
+const FIGHTER: f32 = 40.0;
 
 pub fn view(app: &App, p: &Palette) -> El {
     let replays = &app.replays;
-    let folders: Vec<String> = replays
-        .folders
-        .iter()
-        .map(|(name, path)| format!("{name}: {}", path.display()))
-        .collect();
     let refresh = if replays.scanning || replays.refreshing {
         text_action("Reading…", false, p).key("replays/reading")
     } else {
@@ -42,17 +43,8 @@ pub fn view(app: &App, p: &Palette) -> El {
             "Your Slippi and tgg-melee replays, each played with the mods its game had.",
             p,
         )))
-        .child(
-            col()
-                .items_end()
-                .gap(space::TIGHT)
-                .children(
-                    folders
-                        .into_iter()
-                        .map(|folder| label(folder).font(text::MONO_SMALL).color(p.faint)),
-                )
-                .child(refresh),
-        );
+        .child(row().mr(-TEXT_ACTION_INSET).child(refresh));
+    let shown = replays.shown();
     let body: Vec<El> = if !replays.scanned {
         (0..PLACEHOLDERS)
             .map(|_| {
@@ -64,24 +56,36 @@ pub fn view(app: &App, p: &Palette) -> El {
             })
             .collect()
     } else if replays.items.is_empty() {
+        let folders: Vec<String> = replays
+            .folders
+            .iter()
+            .map(|(_, path)| path.display().to_string())
+            .collect();
         vec![
-            label(
-                "No replays yet. Slippi and tgg-melee's recorder save them in the folders above.",
-            )
+            label(format!(
+                "No replays yet. Slippi and tgg-melee's recorder save them in {}.",
+                folders.join(" and ")
+            ))
             .key("replays/empty")
             .font(text::BODY)
-            .color(p.muted),
+            .color(p.muted)
+            .wrap(),
+        ]
+    } else if shown.is_empty() {
+        vec![
+            label("No replay matches that.")
+                .key("replays/none")
+                .font(text::BODY)
+                .color(p.muted),
         ]
     } else {
-        replays
-            .items
-            .iter()
+        shown
+            .into_iter()
             .map(|item| replay_row(app, replays, item, p))
             .collect()
     };
     let list = col()
         .key("replays/list")
-        .max_w(COLUMN)
         .child(rule(p))
         .children(body.into_iter().flat_map(|row| [row, rule(p)]));
     let page = col()
@@ -90,7 +94,13 @@ pub fn view(app: &App, p: &Palette) -> El {
         .pb(space::XL)
         .gap(space::LG)
         .child(head)
-        .child(list);
+        .child(
+            col()
+                .max_w(COLUMN)
+                .gap(space::SM)
+                .child(filters(replays, p))
+                .child(list),
+        );
     col()
         .key("replays/scroll")
         .grow(1.0)
@@ -101,8 +111,59 @@ pub fn view(app: &App, p: &Palette) -> El {
         .child(page)
 }
 
-/// A replay: when and where it was played, who played as whom and who won,
-/// what it needs, and Play.
+/// The search, and which folder's replays show.
+fn filters(replays: &Replays, p: &Palette) -> El {
+    let choice = |name: &str, source: Option<String>| {
+        let chosen = replays.source == source;
+        let key = format!(
+            "replays/source/{}",
+            source.as_deref().unwrap_or("all").to_lowercase()
+        );
+        chip(name, chosen, p)
+            .key(key)
+            .role("radio")
+            .on_press(move |app: &mut App| actions::set_source(app, source.clone()))
+    };
+    row()
+        .gap(space::SM)
+        .items_center()
+        .child(
+            search_field(&replays.search, "Search players, fighters, stages", p)
+                .key("replays/search")
+                .grow(1.0)
+                .on_edit(|app: &mut App| &mut app.replays.search),
+        )
+        .child(
+            row().gap(space::SNUG).child(choice("All", None)).children(
+                replays
+                    .folders
+                    .iter()
+                    .map(|(name, _)| choice(name, Some(name.clone()))),
+            ),
+        )
+}
+
+/// A player's fighter as the player's game draws that costume, once its
+/// picture has arrived; a quiet tile until then.
+pub fn fighter_picture(
+    app: &App,
+    character: Option<u8>,
+    costume: Option<u8>,
+    side: f32,
+    p: &Palette,
+) -> El {
+    let slot = character
+        .and_then(tgg_app::replays::character)
+        .and_then(|character| actions::costume_slot(app, character, costume.unwrap_or(0)));
+    icon_tile(
+        slot.and_then(|slot| app.renders.get(RenderKey::Slot(slot))),
+        side,
+        p,
+    )
+}
+
+/// A replay: its fighters, who played as whom and who won, when, where and
+/// how long, what it needs, and Play. Pressing it shows its details.
 fn replay_row(app: &App, replays: &Replays, item: &Item, p: &Palette) -> El {
     let key = format!("replays/{}", item.path.display());
     let info = item.info.as_ref();
@@ -122,20 +183,24 @@ fn replay_row(app: &App, replays: &Replays, item: &Item, p: &Palette) -> El {
             info.players
                 .iter()
                 .map(|player| {
-                    let fighter = player
-                        .character
-                        .and_then(tgg_app::replays::character)
-                        .map_or("?", |fighter| fighter.name());
                     let name = player
                         .name
                         .clone()
                         .unwrap_or_else(|| format!("P{}", player.port + 1));
                     let won = info.winner == Some(player.port);
-                    format!("{name} ({fighter}){}", if won { " ★" } else { "" })
+                    format!("{name}{}", if won { " ★" } else { "" })
                 })
                 .collect()
         })
         .unwrap_or_default();
+    let fighters = info.map(|info| {
+        row().gap(space::TIGHT).children(
+            info.players
+                .iter()
+                .take(2)
+                .map(|player| fighter_picture(app, player.character, player.costume, FIGHTER, p)),
+        )
+    });
     let stage = info
         .and_then(|info| info.stage)
         .and_then(tgg_app::replays::stage_name);
@@ -167,40 +232,47 @@ fn replay_row(app: &App, replays: &Replays, item: &Item, p: &Palette) -> El {
             .child(text_action("Stop", false, p).on_press(actions::cancel_preparing))
     } else {
         let path = item.path.clone();
-        let playable = !matches!(item.status, Status::Unreadable(_) | Status::NoGame(_));
-        row().children(
-            (playable && app.mods.playing.is_none() && replays.preparing.is_none()).then(|| {
-                button("Play", ButtonKind::Secondary, p)
-                    .key(format!("{key}/play"))
-                    .on_press(move |app: &mut App| actions::play(app, &path))
-            }),
-        )
+        row().children(play_button(app, item, p).map(|button| {
+            button
+                .key(format!("{key}/play"))
+                .on_press(move |app: &mut App| actions::play(app, &path))
+        }))
     };
+    let chosen = replays.selected.as_ref() == Some(&item.path);
+    let pressed = item.path.clone();
     row()
         .key(key)
         .py(space::XS)
+        .px(space::XS)
+        .mx(-space::XS)
         .gap(space::SM)
         .items_center()
+        .radius(radius::CONTROL)
+        .fill(if chosen {
+            p.selected
+        } else {
+            rune::Color::TRANSPARENT
+        })
+        .hover(p.hover)
+        .cursor(rune::Cursor::Pointer)
+        .role("button")
+        .focusable(true)
+        .on_press(move |app: &mut App| actions::select(app, &pressed))
+        .children(fighters)
         .child(
             col()
                 .gap(space::TIGHT)
                 .grow(1.0)
                 .min_w(0.0)
                 .child(
-                    row()
-                        .gap(space::XS)
-                        .items_end()
-                        .child(
-                            label(players.join("  vs  "))
-                                .font(text::STRONG)
-                                .color(p.ink)
-                                .truncate(),
-                        )
-                        .children(
-                            players
-                                .is_empty()
-                                .then(|| label("A replay").font(text::STRONG).color(p.muted)),
-                        ),
+                    label(if players.is_empty() {
+                        "A replay".to_owned()
+                    } else {
+                        players.join("  vs  ")
+                    })
+                    .font(text::STRONG)
+                    .color(p.ink)
+                    .truncate(),
                 )
                 .child(
                     label(format!("{when} · {}", facts.join(" · ")))
@@ -213,8 +285,17 @@ fn replay_row(app: &App, replays: &Replays, item: &Item, p: &Palette) -> El {
         .child(end)
 }
 
+/// Play, while a replay can be played: not one that can't be read or needs
+/// a game that can't be had, and not while a game runs or a replay's mods
+/// are on their way. The caller keys it and makes pressing it play.
+pub fn play_button(app: &App, item: &Item, p: &Palette) -> Option<El> {
+    let playable = !matches!(item.status, Status::Unreadable(_) | Status::NoGame(_));
+    (playable && app.mods.playing.is_none() && app.replays.preparing.is_none())
+        .then(|| button("Play", ButtonKind::Secondary, p))
+}
+
 /// What a replay needs, as a badge.
-fn status_badge(status: &Status, p: &Palette) -> El {
+pub fn status_badge(status: &Status, p: &Palette) -> El {
     match status {
         Status::Unknown => badge("Checking…", Tone::Plain, p),
         Status::AsIs => badge("Plays as is", Tone::Mine, p),

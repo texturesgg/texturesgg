@@ -322,6 +322,27 @@ const SCENES: &[Scene] = &[
         jobs::poll_now(app);
         app.jobs.inline = false;
     }),
+    // The same, its first two-player replay chosen, with its stats.
+    ("replay-details", |app| {
+        app.jobs.inline = true;
+        nav::actions::go(app, nav::Place::Replays);
+        jobs::poll_now(app);
+        let first = app
+            .replays
+            .items
+            .iter()
+            .find(|item| {
+                item.info
+                    .as_ref()
+                    .is_some_and(|info| info.players.len() == 2)
+            })
+            .map(|item| item.path.clone());
+        if let Some(path) = first {
+            replays::actions::select(app, &path);
+            jobs::poll_now(app);
+        }
+        app.jobs.inline = false;
+    }),
     ("no-sidebar", |app| app.nav.sidebar = false),
     ("paper", |app| {
         app.settings.set_appearance(settings::Appearance::Paper)

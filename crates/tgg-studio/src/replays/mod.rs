@@ -12,6 +12,7 @@
 //! the dialog before a replay that needs a profile plays.
 
 pub mod actions;
+pub mod details;
 pub mod review;
 pub mod view;
 
@@ -43,6 +44,17 @@ pub struct Replays {
     pub review: Option<Review>,
     /// A replay's mods being fetched and its folder built.
     pub preparing: Option<Preparing>,
+    /// The replay whose details show beside the list.
+    pub selected: Option<PathBuf>,
+    /// Replays' stats, once read: `None` while on their way.
+    pub stats: std::collections::HashMap<
+        PathBuf,
+        Option<Result<Vec<tgg_app::replay_stats::PlayerStats>, String>>,
+    >,
+    /// What the player's looking for: names, codes, fighters, stages.
+    pub search: rune::TextEdit,
+    /// Only replays from this folder, by name; all when none.
+    pub source: Option<String>,
 }
 
 /// A replay in the list.
@@ -140,8 +152,60 @@ pub enum Done {
         catalogs: Vec<(String, Catalog)>,
     },
     /// A replay's profile, prepared to play.
+    /// A replay's stats, read from its frames.
+    Stats {
+        path: PathBuf,
+        result: Result<Vec<tgg_app::replay_stats::PlayerStats>, String>,
+    },
     Prepared {
         path: PathBuf,
         result: Box<Result<Prepared, Error>>,
     },
+}
+
+impl Replays {
+    /// The replays the filters show: from the folder chosen (or every one),
+    /// matching each word searched in a player's name or code, a fighter,
+    /// or the stage, without case.
+    pub fn shown(&self) -> Vec<&Item> {
+        let query = self.search.text.to_lowercase();
+        let words: Vec<&str> = query.split_whitespace().collect();
+        self.items
+            .iter()
+            .filter(|item| {
+                self.source
+                    .as_ref()
+                    .is_none_or(|source| item.source == *source)
+            })
+            .filter(|item| {
+                words.is_empty() || words.iter().all(|word| item.haystack().contains(word))
+            })
+            .collect()
+    }
+}
+
+impl Item {
+    /// What a search looks through, in lower case.
+    fn haystack(&self) -> String {
+        let Some(info) = &self.info else {
+            return String::new();
+        };
+        let mut parts: Vec<String> = Vec::new();
+        for player in &info.players {
+            parts.extend(player.name.clone());
+            parts.extend(player.code.clone());
+            parts.extend(
+                player
+                    .character
+                    .and_then(tgg_app::replays::character)
+                    .map(|fighter| fighter.name().to_owned()),
+            );
+        }
+        parts.extend(
+            info.stage
+                .and_then(tgg_app::replays::stage_name)
+                .map(str::to_owned),
+        );
+        parts.join(" ").to_lowercase()
+    }
 }
