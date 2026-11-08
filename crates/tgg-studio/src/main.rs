@@ -188,16 +188,18 @@ fn launch() -> App {
     App::new(start(None), settings::load(), Data::of_player(), true)
 }
 
-/// The game given, else the one chosen before; Welcome finds one otherwise,
-/// or says why a given one won't do.
+/// The game given, else the one chosen before, else the one Slippi Launcher
+/// plays or one in Dolphin's folders, remembered so the next launch opens
+/// it directly. Welcome lists the games found otherwise, or says why a
+/// given one won't do. A snapshot remembers nothing: it's not the player
+/// choosing.
 fn start(iso: Option<&Path>) -> Start {
-    let found = match iso {
-        Some(iso) => tgg_app::find_game(Some(iso)).map(|found| found.map(|(game, _)| game)),
-        None => Ok(tgg_app::saved_game()),
-    };
+    let found = tgg_app::find_game(iso).map(|found| found.map(|(game, _)| game));
     let problem = match found {
         Ok(Some(game)) => {
-            tgg_app::remember_game(&game);
+            if !snapshot() {
+                tgg_app::remember_game(&game);
+            }
             match tgg_app::game_references(game) {
                 Ok(references) => return Start::Game(references),
                 Err(error) => error.to_string(),
@@ -270,4 +272,9 @@ fn mods_scene(app: &mut App, installed: bool) {
     app.mods.registry = mods::Registry::Answered;
     app.mods.disc = app.game.as_ref().map_or(mods::Disc::Missing, |references| mods::Disc::Found(references.game().path().to_owned()));
     nav::actions::go(app, nav::Place::Mods);
+}
+
+/// Whether this run is a snapshot (`--snap`), for Rune's tooling.
+fn snapshot() -> bool {
+    std::env::args().any(|argument| argument == "--snap")
 }
