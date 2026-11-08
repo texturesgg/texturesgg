@@ -18,6 +18,8 @@ use tgg_mod::{CatalogEntry, LocalMod, ModId, ModSummary, Set, SetStatus};
 const SET_CARD: f32 = 300.0;
 /// The notices and the lists read best no wider than this.
 const COLUMN: f32 = 720.0;
+/// A one-mod update's progress bar, in its row.
+const INLINE_PROGRESS: f32 = 80.0;
 /// The head's side, where tgg-melee's version and disc are, at its widest.
 const HEAD_SIDE: f32 = 420.0;
 /// Placeholder cards and rows while textures.gg first answers.
@@ -200,7 +202,8 @@ fn notices(app: &App, p: &Palette) -> Vec<El> {
     if let Some(problem) = &mods.problem {
         notices.push(callout(say(problem.clone(), true), None, p).key("mods/problem"));
     }
-    if let Some(work) = &mods.work {
+    // A one-mod update shows its progress in that mod's row instead.
+    if let Some(work) = mods.work.as_ref().filter(|work| work.target.is_none()) {
         notices.push(working(work, p));
     }
     let Some(port) = mods.port() else {
@@ -833,6 +836,19 @@ pub(super) fn update_mod(
     key: &str,
     p: &Palette,
 ) -> El {
+    // Updating this one: its progress, in place of the news.
+    if let Some(work) = mods
+        .work
+        .as_ref()
+        .filter(|work| work.target.as_ref() == Some(id))
+    {
+        return row()
+            .key(format!("{key}/updating"))
+            .gap(space::XS)
+            .items_center()
+            .child(label("Updating…").font(text::SMALL).color(p.muted))
+            .child(col().w(INLINE_PROGRESS).child(progress(work.fraction(), p)));
+    }
     let wanted = id.clone();
     row()
         .gap(space::XS)

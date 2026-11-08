@@ -602,6 +602,14 @@ pub fn review_mod_update(app: &mut App, id: &ModId) {
     {
         return app.tell(format!("{} is up to date.", app.mods.name_of(id)), false);
     }
+    // Nothing but that mod changes: no review, it updates in its row.
+    if plan.steps.len() == 1 && plan.problems.is_empty() {
+        if app.mods.work.is_none() {
+            let doing = format!("Updating {}", app.mods.name_of(id));
+            apply_plan(app, doing, plan, Vec::new(), Some(id.clone()));
+        }
+        return;
+    }
     app.mods.review = Some(Review {
         title: format!("Update {}", app.mods.name_of(id)),
         plan,
@@ -629,14 +637,29 @@ pub fn confirm_review(app: &mut App) {
     let Some(review) = app.mods.review.take() else {
         return;
     };
-    let (net, mods) = (app.mods.net.clone(), app.data.mods.clone());
-    let plan: Plan = review.plan;
-    app.mods.removing = if review.remove_dropped {
+    let removing = if review.remove_dropped {
         review.dropped
     } else {
         Vec::new()
     };
-    let work = start(app, review.title);
+    apply_plan(app, review.title, review.plan, removing, None);
+}
+
+/// Apply `plan` on a job, named `doing`, then remove `removing`; `target`
+/// when it updates that one mod alone.
+fn apply_plan(
+    app: &mut App,
+    doing: String,
+    plan: Plan,
+    removing: Vec<ModId>,
+    target: Option<ModId>,
+) {
+    let (net, mods) = (app.mods.net.clone(), app.data.mods.clone());
+    app.mods.removing = removing;
+    let work = start(app, doing);
+    if let Some(work) = &mut app.mods.work {
+        work.target = target;
+    }
     app.jobs.spawn("mods install", move || {
         let report = reporter(&work);
         Job::Mods(Box::new(Done::Applied(tgg_mod::apply(
@@ -838,6 +861,7 @@ fn start(app: &mut App, doing: String) -> Arc<Shared> {
         doing,
         progress: shared.progress.clone(),
         cancel: shared.cancel.clone(),
+        target: None,
     });
     shared
 }

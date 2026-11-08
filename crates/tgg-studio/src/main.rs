@@ -204,6 +204,24 @@ const SCENES: &[Scene] = &[
         app.mods.releases.splice(0..0, newer);
         mods::actions::show_versions(app, true);
     }),
+    // Online rules updating on its own, its progress in its row.
+    ("mods-updating-one", |app| {
+        mods_scene(app, true);
+        mods::actions::show_tab(app, mods::Tab::Installed);
+        let progress = tgg_mod::Progress {
+            step: 0,
+            steps: 1,
+            label: "Downloading Online rules".into(),
+            bytes: 1,
+            total: Some(2),
+        };
+        app.mods.work = Some(mods::Work {
+            doing: "Updating Online rules".into(),
+            progress: std::sync::Arc::new(std::sync::Mutex::new(Some(progress))),
+            cancel: std::sync::Arc::default(),
+            target: "tgg.online-rules".parse().ok(),
+        });
+    }),
     // Before textures.gg first answers: placeholders where the collections go.
     ("mods-loading", |app| {
         mods_scene(app, true);
@@ -253,6 +271,7 @@ const SCENES: &[Scene] = &[
             doing: "Installing tgg-melee 0.5.0".into(),
             progress: std::sync::Arc::new(std::sync::Mutex::new(Some(progress))),
             cancel: std::sync::Arc::default(),
+            target: None,
         });
     }),
     // The launch video's start: a player new to mods, against the live

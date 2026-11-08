@@ -1997,21 +1997,25 @@ fn one_mod_updates_on_its_own_and_stays_in_its_collection() {
     });
     tap(&mut rt, "mods/tab/installed");
     tap_shown(&mut rt, "mods/mod/tgg.replay-recorder/update");
-    settle(&mut rt);
-    let review = rt
+    // Only that mod changes, so no review: it updates in its row, and the
+    // page above doesn't move.
+    assert!(rt.state.mods.review.is_none());
+    let target = rt
         .state
         .mods
-        .review
+        .work
         .as_ref()
-        .expect("its update's plan shows");
-    let ids: Vec<String> = review
-        .plan
-        .steps
-        .iter()
-        .map(|step| step.id.to_string())
-        .collect();
-    assert_eq!(ids, ["tgg.replay-recorder"], "only that mod");
-    tap(&mut rt, "mods/review/confirm");
+        .and_then(|work| work.target.clone());
+    assert_eq!(
+        target.map(|id| id.to_string()).as_deref(),
+        Some("tgg.replay-recorder")
+    );
+    rt.frame(FRAME);
+    assert!(
+        rt.find("mods/mod/tgg.replay-recorder/updating").is_some(),
+        "its progress, in its row"
+    );
+    assert!(rt.find("mods/work").is_none(), "not above the page");
     jobs_until(&mut rt, |app| {
         app.mods.work.is_none()
             && app

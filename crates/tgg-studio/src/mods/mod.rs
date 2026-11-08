@@ -328,6 +328,9 @@ pub struct Work {
     pub doing: String,
     pub progress: Arc<Mutex<Option<Progress>>>,
     pub cancel: Arc<AtomicBool>,
+    /// The one mod it updates, when that's all it does: its progress shows
+    /// in that mod's row, not above the page.
+    pub target: Option<ModId>,
 }
 
 impl Work {
