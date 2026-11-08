@@ -1,6 +1,7 @@
 //! What a mod says about itself, in its package's `manifest.json`.
 //!
-//! An author writes the identity fields and `depends`. Packing adds
+//! An author writes the identity fields, `depends`, and what a store shows
+//! (`icon`, `screenshots`, `tags`, `homepage`). Packing adds
 //! `game_abi`, `target`, `api_version`, `state`, `hooks`, `events`, `exports`
 //! and `imports`, read from the library, and `files` and `assets`, read from
 //! the mod's folders, so they never come from the author.
@@ -93,6 +94,19 @@ pub struct Manifest {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub license: Option<String>,
+    /// The mod's icon in a store: a PNG under `assets/`, by its path there.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// Screenshots a store shows, in order: PNGs under `assets/`, by their
+    /// paths there.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub screenshots: Vec<String>,
+    /// What a store files the mod under, from [`TAGS`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    /// The mod's web page, an http or https URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homepage: Option<String>,
     /// The game layout the library was built against, from the library.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub game_abi: Option<String>,
@@ -129,6 +143,25 @@ pub struct Manifest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<ModFile>,
 }
+
+/// The tags a manifest's `tags` may name.
+pub const TAGS: &[&str] = &[
+    "competitive",
+    "netplay",
+    "replays",
+    "training",
+    "visual",
+    "audio",
+    "quality-of-life",
+    "stage",
+    "fighter",
+];
+/// The most tags a manifest has.
+pub const MAX_TAGS: usize = 5;
+/// The most screenshots a manifest lists.
+pub const MAX_SCREENSHOTS: usize = 8;
+/// The longest homepage URL, in bytes.
+pub const MAX_HOMEPAGE: usize = 256;
 
 /// The library's name when the manifest names none: `mod.so`, or
 /// [`WINDOWS_ENTRY`] for a Windows build.
@@ -167,6 +200,16 @@ pub enum ManifestError {
     Netplay,
     #[error("the mod depends on itself")]
     DependsOnItself,
+    #[error("the {0} {1:?} must be the path of a .png under assets/")]
+    Image(&'static str, String),
+    #[error("a mod lists at most {MAX_SCREENSHOTS} screenshots")]
+    Screenshots,
+    #[error("the tag {0:?} isn't one of {tags}", tags = TAGS.join(", "))]
+    Tag(String),
+    #[error("a mod has at most {MAX_TAGS} tags, each once")]
+    Tags,
+    #[error("the homepage {0:?} must be an http or https URL")]
+    Homepage(String),
 }
 
 impl Manifest {
@@ -218,6 +261,56 @@ impl Manifest {
         Ok(())
     }
 
+    /// Check what a store shows: `icon` and `screenshots` are paths of
+    /// `.png` files under `assets/`, `tags` come from [`TAGS`], and
+    /// `homepage` is a web URL. Packing checks it, and that the images are
+    /// PNGs in the package; reading a manifest doesn't, so a tag added later
+    /// doesn't stop an older tgg from installing the mod.
+    pub fn check_listing(&self) -> Result<(), ManifestError> {
+        let png = |kind: &'static str, path: &String| {
+            let valid = crate::files::check_path("assets", path).is_ok()
+                && path.to_ascii_lowercase().ends_with(".png");
+            if valid {
+                Ok(())
+            } else {
+                Err(ManifestError::Image(kind, path.clone()))
+            }
+        };
+        if let Some(icon) = &self.icon {
+            png("icon", icon)?;
+        }
+        for screenshot in &self.screenshots {
+            png("screenshot", screenshot)?;
+        }
+        if self.screenshots.len() > MAX_SCREENSHOTS {
+            return Err(ManifestError::Screenshots);
+        }
+        if let Some(tag) = self.tags.iter().find(|tag| !TAGS.contains(&tag.as_str())) {
+            return Err(ManifestError::Tag(tag.clone()));
+        }
+        let mut tags: Vec<&String> = self.tags.iter().collect();
+        tags.sort();
+        tags.dedup();
+        if self.tags.len() > MAX_TAGS || tags.len() != self.tags.len() {
+            return Err(ManifestError::Tags);
+        }
+        if let Some(homepage) = &self.homepage {
+            let host = homepage
+                .strip_prefix("https://")
+                .or_else(|| homepage.strip_prefix("http://"))
+                .map(|rest| rest.split(['/', '?', '#']).next().unwrap_or(""));
+            let valid = homepage.len() <= MAX_HOMEPAGE
+                && !homepage
+                    .chars()
+                    .any(|c| c.is_whitespace() || c.is_control())
+                && host.is_some_and(|host| !host.is_empty());
+            if !valid {
+                return Err(ManifestError::Homepage(homepage.clone()));
+            }
+        }
+        Ok(())
+    }
+
     /// A manifest with only the fields an author writes.
     pub fn new(id: ModId, name: String, version: Version) -> Self {
         Self {
@@ -229,6 +322,10 @@ impl Manifest {
             depends: BTreeMap::new(),
             description: None,
             license: None,
+            icon: None,
+            screenshots: Vec::new(),
+            tags: Vec::new(),
+            homepage: None,
             game_abi: None,
             target: None,
             api_version: None,

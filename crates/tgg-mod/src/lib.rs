@@ -32,7 +32,8 @@
 //! - [`net`]: fetching, behind the [`Net`] trait; [`HttpNet`] over HTTPS and
 //!   [`FakeNet`] in memory for tests.
 //! - [`ports`]: tgg-melee releases, installed ports, and launching the game.
-//! - [`registry`]: the textures.gg registry's sets and per-layout catalog.
+//! - [`registry`]: the textures.gg registry's sets, per-layout catalog, and
+//!   store listings.
 //! - [`plan`]: what an install or update will do, and applying it.
 //! - [`local`]: what a mods folder holds, turning mods on and off, and
 //!   uninstalling.
@@ -84,7 +85,10 @@ pub use ports::{
     PortInstall, PortRelease, Running, install_port, installed_ports, launch, port_releases,
     port_update, remove_port,
 };
-pub use registry::{Set, SetMod, catalog, sets};
+pub use registry::{
+    Image, ModDetails, ModPage, ModRelease, ModSummary, Set, SetMod, System, catalog, mod_details,
+    mods, sets,
+};
 pub use sdk::Sdk;
 pub use symbols::Symbols;
 

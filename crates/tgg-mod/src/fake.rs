@@ -7,7 +7,7 @@ use crate::manifest::Manifest;
 use crate::net::{Net, NetError};
 use crate::package::{self, Package};
 use crate::ports::{self, PortRelease, ReleaseFile, ReleaseFiles, Toolchain};
-use crate::registry::{Set, SetMod};
+use crate::registry::{Image, ModDetails, ModPage, ModRelease, ModSummary, Set, SetMod, System};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
@@ -27,6 +27,11 @@ use std::sync::Mutex;
 ///   names every published mod in `ids`.
 /// - the sets `competitive` and `replays`, version 1, taking each mod at
 ///   `^<its version>`, minor version included.
+/// - store listings of every mod (`/api/registry/mods`, `/mods/<id>`): each
+///   with a 64 by 64 icon of its own color, the tags `competitive` and
+///   `netplay` (Competitive) or `replays` and `quality-of-life`
+///   (Replays), a README, a changelog per release, and as many installs as
+///   its packages have been downloaded from it.
 /// - tgg-melee [`FakeNet::PORT_VERSION`] for this system, whose game is a
 ///   shell script that runs for `$TGG_FAKE_GAME_SECONDS` (default 30)
 ///   seconds, so it launches on Linux and macOS.
@@ -48,6 +53,10 @@ struct State {
     files: BTreeMap<String, Vec<u8>>,
     latest: Option<String>,
     requests: Vec<String>,
+    /// Each mod's tags, by id.
+    tags: BTreeMap<String, Vec<String>>,
+    /// Each mod's package downloads, by id.
+    installs: BTreeMap<String, u64>,
 }
 
 impl Default for FakeNet {
@@ -102,6 +111,12 @@ impl FakeNet {
             let depends: Vec<(&str, &str)> = depends.iter().copied().collect();
             net.publish_mod(id, name, version, &depends);
         }
+        for (id, ..) in &competitive {
+            net.set_tags(id, &["competitive", "netplay"]);
+        }
+        for (id, ..) in &replays {
+            net.set_tags(id, &["replays", "quality-of-life"]);
+        }
         let set = |name: &str, title: &str, description: &str, mods: &[(&str, &str, &str, _)]| {
             let mut listed: Vec<SetMod> = Vec::new();
             for (id, _, version, _) in mods {
@@ -144,6 +159,13 @@ impl FakeNet {
         self.state().offline = offline;
     }
 
+    /// Give the mod `id` the store tags `tags`.
+    pub fn set_tags(&self, id: &str, tags: &[&str]) {
+        self.state()
+            .tags
+            .insert(id.into(), tags.iter().map(|&tag| tag.into()).collect());
+    }
+
     /// Every URL requested so far, in order.
     pub fn requests(&self) -> Vec<String> {
         self.state().requests.clone()
@@ -164,6 +186,8 @@ impl FakeNet {
         state
             .files
             .insert(format!("{}{url}", Self::API), zip.clone());
+        let (icon, _) = icon(package.manifest.id.as_str());
+        state.files.insert(icon_url(&icon), icon);
         state.catalog.retain(|entry| {
             entry.manifest.id != package.manifest.id
                 || entry.manifest.version != package.manifest.version
@@ -283,6 +307,123 @@ impl FakeNet {
         state.latest = Some(version.into());
     }
 
+    /// Every mod's summary, most installed first, as the registry lists them.
+    fn summaries(state: &State) -> Vec<ModSummary> {
+        let mut newest: BTreeMap<&str, &CatalogEntry> = BTreeMap::new();
+        for entry in &state.catalog {
+            let id = entry.manifest.id.as_str();
+            if newest
+                .get(id)
+                .is_none_or(|seen| seen.manifest.version < entry.manifest.version)
+            {
+                newest.insert(id, entry);
+            }
+        }
+        let mut summaries: Vec<ModSummary> = newest
+            .into_values()
+            .map(|entry| {
+                let id = entry.manifest.id.as_str();
+                let (bytes, size) = icon(id);
+                ModSummary {
+                    id: entry.manifest.id.clone(),
+                    name: entry.manifest.name.clone(),
+                    description: entry.manifest.description.clone(),
+                    author: "textures.gg".into(),
+                    icon: Some(Image {
+                        url: icon_url(&bytes),
+                        width: size,
+                        height: size,
+                    }),
+                    tags: state.tags.get(id).cloned().unwrap_or_default(),
+                    installs: state.installs.get(id).copied().unwrap_or(0),
+                    version: entry.manifest.version.clone(),
+                    updated_at: RELEASED.into(),
+                    sets: state
+                        .sets
+                        .iter()
+                        .filter(|set| set.range(&entry.manifest.id).is_some())
+                        .map(|set| set.name.clone())
+                        .collect(),
+                    targets: System::this().into_iter().collect(),
+                    netplay: Some(entry.netplay),
+                }
+            })
+            .collect();
+        summaries.sort_by(|a, b| b.installs.cmp(&a.installs).then_with(|| a.id.cmp(&b.id)));
+        summaries
+    }
+
+    fn mods_json(state: &State, query: &str) -> Vec<u8> {
+        let param = |name: &str| {
+            query
+                .split('&')
+                .find_map(|pair| pair.strip_prefix(name)?.strip_prefix('='))
+                .and_then(|value| value.parse::<u32>().ok())
+        };
+        let page = param("page").unwrap_or(1).max(1);
+        let page_size = param("pageSize").unwrap_or(50).clamp(1, 100);
+        let all = Self::summaries(state);
+        let total = all.len() as u64;
+        let items = all
+            .into_iter()
+            .skip(((page - 1) * page_size) as usize)
+            .take(page_size as usize)
+            .collect();
+        let page = ModPage {
+            port: Some(Self::PORT_VERSION.into()),
+            items,
+            page,
+            page_size,
+            total,
+            total_pages: total.div_ceil(page_size as u64) as u32,
+        };
+        serde_json::to_vec_pretty(&page).expect("a page serializes")
+    }
+
+    fn details_json(state: &State, id: &str) -> Option<Vec<u8>> {
+        let summary = Self::summaries(state)
+            .into_iter()
+            .find(|summary| summary.id.as_str() == id)?;
+        let mut releases: Vec<&CatalogEntry> = state
+            .catalog
+            .iter()
+            .filter(|entry| entry.manifest.id.as_str() == id)
+            .collect();
+        releases.sort_by(|a, b| b.manifest.version.cmp(&a.manifest.version));
+        let newest = releases[0];
+        let details = ModDetails {
+            port: Some(Self::PORT_VERSION.into()),
+            readme: Some(format!(
+                "# {}\n\n{}\n",
+                summary.name,
+                summary.description.as_deref().unwrap_or("")
+            )),
+            screenshots: Vec::new(),
+            homepage: None,
+            source: None,
+            license: newest.manifest.license.clone(),
+            releases: releases
+                .iter()
+                .map(|entry| ModRelease {
+                    version: entry.manifest.version.clone(),
+                    date: RELEASED.into(),
+                    changelog: Some(format!("- Version {}.", entry.manifest.version)),
+                })
+                .collect(),
+            depends: newest
+                .manifest
+                .depends
+                .iter()
+                .map(|(id, range)| SetMod {
+                    id: id.clone(),
+                    range: range.clone(),
+                })
+                .collect(),
+            summary,
+        };
+        Some(serde_json::to_vec_pretty(&details).expect("details serialize"))
+    }
+
     fn catalog_json(state: &State, layout: &str) -> Vec<u8> {
         let catalog = Catalog {
             schema: catalog::SCHEMA,
@@ -305,6 +446,71 @@ impl FakeNet {
         };
         catalog.to_json().into_bytes()
     }
+}
+
+/// When every fake release was approved.
+const RELEASED: &str = "2026-11-01T00:00:00.000Z";
+
+/// The fake icon of the mod `id` and its size: a square of a color of
+/// its own.
+fn icon(id: &str) -> (Vec<u8>, u32) {
+    const SIZE: u32 = 64;
+    let hash = crate::package::sha256_hex(id.as_bytes());
+    let rgb = u32::from_str_radix(&hash[..6], 16).expect("hex");
+    (
+        png(
+            SIZE,
+            SIZE,
+            rgb.to_be_bytes()[1..].try_into().expect("3 bytes"),
+        ),
+        SIZE,
+    )
+}
+
+fn icon_url(png: &[u8]) -> String {
+    format!(
+        "{}/api/registry/images/{}.png",
+        FakeNet::API,
+        crate::package::sha256_hex(png)
+    )
+}
+
+/// A PNG `width` by `height` of the color `rgb`.
+pub(crate) fn png(width: u32, height: u32, rgb: [u8; 3]) -> Vec<u8> {
+    use std::io::Write;
+    fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
+        out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        let start = out.len();
+        out.extend_from_slice(kind);
+        out.extend_from_slice(data);
+        let crc = out[start..].iter().fold(!0u32, |crc, &byte| {
+            (0..8).fold(crc ^ u32::from(byte), |crc, _| {
+                if crc & 1 == 1 {
+                    0xedb8_8320 ^ (crc >> 1)
+                } else {
+                    crc >> 1
+                }
+            })
+        });
+        out.extend_from_slice(&(!crc).to_be_bytes());
+    }
+    let mut header = Vec::new();
+    header.extend_from_slice(&width.to_be_bytes());
+    header.extend_from_slice(&height.to_be_bytes());
+    // 8-bit RGB, deflate, no filter, no interlace.
+    header.extend_from_slice(&[8, 2, 0, 0, 0]);
+    // Each row: filter type 0 (none), then its pixels.
+    let row: Vec<u8> = std::iter::once(0)
+        .chain(rgb.iter().copied().cycle().take(3 * width as usize))
+        .collect();
+    let pixels = row.repeat(height as usize);
+    let mut zlib = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+    zlib.write_all(&pixels).expect("write to memory");
+    let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+    chunk(&mut out, b"IHDR", &header);
+    chunk(&mut out, b"IDAT", &zlib.finish().expect("write to memory"));
+    chunk(&mut out, b"IEND", &[]);
+    out
 }
 
 /// The fake port's game: it runs for a while and ends.
@@ -358,16 +564,32 @@ impl Net for FakeNet {
             url.strip_prefix(&format!("{}/api/registry/catalog?layout=", Self::API))
         {
             Self::catalog_json(&state, layout)
+        } else if let Some(query) = url.strip_prefix(&format!("{}/api/registry/mods?", Self::API)) {
+            Self::mods_json(&state, query)
+        } else if let Some(id) = url.strip_prefix(&format!("{}/api/registry/mods/", Self::API)) {
+            match Self::details_json(&state, id) {
+                Some(body) => body,
+                None => return Err(NetError::NotFound { url: url.into() }),
+            }
         } else if url == format!("{}/latest.json", Self::RELEASES) {
             match &state.latest {
                 Some(version) => format!("{{\"version\": \"{version}\"}}").into_bytes(),
                 None => return Err(NetError::NotFound { url: url.into() }),
             }
         } else {
-            match state.files.get(url) {
-                Some(body) => body.clone(),
-                None => return Err(NetError::NotFound { url: url.into() }),
+            let Some(body) = state.files.get(url).cloned() else {
+                return Err(NetError::NotFound { url: url.into() });
+            };
+            // A package download is an install of its mod.
+            let downloaded = state
+                .catalog
+                .iter()
+                .find(|entry| url == format!("{}{}", Self::API, entry.package.url))
+                .map(|entry| entry.manifest.id.to_string());
+            if let Some(id) = downloaded {
+                *state.installs.entry(id).or_default() += 1;
             }
+            body
         };
         if body.len() as u64 > limit {
             return Err(NetError::TooLarge {
