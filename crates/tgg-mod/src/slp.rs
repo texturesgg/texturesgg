@@ -27,6 +27,7 @@ const GAME_START: u8 = 0x36;
 const MESSAGE_SPLITTER: u8 = 0x10;
 const GECKO_LIST: u8 = 0x3D;
 /// Events that come once frames start: reading stops at the first.
+const GAME_END: u8 = 0x39;
 const FRAME_EVENTS: [u8; 4] = [0x37, 0x38, 0x3A, 0x39];
 /// Pokémon Stadium changing form.
 const TRANSFORMATION: u8 = 0x41;
@@ -55,6 +56,8 @@ pub(crate) struct Start {
     /// The address of each code the console ran, as `0x` and eight
     /// upper-case hex digits, sorted, without repeats.
     pub codes: Vec<String>,
+    /// Each port's external character id and costume, when it has a player.
+    pub players: [Option<(u8, u8)>; 4],
 }
 
 impl Start {
@@ -104,8 +107,144 @@ pub(crate) fn read(path: &Path, skip_events: impl Fn(&Value) -> bool) -> Result<
         }
     }
     file.seek(SeekFrom::Start(15))?;
-    replay.start = start(&mut file.take(events_end - 15))?;
+    replay.start = start(&mut file.take(events_end - 15), true)?.0;
     Ok(replay)
+}
+
+/// What [`replay_info`] reads: the metadata, Game Start (without the frozen
+/// Stadium scan), and Game End's placements, read from the end of the raw
+/// element when its length is known.
+pub(crate) fn read_info(path: &Path) -> Result<(Replay, Option<[u8; 4]>), SlpError> {
+    let mut file = BufReader::new(File::open(path)?);
+    let len = file.get_ref().metadata()?.len();
+    let mut head = [0u8; 15];
+    if len < 15 || file.read_exact(&mut head).is_err() || &head[..11] != HEAD {
+        return Err(SlpError::NotReplay);
+    }
+    let raw = u64::from(u32::from_be_bytes(
+        head[11..15].try_into().expect("4 bytes"),
+    ));
+    let known = raw != 0 && 15 + raw <= len;
+    let events_end = if known { 15 + raw } else { len };
+    let mut replay = Replay::default();
+    if known && 15 + raw < len && len - (15 + raw) <= METADATA_LIMIT {
+        file.seek(SeekFrom::Start(15 + raw))?;
+        let mut tail = Vec::new();
+        file.by_ref().take(METADATA_LIMIT).read_to_end(&mut tail)?;
+        replay.metadata = metadata(&tail).map_err(SlpError::Metadata)?;
+    }
+    file.seek(SeekFrom::Start(15))?;
+    let (start, end_size) = start(&mut file.by_ref().take(events_end - 15), false)?;
+    replay.start = start;
+    // Game End is the last event of a finished replay: method, LRAS, then
+    // each port's placement (Slippi 3.13 on).
+    let mut placements = None;
+    if let Some(size) = end_size.filter(|size| known && *size >= 6)
+        && u64::from(size) + 1 + 15 <= events_end
+    {
+        file.seek(SeekFrom::Start(events_end - 1 - u64::from(size)))?;
+        let mut end = vec![0u8; 1 + usize::from(size)];
+        if file.read_exact(&mut end).is_ok() && end[0] == GAME_END {
+            placements = Some([end[3], end[4], end[5], end[6]]);
+        }
+    }
+    Ok((replay, placements))
+}
+
+/// What a replay list shows of a replay, read from its head and tail alone
+/// ([`replay_info`]).
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ReplayInfo {
+    /// When it started, as RFC 3339 (`metadata.startAt`).
+    pub started: Option<String>,
+    /// How many frames it recorded: `metadata.lastFrame` + 124 (the first
+    /// frame is -123). None while it is being written.
+    pub frames: Option<u32>,
+    /// The stage id, from Game Start.
+    pub stage: Option<u16>,
+    /// The Slippi version that recorded it, from Game Start.
+    pub slippi: Option<String>,
+    /// `metadata.playedOn`: `dolphin`, `network`, `nintendont` or
+    /// `tgg-melee`.
+    pub played_on: Option<String>,
+    /// Each port with a player, by port.
+    pub players: Vec<ReplayPlayer>,
+    /// The winner's port, from Game End's placements (Slippi 3.13 on) in a
+    /// finished replay; none for a no contest or a tie.
+    pub winner: Option<u8>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ReplayPlayer {
+    /// 0-based: P1 is 0.
+    pub port: u8,
+    /// Their netplay name (`metadata.players.<port>.names.netplay`).
+    pub name: Option<String>,
+    /// Their connect code (`names.code`), such as `ABCD#123`.
+    pub code: Option<String>,
+    /// The external character id, from Game Start.
+    pub character: Option<u8>,
+    pub costume: Option<u8>,
+}
+
+/// The summary of the replay `path` a replay list shows: disk only, from
+/// its head (Game Start), its last event (Game End) and its metadata.
+pub fn replay_info(path: &Path) -> Result<ReplayInfo, crate::error::Error> {
+    let (replay, placements) = read_info(path).map_err(|error| match error {
+        SlpError::Io(source) => crate::error::Error::Io {
+            path: path.to_owned(),
+            source,
+        },
+        error => crate::error::Error::BadReplay {
+            path: path.to_owned(),
+            why: error.to_string(),
+        },
+    })?;
+    let meta = replay.metadata.as_ref();
+    let text = |value: Option<&Value>| {
+        value
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+    };
+    let names =
+        |port: usize| meta.and_then(|m| m.get("players")?.get(port.to_string())?.get("names"));
+    let mut players = Vec::new();
+    for port in 0..4 {
+        let from_start = replay.start.as_ref().and_then(|start| start.players[port]);
+        let names = names(port);
+        let in_meta = meta
+            .and_then(|m| m.get("players")?.get(port.to_string()))
+            .is_some();
+        if from_start.is_none() && !(replay.start.is_none() && in_meta) {
+            continue;
+        }
+        players.push(ReplayPlayer {
+            port: port as u8,
+            name: text(names.and_then(|n| n.get("netplay"))),
+            code: text(names.and_then(|n| n.get("code"))),
+            character: from_start.map(|(character, _)| character),
+            costume: from_start.map(|(_, costume)| costume),
+        });
+    }
+    // The one port placed first; a tie (or teams) leaves it open.
+    let winner = placements.and_then(|placements| {
+        let first: Vec<u8> = (0..4u8)
+            .filter(|&port| placements[usize::from(port)] == 0)
+            .collect();
+        (first.len() == 1).then(|| first[0])
+    });
+    Ok(ReplayInfo {
+        started: text(meta.and_then(|m| m.get("startAt"))),
+        frames: meta
+            .and_then(|m| m.get("lastFrame")?.as_i64())
+            .and_then(|last| u32::try_from(last + 124).ok()),
+        stage: replay.start.as_ref().map(|start| start.stage),
+        slippi: replay.start.as_ref().map(Start::version),
+        played_on: text(meta.and_then(|m| m.get("playedOn"))),
+        players,
+        winner,
+    })
 }
 
 /// The `metadata` element in the bytes after the raw array: none when the
@@ -125,18 +264,22 @@ fn metadata(tail: &[u8]) -> Result<Option<Value>, String> {
     Ok(None)
 }
 
-/// Game Start and the gecko list, from the events in `events`.
-fn start(events: &mut impl Read) -> Result<Option<Start>, SlpError> {
+/// Game Start and the gecko list, from the events in `events`, and Game
+/// End's payload size. `scan_stadium` reads on to tell frozen Stadium.
+fn start(
+    events: &mut impl Read,
+    scan_stadium: bool,
+) -> Result<(Option<Start>, Option<u16>), SlpError> {
     let mut byte = [0u8; 1];
     if events.read_exact(&mut byte).is_err() || byte[0] != EVENT_PAYLOADS {
-        return Ok(None);
+        return Ok((None, None));
     }
     if events.read_exact(&mut byte).is_err() {
-        return Ok(None);
+        return Ok((None, None));
     }
     let mut table = vec![0u8; usize::from(byte[0]).saturating_sub(1)];
     if events.read_exact(&mut table).is_err() {
-        return Ok(None);
+        return Ok((None, None));
     }
     let mut sizes: [Option<u16>; 256] = [None; 256];
     for entry in table.as_chunks::<3>().0 {
@@ -160,6 +303,7 @@ fn start(events: &mut impl Read) -> Result<Option<Start>, SlpError> {
             // the first transformation, which comes early in a game that
             // has them, and the whole file in one that doesn't.
             if let Some(start) = &mut start
+                && scan_stadium
                 && start.stage == POKEMON_STADIUM
                 && !start.frozen_stadium
                 && sizes[usize::from(TRANSFORMATION)].is_some()
@@ -188,7 +332,7 @@ fn start(events: &mut impl Read) -> Result<Option<Start>, SlpError> {
     if let Some(start) = &mut start {
         start.codes = codes(&gecko);
     }
-    Ok(start)
+    Ok((start, sizes[usize::from(GAME_END)]))
 }
 
 /// Whether a Stadium transformation event (0x41) follows, the reader being
@@ -241,6 +385,10 @@ fn game_start(e: &[u8]) -> Start {
         frozen_stadium: byte(0x1A2) != 0,
         ucf_off: ucf_off && any,
         codes: Vec::new(),
+        players: std::array::from_fn(|i| {
+            (byte(0x5 + 0x61 + 0x24 * i) != 3)
+                .then(|| (byte(0x65 + 0x24 * i), byte(0x68 + 0x24 * i)))
+        }),
     }
 }
 
@@ -486,12 +634,14 @@ pub mod write {
         const SPLIT_SIZE: u16 = 0x204;
         const FRAME_START_SIZE: u16 = 0x0C;
         const TRANSFORMATION_SIZE: u16 = 0x08;
-        let mut out = vec![0x35, 1 + 3 * 4];
+        const GAME_END_SIZE: u16 = 0x06;
+        let mut out = vec![0x35, 1 + 3 * 5];
         for (command, size) in [
             (0x36u8, START_SIZE),
             (0x10, SPLIT_SIZE),
             (0x3A, FRAME_START_SIZE),
             (0x41, TRANSFORMATION_SIZE),
+            (0x39, GAME_END_SIZE),
         ] {
             out.push(command);
             out.extend_from_slice(&size.to_be_bytes());
@@ -525,6 +675,14 @@ pub mod write {
         let mut frame = vec![0u8; 1 + usize::from(FRAME_START_SIZE)];
         frame[0] = 0x3A;
         out.extend_from_slice(&frame);
+        out
+    }
+
+    /// A Game End event, to end [`events`]: the method (2, a game) and each
+    /// port's placement (0xFF for none).
+    pub fn game_end(placements: [u8; 4]) -> Vec<u8> {
+        let mut out = vec![0x39, 2, 0xFF];
+        out.extend_from_slice(&placements);
         out
     }
 
@@ -612,6 +770,38 @@ mod tests {
         let transforms = file(&write::replay(&events, None));
         let start = read(transforms.path(), |_| false).expect("read").start;
         assert!(!start.expect("start").frozen_stadium);
+    }
+
+    #[test]
+    fn a_replay_info_reads_players_and_the_winner() {
+        let mut events = write::events([3, 18, 0], 31, false, 1, &[]);
+        events.extend_from_slice(&write::game_end([1, 0, 0xFF, 0xFF]));
+        let metadata = json!({
+            "startAt": "2026-11-07T00:00:00Z",
+            "lastFrame": 3600,
+            "playedOn": "network",
+            "players": {"1": {"names": {"netplay": "Ann", "code": "ANN#1"}}}
+        });
+        let replay = file(&write::replay(&events, Some(&metadata)));
+        let info = replay_info(replay.path()).expect("info");
+        assert_eq!(info.started.as_deref(), Some("2026-11-07T00:00:00Z"));
+        assert_eq!(info.frames, Some(3724));
+        assert_eq!(info.stage, Some(31));
+        assert_eq!(info.slippi.as_deref(), Some("3.18.0"));
+        assert_eq!(info.played_on.as_deref(), Some("network"));
+        assert_eq!(info.players.len(), 2);
+        assert_eq!(info.players[1].name.as_deref(), Some("Ann"));
+        assert_eq!(info.players[1].code.as_deref(), Some("ANN#1"));
+        assert_eq!(info.players[0].character, Some(0));
+        assert_eq!(info.winner, Some(1));
+
+        // Being written: no length, so no metadata and no Game End.
+        let mut bytes = write::replay(&events, None);
+        bytes[11..15].copy_from_slice(&[0; 4]);
+        let live = file(&bytes);
+        let info = replay_info(live.path()).expect("info");
+        assert_eq!((info.frames, info.winner), (None, None));
+        assert_eq!(info.players.len(), 2);
     }
 
     #[test]
