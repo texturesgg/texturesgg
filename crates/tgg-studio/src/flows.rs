@@ -2213,6 +2213,27 @@ fn replays_list_who_played_and_what_each_needs() {
     );
 }
 
+#[test]
+fn installing_mods_plans_the_replays_again() {
+    let replays = tempfile::tempdir().expect("temp");
+    tgg_replay_in(replays.path());
+    let (mut rt, _disc, _data) = on_replays(replays.path());
+    let before = rt.state.replays.items[0].status.clone();
+    tap(&mut rt, crate::nav::Place::Mods.key());
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered
+    });
+    tap(&mut rt, "mods/tab/sets");
+    install_set(&mut rt, "competitive");
+    assert!(!rt.state.replays.planned, "what they need is out of date");
+    tap(&mut rt, crate::nav::Place::Replays.key());
+    jobs_until(&mut rt, |app| app.replays.planned);
+    assert_ne!(
+        rt.state.replays.items[0].status, before,
+        "the replay's mods it now has count"
+    );
+}
+
 /// The bytes the listed replay's mods download.
 fn item_size(rt: &Runtime<App>) -> u64 {
     match &rt.state.replays.items[0].status {

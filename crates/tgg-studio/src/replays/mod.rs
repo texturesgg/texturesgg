@@ -39,6 +39,8 @@ pub struct Replays {
     pub refreshing: bool,
     /// The replays have been planned once this session.
     pub planned: bool,
+    /// What's installed changed while they were being planned: plan again.
+    pub plan_again: bool,
     /// A replay's review before it plays.
     pub review: Option<Review>,
     /// A replay's mods being fetched and its folder built.

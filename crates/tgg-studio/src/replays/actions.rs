@@ -134,6 +134,26 @@ pub fn refresh(app: &mut App) {
     });
 }
 
+/// What's installed changed (a mod installed, updated, removed or switched,
+/// or another tgg-melee): plan the replays again, now while the page shows
+/// (keeping their statuses until the new ones arrive), else when it opens.
+pub fn installs_changed(app: &mut App) {
+    if !app.replays.scanned {
+        return;
+    }
+    app.replays.planned = false;
+    if app.replays.refreshing {
+        app.replays.plan_again = true;
+    } else if showing(app) {
+        refresh(app);
+    }
+}
+
+/// Whether the Replays page shows.
+fn showing(app: &App) -> bool {
+    app.nav.place == crate::nav::Place::Replays
+}
+
 /// A job finished. True: what shows changed.
 pub fn done(app: &mut App, done: Done) -> bool {
     match done {
@@ -159,7 +179,7 @@ pub fn done(app: &mut App, done: Done) -> bool {
         }
         Done::Refreshed { mapping, plans } => {
             app.replays.refreshing = false;
-            app.replays.planned = true;
+            app.replays.planned = !std::mem::take(&mut app.replays.plan_again);
             if mapping.is_some() {
                 app.replays.mapping = mapping;
             }
@@ -168,6 +188,9 @@ pub fn done(app: &mut App, done: Done) -> bool {
                     item.status = status(&plan);
                     item.plan = Some(plan);
                 }
+            }
+            if !app.replays.planned && showing(app) {
+                refresh(app);
             }
         }
         Done::Stats { path, result } => {
