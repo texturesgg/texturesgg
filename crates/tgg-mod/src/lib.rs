@@ -42,6 +42,8 @@
 //!   mods a replay or a netplay host needs: reading them ([`slp`] for
 //!   replays), resolving, preparing and launching them; and the package
 //!   cache.
+//! - [`scaffold`]: starting a new mod from an SDK example, a release's SDK,
+//!   the build tools on `PATH`, and the mod docs' address.
 
 pub mod cache;
 pub mod catalog;
@@ -64,6 +66,7 @@ pub mod prepare;
 mod process;
 pub mod profile;
 pub mod registry;
+pub mod scaffold;
 pub mod sdk;
 pub mod slp;
 pub mod symbols;
@@ -111,6 +114,9 @@ pub use profile::{
 pub use registry::{
     Image, ModDetails, ModPage, ModRelease, ModSummary, Publisher, Set, SetMod, System, catalog,
     mod_details, mods, sets,
+};
+pub use scaffold::{
+    CreatedMod, NewMod, Repository, Tools, docs_url, new_mod, release_sdk, sdk_examples, tools,
 };
 pub use sdk::Sdk;
 pub use slp::{ReplayInfo, ReplayPlayer, replay_info};

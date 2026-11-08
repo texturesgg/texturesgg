@@ -9,21 +9,6 @@ use anyhow::{Result, ensure};
 use std::path::PathBuf;
 use std::time::Duration;
 
-const SITE: &str = "https://textures.gg/docs/mods";
-
-/// `major.minor` of a version such as `0.3.2`; anything else is `latest`.
-pub fn minor(version: &str) -> String {
-    match semver::Version::parse(version) {
-        Ok(version) => format!("{}.{}", version.major, version.minor),
-        Err(_) => "latest".to_owned(),
-    }
-}
-
-/// The docs page `page` for the game version `version`.
-pub fn url(version: &str, page: &str) -> String {
-    format!("{SITE}/{}/{page}", minor(version))
-}
-
 fn reachable(url: &str) -> bool {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(4)))
@@ -53,7 +38,7 @@ pub fn run(page: Option<&str>) -> Result<()> {
         .as_ref()
         .map(|i| i.version.clone())
         .unwrap_or_else(|| "latest".into());
-    let url = url(&version, page);
+    let url = tgg_mod::docs_url(&version, page);
     if reachable(&url) {
         println!("{url}");
         let _ = open::that_detached(&url);
