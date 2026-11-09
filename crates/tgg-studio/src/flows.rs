@@ -138,12 +138,6 @@ fn without_a_game_welcome_asks_for_one() {
         rt.find(Place::Play.key()).is_none(),
         "no places until there's a game"
     );
-    if cfg!(not(target_os = "macos")) {
-        assert!(
-            rt.find("window/close").is_some(),
-            "a borderless window can still be closed"
-        );
-    }
 }
 
 #[test]
@@ -1665,14 +1659,10 @@ fn a_newer_tgg_melee_says_which_mods_wait_and_the_older_one_stays_to_go_back_to(
 }
 
 #[test]
-fn the_details_pane_is_the_window_tall_and_takes_the_window_controls() {
+fn the_details_pane_is_the_window_tall() {
     let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
     narrow(&mut rt);
     tap(&mut rt, "mods/tab/all");
-    let close = rt
-        .presented("window/close")
-        .expect("the window's close shows")
-        .0;
     tap_shown(&mut rt, "mods/catalog/tgg.netplay");
     settle(&mut rt);
     let (pane, _) = rt.presented("mods/details").expect("the pane shows");
@@ -1680,15 +1670,6 @@ fn the_details_pane_is_the_window_tall_and_takes_the_window_controls() {
         pane[1] < 0.5,
         "it starts at the window's top, not {} pt down",
         pane[1]
-    );
-    let moved = rt
-        .presented("window/close")
-        .expect("the window's close still shows")
-        .0;
-    assert!(
-        (moved[0] + moved[2] - (close[0] + close[2])).abs() < 0.5
-            && (moved[1] - close[1]).abs() < 0.5,
-        "and it stays where it was: {close:?} then {moved:?}"
     );
     tap(&mut rt, "mods/details/close");
     settle(&mut rt);

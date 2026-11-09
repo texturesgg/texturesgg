@@ -29,14 +29,13 @@ mod stage;
 mod state;
 mod ui;
 mod welcome;
-mod window;
 
 #[cfg(test)]
 mod flows;
 #[cfg(all(test, feature = "melee-iso"))]
 mod iso_flows;
 
-use rune::{AppSpec, WindowOptions};
+use rune::AppSpec;
 use state::{App, Data, Start};
 use std::path::{Path, PathBuf};
 use tgg_app::settings;
@@ -412,12 +411,6 @@ fn main() {
     // the desktop matches the window to them.
     rune::set_app_id("gg.textures.app");
     rune::App::new(spec)
-        // The app draws its own title row, so Linux and Windows windows have
-        // no system one; macOS keeps its window buttons.
-        .window_options(WindowOptions {
-            borderless: cfg!(not(target_os = "macos")),
-            ..Default::default()
-        })
         // Coming back to the window: a sign-in or sign-out made with `tgg` shows.
         .on_focus(signin::actions::focused)
         .init(move || {

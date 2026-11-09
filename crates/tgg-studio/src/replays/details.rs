@@ -8,7 +8,7 @@ use super::{Item, actions, view};
 use crate::jobs::renders::RenderKey;
 use crate::state::App;
 use crate::ui::tokens::{Palette, motion, size, space, text};
-use crate::ui::{self, Tone, badge, rule, spacer, text_action};
+use crate::ui::{self, Tone, badge, rule, spacer, text_action, title_bar};
 use rune::{El, ScrollSpec, col, el, row, text as label};
 use tgg_app::replay_stats::PlayerStats;
 
@@ -28,21 +28,19 @@ pub fn shown(app: &App) -> bool {
 /// window's edge so it slides.
 pub fn view(app: &App, p: &Palette) -> El {
     let shown = shown(app);
-    let head = row()
+    let head = title_bar(row())
         .h(size::TITLE_ROW)
         .pl(space::MD)
         .pr(space::XS)
         .gap(space::XS)
         .items_center()
-        .window_drag()
         .child(label("Replay").font(text::LABEL).color(p.faint))
         .child(spacer())
         .child(
             text_action("Hide", false, p)
                 .key("replays/details/close")
                 .on_press(actions::close_details),
-        )
-        .children(shown.then(|| crate::shell::window_controls(p)).flatten());
+        );
     row()
         .key("replays/details")
         .w(if shown {

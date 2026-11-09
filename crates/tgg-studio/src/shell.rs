@@ -8,11 +8,10 @@ use crate::nav::{Place, actions as nav};
 use crate::state::App;
 use crate::ui::tokens::{Palette, elevation, motion, radius, size, space, text};
 use crate::ui::{
-    close_glyph, dot, icon_button, place_row, rule, sidebar_glyph, spacer, text_action,
+    close_glyph, dot, icon_button, place_row, rule, sidebar_glyph, spacer, text_action, title_bar,
 };
 use crate::{
-    editor, keys, library, melee, mods, newmod, play, preferences, replays, report, signin,
-    welcome, window,
+    editor, keys, library, melee, mods, newmod, play, preferences, replays, report, signin, welcome,
 };
 use rune::{Cx, El, col, el, row, text as label};
 
@@ -111,11 +110,10 @@ fn sidebar(app: &App, p: &Palette) -> El {
         .w(size::SIDEBAR)
         .h_full()
         .child(
-            row()
+            title_bar(row())
                 .h(size::TITLE_ROW)
                 .pl(TITLE_CLEARANCE)
                 .items_center()
-                .window_drag()
                 .child(label("textures.gg").font(text::WORDMARK).color(p.ink)),
         )
         .child(
@@ -152,7 +150,7 @@ fn title_row(app: &App, p: &Palette) -> El {
     } else {
         TITLE_CLEARANCE
     };
-    let mut row = row()
+    title_bar(row())
         .key("shell/title")
         .h(size::TITLE_ROW)
         .pl(start)
@@ -160,29 +158,10 @@ fn title_row(app: &App, p: &Palette) -> El {
         .gap(space::XS)
         .items_center()
         .motion(motion::DEFAULT)
-        .window_drag()
         .children(crumbs(app, p))
         .child(el().grow(1.0))
         .children(update(app, p))
-        .children(title_actions(app, p));
-    // While the details pane shows, the window's controls sit in its head, at the window's edge.
-    if !mods::details::shown(app)
-        && !replays::details::shown(app)
-        && let Some(controls) = window_controls(p)
-    {
-        row = row.child(controls);
-    }
-    row
-}
-
-/// The window's own controls, where the app draws them (not on macOS, which
-/// keeps its own): close.
-pub fn window_controls(p: &Palette) -> Option<El> {
-    cfg!(not(target_os = "macos")).then(|| {
-        icon_button(close_glyph(p), "Close", p)
-            .key("window/close")
-            .on_press_tx(window::close)
-    })
+        .children(title_actions(app, p))
 }
 
 fn place(app: &App, p: &Palette) -> El {

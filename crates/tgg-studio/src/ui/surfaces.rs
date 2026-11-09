@@ -265,3 +265,15 @@ pub fn callout(words: El, action: Option<El>, p: &Palette) -> El {
         .child(col().grow(1.0).min_w(0.0).child(words))
         .children(action)
 }
+
+/// A row standing in for the title bar, as Hex does: on macOS, where the
+/// window draws none under its traffic lights, pressing its background
+/// moves the window. Linux and Windows keep the system's title bar, with
+/// its own buttons, so the row is only a row there.
+pub fn title_bar(element: El) -> El {
+    if cfg!(target_os = "macos") {
+        element.window_drag()
+    } else {
+        element
+    }
+}

@@ -227,7 +227,7 @@ fn step(app: &mut App, back: bool) {
 
 /// Keep the costume in the library as an edited skin and, with `install_it`,
 /// write it into the slot it came from; then do what was waiting on it.
-pub fn save(app: &mut App, install_it: bool, then: Option<Pending>, tx: &mut Tx) {
+pub fn save(app: &mut App, install_it: bool, then: Option<Pending>, _: &mut Tx) {
     let Some(document) = &app.editor else { return };
     let Some(references) = &app.game else { return };
     let Ok(open) = &document.listing.document else {
@@ -278,7 +278,7 @@ pub fn save(app: &mut App, install_it: bool, then: Option<Pending>, tx: &mut Tx)
                 crate::library::actions::refresh_after_install(app, slot);
             }
             if let Some(then) = then {
-                go_on(app, then, tx);
+                go_on(app, then);
             }
         }
         Err(error) => app.tell(format!("Couldn't save: {error}"), true),
@@ -287,7 +287,7 @@ pub fn save(app: &mut App, install_it: bool, then: Option<Pending>, tx: &mut Tx)
 
 /// Ask to leave for `then`: straight away when nothing is unsaved, else
 /// the prompt asks first. Whether it left.
-pub fn leave_for(app: &mut App, then: Pending, tx: &mut Tx) -> bool {
+pub fn leave_for(app: &mut App, then: Pending, _: &mut Tx) -> bool {
     let Some(document) = &mut app.editor else {
         return true;
     };
@@ -295,7 +295,7 @@ pub fn leave_for(app: &mut App, then: Pending, tx: &mut Tx) -> bool {
         document.pending = Some(then);
         return false;
     }
-    go_on(app, then, tx);
+    go_on(app, then);
     true
 }
 
@@ -313,13 +313,13 @@ pub fn answer_save(app: &mut App, tx: &mut Tx) {
     save(app, false, then, tx);
 }
 
-pub fn answer_discard(app: &mut App, tx: &mut Tx) {
+pub fn answer_discard(app: &mut App, _: &mut Tx) {
     if let Some(then) = app
         .editor
         .as_mut()
         .and_then(|document| document.pending.take())
     {
-        go_on(app, then, tx);
+        go_on(app, then);
     }
 }
 
@@ -331,11 +331,10 @@ pub fn answer_cancel(app: &mut App) {
 
 /// Do what waited: close the document (the stage shows the slot from the
 /// game again, edits gone), then leave, close, or go.
-fn go_on(app: &mut App, then: Pending, tx: &mut Tx) {
+fn go_on(app: &mut App, then: Pending) {
     close(app);
     match then {
         Pending::Leave => {}
-        Pending::Close => tx.close_window(),
         Pending::Go(place) => nav::go(app, place),
         Pending::Edit(slot) => open_slot(app, slot),
     }

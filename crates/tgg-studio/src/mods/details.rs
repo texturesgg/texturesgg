@@ -8,7 +8,7 @@ use crate::state::App;
 use crate::ui::tokens::{Palette, motion, radius, size, space, text};
 use crate::ui::{
     ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, icon_tile, rule, spacer, switch,
-    text_action,
+    text_action, title_bar,
 };
 use rune::{El, ScrollSpec, col, el, row, text as label};
 use tgg_mod::{Manifest, ModDetails};
@@ -37,21 +37,19 @@ pub fn shown(app: &App) -> bool {
 /// slides in rather than unfolding.
 pub fn view(app: &App, p: &Palette) -> El {
     let shown = shown(app);
-    let head = row()
+    let head = title_bar(row())
         .h(size::TITLE_ROW)
         .pl(space::MD)
         .pr(space::XS)
         .gap(space::XS)
         .items_center()
-        .window_drag()
         .child(label("Details").font(text::LABEL).color(p.faint))
         .child(spacer())
         .child(
             text_action("Hide", false, p)
                 .key("mods/details/close")
                 .on_press(actions::close_details),
-        )
-        .children(shown.then(|| crate::shell::window_controls(p)).flatten());
+        );
     row()
         .key("mods/details")
         .w(if shown {

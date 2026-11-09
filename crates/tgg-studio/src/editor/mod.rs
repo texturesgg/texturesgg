@@ -45,8 +45,6 @@ pub struct Document {
 pub enum Pending {
     /// Back to the fighter on the stage.
     Leave,
-    /// Close the window.
-    Close,
     /// Go to another place.
     Go(Place),
     /// Open another of the game's slots for editing: a recent edit.

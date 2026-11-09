@@ -4,8 +4,8 @@
 use super::actions;
 use crate::state::App;
 use crate::ui::tokens::{Palette, radius, size, space, text};
-use crate::ui::{ButtonKind, button};
-use rune::{El, col, el, row, text as label};
+use crate::ui::{ButtonKind, button, title_bar};
+use rune::{El, col, row, text as label};
 use tgg_app::GameChoice;
 
 /// The column Welcome reads in, in points.
@@ -44,7 +44,7 @@ pub fn view(app: &App, p: &Palette) -> El {
         .h_full()
         .fill(p.bg)
         .center()
-        .child(title_band(p))
+        .child(title_band())
         .child(body)
 }
 
@@ -100,17 +100,11 @@ fn games(games: &[GameChoice], p: &Palette) -> El {
         .children(rows)
 }
 
-/// The band across the top that moves the window, with its controls.
-fn title_band(p: &Palette) -> El {
-    let mut band = row()
+/// The band across the top: on macOS it moves the window, as the title row
+/// does once there's a game.
+fn title_band() -> El {
+    title_bar(row())
         .h(size::TITLE_ROW)
         .w_full()
-        .pr(space::XS)
-        .items_center()
-        .window_drag()
-        .child(el().grow(1.0));
-    if let Some(controls) = crate::shell::window_controls(p) {
-        band = band.child(controls);
-    }
-    band.absolute(0.0, 0.0)
+        .absolute(0.0, 0.0)
 }
