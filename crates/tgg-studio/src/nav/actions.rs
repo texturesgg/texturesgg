@@ -25,11 +25,19 @@ pub fn toggle_sidebar(app: &mut App) {
     app.change_settings(|settings| settings.sidebar = Some(shown));
 }
 
-/// Up a level: from a fighter or stage back to the roster. Whether there
-/// was a level to go up.
+/// Up a level: from a fighter or stage back to the roster, or a mod's or
+/// replay's details closed. Whether there was a level to go up.
 pub fn up(app: &mut App) -> bool {
     match app.nav.place {
         Place::Skins => crate::melee::actions::back(app),
+        Place::Mods if app.mods.selected.is_some() => {
+            crate::mods::actions::close_details(app);
+            true
+        }
+        Place::Replays if app.replays.selected.is_some() => {
+            crate::replays::actions::close_details(app);
+            true
+        }
         Place::Play | Place::Mods | Place::Replays | Place::Create => false,
     }
 }

@@ -2476,6 +2476,11 @@ fn a_replays_details_slide_in_with_its_players_and_stats() {
     );
     tap(&mut rt, "replays/details/close");
     assert!(rt.state.replays.selected.is_none());
+    // Escape closes it too.
+    tap_shown(&mut rt, &format!("replays/{}", path.display()));
+    assert!(rt.state.replays.selected.is_some());
+    press_escape(&mut rt);
+    assert!(rt.state.replays.selected.is_none());
 }
 
 #[test]

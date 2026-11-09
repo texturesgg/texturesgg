@@ -11,7 +11,8 @@ use rune::{Key, KeyEvent, Tx};
 /// What a shortcut does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {
-    /// Up a level: out of the editor, or from a fighter back to the roster.
+    /// Up a level: out of the editor, from a fighter back to the roster, or
+    /// a details pane closed.
     Back,
     ToggleSidebar,
     TogglePlayback,
