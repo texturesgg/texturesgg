@@ -398,14 +398,26 @@ version.
 
 The in-game replay browser (and a future in-game netplay lobby) can't launch a second
 game, and the port does no package fetching or TLS of its own. Each port release ships
-the `tgg` binary beside the game, and the port gets one call:
+the `tgg` binary beside the game, and the port's `tgg/restart.h` drives it (tgg-melee's
+`docs/restart.md`):
 
 ```c
-/* Restart into a profile: prepare it with the helper, then restart the game with its
- * folder, and after the restart give `then` to the asking mod (a `restarted` event).
- * Presentation code only. */
-int tgg_restart_with(const char* profile_json, const char* then);
+int tgg_restart_with(const char* mod, const char* source, const char* then);
+void tgg_restart_poll(tgg_restart_status* status);   /* WORKING, NEEDS_TRUST, NOT_NEEDED, FAILED */
+int tgg_restart_trust(int yes, int remember);
+void tgg_restart_cancel(void);
+int tgg_restart_back(void);
+const char* tgg_restarted(const char* mod);           /* `then`, back in the player's own game */
 ```
+
+`source` is a replay or a profile file. `tgg_restart_with` runs `tgg profile prepare
+<source> --machine` and reads its JSON lines without waiting; the asking mod polls each
+frame and draws the progress and any trust prompt itself (`tgg_restart_trust` runs `tgg`
+again with `--trust` for each yes). A `done` line that fits as installed ends with
+NOT_NEEDED, and the mod plays the replay in the running game. Otherwise the port sets the
+`env` from the line (plus `TGG_REPLAY_PLAYER_FILE` for a replay, and `TGG_SKIP_INTRO`),
+keeps what it changed in `TGG_RETURN_*`, and replaces itself with `port.executable`, so the
+replay starts at once.
 
 The game loads its mods once, at start, so a profile that needs a mod the running game
 doesn't have means a restart. It only restarts when it must:
@@ -417,17 +429,12 @@ doesn't have means a restart. It only restarts when it must:
   means a restart.
 - The profile needs a mod or game version the running game doesn't have: restart.
 
-A restart boots straight into what was asked (no intro or menus, as quick-start does) with
-the native pack already built, so it reads as a short loading screen, and leaving playback
-restarts back into the player's own mods and the screen they came from.
-
-`tgg_restart_with` runs `tgg profile prepare <profile.json> --machine` beside the game.
-The helper prints its plan (including `needs_trust` entries), progress and finally the
-prepared folder as JSON lines on stdout; the port draws the progress and any trust
-prompt, then re-executes itself with the folder (and the needed port version, which may
-mean executing that version instead). One implementation of fetching and trust
-(`tgg-mod`), no package code in C, and it works however the game was started: the app,
-`tgg`, or a desktop shortcut. Leaving playback restarts back into the player's own mods.
+When the replay's match is over, or the player leaves it, the replay player calls
+`tgg_restart_back`: the player's own game starts again with what it had (past the intro),
+and `tgg_restarted` gives the asking mod its `then`, so the replay browser opens again in
+the folder the player was in. One implementation of fetching and trust (`tgg-mod`), no
+package code in C, and it works however the game was started: the app, `tgg`, or a desktop
+shortcut.
 
 ## Trust
 
