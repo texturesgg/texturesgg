@@ -256,6 +256,7 @@ pub fn prepare_profile(
             Some(&packages),
             &m.id,
             &m.package,
+            false,
             &mut |bytes, _| report(bytes),
             cancel,
         )?;

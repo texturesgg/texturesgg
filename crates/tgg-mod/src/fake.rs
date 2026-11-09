@@ -34,7 +34,8 @@ use std::sync::Mutex;
 ///   with a 64 by 64 icon of its own color, the tags `competitive` and
 ///   `netplay` (Competitive) or `replays` and `quality-of-life`
 ///   (Replays), a README, a changelog per release, and as many installs as
-///   its packages have been downloaded from it.
+///   its packages have been downloaded from it as first installs
+///   (`?for=install`).
 /// - the Slippi mapping [`slippi_mapping`] (`/api/registry/slippi`), whose
 ///   mods [`FakeNet::publish_slippi_mods`] publishes.
 /// - tgg-melee [`FakeNet::PORT_VERSION`] for this system, whose game is a
@@ -686,16 +687,17 @@ impl Net for FakeNet {
                 None => return Err(NetError::NotFound { url: url.into() }),
             }
         } else {
-            let Some(body) = state.files.get(url).cloned() else {
+            let (path, query) = url.split_once('?').unwrap_or((url, ""));
+            let Some(body) = state.files.get(path).cloned() else {
                 return Err(NetError::NotFound { url: url.into() });
             };
-            // A package download is an install of its mod.
+            // A package download marked as a first install counts as one.
             let downloaded = state
                 .catalog
                 .iter()
-                .find(|entry| url == format!("{}{}", Self::API, entry.package.url))
+                .find(|entry| path == format!("{}{}", Self::API, entry.package.url))
                 .map(|entry| entry.manifest.id.to_string());
-            if let Some(id) = downloaded {
+            if let Some(id) = downloaded.filter(|_| query.split('&').any(|p| p == "for=install")) {
                 *state.installs.entry(id).or_default() += 1;
             }
             body
