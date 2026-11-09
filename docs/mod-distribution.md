@@ -51,7 +51,7 @@ competitive` and `tgg port run`. Mod makers keep `tgg mod publish`.
   does this.
 - **Registry mod**: an id with releases (versions). Each release has one build
   per active layout. The catalog lists them. No registry id starts with
-  `skin.`: those are skins tgg makes on the player's machine.
+  `skin.`: the prefix is kept for skins.
 - **Set**: a name, a title, a description, a version, and a list of `(mod id,
   version range)`. Sets live in the registry, edited by admins. Its version is
   bumped when its list or ranges change.
