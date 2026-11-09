@@ -833,7 +833,10 @@ fn installing_a_mod_counts_toward_its_installs_and_updating_it_doesnt() {
     let sets = tgg_mod::sets(&net).expect("sets");
     let catalog = tgg_mod::catalog(&net, &port.port()).expect("catalog");
     let plan = tgg_mod::plan_updates(&sets, &catalog, &local(&player, &port));
-    assert_eq!(plan.steps.iter().filter(|s| s.download.is_some()).count(), 1);
+    assert_eq!(
+        plan.steps.iter().filter(|s| s.download.is_some()).count(),
+        1
+    );
     tgg_mod::apply_cached(
         &net,
         &plan,
