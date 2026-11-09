@@ -77,11 +77,15 @@ fn verified(bytes: &[u8], package: &PackageRef) -> bool {
 
 /// The bytes of the package of `id`, from the cache `packages` when it has
 /// them right, else downloaded, checked against the SHA-256 and kept there.
+/// A download for a mod the player doesn't have yet (`first_install`) says
+/// so (`?for=install`): the registry counts those as installs, and nothing
+/// else.
 pub(crate) fn fetch_package(
     net: &dyn Net,
     packages: Option<&Path>,
     id: &ModId,
     package: &PackageRef,
+    first_install: bool,
     on_bytes: &mut dyn FnMut(u64, Option<u64>),
     cancel: &AtomicBool,
 ) -> Result<Vec<u8>, Error> {
@@ -101,7 +105,7 @@ pub(crate) fn fetch_package(
     }
     let bytes = net
         .download(
-            &package.url,
+            &package_url(&package.url, first_install),
             package.size.min(PACKAGE_LIMIT),
             on_bytes,
             cancel,
@@ -118,6 +122,15 @@ pub(crate) fn fetch_package(
         let _ = write_atomic(path, &bytes);
     }
     Ok(bytes)
+}
+
+/// The URL to download `url` from, marked as a first install when it is one.
+fn package_url(url: &str, first_install: bool) -> String {
+    match (first_install, url.contains('?')) {
+        (false, _) => url.to_owned(),
+        (true, false) => format!("{url}?for=install"),
+        (true, true) => format!("{url}&for=install"),
+    }
 }
 
 fn file_name_part(text: &str) -> String {
@@ -253,6 +266,7 @@ mod tests {
                 Some(&packages),
                 id,
                 &entry.package,
+                false,
                 &mut |_, _| {},
                 &go,
             )
