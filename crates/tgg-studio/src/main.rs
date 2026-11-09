@@ -199,6 +199,15 @@ const SCENES: &[Scene] = &[
             app.tell_undoable("Installed DARK GOKU FOX HALO into Fox · Orange.", slot);
         }
     }),
+    // What the next launch says when edits were left unsaved.
+    ("draft", |app| {
+        if let Ok(slot) = "PlFxOr.dat".parse() {
+            app.tell_with(
+                "Unsaved edits to Fox · Orange",
+                state::NoticeAction::Reopen(slot),
+            );
+        }
+    }),
     ("mods-installed", |app| mods_scene(app, true)),
     // Updating Competitive to a version without Quick start, Online rules
     // newer.
@@ -592,7 +601,7 @@ fn mods_scene(app: &mut App, installed: bool) {
 }
 
 /// Whether this run is a snapshot (`--snap`), for Rune's tooling.
-fn snapshot() -> bool {
+pub(crate) fn snapshot() -> bool {
     std::env::args().any(|argument| argument == "--snap")
 }
 

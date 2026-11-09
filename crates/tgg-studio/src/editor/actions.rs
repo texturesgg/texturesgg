@@ -160,6 +160,7 @@ pub fn import(app: &mut App, texture: usize, rgba: &[u8]) -> Result<TextureEdit,
         .import(TextureIndex(texture), rgba)
         .map_err(|error| error.to_string())?;
     show_pixels(app, texture, &edit.decoded);
+    super::draft::keep(app);
     Ok(edit)
 }
 
@@ -223,6 +224,7 @@ fn step(app: &mut App, back: bool) {
             }
         }
     }
+    super::draft::keep(app);
 }
 
 /// Keep the costume in the library as an edited skin and, with `install_it`,
@@ -268,6 +270,7 @@ pub fn save(app: &mut App, install_it: bool, then: Option<Pending>, _: &mut Tx) 
             {
                 open.mark_saved();
             }
+            super::draft::keep(app);
             let text = if install_it {
                 format!("Saved {name} to your library and installed it.")
             } else {
@@ -358,7 +361,7 @@ pub fn edit_recent(app: &mut App, slot: melee_dat::MeleeSlot, tx: &mut Tx) {
 
 /// Show `slot` on the stage, under its fighter or stage in Melee, and open
 /// it for editing.
-fn open_slot(app: &mut App, slot: melee_dat::MeleeSlot) {
+pub fn open_slot(app: &mut App, slot: melee_dat::MeleeSlot) {
     nav::go(app, Place::Skins);
     app.melee.tab = match slot {
         melee_dat::MeleeSlot::Stage(_) => crate::melee::Tab::Stages,
@@ -390,6 +393,8 @@ fn close(app: &mut App) {
         return;
     };
     super::external::forget(&mut document);
+    // Closed, its edits are saved or discarded: the draft goes.
+    super::draft::keep(app);
     if app.stage.shown.is_some()
         && let Err(problem) = stage::show(app, document.slot)
     {
@@ -413,4 +418,39 @@ fn edited_name(name: &str) -> String {
     } else {
         format!("{name} (edited)")
     }
+}
+
+/// Put `bytes`, a draft of `slot`'s costume, in place of the document just
+/// opened for it: on the model and in the panes, and unsaved.
+pub fn restore(app: &mut App, slot: melee_dat::MeleeSlot, bytes: Vec<u8>) -> Result<(), String> {
+    let Some(document) = &app.editor else {
+        return Err("its costume couldn't be opened".into());
+    };
+    if document.slot != slot {
+        return Err("its costume couldn't be opened".into());
+    }
+    let store = app
+        .stage
+        .shown
+        .as_ref()
+        .and_then(|shown| shown.store.clone());
+    let mut listing = Listing::read(bytes.clone(), app.game.as_ref(), store.as_deref());
+    match &mut listing.document {
+        Ok(open) => open.mark_unsaved(),
+        Err(error) => return Err(error.to_string()),
+    }
+    let thumbnails = pictures(&listing);
+    if let Some(document) = &mut app.editor {
+        document.listing = listing;
+        document.thumbnails = thumbnails;
+        super::colors::read(document);
+    }
+    stage::replace(app, &bytes)?;
+    let first = app
+        .editor
+        .as_ref()
+        .is_some_and(|document| document.texture_count() > 0)
+        .then_some(0);
+    select(app, first);
+    Ok(())
 }

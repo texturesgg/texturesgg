@@ -193,8 +193,18 @@ pub struct Notice {
     pub id: u64,
     pub text: String,
     pub error: bool,
-    /// The slot an install just changed, which Undo puts back.
-    pub undo: Option<melee_dat::MeleeSlot>,
+    /// What it offers to do about it.
+    pub action: Option<NoticeAction>,
+}
+
+/// What a toast offers to do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NoticeAction {
+    /// Put back the slot an install just changed.
+    Undo(melee_dat::MeleeSlot),
+    /// Reopen the unsaved edits an earlier session left of a slot, or
+    /// discard them. It stays until answered or dismissed.
+    Reopen(melee_dat::MeleeSlot),
 }
 
 /// How long a toast shows, in seconds.
@@ -208,19 +218,25 @@ impl App {
 
     /// Say `text` in a toast offering to undo the install into `slot`.
     pub fn tell_undoable(&mut self, text: impl Into<String>, slot: melee_dat::MeleeSlot) {
-        self.show_notice(text.into(), false, Some(slot));
+        self.tell_with(text, NoticeAction::Undo(slot));
     }
 
-    fn show_notice(&mut self, text: String, error: bool, undo: Option<melee_dat::MeleeSlot>) {
+    /// Say `text` in a toast offering `action`.
+    pub fn tell_with(&mut self, text: impl Into<String>, action: NoticeAction) {
+        self.show_notice(text.into(), false, Some(action));
+    }
+
+    fn show_notice(&mut self, text: String, error: bool, action: Option<NoticeAction>) {
         let id = self.notice.as_ref().map_or(1, |notice| notice.id + 1);
         self.notice = Some(Notice {
             id,
             text,
             error,
-            undo,
+            action,
         });
+        let lasts = error || matches!(action, Some(NoticeAction::Reopen(_)));
         // Recordings run work inline, where waiting would stall the window.
-        if !error && !self.jobs.inline {
+        if !lasts && !self.jobs.inline {
             self.jobs.spawn("notice", move || {
                 std::thread::sleep(std::time::Duration::from_secs(NOTICE_SECONDS));
                 crate::jobs::Done::NoticeExpired(id)

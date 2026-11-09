@@ -5,7 +5,7 @@
 //! it shows comes from the app's state, and pressing calls `nav::actions`.
 
 use crate::nav::{Place, actions as nav};
-use crate::state::App;
+use crate::state::{App, NoticeAction};
 use crate::ui::tokens::{Palette, elevation, motion, radius, size, space, text};
 use crate::ui::{
     close_glyph, dot, icon_button, place_row, rule, sidebar_glyph, spacer, text_action, title_bar,
@@ -203,11 +203,22 @@ fn notice(app: &App, p: &Palette) -> Option<El> {
         0.0
     } + space::PAGE;
     let top = app.window_height - size::TOAST_HEIGHT - space::LG;
-    let undo = notice.undo.map(|slot| {
-        text_action("Undo", false, p)
-            .key("shell/notice/undo")
-            .on_press(move |app: &mut App| library::actions::undo(app, slot))
-    });
+    let actions: Vec<El> = match notice.action {
+        Some(NoticeAction::Undo(slot)) => vec![
+            text_action("Undo", false, p)
+                .key("shell/notice/undo")
+                .on_press(move |app: &mut App| library::actions::undo(app, slot)),
+        ],
+        Some(NoticeAction::Reopen(_)) => vec![
+            text_action("Reopen", false, p)
+                .key("shell/notice/reopen")
+                .on_press(editor::draft::reopen),
+            text_action("Discard", false, p)
+                .key("shell/notice/discard")
+                .on_press(editor::draft::discard),
+        ],
+        None => Vec::new(),
+    };
     let (y, blur) = elevation::TOAST;
     Some(
         row()
@@ -233,7 +244,7 @@ fn notice(app: &App, p: &Palette) -> Option<El> {
                     .min_w(0.0)
                     .grow(1.0),
             )
-            .children(undo)
+            .children(actions)
             .child(
                 icon_button(close_glyph(p), "Dismiss", p)
                     .key("shell/notice/dismiss")

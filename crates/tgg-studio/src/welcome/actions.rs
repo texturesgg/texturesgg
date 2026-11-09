@@ -34,6 +34,7 @@ pub fn use_game_at(app: &mut App, path: &Path) {
             app.welcome = Welcome::default();
             crate::melee::actions::open_game(app, references);
             nav::go(app, Place::Play);
+            crate::editor::draft::offer(app);
         }
         Err(problem) => app.welcome.problem = Some(problem),
     }

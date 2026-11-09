@@ -160,6 +160,8 @@ fn states_of(game: &tgg_app::Game, library: &Library) -> HashMap<MeleeSlot, Slot
 pub fn setup(app: &mut crate::state::App, waker: Waker) {
     app.jobs.set_waker(waker);
     crate::melee::actions::refresh(app);
+    // Edits a closed window or a crash left unsaved.
+    crate::editor::draft::offer(app);
     // Outside tests and recordings: offer a report when the last session
     // crashed, and ask once whether a newer version is out (Settings turns
     // that off).

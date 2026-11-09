@@ -116,6 +116,7 @@ pub fn apply(app: &mut App) {
         Ok(what) => {
             let bytes = open.bytes().to_vec();
             read(document);
+            super::draft::keep(app);
             if let Err(problem) = stage::replace(app, &bytes) {
                 return app.tell(problem, true);
             }

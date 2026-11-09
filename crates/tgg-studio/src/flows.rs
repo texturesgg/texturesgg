@@ -783,6 +783,99 @@ fn leaving_with_unsaved_edits_asks_and_discarding_puts_the_costume_back() {
     );
 }
 
+/// The app again on `iso` with the data in `data`, as the next launch
+/// finds it, offering what the last left.
+fn relaunch(iso: &Path, data: &Path) -> Runtime<App> {
+    let app = App::new(
+        game_at(iso),
+        Settings::default(),
+        Data::in_folder(data),
+        false,
+    );
+    let mut rt = Runtime::new(app, shell::view, WINDOW, Env::new(true, 2.0));
+    rt.on_key = Some(crate::keys::on_key);
+    rt.update(|app, _| crate::editor::draft::offer(app));
+    rt.frame(0.0);
+    settle(&mut rt);
+    rt
+}
+
+#[test]
+fn unsaved_edits_left_by_a_closed_window_reopen_next_launch() {
+    let (folder, iso) = melee_iso();
+    let (mut rt, data) = runtime(game_at(&iso));
+    open_place(&mut rt, Place::Skins);
+    tap(&mut rt, "melee/fighter/Falco");
+    settle(&mut rt);
+    tap(&mut rt, "melee/edit");
+    settle(&mut rt);
+    let files = tempfile::tempdir().expect("temp dir");
+    let red = png(files.path(), 8, [255, 0, 0, 255]);
+    rt.update(|app, _| crate::editor::files::import_file(app, 0, &red));
+    let draft = data.path().join("draft").join("PlFcRe.dat");
+    let edited = std::fs::read(&draft).expect("the edit is kept as it's made");
+    // Undone back to as it opened, nothing's unsaved: no draft.
+    command(&mut rt, 'z', false);
+    assert!(!draft.exists());
+    command(&mut rt, 'z', true);
+    assert!(draft.exists());
+    // The window closes without asking.
+    drop(rt);
+
+    let mut rt = relaunch(&iso, data.path());
+    assert!(rt.find("shell/notice/reopen").is_some(), "it's offered");
+    tap(&mut rt, "shell/notice/reopen");
+    let document = rt.state.editor.as_ref().expect("Falco's costume opens");
+    assert_eq!(document.slot.file_name(), "PlFcRe.dat");
+    assert!(document.modified(), "its edits are still unsaved");
+    let open = document.listing.document.as_ref().expect("open");
+    assert_eq!(open.bytes(), edited.as_slice());
+    assert_eq!(rt.state.nav.place, Place::Skins);
+    assert!(rt.state.notice.is_none());
+
+    // Leaving and discarding them throws the draft away.
+    press_escape(&mut rt);
+    settle(&mut rt);
+    tap(&mut rt, "prompt/discard");
+    assert!(rt.state.editor.is_none());
+    assert!(!draft.exists());
+    drop(folder);
+}
+
+#[test]
+fn a_draft_can_be_discarded_without_opening_it() {
+    let (mut rt, _disc, data) = editing();
+    let files = tempfile::tempdir().expect("temp dir");
+    let red = png(files.path(), 8, [255, 0, 0, 255]);
+    rt.update(|app, _| crate::editor::files::import_file(app, 0, &red));
+    let iso = rt
+        .state
+        .game
+        .as_ref()
+        .expect("a game")
+        .game()
+        .path()
+        .to_owned();
+    drop(rt);
+    let mut rt = relaunch(&iso, data.path());
+    tap(&mut rt, "shell/notice/discard");
+    assert!(rt.state.notice.is_none());
+    assert!(rt.state.editor.is_none());
+    assert!(!data.path().join("draft").exists());
+}
+
+#[test]
+fn saving_clears_the_draft() {
+    let (mut rt, _disc, data) = editing();
+    let files = tempfile::tempdir().expect("temp dir");
+    let red = png(files.path(), 8, [255, 0, 0, 255]);
+    rt.update(|app, _| crate::editor::files::import_file(app, 0, &red));
+    assert!(data.path().join("draft").join("PlFcRe.dat").exists());
+    settle(&mut rt);
+    tap(&mut rt, "editor/install");
+    assert!(!data.path().join("draft").exists());
+}
+
 #[test]
 fn save_and_install_writes_the_edited_costume_into_the_game() {
     let (mut rt, _disc, _data) = editing();

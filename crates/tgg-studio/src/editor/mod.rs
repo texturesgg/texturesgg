@@ -6,13 +6,16 @@
 //! editor, and the colors outside its textures changed. Undo and redo step
 //! through them; Save keeps the costume in the library as an edited skin,
 //! and Save and install also writes it into the slot it came from. Leaving
-//! with edits unsaved asks first. `actions` changes it, `files` takes
+//! with edits unsaved asks first, and `draft` keeps them on disk until
+//! they're saved or discarded, for the next launch to reopen if the window
+//! closed first. `actions` changes it, `files` takes
 //! textures in and out, `external` round-trips them through the image
 //! editor, `colors` changes its colors, and `view` and `colors_view` draw it.
 
 pub mod actions;
 pub mod colors;
 pub mod colors_view;
+pub mod draft;
 pub mod external;
 pub mod files;
 pub mod view;
