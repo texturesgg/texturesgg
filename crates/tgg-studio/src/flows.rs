@@ -1586,6 +1586,7 @@ fn offline_mods_says_so_and_keeps_what_is_installed() {
     assert!(rt.find("mods/registry").is_some());
 }
 
+#[cfg_attr(windows, ignore = "the fake game is a shell script")]
 #[test]
 fn play_starts_tgg_melee_and_stop_ends_it() {
     let (mut rt, _disc, data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
@@ -2505,6 +2506,7 @@ fn item_size(rt: &Runtime<App>) -> u64 {
     }
 }
 
+#[cfg_attr(windows, ignore = "the fake game is a shell script")]
 #[test]
 fn a_replay_that_needs_mods_is_reviewed_then_plays_in_its_own_setup() {
     let replays = tempfile::tempdir().expect("temp");
