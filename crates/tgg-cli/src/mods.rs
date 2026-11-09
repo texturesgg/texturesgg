@@ -49,6 +49,10 @@ pub enum ModCommand {
         /// include/, files/ and assets/ are taken from it.
         #[arg(long)]
         source_zip: Option<PathBuf>,
+        /// The commit of the reviewed source this is built from, which the
+        /// package records: for the registry's builder.
+        #[arg(long, value_parser = commit_arg)]
+        source_commit: Option<String>,
         /// The SDK's folder or tgg-game-sdk.json [default: the SDK of the
         /// game in use]
         #[arg(long, env = "TGG_GAME_SDK")]
@@ -266,6 +270,7 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
         ModCommand::Build {
             dir,
             source_zip,
+            source_commit,
             sdk,
             debug,
             cc,
@@ -280,7 +285,8 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
                 cc: &cc.resolve(),
                 debug,
             };
-            let built = build::build(&dir, &options)?;
+            let mut built = build::build(&dir, &options)?;
+            built.package.manifest.source = source_commit;
             write_package(
                 built.package,
                 built.canonical,
@@ -378,6 +384,14 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
             let port = PortArg::default().game().ok().flatten();
             with_player(api, port, true, |p| p.remove(set.as_deref(), &ids))
         }
+    }
+}
+
+fn commit_arg(arg: &str) -> Result<String, String> {
+    if tgg_mod::manifest::is_commit(arg) {
+        Ok(arg.to_owned())
+    } else {
+        Err("a commit is 40 lowercase hex digits".into())
     }
 }
 
