@@ -2344,10 +2344,18 @@ fn signing_in_shows_the_code_then_who_is_signed_in() {
         rt.state.notice.as_ref().map(|notice| notice.text.as_str()),
         Some("Signed in as ciao.")
     );
-    // The account row opens who's signed in, and signing out.
+    // The account row opens You: who's signed in, and signing out.
     tap(&mut rt, "sidebar/account");
     settle(&mut rt);
-    assert!(rt.find("account/sign-out").is_some());
+    assert_eq!(rt.state.nav.place, Place::Profile);
+    assert!(rt.find("profile/sign-out").is_some());
+    // Signed out, You goes, back to Play.
+    rt.update(|app, tx| {
+        crate::signin::actions::done(app, crate::signin::Done::SignedOut(Ok(())), tx);
+    });
+    settle(&mut rt);
+    assert_eq!(rt.state.nav.place, Place::Play);
+    assert!(rt.state.signin.who.is_none());
 }
 
 #[test]
@@ -2741,6 +2749,27 @@ fn installed_shows_just_the_mods_the_player_is_making() {
     settle(&mut rt);
     assert!(rt.find(&row(mine)).is_some(), "the player's mod shows");
     assert!(rt.find(&row(other)).is_none(), "the rest don't");
+    // You lists it too, and pressing it shows it among them on Mods.
+    sign_in_as_ciao(&mut rt);
+    rt.frame(FRAME);
+    tap(&mut rt, "sidebar/account");
+    settle(&mut rt);
+    let you = |id: &str| format!("profile/mod/{id}");
+    assert!(rt.find(&you(mine)).is_some());
+    assert!(rt.find(&you(other)).is_none());
+    tap(&mut rt, &you(mine));
+    settle(&mut rt);
+    assert_eq!(rt.state.nav.place, Place::Mods);
+    assert!(rt.state.mods.made_only);
+    assert_eq!(
+        rt.state
+            .mods
+            .selected
+            .as_ref()
+            .map(ToString::to_string)
+            .as_deref(),
+        Some(mine.as_str())
+    );
 }
 
 #[test]
@@ -2759,4 +2788,67 @@ fn your_skins_shows_just_the_skins_the_player_made() {
     settle(&mut rt);
     let skin = &rt.state.library.skins()[0];
     assert!(rt.find(&format!("library/skin/{}", skin.id)).is_some());
+}
+
+/// Signed in to textures.gg as ciao, as the site last said.
+fn sign_in_as_ciao(rt: &mut Runtime<App>) {
+    rt.update(|app, _| {
+        app.signin.who = Some(tgg_account::SignedIn {
+            account: tgg_account::Account {
+                handle: "ciao".into(),
+                display_name: None,
+                id: None,
+            },
+            verified: true,
+        });
+    });
+}
+
+#[test]
+fn you_shows_the_skins_the_player_made_and_goes_to_them() {
+    let (mut rt, _disc, _data) = editing();
+    tap(&mut rt, "editor/save");
+    settle(&mut rt);
+    rt.update(crate::editor::actions::leave);
+    sign_in_as_ciao(&mut rt);
+    settle(&mut rt);
+    tap(&mut rt, "sidebar/account");
+    settle(&mut rt);
+    assert_eq!(rt.state.nav.place, Place::Profile);
+    assert!(
+        rt.find("sidebar/marker").is_none(),
+        "no place above is marked"
+    );
+    let skin = rt.state.library.skins()[0].id;
+    assert!(rt.find(&format!("library/skin/{skin}")).is_some());
+    // Nothing being made on Mods yet: it says where to start one.
+    assert!(rt.find("profile/mods/empty").is_some());
+    tap(&mut rt, "profile/skins/all");
+    settle(&mut rt);
+    assert_eq!(rt.state.nav.place, Place::Skins);
+    assert_eq!(rt.state.melee.tab, crate::melee::Tab::Mine);
+    assert_eq!(rt.state.library_page.filter, crate::library::Filter::Made);
+}
+
+#[test]
+fn you_with_nothing_made_says_where_to_make_it() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    sign_in_as_ciao(&mut rt);
+    rt.frame(FRAME);
+    tap(&mut rt, "sidebar/account");
+    settle(&mut rt);
+    assert!(rt.find("profile/name").is_some());
+    tap(&mut rt, "profile/skins/empty/go");
+    settle(&mut rt);
+    assert_eq!(rt.state.nav.place, Place::Skins);
+}
+
+#[test]
+fn signed_out_the_account_row_signs_in_instead() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    tap(&mut rt, "sidebar/account");
+    assert!(rt.state.signin.login.is_some(), "the sign-in dialog opens");
+    assert_eq!(rt.state.nav.place, Place::Play);
 }

@@ -130,7 +130,7 @@ fn groups(app: &App) -> Vec<(String, Vec<&Skin>)> {
 
 /// A skin: its picture, its name, where it goes, whether it's in the game,
 /// and installing or removing it.
-fn card(app: &App, skin: &Skin, p: &Palette) -> El {
+pub fn card(app: &App, skin: &Skin, p: &Palette) -> El {
     let mut picture = card_plate(p);
     if let Some(pixels) = app.renders.get(RenderKey::Skin(skin.id)) {
         picture = picture.pixels_fit(pixels, rune::SurfaceFit::Fill);
@@ -178,6 +178,6 @@ fn card(app: &App, skin: &Skin, p: &Palette) -> El {
 }
 
 /// Whether the player made `skin`: saved it from the editor.
-fn made(skin: &Skin) -> bool {
+pub fn made(skin: &Skin) -> bool {
     matches!(skin.source, SkinSource::Edited { .. })
 }

@@ -1,5 +1,5 @@
-//! The sidebar's account row, the sign-in dialog (the code, and the page
-//! to confirm it on), and the account dialog (who's signed in, signing out).
+//! The sidebar's account row and the sign-in dialog (the code, and the page
+//! to confirm it on). Who's signed in, and signing out, are on You.
 
 use super::actions;
 use crate::keys;
@@ -29,12 +29,18 @@ pub fn foot(app: &App, p: &Palette) -> El {
         .gap(space::XS)
         .items_center()
         .radius(radius::CONTROL)
+        // Marked while You shows, as the places above are.
+        .fill(if app.nav.place == crate::nav::Place::Profile {
+            p.hover
+        } else {
+            rune::Color::TRANSPARENT
+        })
         .hover(p.hover)
         .cursor(rune::Cursor::Pointer)
         .role("button")
         .label(name.clone())
         .focusable(true)
-        .on_press(actions::account_row)
+        .on_press_tx(actions::account_row)
         .children(mark)
         .child(
             label(name)
@@ -153,42 +159,6 @@ pub fn sign_in(app: &App, p: &Palette) -> Option<El> {
         DialogWidth::Narrow,
         parts,
         actions::cancel,
-        p,
-    ))
-}
-
-/// The account dialog: who's signed in, and signing out.
-pub fn account(app: &App, p: &Palette) -> Option<El> {
-    let who = app
-        .signin
-        .who
-        .as_ref()
-        .filter(|_| app.signin.account_open)?;
-    let line = if who.verified {
-        "Signed in to textures.gg.".to_owned()
-    } else {
-        "Signed in to textures.gg. The site couldn't be reached to check just now.".to_owned()
-    };
-    let parts = Dialog {
-        title: super::shown_name(&who.account),
-        line,
-        body: None,
-        buttons: vec![
-            button("Close", ButtonKind::Secondary, p)
-                .key("account/close")
-                .on_press(actions::hide_account),
-            spacer(),
-            button("Sign out", ButtonKind::Secondary, p)
-                .key("account/sign-out")
-                .on_press(actions::sign_out),
-        ],
-    };
-    Some(dialog(
-        "account",
-        "dialog",
-        DialogWidth::Narrow,
-        parts,
-        actions::hide_account,
         p,
     ))
 }

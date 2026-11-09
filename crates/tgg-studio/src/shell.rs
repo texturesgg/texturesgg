@@ -11,7 +11,8 @@ use crate::ui::{
     close_glyph, dot, icon_button, place_row, rule, sidebar_glyph, spacer, text_action, title_bar,
 };
 use crate::{
-    editor, keys, library, melee, mods, newmod, play, preferences, replays, report, signin, welcome,
+    editor, keys, library, melee, mods, newmod, play, preferences, profile, replays, report,
+    signin, welcome,
 };
 use rune::{Cx, El, col, el, row, text as label};
 
@@ -74,7 +75,6 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .children(preferences::view::menu(app, &p))
         .children(report::view::view(app, &p))
         .children(signin::view::sign_in(app, &p))
-        .children(signin::view::account(app, &p))
         .children(replays::review::view(app, &p))
         .children(newmod::view::view(app, &p))
         // Its examples' menu, over it.
@@ -91,19 +91,18 @@ fn sidebar(app: &App, p: &Palette) -> El {
             .on_press_tx(move |app: &mut App, tx| editor::actions::go(app, place, tx))
     });
     // One marker glides between places, so the move from one to the next
-    // shows. Every row is as tall, so its offset is a multiple.
-    let index = Place::ALL
-        .iter()
-        .position(|place| *place == app.nav.place)
-        .unwrap_or(0);
-    let marker = el()
-        .key("sidebar/marker")
-        .w(size::SIDEBAR - 2.0 * space::XS)
-        .h(size::ROW)
-        .radius(radius::CONTROL)
-        .fill(p.hover)
-        .motion(motion::SNAPPY)
-        .absolute(0.0, index as f32 * (size::ROW + space::TIGHT));
+    // shows. Every row is as tall, so its offset is a multiple. On You, the
+    // account row at the foot is marked instead.
+    let index = Place::ALL.iter().position(|place| *place == app.nav.place);
+    let marker = index.map(|index| {
+        el().key("sidebar/marker")
+            .w(size::SIDEBAR - 2.0 * space::XS)
+            .h(size::ROW)
+            .radius(radius::CONTROL)
+            .fill(p.hover)
+            .motion(motion::SNAPPY)
+            .absolute(0.0, index as f32 * (size::ROW + space::TIGHT))
+    });
     // The foot: who's signed in (else Sign in), and Settings beside it.
     let foot = signin::view::foot(app, p);
     let inner = col()
@@ -121,7 +120,7 @@ fn sidebar(app: &App, p: &Palette) -> El {
                 .mx(space::XS)
                 .my(space::SNUG)
                 .gap(space::TIGHT)
-                .child(marker)
+                .children(marker)
                 .children(places),
         )
         .child(spacer())
@@ -170,6 +169,7 @@ fn place(app: &App, p: &Palette) -> El {
         Place::Skins => melee::view::view(app, p),
         Place::Mods => mods::view::view(app, p),
         Place::Replays => replays::view::view(app, p),
+        Place::Profile => profile::view::view(app, p),
     };
     col()
         .key("shell/place")
@@ -262,7 +262,7 @@ fn title_actions(app: &App, p: &Palette) -> Option<El> {
     match app.nav.place {
         Place::Skins => melee::subject::title_actions(app, p),
         // Each game's Play is on Play.
-        Place::Play | Place::Mods | Place::Replays => None,
+        Place::Play | Place::Mods | Place::Replays | Place::Profile => None,
     }
 }
 

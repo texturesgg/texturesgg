@@ -2,6 +2,7 @@
 
 use super::{Done, Login};
 use crate::jobs::Done as Job;
+use crate::nav::Place;
 use crate::state::App;
 use rune::Tx;
 use std::time::{Duration, Instant};
@@ -21,7 +22,6 @@ pub fn check(app: &mut App) {
 
 /// Start signing in: ask for a code, and show the dialog.
 pub fn begin(app: &mut App) {
-    app.signin.account_open = false;
     app.signin.login = Some(Login::asking());
     let site = app.signin.site.clone();
     app.jobs.spawn("sign in", move || {
@@ -81,8 +81,7 @@ fn follow_saved(app: &mut App) -> bool {
             true
         }
         (false, true) => {
-            app.signin.who = None;
-            app.signin.account_open = false;
+            signed_out(app);
             true
         }
         _ => false,
@@ -120,9 +119,10 @@ pub fn tick(app: &mut App) {
 pub fn done(app: &mut App, done: Done, tx: &mut Tx) -> bool {
     match done {
         Done::Checked(result) => match result {
-            Ok(who) => app.signin.who = who,
+            Ok(Some(who)) => app.signin.who = Some(who),
+            Ok(None) => signed_out(app),
             Err(Error::SessionExpired) => {
-                app.signin.who = None;
+                signed_out(app);
                 app.tell("Your textures.gg sign-in expired; sign in again.", true);
             }
             Err(error) => tgg_app::log(&format!("checking the sign-in: {error}")),
@@ -146,8 +146,7 @@ pub fn done(app: &mut App, done: Done, tx: &mut Tx) -> bool {
         }
         Done::Polled(result) => polled(app, result, tx),
         Done::SignedOut(result) => {
-            app.signin.who = None;
-            app.signin.account_open = false;
+            signed_out(app);
             match result {
                 Ok(()) => app.tell("Signed out of textures.gg.", false),
                 Err(error) => app.tell(format!("Couldn't sign out: {error}."), true),
@@ -195,15 +194,6 @@ pub fn polled(app: &mut App, result: Result<Poll, Error>, tx: &mut Tx) {
     }
 }
 
-/// Show or hide who's signed in, and signing out.
-pub fn show_account(app: &mut App, shown: bool) {
-    app.signin.account_open = shown;
-}
-
-pub fn hide_account(app: &mut App) {
-    show_account(app, false);
-}
-
 /// Sign out, here and in the CLI (they share the sign-in).
 pub fn sign_out(app: &mut App) {
     let site = app.signin.site.clone();
@@ -212,10 +202,19 @@ pub fn sign_out(app: &mut App) {
     });
 }
 
-/// The sidebar's account row: who's signed in, else signing in.
-pub fn account_row(app: &mut App) {
+/// No one's signed in now: You, which shows who is, goes back to Play.
+fn signed_out(app: &mut App) {
+    app.signin.who = None;
+    if app.nav.place == Place::Profile {
+        crate::nav::actions::go(app, Place::Play);
+    }
+}
+
+/// The sidebar's account row: who's signed in and what they've made, on
+/// You (asking first about unsaved edits), else signing in.
+pub fn account_row(app: &mut App, tx: &mut Tx) {
     if app.signin.who.is_some() {
-        show_account(app, true);
+        crate::editor::actions::go(app, Place::Profile, tx);
     } else {
         begin(app);
     }

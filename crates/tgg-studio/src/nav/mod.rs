@@ -17,6 +17,9 @@ pub enum Place {
     Mods,
     /// Their Slippi and tgg-melee replays.
     Replays,
+    /// Who's signed in, and what they've made: from the sidebar's
+    /// account row, not its list of places.
+    Profile,
 }
 
 impl Place {
@@ -28,6 +31,7 @@ impl Place {
             Place::Skins => "Skins",
             Place::Mods => "Mods",
             Place::Replays => "Replays",
+            Place::Profile => "You",
         }
     }
 
@@ -38,6 +42,7 @@ impl Place {
             Place::Skins => "sidebar/place/skins",
             Place::Mods => "sidebar/place/mods",
             Place::Replays => "sidebar/place/replays",
+            Place::Profile => "sidebar/account",
         }
     }
 }

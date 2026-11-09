@@ -20,6 +20,7 @@ mod nav;
 mod newmod;
 mod play;
 mod preferences;
+mod profile;
 mod replays;
 mod report;
 mod shell;
@@ -367,6 +368,18 @@ const SCENES: &[Scene] = &[
             },
             verified: true,
         });
+    }),
+    // You, signed in as ciao, with what's been made on this computer.
+    ("profile", |app| {
+        app.signin.who = Some(tgg_account::SignedIn {
+            account: tgg_account::Account {
+                handle: "ciao".into(),
+                display_name: Some("Ciao".into()),
+                id: None,
+            },
+            verified: true,
+        });
+        nav::actions::go(app, nav::Place::Profile);
     }),
     // The player's own replays, read and resolved against the live
     // textures.gg before the picture (not deterministic: for a look).

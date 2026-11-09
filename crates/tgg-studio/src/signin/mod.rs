@@ -3,8 +3,8 @@
 //! so a sign-in in either shows in the other). Signing in is the device
 //! flow: the app asks for a code, the player confirms it on the site, and
 //! the app polls until they have, a request at a time, never blocking the
-//! window. `actions` changes it; `view` draws the sidebar's account row,
-//! the sign-in dialog and the account dialog.
+//! window. `actions` changes it; `view` draws the sidebar's account row
+//! and the sign-in dialog; who's signed in shows on You.
 
 pub mod actions;
 pub mod view;
@@ -23,8 +23,6 @@ pub struct SignIn {
     pub who: Option<SignedIn>,
     /// A sign-in under way, its dialog showing.
     pub login: Option<Login>,
-    /// The account dialog shows.
-    pub account_open: bool,
 }
 
 impl SignIn {
@@ -42,7 +40,6 @@ impl SignIn {
             site: Arc::new(site),
             who: None,
             login: None,
-            account_open: false,
         }
     }
 }
