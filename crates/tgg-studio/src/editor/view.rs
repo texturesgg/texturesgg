@@ -66,7 +66,7 @@ pub fn crumbs(document: &Document, p: &Palette) -> El {
         .gap(space::XS)
         .items_center()
         .child(
-            label(crate::nav::Place::Melee.label())
+            label(crate::nav::Place::Skins.label())
                 .font(text::STRONG)
                 .color(p.muted),
         )

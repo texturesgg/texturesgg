@@ -150,8 +150,8 @@ pub mod size {
     pub const SIDEBAR: f32 = 220.0;
     /// A place in the sidebar, and a row in a pane.
     pub const ROW: f32 = 32.0;
-    /// A group's name over its places in the sidebar.
-    pub const GROUP_HEAD: f32 = 20.0;
+    /// A game's card on Play, and a card like it.
+    pub const GAME_CARD: f32 = 340.0;
     /// A tab's words, centered in this, over its underline; what sits at
     /// the end of a row of tabs centers in it too.
     pub const TAB: f32 = 34.0;

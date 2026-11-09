@@ -360,7 +360,11 @@ pub fn edit_recent(app: &mut App, slot: melee_dat::MeleeSlot, tx: &mut Tx) {
 /// Show `slot` on the stage, under its fighter or stage in Melee, and open
 /// it for editing.
 fn open_slot(app: &mut App, slot: melee_dat::MeleeSlot) {
-    nav::go(app, Place::Melee);
+    nav::go(app, Place::Skins);
+    app.melee.tab = match slot {
+        melee_dat::MeleeSlot::Stage(_) => crate::melee::Tab::Stages,
+        _ => crate::melee::Tab::Fighters,
+    };
     match slot {
         melee_dat::MeleeSlot::Stage(stage) => crate::melee::actions::open_stage(app, stage),
         slot => {

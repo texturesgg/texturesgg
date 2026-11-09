@@ -37,6 +37,12 @@ fn tap(rt: &mut Runtime<App>, key: &str) {
     rt.frame(FRAME);
 }
 
+/// Go to `place` from the sidebar, and let the page come to rest.
+fn open_place(rt: &mut Runtime<App>, place: Place) {
+    tap(rt, place.key());
+    settle(rt);
+}
+
 /// Let springs come to rest.
 fn settle(rt: &mut Runtime<App>) {
     for _ in 0..90 {
@@ -67,9 +73,9 @@ fn game_at(path: &Path) -> Start {
 fn a_place_in_the_sidebar_shows_it() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
-    assert_eq!(rt.state.nav.place, Place::Melee);
-    tap(&mut rt, Place::Library.key());
-    assert_eq!(rt.state.nav.place, Place::Library);
+    assert_eq!(rt.state.nav.place, Place::Play, "it opens on Play");
+    tap(&mut rt, Place::Skins.key());
+    assert_eq!(rt.state.nav.place, Place::Skins);
     tap(&mut rt, Place::Mods.key());
     assert_eq!(rt.state.nav.place, Place::Mods);
 }
@@ -129,7 +135,7 @@ fn without_a_game_welcome_asks_for_one() {
     let (rt, _data) = runtime(Start::Welcome(Welcome::default()));
     assert!(rt.find("welcome/choose").is_some());
     assert!(
-        rt.find(Place::Melee.key()).is_none(),
+        rt.find(Place::Play.key()).is_none(),
         "no places until there's a game"
     );
     if cfg!(not(target_os = "macos")) {
@@ -168,13 +174,13 @@ fn choosing_a_melee_iso_opens_the_game_and_remembers_it() {
         .expect("a dialog was open");
     rt.frame(FRAME);
     assert!(rt.state.game.is_some());
-    assert_eq!(rt.state.nav.place, Place::Melee);
+    assert_eq!(rt.state.nav.place, Place::Play);
     assert_eq!(rt.state.settings.iso_path.as_deref(), Some(iso.as_path()));
     assert_eq!(
         rt.state.settings.game_folders,
         vec![folder.path().to_path_buf()]
     );
-    assert!(rt.find(Place::Melee.key()).is_some(), "the places show");
+    assert!(rt.find(Place::Play.key()).is_some(), "the places show");
 }
 
 #[test]
@@ -197,6 +203,7 @@ fn a_game_found_in_the_players_folders_opens_with_one_press() {
 fn the_roster_shows_the_games_fighters_and_whats_changed_once_its_read() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
+    open_place(&mut rt, Place::Skins);
     assert!(
         rt.find("melee/fighter/Falco").is_some(),
         "the test disc holds a Falco costume"
@@ -254,6 +261,7 @@ fn states_read_for_another_game_are_set_aside() {
 fn the_stages_tab_shows_the_stages() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
+    open_place(&mut rt, Place::Skins);
     tap(&mut rt, "melee/tab/stages");
     assert_eq!(rt.state.melee.tab, crate::melee::Tab::Stages);
     assert!(rt.find("melee/fighter/Falco").is_none());
@@ -271,6 +279,7 @@ fn press_escape(rt: &mut Runtime<App>) {
 fn a_fighter_opens_onto_the_stage_and_escape_closes_it_into_its_plate() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
+    open_place(&mut rt, Place::Skins);
     tap(&mut rt, "melee/fighter/Falco");
     assert_eq!(
         rt.state.melee.subject,
@@ -304,6 +313,7 @@ fn a_fighter_opens_onto_the_stage_and_escape_closes_it_into_its_plate() {
 fn the_breadcrumb_goes_back_to_the_roster() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
+    open_place(&mut rt, Place::Skins);
     tap(&mut rt, "melee/fighter/Falco");
     tap(&mut rt, "melee/crumb");
     assert_eq!(rt.state.melee.subject, None);
@@ -313,6 +323,7 @@ fn the_breadcrumb_goes_back_to_the_roster() {
 fn a_costume_that_wont_load_says_why_and_stays_on_the_roster() {
     let (_folder, iso) = disc_holding(b"not a costume");
     let (mut rt, _data) = runtime(game_at(&iso));
+    open_place(&mut rt, Place::Skins);
     tap(&mut rt, "melee/fighter/Falco");
     assert_eq!(rt.state.melee.subject, None);
     let problem = rt.state.melee.problem.clone().expect("it says why");
@@ -324,6 +335,7 @@ fn a_costume_that_wont_load_says_why_and_stays_on_the_roster() {
 fn a_pane_folds_to_its_header() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
+    open_place(&mut rt, Place::Skins);
     tap(&mut rt, "melee/fighter/Falco");
     assert!(rt.find("melee/costume/PlFcRe.dat").is_some());
     tap(&mut rt, "melee/pane/costumes");
@@ -341,6 +353,7 @@ fn a_pane_folds_to_its_header() {
 fn dragging_across_the_stage_turns_the_camera_by_how_far_it_went() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
+    open_place(&mut rt, Place::Skins);
     tap(&mut rt, "melee/fighter/Falco");
     settle(&mut rt);
     let before = rt
@@ -432,8 +445,9 @@ fn dragging_across_the_stage_turns_the_camera_by_how_far_it_went() {
 fn going_to_another_place_takes_the_fighter_off_the_stage() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
+    open_place(&mut rt, Place::Skins);
     tap(&mut rt, "melee/fighter/Falco");
-    tap(&mut rt, Place::Library.key());
+    tap(&mut rt, Place::Mods.key());
     assert!(rt.state.stage.shown.is_none());
     assert_eq!(rt.state.melee.subject, None);
 }
@@ -448,7 +462,8 @@ fn falco_skin(folder: &Path) -> (PathBuf, Vec<u8>) {
 
 /// Add `file` through the Library's file dialog, into Review.
 fn add_through_review(rt: &mut Runtime<App>, file: PathBuf) {
-    tap(rt, Place::Library.key());
+    open_place(rt, Place::Skins);
+    tap(rt, "melee/tab/mine");
     tap(rt, "library/add-file");
     rt.resolve_file_dialog(Some(file))
         .expect("a dialog was open");
@@ -543,7 +558,8 @@ fn an_install_undoes_from_the_fighters_costume() {
         rt.state.melee.undoable.contains(&slot),
         "the install can be undone"
     );
-    tap(&mut rt, Place::Melee.key());
+    tap(&mut rt, Place::Skins.key());
+    tap(&mut rt, "melee/tab/fighters");
     tap(&mut rt, "melee/fighter/Falco");
     settle(&mut rt);
     tap(&mut rt, "melee/undo");
@@ -605,6 +621,7 @@ fn escape_closes_review_without_adding() {
 fn editing() -> (Runtime<App>, TempDir, TempDir) {
     let (folder, iso) = melee_iso();
     let (mut rt, data) = runtime(game_at(&iso));
+    open_place(&mut rt, Place::Skins);
     tap(&mut rt, "melee/fighter/Falco");
     settle(&mut rt);
     tap(&mut rt, "melee/edit");
@@ -781,11 +798,11 @@ fn the_prompt_can_save_then_go_where_the_player_was_going() {
     let files = tempfile::tempdir().expect("temp dir");
     let red = png(files.path(), 8, [255, 0, 0, 255]);
     rt.update(|app, _| crate::editor::files::import_file(app, 0, &red));
-    tap(&mut rt, Place::Library.key());
-    assert_eq!(rt.state.nav.place, Place::Melee, "it asks before going");
+    tap(&mut rt, Place::Mods.key());
+    assert_eq!(rt.state.nav.place, Place::Skins, "it asks before going");
     settle(&mut rt);
     tap(&mut rt, "prompt/save");
-    assert_eq!(rt.state.nav.place, Place::Library);
+    assert_eq!(rt.state.nav.place, Place::Mods);
     assert!(rt.state.editor.is_none());
     assert_eq!(rt.state.library.skins().len(), 1);
 }
@@ -856,6 +873,7 @@ fn a_click_on_the_model_asks_to_pick_and_a_drag_doesnt() {
 fn off_the_editor_a_click_on_the_model_picks_nothing() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
+    open_place(&mut rt, Place::Skins);
     tap(&mut rt, "melee/fighter/Falco");
     settle(&mut rt);
     tap(&mut rt, "stage/viewport");
@@ -1204,7 +1222,8 @@ fn a_new_mod_starts_from_the_sdk_in_a_folder_of_its_own() {
         tempfile::tempdir().expect("temp"),
         tempfile::tempdir().expect("temp"),
     );
-    tap(&mut rt, "mods/new-mod");
+    open_place(&mut rt, Place::Create);
+    tap(&mut rt, "create/new-mod");
     jobs_until(&mut rt, |app| app.new_mod.sdk.is_some());
     // The fake's SDK can't be read (see sdk_in), which the dialog says;
     // then the SDK as the download would have left it.
@@ -1256,9 +1275,12 @@ fn a_new_mod_starts_from_the_sdk_in_a_folder_of_its_own() {
 
 #[test]
 fn new_mod_waits_for_tgg_melee() {
-    let (rt, _disc, _data) = on_mods(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    let (mut rt, _disc, _data) = on_mods(std::sync::Arc::new(tgg_mod::FakeNet::new()));
     assert!(
-        rt.find("mods/new-mod").is_none(),
+        {
+            open_place(&mut rt, Place::Create);
+            rt.find("create/new-mod").is_none() && rt.find("create/set-up").is_some()
+        },
         "a mod starts from the installed tgg-melee's SDK"
     );
 }
@@ -1308,9 +1330,11 @@ fn mods_offers_tgg_melee_then_its_sets() {
         "a set installs now"
     );
     assert!(
-        rt.find("sidebar/tgg-melee/play").is_none()
-            && rt.find("sidebar/tgg-melee/set-up").is_some(),
-        "the test disc isn't unmodified, so it says set up, not play"
+        {
+            open_place(&mut rt, Place::Play);
+            rt.find("play/tgg-melee/play").is_none()
+        } && rt.find("play/tgg-melee/choose-disc").is_some(),
+        "the test disc isn't unmodified, so Play asks for one"
     );
     assert_eq!(rt.state.mods.disc, crate::mods::Disc::Missing);
 }
@@ -1443,16 +1467,17 @@ fn play_starts_tgg_melee_and_stop_ends_it() {
         .to_owned();
     rt.update(|app, _| crate::mods::actions::use_disc(app, iso.clone()));
     rt.frame(FRAME);
-    tap(&mut rt, "sidebar/tgg-melee/play");
+    open_place(&mut rt, Place::Play);
+    tap(&mut rt, "play/tgg-melee/play");
     assert!(rt.state.mods.playing.is_some());
     assert!(
         tgg_mod::game_running(&data.path().join("mods")),
         "other tgg's see the game running"
     );
-    assert!(rt.find("sidebar/tgg-melee/stop").is_some());
-    tap(&mut rt, "sidebar/tgg-melee/stop");
+    assert!(rt.find("play/tgg-melee/stop").is_some());
+    tap(&mut rt, "play/tgg-melee/stop");
     jobs_until(&mut rt, |app| app.mods.playing.is_none());
-    assert!(rt.find("sidebar/tgg-melee/play").is_some());
+    assert!(rt.find("play/tgg-melee/play").is_some());
 }
 
 #[test]
@@ -1975,7 +2000,7 @@ fn a_report_shows_what_it_would_send_and_copies_it() {
 }
 
 #[test]
-fn a_recent_edit_opens_again_from_the_sidebar() {
+fn a_recent_edit_opens_again_from_skins() {
     let (mut rt, _disc, _data) = editing();
     let slot = rt.state.editor.as_ref().expect("editing").slot;
     assert_eq!(
@@ -1983,11 +2008,12 @@ fn a_recent_edit_opens_again_from_the_sidebar() {
         Some(&slot),
         "remembered as it opened"
     );
-    let key = format!("sidebar/recent/{}", slot.file_name());
-    assert!(rt.find(&key).is_some());
+    let key = format!("skins/recent/{}", slot.file_name());
     rt.update(crate::editor::actions::leave);
-    tap(&mut rt, Place::Library.key());
+    tap(&mut rt, Place::Mods.key());
+    tap(&mut rt, Place::Skins.key());
     assert!(rt.state.editor.is_none());
+    assert!(rt.find(&key).is_some(), "Skins lists it");
     tap(&mut rt, &key);
     settle(&mut rt);
     assert_eq!(
@@ -1995,7 +2021,7 @@ fn a_recent_edit_opens_again_from_the_sidebar() {
         Some(slot),
         "open for editing again"
     );
-    assert_eq!(rt.state.nav.place, Place::Melee);
+    assert_eq!(rt.state.nav.place, Place::Skins);
 }
 
 /// The fake's Competitive at version 2: without Quick start, and with a
@@ -2390,7 +2416,8 @@ fn a_replay_that_needs_mods_is_reviewed_then_plays_in_its_own_setup() {
         1,
         "a profile game runs"
     );
-    tap(&mut rt, "sidebar/tgg-melee/stop");
+    open_place(&mut rt, Place::Play);
+    tap(&mut rt, "play/tgg-melee/stop");
     jobs_until(&mut rt, |app| app.mods.playing.is_none());
 }
 
@@ -2525,22 +2552,22 @@ fn fake_dolphin(folder: &Path) -> PathBuf {
 
 #[cfg(unix)]
 #[test]
-fn slippi_plays_beside_its_name_once_its_dolphin_is_found() {
+fn slippi_plays_from_its_card_once_its_dolphin_is_found() {
     let (_folder, iso) = melee_iso();
     let (mut rt, data) = runtime(game_at(&iso));
     assert!(
-        rt.find("sidebar/slippi/play").is_none(),
-        "no Play without Slippi's Dolphin"
+        rt.find("play/slippi/play").is_none() && rt.find("play/slippi/get").is_some(),
+        "without Slippi's Dolphin, it says where to get Slippi"
     );
     let dolphin = fake_dolphin(data.path());
     rt.update(|app, _| app.slippi.dolphin = Some(dolphin.clone()));
     rt.frame(FRAME);
-    tap(&mut rt, "sidebar/slippi/play");
+    tap(&mut rt, "play/slippi/play");
     assert!(rt.state.slippi.running);
-    assert!(rt.find("sidebar/slippi/open").is_some(), "says it's open");
+    assert!(rt.find("play/slippi/open").is_some(), "says it's open");
     jobs_until(&mut rt, |app| !app.slippi.running);
     assert!(
-        rt.find("sidebar/slippi/play").is_some(),
+        rt.find("play/slippi/play").is_some(),
         "Play again once it closes"
     );
 }
@@ -2549,8 +2576,8 @@ fn slippi_plays_beside_its_name_once_its_dolphin_is_found() {
 fn tgg_melee_says_set_up_until_its_installed() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
-    assert!(rt.find("sidebar/tgg-melee/play").is_none());
-    tap(&mut rt, "sidebar/tgg-melee/set-up");
+    assert!(rt.find("play/tgg-melee/play").is_none());
+    tap(&mut rt, "play/tgg-melee/set-up");
     assert_eq!(rt.state.nav.place, Place::Mods, "Set up goes to Mods");
 }
 

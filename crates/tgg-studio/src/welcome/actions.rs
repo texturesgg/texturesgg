@@ -33,7 +33,7 @@ pub fn use_game_at(app: &mut App, path: &Path) {
             app.change_settings(|settings| remember(settings, path));
             app.welcome = Welcome::default();
             crate::melee::actions::open_game(app, references);
-            nav::go(app, Place::Melee);
+            nav::go(app, Place::Play);
         }
         Err(problem) => app.welcome.problem = Some(problem),
     }

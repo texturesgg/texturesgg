@@ -1,30 +1,51 @@
-//! The Library's page: the player's skins as plates, grouped by the fighter
-//! each was made for, newest first; stages and skins without a slot last.
+//! The player's skins, under Skins' "Your skins" tab, as plates grouped by
+//! the fighter each was made for, newest first; stages and skins without a
+//! slot last.
 
 use super::{Filter, actions};
 use crate::jobs::renders::RenderKey;
 use crate::state::App;
 use crate::ui::tokens::{Palette, space, text};
 use crate::ui::{
-    self, ButtonKind, TEXT_ACTION_INSET, button, card_plate, page_head, rule, tab, text_action,
+    self, ButtonKind, TEXT_ACTION_INSET, button, card_plate, chip, spacer, text_action,
 };
 use melee_dat::MeleeSlot;
-use rune::{El, ScrollSpec, col, row, text as label};
+use rune::{El, col, row, text as label};
 use tgg_app::costumes::{EFFECTS_FILE, FIGHTER_FILE, fighters};
 use tgg_app::install::SlotState;
 use tgg_app::library::Skin;
 
-pub fn view(app: &App, p: &Palette) -> El {
+/// Skins' "Your skins" tab: which of them show, adding more, and the skins
+/// grouped by fighter.
+pub fn body(app: &App, p: &Palette) -> Vec<El> {
     let skins = app.library.skins();
     let in_game = skins.iter().filter(|skin| installed(app, skin)).count();
-    let head = row()
-        .items_end()
-        .gap(space::SM)
-        .child(col().grow(1.0).child(page_head(
-            "Library",
-            &format!("{} skins, {in_game} in your ISO.", skins.len()),
-            p,
-        )))
+    let filter = app.library_page.filter;
+    let choice = |name: String, which: Filter, key: &str| {
+        chip(&name, filter == which, p)
+            .key(key.to_owned())
+            .role("radio")
+            .on_press(move |app: &mut App| actions::show_filter(app, which))
+    };
+    let top = row()
+        .gap(space::SNUG)
+        .items_center()
+        .child(choice(
+            format!("All {}", skins.len()),
+            Filter::All,
+            "library/tab/all",
+        ))
+        .child(choice(
+            format!("In your ISO {in_game}"),
+            Filter::InGame,
+            "library/tab/in-game",
+        ))
+        .child(choice(
+            format!("Not installed {}", skins.len() - in_game),
+            Filter::NotInstalled,
+            "library/tab/not-installed",
+        ))
+        .child(spacer())
         .child(
             button("Add a file…", ButtonKind::Secondary, p)
                 .key("library/add-file")
@@ -35,69 +56,33 @@ pub fn view(app: &App, p: &Palette) -> El {
                 .key("library/add-folder")
                 .on_press_tx(actions::choose_folder),
         );
-    let filter = app.library_page.filter;
-    let tabs = row()
-        .gap(space::LG)
-        .child(
-            tab("All", skins.len(), filter == Filter::All, p)
-                .key("library/tab/all")
-                .on_press(|app: &mut App| actions::show_filter(app, Filter::All)),
-        )
-        .child(
-            tab("In your game", in_game, filter == Filter::InGame, p)
-                .key("library/tab/in-game")
-                .on_press(|app: &mut App| actions::show_filter(app, Filter::InGame)),
-        )
-        .child(
-            tab(
-                "Not installed",
-                skins.len() - in_game,
-                filter == Filter::NotInstalled,
-                p,
-            )
-            .key("library/tab/not-installed")
-            .on_press(|app: &mut App| actions::show_filter(app, Filter::NotInstalled)),
-        );
-    let groups = groups(app);
-    let body = if skins.is_empty() {
-        vec![
-            label("Your library is empty. Add skins from a file, a zip, or a folder of them.")
+    let mut body = vec![top];
+    if skins.is_empty() {
+        body.push(
+            label("You have no skins yet. Add them from a file, a zip, or a folder of them.")
                 .key("library/empty")
                 .font(text::BODY)
                 .color(p.muted),
-        ]
+        );
     } else {
-        groups
-            .into_iter()
-            .map(|(name, skins)| {
-                col()
-                    .gap(space::SM)
-                    .child(label(name).font(text::LABEL).color(p.faint))
-                    .child(
-                        row()
-                            .flex_wrap()
-                            .gap(space::MD)
-                            .children(skins.into_iter().map(|skin| card(app, skin, p))),
-                    )
-            })
-            .collect()
-    };
-    let page = col()
-        .px(space::PAGE)
-        .pt(space::XS)
-        .pb(space::XL)
-        .gap(space::MD)
-        .child(head)
-        .child(col().child(tabs).child(rule(p)))
-        .children(body);
-    col()
-        .key("library/scroll")
-        .grow(1.0)
-        .min_h(0.0)
-        .scroll(ScrollSpec {
-            stick_bottom: false,
-        })
-        .child(page)
+        body.extend(groups(app).into_iter().map(|(name, skins)| {
+            col()
+                .gap(space::SM)
+                .child(label(name).font(text::LABEL).color(p.faint))
+                .child(
+                    row()
+                        .flex_wrap()
+                        .gap(space::MD)
+                        .children(skins.into_iter().map(|skin| card(app, skin, p))),
+                )
+        }));
+    }
+    body
+}
+
+/// How many skins the player has, for the tab's count.
+pub fn count(app: &App) -> usize {
+    app.library.skins().len()
 }
 
 /// Whether `skin` is in the player's game now.

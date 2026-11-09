@@ -15,12 +15,14 @@ use tgg_app::Game;
 use tgg_app::costumes::{Fighter, roster};
 use tgg_app::install::SlotState;
 
-/// The roster's two halves.
+/// Skins' tabs: the roster's two halves, then the player's own skins.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Tab {
     #[default]
     Fighters,
     Stages,
+    /// The skins they have (the library).
+    Mine,
 }
 
 #[derive(Default)]

@@ -67,6 +67,14 @@ pub fn states_read(
 
 pub fn show_tab(app: &mut App, tab: Tab) {
     app.melee.tab = tab;
+    opened(app);
+}
+
+/// Skins shows: the player's skins get their pictures while they're on show.
+pub fn opened(app: &mut App) {
+    if app.melee.tab == Tab::Mine {
+        crate::library::actions::request_renders(app);
+    }
 }
 
 /// Open `character` onto the stage, on the costume last chosen for it.
@@ -129,4 +137,10 @@ pub fn toggle_pane(app: &mut App, pane: Pane) {
         Pane::Shared => panes.shared = !panes.shared,
         Pane::Moves => panes.moves = !panes.moves,
     }
+}
+
+/// Skins, on the player's own skins.
+pub fn show_mine(app: &mut App) {
+    crate::nav::actions::go(app, crate::nav::Place::Skins);
+    show_tab(app, Tab::Mine);
 }

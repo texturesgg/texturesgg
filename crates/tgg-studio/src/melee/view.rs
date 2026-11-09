@@ -1,10 +1,12 @@
-//! Melee's page: the roster, fighters or stages, as plates in a grid.
+//! Skins' page: the roster of the player's ISO, fighters or stages, as
+//! plates in a grid, and the skins they have; the costumes and stages
+//! edited lately sit under the head.
 
 use super::{Melee, Subject, Tab, actions};
 use crate::jobs::renders::RenderKey;
 use crate::state::App;
 use crate::ui::tokens::{Palette, space, text};
-use crate::ui::{self, card_plate, page_head, rule, tab};
+use crate::ui::{self, TEXT_ACTION_INSET, card_plate, page_head, rule, tab, text_action};
 use melee_dat::MeleeSlot;
 use rune::{El, ScrollSpec, col, row, text as label};
 
@@ -16,60 +18,73 @@ pub fn view(app: &App, p: &Palette) -> El {
     if let Some(subject) = melee.subject {
         return super::subject::view(app, subject, p);
     }
+    let tab_for = |name: &str, count: usize, which: Tab, key: &str| {
+        tab(name, count, melee.tab == which, p)
+            .key(key.to_owned())
+            .on_press(move |app: &mut App| actions::show_tab(app, which))
+    };
     let tabs = row()
         .gap(space::LG)
-        .child(
-            tab(
-                "Fighters",
-                melee.fighters.len(),
-                melee.tab == Tab::Fighters,
-                p,
-            )
-            .key("melee/tab/fighters")
-            .on_press(|app: &mut App| actions::show_tab(app, Tab::Fighters)),
-        )
-        .child(
-            tab("Stages", melee.stages.len(), melee.tab == Tab::Stages, p)
-                .key("melee/tab/stages")
-                .on_press(|app: &mut App| actions::show_tab(app, Tab::Stages)),
-        );
-    let cards: Vec<El> = match melee.tab {
-        Tab::Fighters => melee
-            .fighters
-            .iter()
-            .map(|fighter| {
-                let picture = Melee::shown_slot(fighter);
-                let changed = melee.changed_count(fighter);
-                let character = fighter.character;
-                card(
-                    app,
-                    Subject::Fighter(character),
-                    picture,
-                    status(melee, changed),
-                    p,
-                )
-                .key(format!("melee/fighter/{}", character.name()))
-                .on_press(move |app: &mut App| actions::open_fighter(app, character))
-            })
-            .collect(),
-        Tab::Stages => melee
-            .stages
-            .iter()
-            .map(|stage| {
-                let slot = MeleeSlot::Stage(*stage);
-                let changed = usize::from(melee.changed(slot));
-                let stage = *stage;
-                card(
-                    app,
-                    Subject::Stage(stage),
-                    Some(slot),
-                    status(melee, changed),
-                    p,
-                )
-                .key(format!("melee/stage/{}", stage.file_name()))
-                .on_press(move |app: &mut App| actions::open_stage(app, stage))
-            })
-            .collect(),
+        .child(tab_for(
+            "Fighters",
+            melee.fighters.len(),
+            Tab::Fighters,
+            "melee/tab/fighters",
+        ))
+        .child(tab_for(
+            "Stages",
+            melee.stages.len(),
+            Tab::Stages,
+            "melee/tab/stages",
+        ))
+        .child(tab_for(
+            "Your skins",
+            crate::library::view::count(app),
+            Tab::Mine,
+            "melee/tab/mine",
+        ));
+    let body: Vec<El> = match melee.tab {
+        Tab::Fighters => vec![grid(
+            melee
+                .fighters
+                .iter()
+                .map(|fighter| {
+                    let picture = Melee::shown_slot(fighter);
+                    let changed = melee.changed_count(fighter);
+                    let character = fighter.character;
+                    card(
+                        app,
+                        Subject::Fighter(character),
+                        picture,
+                        status(melee, changed),
+                        p,
+                    )
+                    .key(format!("melee/fighter/{}", character.name()))
+                    .on_press(move |app: &mut App| actions::open_fighter(app, character))
+                })
+                .collect(),
+        )],
+        Tab::Stages => vec![grid(
+            melee
+                .stages
+                .iter()
+                .map(|stage| {
+                    let slot = MeleeSlot::Stage(*stage);
+                    let changed = usize::from(melee.changed(slot));
+                    let stage = *stage;
+                    card(
+                        app,
+                        Subject::Stage(stage),
+                        Some(slot),
+                        status(melee, changed),
+                        p,
+                    )
+                    .key(format!("melee/stage/{}", stage.file_name()))
+                    .on_press(move |app: &mut App| actions::open_stage(app, stage))
+                })
+                .collect(),
+        )],
+        Tab::Mine => crate::library::view::body(app, p),
     };
     let page = col()
         .px(space::PAGE)
@@ -81,12 +96,13 @@ pub fn view(app: &App, p: &Palette) -> El {
                 .items_end()
                 .gap(space::LG)
                 .child(col().grow(1.0).min_w(0.0).child(page_head(
-                    crate::nav::Place::Melee.label(),
-                    "What's in the ISO you play on Slippi or Dolphin, and what you've changed.",
+                    crate::nav::Place::Skins.label(),
+                    "The skins you have, and what's in the ISO you play on Slippi.",
                     p,
                 )))
                 .children(game(app, p)),
         )
+        .children(recent(app, p))
         .children(melee.problem.as_ref().map(|problem| {
             label(problem.clone())
                 .key("melee/problem")
@@ -94,7 +110,7 @@ pub fn view(app: &App, p: &Palette) -> El {
                 .color(p.danger)
         }))
         .child(col().child(tabs).child(rule(p)))
-        .child(row().flex_wrap().gap(space::MD).children(cards));
+        .children(body);
     col()
         .key("melee/scroll")
         .grow(1.0)
@@ -103,6 +119,42 @@ pub fn view(app: &App, p: &Palette) -> El {
             stick_bottom: false,
         })
         .child(page)
+}
+
+/// Plates, wrapping to the page.
+fn grid(cards: Vec<El>) -> El {
+    row().flex_wrap().gap(space::MD).children(cards)
+}
+
+/// The costumes and stages edited lately, the latest first: pressing one
+/// opens it for editing again (through the unsaved-changes prompt).
+fn recent(app: &App, p: &Palette) -> Option<El> {
+    let slots = &app.settings.recent;
+    if slots.is_empty() {
+        return None;
+    }
+    Some(
+        row()
+            .key("skins/recent")
+            .flex_wrap()
+            .items_center()
+            .gap(space::XXS)
+            .child(
+                label("Recently edited")
+                    .font(text::LABEL)
+                    .color(p.faint)
+                    .pl(TEXT_ACTION_INSET)
+                    .mr(space::XXS),
+            )
+            .children(slots.iter().copied().map(|slot| {
+                text_action(&tgg_app::costumes::slot_label(Some(slot)), false, p)
+                    .key(format!("skins/recent/{}", slot.file_name()))
+                    .on_press_tx(move |app: &mut App, tx| {
+                        crate::editor::actions::edit_recent(app, slot, tx)
+                    })
+            }))
+            .ml(-TEXT_ACTION_INSET),
+    )
 }
 
 /// What a plate's line says: nothing until the slots are read, then

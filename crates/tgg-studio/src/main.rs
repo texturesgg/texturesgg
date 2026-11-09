@@ -10,6 +10,7 @@
 //! tgg-studio [--iso PATH] --snap out.png [--scene NAME]   headless, as Rune's tooling
 //! ```
 
+mod create;
 mod editor;
 mod jobs;
 mod keys;
@@ -18,6 +19,7 @@ mod melee;
 mod mods;
 mod nav;
 mod newmod;
+mod play;
 mod preferences;
 mod replays;
 mod report;
@@ -49,23 +51,26 @@ const SCENES: &[Scene] = &[
         app.game = None;
         app.welcome.games = tgg_app::discover_games();
     }),
-    ("stages", |app| app.melee.tab = melee::Tab::Stages),
+    ("stages", |app| skins(app).melee.tab = melee::Tab::Stages),
+    ("skins", |app| {
+        skins(app);
+    }),
     ("fox", |app| {
         if let Some(fox) = melee_dat::Character::from_code("Fx") {
-            melee::actions::open_fighter(app, fox);
+            melee::actions::open_fighter(skins(app), fox);
         }
     }),
     ("fox-shine", |app| show_shared(app, "Fx", "Shine")),
     ("fox-laser", |app| show_shared(app, "Fx", "Laser")),
     ("fox-edit", |app| {
         if let Some(fox) = melee_dat::Character::from_code("Fx") {
-            melee::actions::open_fighter(app, fox);
+            melee::actions::open_fighter(skins(app), fox);
             editor::actions::open(app);
         }
     }),
     ("fox-edit-helmet", |app| {
         if let Some(fox) = melee_dat::Character::from_code("Fx") {
-            melee::actions::open_fighter(app, fox);
+            melee::actions::open_fighter(skins(app), fox);
             editor::actions::open(app);
             editor::actions::select(app, Some(1));
         }
@@ -73,7 +78,7 @@ const SCENES: &[Scene] = &[
     // A click on the middle of the model, as the player would to pick its texture.
     ("fox-edit-pick", |app| {
         if let Some(fox) = melee_dat::Character::from_code("Fx") {
-            melee::actions::open_fighter(app, fox);
+            melee::actions::open_fighter(skins(app), fox);
             editor::actions::open(app);
             editor::actions::select(app, None);
             if let Some(shown) = &mut app.stage.shown {
@@ -84,7 +89,7 @@ const SCENES: &[Scene] = &[
     // Changing the costume's first color outside its textures.
     ("fox-colors", |app| {
         if let Some(fox) = melee_dat::Character::from_code("Fx") {
-            melee::actions::open_fighter(app, fox);
+            melee::actions::open_fighter(skins(app), fox);
             editor::actions::open(app);
             editor::actions::select(app, None);
             editor::colors::pick_swatch(app, 0, 0, &mut rune::Tx::default());
@@ -104,7 +109,7 @@ const SCENES: &[Scene] = &[
         else {
             return;
         };
-        melee::actions::open_stage(app, stage);
+        melee::actions::open_stage(skins(app), stage);
         editor::actions::open(app);
         editor::actions::select(app, None);
         let groups = app
@@ -125,7 +130,7 @@ const SCENES: &[Scene] = &[
     }),
     ("fox-moves", |app| {
         if let Some(fox) = melee_dat::Character::from_code("Fx") {
-            melee::actions::open_fighter(app, fox);
+            melee::actions::open_fighter(skins(app), fox);
             melee::actions::toggle_pane(app, melee::Pane::Moves);
         }
     }),
@@ -137,14 +142,14 @@ const SCENES: &[Scene] = &[
             .copied()
             .find(|stage| stage.name() == "Final Destination")
         {
-            melee::actions::open_stage(app, stage);
+            melee::actions::open_stage(skins(app), stage);
         }
     }),
-    ("library", |app| nav::actions::go(app, nav::Place::Library)),
+    ("library", melee::actions::show_mine),
     // Review over Library: Fox's green costume, offered as a skin, and a
     // file that isn't one.
     ("library-review", |app| {
-        nav::actions::go(app, nav::Place::Library);
+        melee::actions::show_mine(app);
         let (Some(fox), Some(references)) = (melee_dat::Character::from_code("Fx"), &app.game)
         else {
             return;
@@ -172,7 +177,7 @@ const SCENES: &[Scene] = &[
         let Some(fox) = melee_dat::Character::from_code("Fx") else {
             return;
         };
-        melee::actions::open_fighter(app, fox);
+        melee::actions::open_fighter(skins(app), fox);
         editor::actions::open(app);
         editor::colors::pick_swatch(app, 0, 0, &mut rune::Tx::default());
         editor::colors::set_channel(app, 0, 255.0);
@@ -184,6 +189,12 @@ const SCENES: &[Scene] = &[
     // one with an update; the review before installing Replays; and an
     // install under way.
     ("mods", |app| mods_scene(app, false)),
+    // Play before tgg-melee is installed.
+    ("play-new", |app| {
+        mods_scene(app, false);
+        app.nav.place = nav::Place::Play;
+    }),
+    ("create", |app| app.nav.place = nav::Place::Create),
     ("mods-installed", |app| mods_scene(app, true)),
     // Updating Competitive to a version without Quick start, Online rules
     // newer.
@@ -469,7 +480,7 @@ fn show_shared(app: &mut App, code: &str, name: &str) {
     let Some(character) = melee_dat::Character::from_code(code) else {
         return;
     };
-    melee::actions::open_fighter(app, character);
+    melee::actions::open_fighter(skins(app), character);
     if let Some(model) = melee_dat::SharedModel::of(character).find(|model| model.name() == name) {
         stage::actions::play_action(app, model.action());
     }
@@ -619,6 +630,12 @@ fn open_files(app: &mut App) {
     if files.is_empty() || app.game.is_none() {
         return;
     }
-    nav::actions::go(app, nav::Place::Library);
+    melee::actions::show_mine(app);
     library::actions::add(app, &files);
+}
+
+/// A scene's app, on Skins.
+fn skins(app: &mut App) -> &mut App {
+    app.nav.place = nav::Place::Skins;
+    app
 }

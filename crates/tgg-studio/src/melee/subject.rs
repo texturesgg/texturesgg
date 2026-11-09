@@ -54,14 +54,14 @@ pub fn view(app: &App, subject: Subject, p: &Palette) -> El {
         .children(column)
 }
 
-/// The title row's breadcrumbs while something's open: "Melee / Fox", where
-/// "Melee" goes back.
+/// The title row's breadcrumbs while something's open: "Skins / Fox", where
+/// "Skins" goes back.
 pub fn crumbs(subject: Subject, p: &Palette) -> El {
     row()
         .gap(space::XS)
         .items_center()
         .child(
-            label(crate::nav::Place::Melee.label())
+            label(crate::nav::Place::Skins.label())
                 .key("melee/crumb")
                 .font(text::STRONG)
                 .color(p.muted)

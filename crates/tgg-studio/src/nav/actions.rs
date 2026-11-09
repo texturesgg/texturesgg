@@ -11,10 +11,10 @@ pub fn go(app: &mut App, place: Place) {
     }
     app.nav.place = place;
     match place {
-        Place::Library => crate::library::actions::request_renders(app),
+        Place::Skins => crate::melee::actions::opened(app),
         Place::Mods => crate::mods::actions::opened(app),
         Place::Replays => crate::replays::actions::opened(app),
-        Place::Melee => {}
+        Place::Play | Place::Create => {}
     }
 }
 
@@ -29,7 +29,7 @@ pub fn toggle_sidebar(app: &mut App) {
 /// was a level to go up.
 pub fn up(app: &mut App) -> bool {
     match app.nav.place {
-        Place::Melee => crate::melee::actions::back(app),
-        Place::Library | Place::Mods | Place::Replays => false,
+        Place::Skins => crate::melee::actions::back(app),
+        Place::Play | Place::Mods | Place::Replays | Place::Create => false,
     }
 }
