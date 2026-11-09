@@ -50,7 +50,8 @@ competitive` and `tgg port run`. Mod makers keep `tgg mod publish`.
   is `.<id>` (the game skips dot-folders). `tgg_mod::install::ModsDir` already
   does this.
 - **Registry mod**: an id with releases (versions). Each release has one build
-  per active layout. The catalog lists them.
+  per active layout. The catalog lists them. No registry id starts with
+  `skin.`: those are skins tgg makes on the player's machine.
 - **Set**: a name, a title, a description, a version, and a list of `(mod id,
   version range)`. Sets live in the registry, edited by admins. Its version is
   bumped when its list or ranges change.
@@ -161,6 +162,10 @@ in-game browser will read it directly.
   codes a Slippi replay ran; its shape is in [mod profiles](mod-profiles.md#the-slippi-mapping-get-apiregistryslippi).
   Catalog entries also carry `publisher` and `changes_game` for profiles
   ([catalog entries](mod-profiles.md#catalog-entries)).
+- `GET /api/registry/layouts`: every game layout, newest port release
+  first: `[{id, target, system, portVersion, active}]`, `system` being
+  `linux`, `windows`, `macos` or `other`; `active` is false for a retired
+  layout, whose packages stay downloadable.
 - `GET /api/registry/images/<sha256>.png`: an icon or screenshot.
 - Package and image URLs are content-addressed (by SHA-256) and immutable.
   Lists and catalogs may be a minute old.
