@@ -152,6 +152,9 @@ pub mod size {
     pub const ROW: f32 = 32.0;
     /// A game's card on Play, and a card like it.
     pub const GAME_CARD: f32 = 340.0;
+    /// A toast saying what just happened.
+    pub const TOAST: f32 = 440.0;
+    pub const TOAST_HEIGHT: f32 = 44.0;
     /// A tab's words, centered in this, over its underline; what sits at
     /// the end of a row of tabs centers in it too.
     pub const TAB: f32 = 34.0;
@@ -193,6 +196,8 @@ pub mod size {
 pub mod elevation {
     /// A dialog over the window.
     pub const DIALOG: (f32, f32) = (24.0, 60.0);
+    /// A toast over the place.
+    pub const TOAST: (f32, f32) = (8.0, 24.0);
 }
 
 const SANS: Family = Family::Named("Schibsted Grotesk");

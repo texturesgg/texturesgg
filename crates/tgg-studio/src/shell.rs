@@ -6,8 +6,10 @@
 
 use crate::nav::{Place, actions as nav};
 use crate::state::App;
-use crate::ui::tokens::{Palette, motion, radius, size, space, text};
-use crate::ui::{close_glyph, icon_button, place_row, rule, sidebar_glyph, spacer, text_action};
+use crate::ui::tokens::{Palette, elevation, motion, radius, size, space, text};
+use crate::ui::{
+    close_glyph, dot, icon_button, place_row, rule, sidebar_glyph, spacer, text_action,
+};
 use crate::{
     create, editor, keys, library, melee, mods, newmod, play, preferences, replays, report, signin,
     welcome, window,
@@ -45,6 +47,9 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
             if (app.window_width - rect[2]).abs() >= 0.5 {
                 app.window_width = rect[2];
             }
+            if (app.window_height - rect[3]).abs() >= 0.5 {
+                app.window_height = rect[3];
+            }
         })
         .child(sidebar(app, &p))
         .child(
@@ -58,6 +63,7 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         // A mod's details, the whole window tall at its right, as the sidebar is at its left.
         .child(mods::details::view(app, &p))
         .child(replays::details::view(app, &p))
+        .children(notice(app, &p))
         .child(toggle)
         // Dialogs, over everything.
         .children(library::review::view(app, &p))
@@ -156,7 +162,6 @@ fn title_row(app: &App, p: &Palette) -> El {
         .motion(motion::DEFAULT)
         .window_drag()
         .children(crumbs(app, p))
-        .children(notice(app, p))
         .child(el().grow(1.0))
         .children(update(app, p))
         .children(title_actions(app, p));
@@ -207,18 +212,56 @@ fn crumbs(app: &App, p: &Palette) -> Option<El> {
     }
 }
 
-/// What just happened, said in the title row.
+/// What just happened, in a toast at the foot of the place: its words, Undo
+/// after an install, and dismissing it. A failure is marked in red.
 fn notice(app: &App, p: &Palette) -> Option<El> {
     let notice = app.notice.as_ref()?;
+    if app.window_height <= 0.0 {
+        return None;
+    }
+    let left = if app.nav.sidebar {
+        size::SIDEBAR + size::LINE
+    } else {
+        0.0
+    } + space::PAGE;
+    let top = app.window_height - size::TOAST_HEIGHT - space::LG;
+    let undo = notice.undo.map(|slot| {
+        text_action("Undo", false, p)
+            .key("shell/notice/undo")
+            .on_press(move |app: &mut App| library::actions::undo(app, slot))
+    });
+    let (y, blur) = elevation::TOAST;
     Some(
-        label(notice.text.clone())
+        row()
             .key("shell/notice")
-            .font(text::BODY)
-            .color(if notice.error { p.danger } else { p.muted })
-            .truncate()
-            .min_w(0.0)
-            .shrink()
-            .ml(space::SM),
+            .w(size::TOAST)
+            .h(size::TOAST_HEIGHT)
+            .pl(space::SM)
+            .pr(space::XXS)
+            .gap(space::XS)
+            .items_center()
+            .fill(p.raise)
+            .border(size::LINE, p.line_strong)
+            .radius(radius::CONTROL)
+            .shadow(y, blur, p.shadow)
+            .role("status")
+            .label(notice.text.clone())
+            .children(notice.error.then(|| dot(p.danger)))
+            .child(
+                label(notice.text.clone())
+                    .font(text::BODY)
+                    .color(p.ink)
+                    .truncate()
+                    .min_w(0.0)
+                    .grow(1.0),
+            )
+            .children(undo)
+            .child(
+                icon_button(close_glyph(p), "Dismiss", p)
+                    .key("shell/notice/dismiss")
+                    .on_press(|app: &mut App| app.notice = None),
+            )
+            .absolute(left, top),
     )
 }
 

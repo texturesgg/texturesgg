@@ -37,6 +37,8 @@ pub enum Done {
     NewMod(Box<crate::newmod::actions::Done>),
     /// Slippi's Dolphin, started from here, closed.
     SlippiEnded,
+    /// The toast with this id has shown long enough.
+    NoticeExpired(u64),
 }
 
 pub struct Jobs {
@@ -212,6 +214,7 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
             Done::Replays(done) => crate::replays::actions::done(app, *done),
             Done::NewMod(done) => crate::newmod::actions::done(app, *done),
             Done::SlippiEnded => crate::slippi::actions::ended(app),
+            Done::NoticeExpired(id) => app.notice_expired(id),
             Done::Update(newer) => {
                 app.update = newer;
                 app.update.is_some()

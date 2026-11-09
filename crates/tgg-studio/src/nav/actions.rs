@@ -7,7 +7,6 @@ use crate::state::App;
 pub fn go(app: &mut App, place: Place) {
     if place != app.nav.place {
         crate::melee::actions::back(app);
-        app.notice = None;
     }
     app.nav.place = place;
     match place {

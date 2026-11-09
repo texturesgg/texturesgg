@@ -544,6 +544,32 @@ fn add_and_install_writes_the_skin_into_the_game() {
 }
 
 #[test]
+fn an_installs_toast_undoes_it_and_dismisses() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    let original = tgg_app::test_dat::model();
+    let files = tempfile::tempdir().expect("temp dir");
+    let (skin, _) = falco_skin(files.path());
+    add_through_review(&mut rt, skin);
+    tap(&mut rt, "review/install");
+    settle(&mut rt);
+    tap(&mut rt, "shell/notice/undo");
+    let slot: melee_dat::MeleeSlot = "PlFcRe.dat".parse().expect("a slot");
+    let game = rt.state.game.as_ref().expect("a game").game();
+    assert_eq!(
+        game.read_slot(slot).expect("read back"),
+        original,
+        "Undo put the costume back"
+    );
+    assert!(
+        rt.find("shell/notice/undo").is_none(),
+        "the undo's own toast has nothing to undo"
+    );
+    tap(&mut rt, "shell/notice/dismiss");
+    assert!(rt.state.notice.is_none());
+}
+
+#[test]
 fn an_install_undoes_from_the_fighters_costume() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
@@ -2598,4 +2624,19 @@ fn tgg_melee_stops_playing_the_slippi_iso_once_its_changed() {
     });
     reread(&mut rt);
     jobs_until(&mut rt, |app| app.mods.disc == crate::mods::Disc::Missing);
+}
+
+#[test]
+fn a_toast_goes_by_itself_but_a_failure_stays() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    rt.update(|app, _| app.tell("Something happened.", false));
+    rt.frame(FRAME);
+    assert!(rt.find("shell/notice").is_some(), "it shows");
+    jobs_until(&mut rt, |app| app.notice.is_none());
+    assert!(rt.find("shell/notice").is_none(), "and goes");
+    rt.update(|app, _| app.tell("Something failed.", true));
+    std::thread::sleep(std::time::Duration::from_secs(6));
+    poll(&mut rt);
+    assert!(rt.state.notice.is_some(), "a failure waits to be dismissed");
 }

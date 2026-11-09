@@ -60,6 +60,8 @@ pub struct App {
     /// sidebar; measured on the window, not the place, because a details
     /// pane sliding in narrows the place and would keep itself there.
     pub window_width: f32,
+    /// How tall the window is, as last laid out: toasts sit at its foot.
+    pub window_height: f32,
     /// Slippi's Dolphin, which plays the player's ISO.
     pub slippi: crate::slippi::Slippi,
     /// tgg-melee and its mods.
@@ -116,6 +118,7 @@ impl App {
             new_mod: crate::newmod::NewMod::default(),
             replays: Replays::default(),
             window_width: 0.0,
+            window_height: 0.0,
             jobs: Jobs::default(),
         }
     }
@@ -180,21 +183,58 @@ impl Data {
     }
 }
 
-/// A line saying what just happened: an install, a skin added, why
-/// something couldn't be done.
+/// What just happened, in a toast at the place's foot: an install, a skin
+/// added, why something couldn't be done. It goes by itself after a few
+/// seconds; one saying why something failed stays until it's dismissed or
+/// replaced.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Notice {
+    /// Which toast this is, so the timer of an earlier one leaves it be.
+    pub id: u64,
     pub text: String,
     pub error: bool,
+    /// The slot an install just changed, which Undo puts back.
+    pub undo: Option<melee_dat::MeleeSlot>,
 }
 
+/// How long a toast shows, in seconds.
+const NOTICE_SECONDS: u64 = 5;
+
 impl App {
-    /// Say `text` in the title row until the next thing happens.
+    /// Say `text` in a toast.
     pub fn tell(&mut self, text: impl Into<String>, error: bool) {
+        self.show_notice(text.into(), error, None);
+    }
+
+    /// Say `text` in a toast offering to undo the install into `slot`.
+    pub fn tell_undoable(&mut self, text: impl Into<String>, slot: melee_dat::MeleeSlot) {
+        self.show_notice(text.into(), false, Some(slot));
+    }
+
+    fn show_notice(&mut self, text: String, error: bool, undo: Option<melee_dat::MeleeSlot>) {
+        let id = self.notice.as_ref().map_or(1, |notice| notice.id + 1);
         self.notice = Some(Notice {
-            text: text.into(),
+            id,
+            text,
             error,
+            undo,
         });
+        // Recordings run work inline, where waiting would stall the window.
+        if !error && !self.jobs.inline {
+            self.jobs.spawn("notice", move || {
+                std::thread::sleep(std::time::Duration::from_secs(NOTICE_SECONDS));
+                crate::jobs::Done::NoticeExpired(id)
+            });
+        }
+    }
+
+    /// The toast `id`'s time is up: it goes, unless another replaced it.
+    pub fn notice_expired(&mut self, id: u64) -> bool {
+        let current = self.notice.as_ref().is_some_and(|notice| notice.id == id);
+        if current {
+            self.notice = None;
+        }
+        current
     }
 }
 

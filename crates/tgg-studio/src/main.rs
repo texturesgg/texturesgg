@@ -195,6 +195,13 @@ const SCENES: &[Scene] = &[
         app.nav.place = nav::Place::Play;
     }),
     ("create", |app| app.nav.place = nav::Place::Create),
+    // A toast after an install, offering Undo.
+    ("toast", |app| {
+        skins(app);
+        if let Ok(slot) = "PlFxOr.dat".parse() {
+            app.tell_undoable("Installed DARK GOKU FOX HALO into Fox · Orange.", slot);
+        }
+    }),
     ("mods-installed", |app| mods_scene(app, true)),
     // Updating Competitive to a version without Quick start, Online rules
     // newer.

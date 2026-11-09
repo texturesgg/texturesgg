@@ -175,8 +175,15 @@ pub fn confirm_review(app: &mut App, install_them: bool) {
         .cloned()
         .collect::<Vec<_>>()
         .join(" · ");
-    if !text.is_empty() {
-        app.tell(capitalized(&text), done.is_empty() && !failed.is_empty());
+    match changed.as_slice() {
+        // One install, nothing else to say: it can be undone from the toast.
+        [slot] if failed.is_empty() && done.len() == 1 => {
+            app.tell_undoable(capitalized(&text), *slot);
+        }
+        _ if !text.is_empty() => {
+            app.tell(capitalized(&text), done.is_empty() && !failed.is_empty());
+        }
+        _ => {}
     }
     slots_changed(app, &changed);
     request_renders(app);
@@ -213,7 +220,7 @@ pub fn install(app: &mut App, id: SkinId, slot: MeleeSlot) {
             )
         })
         .map(|()| format!("Installed {name} into {}.", slot_label(Some(slot))));
-    finish(app, slot, result);
+    finish(app, slot, result, true);
 }
 
 /// Put back what `slot` held before its last install.
@@ -221,7 +228,7 @@ pub fn undo(app: &mut App, slot: MeleeSlot) {
     let Some(references) = &app.game else { return };
     let result = install::undo(references.game(), slot, &app.library, &app.data.history())
         .map(|()| format!("Put back what {} had before.", slot_label(Some(slot))));
-    finish(app, slot, result);
+    finish(app, slot, result, false);
 }
 
 /// Put the game's own file back into `slot`, from the install history or
@@ -240,14 +247,19 @@ pub fn restore(app: &mut App, slot: MeleeSlot) {
         &app.data.history(),
     )
     .map(|()| format!("{} is vanilla again.", slot_label(Some(slot))));
-    finish(app, slot, result);
+    finish(app, slot, result, true);
 }
 
-/// Say how a change to `slot` went and, when it went through, show it.
-fn finish(app: &mut App, slot: MeleeSlot, result: Result<String, tgg_app::Error>) {
+/// Say how a change to `slot` went and, when it went through, show it;
+/// `undoable`, the toast offers to put back what it held.
+fn finish(app: &mut App, slot: MeleeSlot, result: Result<String, tgg_app::Error>, undoable: bool) {
     match result {
         Ok(text) => {
-            app.tell(text, false);
+            if undoable {
+                app.tell_undoable(text, slot);
+            } else {
+                app.tell(text, false);
+            }
             slots_changed(app, &[slot]);
         }
         Err(error) => app.tell(error.to_string(), true),

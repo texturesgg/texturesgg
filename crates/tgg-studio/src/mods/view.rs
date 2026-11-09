@@ -19,7 +19,7 @@ use tgg_mod::{CatalogEntry, LocalMod, ModId, ModSummary, Set, SetStatus};
 const SET_CARD: f32 = 300.0;
 /// The notices and the lists read best no wider than this.
 const COLUMN: f32 = 720.0;
-/// The head's side, where tgg-melee's version and disc are, at its widest.
+/// The head's side, where tgg-melee's version is, at its widest.
 const HEAD_SIDE: f32 = 420.0;
 /// Placeholder cards and rows while textures.gg first answers.
 const PLACEHOLDERS: usize = 4;
@@ -164,9 +164,10 @@ fn tabs(mods: &Mods, p: &Palette) -> El {
         )
 }
 
-/// The head's side: tgg-melee's version and the disc it plays, once it's
-/// installed, then choosing another disc and checking for updates. Asking
-/// textures.gg changes the action's words in place, so nothing moves.
+/// The head's side: the tgg-melee version mods are for, once it's
+/// installed, then its versions and checking for updates. Its disc and Play
+/// are on Play. Asking textures.gg changes the action's words in place, so
+/// nothing moves.
 fn head_side(app: &App, p: &Palette) -> El {
     let mods = &app.mods;
     let check = if mods.registry == Registry::Asking {
@@ -183,19 +184,17 @@ fn head_side(app: &App, p: &Palette) -> El {
         .max_w(HEAD_SIDE)
         .min_w(0.0);
     if let Some(port) = mods.port() {
-        side = side
-            .child(
-                row()
-                    .gap(space::XS)
-                    .items_end()
-                    .child(label("tgg-melee").font(text::STRONG).color(p.ink))
-                    .child(
-                        label(port.version.clone())
-                            .font(text::MONO_SMALL)
-                            .color(p.muted),
-                    ),
-            )
-            .children(disc_line(app, p));
+        side = side.child(
+            row()
+                .gap(space::XS)
+                .items_end()
+                .child(label("tgg-melee").font(text::STRONG).color(p.ink))
+                .child(
+                    label(port.version.clone())
+                        .font(text::MONO_SMALL)
+                        .color(p.muted),
+                ),
+        );
     }
     side.child(
         row()
@@ -206,35 +205,7 @@ fn head_side(app: &App, p: &Palette) -> El {
                     .key("mods/versions")
                     .on_press(|app: &mut App| actions::show_versions(app, true))
             }))
-            .children(mods.port().is_some().then(|| {
-                text_action("Choose a disc…", false, p)
-                    .key("mods/choose-disc")
-                    .on_press_tx(actions::choose_disc)
-            }))
             .child(check),
-    )
-}
-
-/// The disc tgg-melee plays, in a line; a missing one is a notice instead.
-fn disc_line(app: &App, p: &Palette) -> Option<El> {
-    let words = match &app.mods.disc {
-        Disc::Unknown | Disc::Looking => "Looking for an unmodified disc…".to_owned(),
-        Disc::Found(path) => {
-            let name = path.file_name().map_or_else(
-                || path.display().to_string(),
-                |name| name.to_string_lossy().into_owned(),
-            );
-            format!("Plays {name}")
-        }
-        Disc::Missing => return None,
-    };
-    Some(
-        label(words)
-            .key("mods/disc")
-            .font(text::SMALL)
-            .color(p.muted)
-            .truncate_middle()
-            .min_w(0.0),
     )
 }
 
