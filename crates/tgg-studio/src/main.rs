@@ -30,6 +30,7 @@ mod stage;
 mod state;
 mod ui;
 mod welcome;
+mod window;
 
 #[cfg(test)]
 mod flows;
@@ -426,34 +427,41 @@ const SCENES: &[Scene] = &[
 fn main() {
     tgg_app::log::start("tgg-studio", env!("CARGO_PKG_VERSION"));
     let iso = iso_argument();
-    let spec = AppSpec::<App> {
-        min_size: Some((900.0, 600.0)),
-        fonts: ui::fonts::FONTS,
-        families: ui::fonts::FAMILIES,
-        scenes: SCENES,
-        on_key: Some(keys::on_key),
-        setup: Some(jobs::setup),
-        poll: Some(jobs::poll),
-        ..AppSpec::new("textures.gg", (1280.0, 800.0), launch, shell::view)
-    };
     // The id its desktop entry and icon are filed under (dist/linux), so
     // the desktop matches the window to them.
     rune::set_app_id("gg.textures.app");
-    rune::App::new(spec)
-        // Coming back to the window: a sign-in or sign-out made with `tgg` shows.
-        .on_focus(signin::actions::focused)
-        .init(move || {
-            let mut app = App::new(
-                start(iso.as_deref()),
-                settings::load(),
-                Data::of_player(),
-                true,
-            );
-            open_files(&mut app);
-            app
-        })
-        .compositor(stage::viewport::Viewport::default())
-        .run();
+    rune::run_windows(move |displays| {
+        let (size, position) = window::opening(displays);
+        let spec = AppSpec::<App> {
+            min_size: Some(window::MIN_SIZE),
+            fonts: ui::fonts::FONTS,
+            families: ui::fonts::FAMILIES,
+            scenes: SCENES,
+            on_key: Some(keys::on_key),
+            setup: Some(jobs::setup),
+            poll: Some(jobs::poll),
+            ..AppSpec::new("textures.gg", size, launch, shell::view)
+        };
+        let app = rune::App::new(spec)
+            .window_options(rune::WindowOptions {
+                position,
+                ..Default::default()
+            })
+            // Coming back to the window: a sign-in or sign-out made with `tgg` shows.
+            .on_focus(signin::actions::focused)
+            .init(move || {
+                let mut app = App::new(
+                    start(iso.as_deref()),
+                    settings::load(),
+                    Data::of_player(),
+                    true,
+                );
+                open_files(&mut app);
+                app
+            })
+            .compositor(stage::viewport::Viewport::default());
+        [rune::WindowSpec::from_app("main", app)]
+    });
     // The PNGs opened in the player's image editor go with the app.
     tgg_app::external::remove_temporary_directory();
 }
