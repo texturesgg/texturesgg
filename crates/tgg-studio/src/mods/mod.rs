@@ -59,6 +59,8 @@ pub struct Mods {
     /// The game, while it runs.
     pub playing: Option<Playing>,
     pub tab: Tab,
+    /// Installed shows only the mods the player is making (dev builds).
+    pub made_only: bool,
     /// What the player's looking for among every mod.
     pub search: TextEdit,
     /// The mod whose details show beside the list.
@@ -122,6 +124,7 @@ impl Default for Mods {
             disc: Disc::Unknown,
             playing: None,
             tab: Tab::default(),
+            made_only: false,
             search: TextEdit::default(),
             selected: None,
             fallback: None,

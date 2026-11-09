@@ -1248,8 +1248,7 @@ fn a_new_mod_starts_from_the_sdk_in_a_folder_of_its_own() {
         tempfile::tempdir().expect("temp"),
         tempfile::tempdir().expect("temp"),
     );
-    open_place(&mut rt, Place::Create);
-    tap(&mut rt, "create/new-mod");
+    tap(&mut rt, "mods/new-mod");
     jobs_until(&mut rt, |app| app.new_mod.sdk.is_some());
     // The fake's SDK can't be read (see sdk_in), which the dialog says;
     // then the SDK as the download would have left it.
@@ -1301,12 +1300,9 @@ fn a_new_mod_starts_from_the_sdk_in_a_folder_of_its_own() {
 
 #[test]
 fn new_mod_waits_for_tgg_melee() {
-    let (mut rt, _disc, _data) = on_mods(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    let (rt, _disc, _data) = on_mods(std::sync::Arc::new(tgg_mod::FakeNet::new()));
     assert!(
-        {
-            open_place(&mut rt, Place::Create);
-            rt.find("create/new-mod").is_none() && rt.find("create/set-up").is_some()
-        },
+        rt.find("mods/new-mod").is_none(),
         "a mod starts from the installed tgg-melee's SDK"
     );
 }
@@ -2639,4 +2635,54 @@ fn a_toast_goes_by_itself_but_a_failure_stays() {
     std::thread::sleep(std::time::Duration::from_secs(6));
     poll(&mut rt);
     assert!(rt.state.notice.is_some(), "a failure waits to be dismissed");
+}
+
+#[cfg(unix)]
+#[test]
+fn installed_shows_just_the_mods_the_player_is_making() {
+    let (mut rt, _disc, data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    install_set(&mut rt, "competitive");
+    let ids: Vec<String> = rt
+        .state
+        .mods
+        .local
+        .mods
+        .iter()
+        .filter(|m| m.enabled)
+        .map(|m| m.id().to_string())
+        .collect();
+    let (mine, other) = (&ids[0], &ids[1]);
+    // A mod in the making loads from its own folder, linked in.
+    let mods = data.path().join("mods");
+    let work = tempfile::tempdir().expect("temp");
+    let source = work.path().join(mine);
+    std::fs::rename(mods.join(mine), &source).expect("move the mod out");
+    std::os::unix::fs::symlink(&source, mods.join(mine)).expect("link it back");
+    rt.update(|app, _| crate::mods::actions::read_disk(app));
+    tap(&mut rt, "mods/tab/installed");
+    settle(&mut rt);
+    let row = |id: &str| format!("mods/mod/{id}");
+    assert!(rt.find(&row(other)).is_some(), "All shows every mod");
+    tap(&mut rt, "mods/installed/made");
+    settle(&mut rt);
+    assert!(rt.find(&row(mine)).is_some(), "the player's mod shows");
+    assert!(rt.find(&row(other)).is_none(), "the rest don't");
+}
+
+#[test]
+fn your_skins_shows_just_the_skins_the_player_made() {
+    let (mut rt, _disc, _data) = editing();
+    tap(&mut rt, "editor/save");
+    settle(&mut rt);
+    let edited = rt.state.library.skins().len();
+    assert!(edited > 0, "saving keeps the costume as a skin");
+    rt.update(crate::editor::actions::leave);
+    settle(&mut rt);
+    tap(&mut rt, "melee/crumb");
+    settle(&mut rt);
+    tap(&mut rt, "melee/tab/mine");
+    tap(&mut rt, "library/tab/made");
+    settle(&mut rt);
+    let skin = &rt.state.library.skins()[0];
+    assert!(rt.find(&format!("library/skin/{}", skin.id)).is_some());
 }

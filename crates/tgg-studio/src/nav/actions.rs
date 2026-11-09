@@ -13,7 +13,7 @@ pub fn go(app: &mut App, place: Place) {
         Place::Skins => crate::melee::actions::opened(app),
         Place::Mods => crate::mods::actions::opened(app),
         Place::Replays => crate::replays::actions::opened(app),
-        Place::Play | Place::Create => {}
+        Place::Play => {}
     }
 }
 
@@ -37,6 +37,6 @@ pub fn up(app: &mut App) -> bool {
             crate::replays::actions::close_details(app);
             true
         }
-        Place::Play | Place::Mods | Place::Replays | Place::Create => false,
+        Place::Play | Place::Mods | Place::Replays => false,
     }
 }

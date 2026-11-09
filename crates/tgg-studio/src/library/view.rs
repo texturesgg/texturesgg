@@ -13,13 +13,14 @@ use melee_dat::MeleeSlot;
 use rune::{El, col, row, text as label};
 use tgg_app::costumes::{EFFECTS_FILE, FIGHTER_FILE, fighters};
 use tgg_app::install::SlotState;
-use tgg_app::library::Skin;
+use tgg_app::library::{Skin, SkinSource};
 
 /// Skins' "Your skins" tab: which of them show, adding more, and the skins
 /// grouped by fighter.
 pub fn body(app: &App, p: &Palette) -> Vec<El> {
     let skins = app.library.skins();
     let in_game = skins.iter().filter(|skin| installed(app, skin)).count();
+    let made_here = skins.iter().filter(|skin| made(skin)).count();
     let filter = app.library_page.filter;
     let choice = |name: String, which: Filter, key: &str| {
         chip(&name, filter == which, p)
@@ -44,6 +45,11 @@ pub fn body(app: &App, p: &Palette) -> Vec<El> {
             format!("Not installed {}", skins.len() - in_game),
             Filter::NotInstalled,
             "library/tab/not-installed",
+        ))
+        .child(choice(
+            format!("Made by you {made_here}"),
+            Filter::Made,
+            "library/tab/made",
         ))
         .child(spacer())
         .child(
@@ -100,6 +106,7 @@ fn groups(app: &App) -> Vec<(String, Vec<&Skin>)> {
             Filter::All => true,
             Filter::InGame => installed(app, skin),
             Filter::NotInstalled => !installed(app, skin),
+            Filter::Made => made(skin),
         };
         if !shown {
             continue;
@@ -168,4 +175,9 @@ fn card(app: &App, skin: &Skin, p: &Palette) -> El {
                 .children(install)
                 .child(remove),
         )
+}
+
+/// Whether the player made `skin`: saved it from the editor.
+fn made(skin: &Skin) -> bool {
+    matches!(skin.source, SkinSource::Edited { .. })
 }

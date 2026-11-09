@@ -27,6 +27,8 @@ pub enum Filter {
     All,
     InGame,
     NotInstalled,
+    /// Saved from the editor.
+    Made,
 }
 
 /// Files the player chose, before they join the library.

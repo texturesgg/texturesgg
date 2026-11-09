@@ -17,18 +17,10 @@ pub enum Place {
     Mods,
     /// Their Slippi and tgg-melee replays.
     Replays,
-    /// Making mods of their own.
-    Create,
 }
 
 impl Place {
-    pub const ALL: [Place; 5] = [
-        Place::Play,
-        Place::Skins,
-        Place::Mods,
-        Place::Replays,
-        Place::Create,
-    ];
+    pub const ALL: [Place; 4] = [Place::Play, Place::Skins, Place::Mods, Place::Replays];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -36,7 +28,6 @@ impl Place {
             Place::Skins => "Skins",
             Place::Mods => "Mods",
             Place::Replays => "Replays",
-            Place::Create => "Create",
         }
     }
 
@@ -47,7 +38,6 @@ impl Place {
             Place::Skins => "sidebar/place/skins",
             Place::Mods => "sidebar/place/mods",
             Place::Replays => "sidebar/place/replays",
-            Place::Create => "sidebar/place/create",
         }
     }
 }

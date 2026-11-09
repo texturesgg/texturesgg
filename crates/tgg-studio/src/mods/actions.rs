@@ -213,6 +213,11 @@ pub fn show_tab(app: &mut App, tab: Tab) {
     app.mods.tab = tab;
 }
 
+/// Installed shows only the mods the player is making, or every one.
+pub fn show_made(app: &mut App, made_only: bool) {
+    app.mods.made_only = made_only;
+}
+
 /// Show the mod `id`'s details beside the list, or hide them when they
 /// show already.
 pub fn select(app: &mut App, id: &ModId) {

@@ -11,7 +11,7 @@ use crate::ui::{
     close_glyph, dot, icon_button, place_row, rule, sidebar_glyph, spacer, text_action,
 };
 use crate::{
-    create, editor, keys, library, melee, mods, newmod, play, preferences, replays, report, signin,
+    editor, keys, library, melee, mods, newmod, play, preferences, replays, report, signin,
     welcome, window,
 };
 use rune::{Cx, El, col, el, row, text as label};
@@ -189,7 +189,6 @@ fn place(app: &App, p: &Palette) -> El {
     let page = match app.nav.place {
         Place::Play => play::view::view(app, p),
         Place::Skins => melee::view::view(app, p),
-        Place::Create => create::view::view(app, p),
         Place::Mods => mods::view::view(app, p),
         Place::Replays => replays::view::view(app, p),
     };
@@ -273,7 +272,7 @@ fn title_actions(app: &App, p: &Palette) -> Option<El> {
     match app.nav.place {
         Place::Skins => melee::subject::title_actions(app, p),
         // Each game's Play is on Play.
-        Place::Play | Place::Mods | Place::Replays | Place::Create => None,
+        Place::Play | Place::Mods | Place::Replays => None,
     }
 }
 

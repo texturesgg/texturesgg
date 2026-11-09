@@ -10,7 +10,6 @@
 //! tgg-studio [--iso PATH] --snap out.png [--scene NAME]   headless, as Rune's tooling
 //! ```
 
-mod create;
 mod editor;
 mod jobs;
 mod keys;
@@ -194,7 +193,6 @@ const SCENES: &[Scene] = &[
         mods_scene(app, false);
         app.nav.place = nav::Place::Play;
     }),
-    ("create", |app| app.nav.place = nav::Place::Create),
     // A toast after an install, offering Undo.
     ("toast", |app| {
         skins(app);

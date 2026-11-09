@@ -7,9 +7,9 @@ use super::{Disc, Mods, Registry, Tab, actions, count_text, size_text};
 use crate::state::App;
 use crate::ui::tokens::{Palette, radius, size, space, text};
 use crate::ui::{
-    ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, button_off, callout, icon_tile, page_head,
-    panel, progress, rule, search_field, skeleton, spacer, split, split_list, split_page, status,
-    switch, tab, text_action,
+    ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, button_off, callout, chip, icon_tile,
+    page_head, panel, progress, rule, search_field, skeleton, spacer, split, split_list,
+    split_page, status, switch, tab, text_action,
 };
 use rune::{El, ScrollSpec, col, el, row, text as label};
 use tgg_mod::{CatalogEntry, LocalMod, ModId, ModSummary, Set, SetStatus};
@@ -756,11 +756,41 @@ fn installed(mods: &Mods, p: &Palette) -> El {
             .font(text::BODY)
             .color(p.muted)
     });
-    let rows = mods.local.mods.iter().map(|m| mod_row(mods, m, p));
+    // The mods the player is making load from their own folders (dev
+    // builds); once there are any, Installed can show just those.
+    let made = mods.local.mods.iter().filter(|m| m.dev).count();
+    let made_only = mods.made_only && made > 0;
+    let choices = (made > 0).then(|| {
+        let choice = |words: String, which: bool, key: &str| {
+            chip(&words, made_only == which, p)
+                .key(key.to_owned())
+                .role("radio")
+                .on_press(move |app: &mut App| actions::show_made(app, which))
+        };
+        row()
+            .gap(space::SNUG)
+            .child(choice(
+                format!("All {}", mods.local.mods.len()),
+                false,
+                "mods/installed/all",
+            ))
+            .child(choice(
+                format!("Made by you {made}"),
+                true,
+                "mods/installed/made",
+            ))
+    });
+    let rows = mods
+        .local
+        .mods
+        .iter()
+        .filter(|m| !made_only || m.dev)
+        .map(|m| mod_row(mods, m, p));
     col()
         .key("mods/installed")
         .gap(space::SM)
         .children(empty)
+        .children(choices)
         .children((!mods.local.mods.is_empty()).then(|| list(rows, p)))
 }
 
@@ -771,7 +801,7 @@ fn mod_row(mods: &Mods, m: &LocalMod, p: &Palette) -> El {
     let on = m.enabled;
     let key = format!("mods/mod/{id}");
     let origin = if m.dev {
-        "A dev build".to_owned()
+        "Made by you · a dev build".to_owned()
     } else if m.sets().is_empty() {
         "On its own".to_owned()
     } else {
