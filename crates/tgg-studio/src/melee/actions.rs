@@ -17,6 +17,14 @@ pub fn open_game(app: &mut App, references: References) {
     app.renders.clear();
     app.game = Some(references);
     refresh(app);
+    // The first look for tgg-melee's disc ran before there was a game (a
+    // first run picks it on Welcome); this one may be it.
+    if matches!(
+        app.mods.disc,
+        crate::mods::Disc::Missing | crate::mods::Disc::Looking
+    ) {
+        crate::mods::actions::find_disc(app);
+    }
 }
 
 /// Read what every slot holds, and ask for the roster's pictures.
