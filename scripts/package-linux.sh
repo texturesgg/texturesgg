@@ -48,6 +48,8 @@ install -Dm644 "$HERE/gg.textures.app.desktop" "$DATA/applications/gg.textures.a
 install -Dm644 "$HERE/gg.textures.app.svg" "$DATA/icons/hicolor/scalable/apps/gg.textures.app.svg"
 install -Dm644 "$HERE/gg.textures.app.png" "$DATA/icons/hicolor/512x512/apps/gg.textures.app.png"
 command -v update-desktop-database >/dev/null && update-desktop-database "$DATA/applications" || true
+# Install on textures.gg opens the app (textures-gg:// links).
+command -v xdg-mime >/dev/null && xdg-mime default gg.textures.app.desktop x-scheme-handler/textures-gg || true
 command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -qt "$DATA/icons/hicolor" 2>/dev/null || true
 echo "Installed textures.gg. Open it from your app menu, or run tgg-studio."
 case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) echo "Add ~/.local/bin to PATH to run it from a terminal." ;; esac

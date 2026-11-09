@@ -41,3 +41,11 @@ Name: "{autoprograms}\textures.gg"; Filename: "{app}\tgg-studio.exe"
 
 [Run]
 Filename: "{app}\tgg-studio.exe"; Description: "Open textures.gg"; Flags: nowait postinstall skipifsilent
+
+; Install on textures.gg opens the app: textures-gg://mods/<id> and
+; textures-gg://sets/<name> reach it as its argument.
+[Registry]
+Root: HKCU; Subkey: "Software\Classes\textures-gg"; ValueType: string; ValueName: ""; ValueData: "URL:textures.gg"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\textures-gg"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\textures-gg\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\tgg-studio.exe"",0"
+Root: HKCU; Subkey: "Software\Classes\textures-gg\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\tgg-studio.exe"" ""%1"""

@@ -228,6 +228,8 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
             }
         };
     }
+    // A link from textures.gg opens once what it needs has arrived.
+    changed |= crate::links::apply(app);
     changed
 }
 

@@ -70,6 +70,8 @@ pub struct App {
     pub mods: Mods,
     /// Work off the window's thread.
     pub jobs: Jobs,
+    /// A textures.gg link waiting to be opened (see `links`).
+    pub link: Option<crate::links::Link>,
 }
 
 /// Where the app starts.
@@ -123,6 +125,7 @@ impl App {
             window_width: 0.0,
             window_height: 0.0,
             jobs: Jobs::default(),
+            link: None,
         }
     }
 

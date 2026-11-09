@@ -14,6 +14,7 @@ mod editor;
 mod jobs;
 mod keys;
 mod library;
+mod links;
 mod melee;
 mod mods;
 mod nav;
@@ -425,6 +426,14 @@ const SCENES: &[Scene] = &[
 ];
 
 fn main() {
+    // Started with a link while the app is open (Windows, Linux): the open
+    // one takes it, and this one is done.
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(link) = links::in_arguments(&arguments)
+        && links::forward(link)
+    {
+        return;
+    }
     tgg_app::log::start("tgg-studio", env!("CARGO_PKG_VERSION"));
     let iso = iso_argument();
     // The id its desktop entry and icon are filed under (dist/linux), so
@@ -449,6 +458,8 @@ fn main() {
             })
             // Coming back to the window: a sign-in or sign-out made with `tgg` shows.
             .on_focus(signin::actions::focused)
+            // textures-gg:// links, on macOS.
+            .on_open_url(links::opened_with)
             .init(move || {
                 let mut app = App::new(
                     start(iso.as_deref()),
@@ -457,9 +468,17 @@ fn main() {
                     true,
                 );
                 open_files(&mut app);
+                if let Some(link) = links::in_arguments(rune::extra_args()) {
+                    links::open(&mut app, link);
+                }
                 app
             })
             .compositor(stage::viewport::Viewport::default());
+        // Links a later launch passes on (Windows, Linux); not for Rune's
+        // headless tooling, whose display isn't a real one.
+        if !cfg!(target_os = "macos") && displays.iter().any(|display| display.id.is_some()) {
+            links::listen(app.handle());
+        }
         [rune::WindowSpec::from_app("main", app)]
     });
     // The PNGs opened in the player's image editor go with the app.

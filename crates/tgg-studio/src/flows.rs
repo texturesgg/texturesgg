@@ -1294,6 +1294,38 @@ fn tap_shown(rt: &mut Runtime<App>, key: &str) {
 }
 
 #[test]
+fn a_link_from_textures_gg_opens_its_set_once_tgg_melee_is_there_then_its_mod() {
+    let (mut rt, _disc, _data) = on_mods(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    rt.update(|app, _| crate::links::open(app, "textures-gg://sets/competitive/"));
+    poll(&mut rt);
+    assert!(rt.state.link.is_some(), "it waits for tgg-melee");
+    tap(&mut rt, "mods/install-port");
+    jobs_until(&mut rt, |app| app.link.is_none());
+    assert_eq!(
+        rt.state
+            .mods
+            .review
+            .as_ref()
+            .map(|review| review.title.as_str()),
+        Some("Install Competitive")
+    );
+    rt.update(|app, _| {
+        crate::mods::actions::cancel_review(app);
+        crate::links::open(app, "textures-gg://mods/tgg.legal-stages");
+    });
+    assert_eq!(rt.state.mods.tab, crate::mods::Tab::All);
+    assert_eq!(
+        rt.state
+            .mods
+            .selected
+            .as_ref()
+            .map(ToString::to_string)
+            .as_deref(),
+        Some("tgg.legal-stages")
+    );
+}
+
+#[test]
 fn a_new_mod_starts_from_the_sdk_in_a_folder_of_its_own() {
     let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
     let mods = tempfile::tempdir().expect("temp");
