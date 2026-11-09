@@ -52,3 +52,32 @@ jobs:
 
       - name: Test
         run: cargo test --locked --workspace
+
+  # tgg-studio ships for macOS and Windows too: the app and the crates under
+  # it build, lint and pass their tests there. (tgg-editor, which tgg-studio
+  # replaces, is Linux only.)
+  rust-other:
+    name: Rust (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            runs-on: blacksmith-6vcpu-macos-15
+          - name: Windows
+            runs-on: blacksmith-4vcpu-windows-2025
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Lint
+        run: cargo clippy --locked --workspace --exclude tgg-editor --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --locked --workspace --exclude tgg-editor
