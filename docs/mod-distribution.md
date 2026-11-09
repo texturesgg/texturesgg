@@ -395,9 +395,12 @@ release mirror.
 ## Netplay
 
 Netplay compares the exact mod set (ids, versions, builds, counted settings) on
-the same platform, and ids, versions and counted settings across platforms. Two
-players with the same set installed match. A set's own version isn't part of
-it; the mods are.
+the same platform, and ids, versions, sources and counted settings across
+platforms. A mod's source is the commit of the reviewed source the registry
+built it from (the manifest's `source`, which the builder writes with `tgg mod
+build --source-commit`), so two systems' builds of one release match and a
+build of anything else doesn't. Two players with the same set installed
+match. A set's own version isn't part of it; the mods are.
 
 ## Work split
 

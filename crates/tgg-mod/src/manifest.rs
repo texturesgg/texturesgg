@@ -146,6 +146,13 @@ pub struct Manifest {
     /// mapping is built from.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub slippi: Vec<SlippiCodeDecl>,
+    /// The commit of the reviewed source the registry built this package
+    /// from (40 lowercase hex digits), written by its builder
+    /// (`tgg mod build --source-commit`). Peers on different systems compare
+    /// it, since their libraries differ. Absent for a package built anywhere
+    /// else.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 /// A Slippi gecko code a mod reproduces: its address (`0x801D45EC`) or a
@@ -165,6 +172,14 @@ pub struct SlippiCodeDecl {
 
 fn every_version() -> String {
     "*".to_owned()
+}
+
+/// Whether `text` is a git commit id: 40 lowercase hex digits.
+pub fn is_commit(text: &str) -> bool {
+    text.len() == 40
+        && text
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// The tags a manifest's `tags` may name.
@@ -223,6 +238,8 @@ pub enum ManifestError {
     Netplay,
     #[error("the mod depends on itself")]
     DependsOnItself,
+    #[error("the source {0:?} must be a commit: 40 lowercase hex digits")]
+    Source(String),
     #[error("the {0} {1:?} must be the path of a .png under assets/")]
     Image(&'static str, String),
     #[error("a mod lists at most {MAX_SCREENSHOTS} screenshots")]
@@ -280,6 +297,11 @@ impl Manifest {
         }
         if self.depends.contains_key(&self.id) {
             return Err(ManifestError::DependsOnItself);
+        }
+        if let Some(source) = &self.source
+            && !is_commit(source)
+        {
+            return Err(ManifestError::Source(source.clone()));
         }
         Ok(())
     }
@@ -360,6 +382,7 @@ impl Manifest {
             files: Vec::new(),
             assets: Vec::new(),
             slippi: Vec::new(),
+            source: None,
         }
     }
 }

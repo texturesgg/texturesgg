@@ -133,6 +133,8 @@ impl Package {
         files::check("assets", &assets)?;
         check_images(&manifest, &assets)?;
         files::check("include", &include)?;
+        // Only the registry's builder says what source a package came from.
+        manifest.source = None;
         manifest.files = files::list(&files);
         manifest.assets = files::list(&assets);
         match &library {
@@ -439,6 +441,21 @@ mod tests {
             Package::from_zip(&swapped.to_zip()),
             Err(PackageError::FilesMismatch("assets"))
         ));
+    }
+
+    #[test]
+    fn only_the_registrys_builder_says_what_source_a_package_came_from() {
+        let files = Files::from([("PlMrNr.dat".to_owned(), b"mario".to_vec())]);
+        let mut claimed = manifest();
+        claimed.source = Some("a".repeat(40));
+        let mut package =
+            Package::pack(claimed, None, files, Files::new(), Files::new()).expect("pack");
+        assert_eq!(package.manifest.source, None, "an author can't claim one");
+        package.manifest.source = Some("b".repeat(40));
+        let opened = Package::from_zip(&package.to_zip()).expect("open");
+        assert_eq!(opened.manifest.source, package.manifest.source);
+        package.manifest.source = Some("main".into());
+        assert!(Package::from_zip(&package.to_zip()).is_err());
     }
 
     #[test]
