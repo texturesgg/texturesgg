@@ -119,7 +119,13 @@ pub fn tick(app: &mut App) {
 pub fn done(app: &mut App, done: Done, tx: &mut Tx) -> bool {
     match done {
         Done::Checked(result) => match result {
-            Ok(Some(who)) => app.signin.who = Some(who),
+            Ok(Some(who)) => {
+                app.signin.who = Some(who);
+                // Someone else now: You reads their profile.
+                if app.nav.place == Place::Profile {
+                    crate::profile::actions::opened(app);
+                }
+            }
             Ok(None) => signed_out(app),
             Err(Error::SessionExpired) => {
                 signed_out(app);

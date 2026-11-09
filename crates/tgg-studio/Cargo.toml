@@ -25,7 +25,8 @@ tgg-account = { path = "../tgg-account" }
 # Where costume renders are kept.
 dirs = "5"
 # Costume renders are kept as PNGs, by their file's SHA-256.
-image = { version = "0.25", default-features = false, features = ["png"] }
+# Pictures from textures.gg: pack thumbnails are WebP, avatars JPEG or PNG.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 sha2 = "0.10"
 # A sent report's answer.
 serde = { version = "1", features = ["derive"] }

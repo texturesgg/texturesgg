@@ -56,6 +56,8 @@ pub struct App {
     pub new_mod: crate::newmod::NewMod,
     /// The player's replays, and playing them with their mods.
     pub replays: Replays,
+    /// What You has read from textures.gg.
+    pub profile: crate::profile::Profile,
     /// How wide the window is, as last laid out. The place is that less the
     /// sidebar; measured on the window, not the place, because a details
     /// pane sliding in narrows the place and would keep itself there.
@@ -117,6 +119,7 @@ impl App {
             signin: SignIn::new(persist, credentials),
             new_mod: crate::newmod::NewMod::default(),
             replays: Replays::default(),
+            profile: Default::default(),
             window_width: 0.0,
             window_height: 0.0,
             jobs: Jobs::default(),

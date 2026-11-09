@@ -185,6 +185,8 @@ pub mod size {
     pub const DOT: f32 = 6.0;
     /// An account's mark, in a row.
     pub const AVATAR: f32 = 22.0;
+    /// An account's picture, heading You, as the site's profile heads it.
+    pub const PORTRAIT: f32 = 72.0;
     /// A dialog asking a question, and one holding a list to look over.
     pub const DIALOG: f32 = 440.0;
     pub const DIALOG_WIDE: f32 = 560.0;

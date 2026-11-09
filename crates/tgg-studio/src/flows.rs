@@ -2852,3 +2852,92 @@ fn signed_out_the_account_row_signs_in_instead() {
     assert!(rt.state.signin.login.is_some(), "the sign-in dialog opens");
     assert_eq!(rt.state.nav.place, Place::Play);
 }
+
+/// textures.gg as You reads it for ciao: one Melee pack, Falco's red
+/// costume alone, liked by nobody, and no code mods (the site's 404).
+fn ciaos_site() -> std::sync::Arc<tgg_mod::FakeNet> {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::empty());
+    let api = format!("{}/api", tgg_mod::FakeNet::API);
+    net.serve(
+        &format!("{api}/users/ciao"),
+        r#"{"name":"ciao","image":null,"pronouns":"they/them","bio":"Makes Falcos.",
+            "createdAt":"2026-09-13T01:32:28.273Z",
+            "stats":{"packCount":1,"downloadCount":1204,"likeCount":3}}"#,
+    );
+    net.serve(
+        &format!("{api}/users/ciao/uploads?pageSize=24"),
+        r#"{"items":[{"id":"p1","title":"Red Falco","slug":"red-falco","thumbnailKey":null,
+            "voteCount":3,"gameSlug":"melee","targetName":"Falco"}]}"#,
+    );
+    net.serve(
+        &format!("{api}/users/ciao/likes?pageSize=24"),
+        r#"{"items":[]}"#,
+    );
+    net.serve(
+        &format!("{api}/packs/by-id/p1/download"),
+        tgg_app::test_dat::model(),
+    );
+    net.serve(
+        &format!("{api}/games/melee/packs/red-falco"),
+        r#"{"mods":[{"fileName":"PlFcRe.dat"}]}"#,
+    );
+    net
+}
+
+#[test]
+fn you_shows_the_profile_as_the_site_does_and_adds_a_pack() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, data) = runtime(game_at(&iso));
+    rt.update(|app, _| app.mods.net = ciaos_site());
+    sign_in_as_ciao(&mut rt);
+    rt.frame(FRAME);
+    tap(&mut rt, "sidebar/account");
+    jobs_until(&mut rt, |app| app.profile.user.is_some());
+    let user = rt.state.profile.user.clone().expect("read").expect("found");
+    assert_eq!(user.stats.download_count, 1204);
+    assert!(rt.find("profile/stats").is_some());
+    assert!(rt.find("profile/tab/mods").is_none(), "no code mods yet");
+    assert!(rt.find("profile/pack/p1").is_some());
+    // Add downloads it and asks where it goes, as a file of the player's would.
+    tap(&mut rt, "profile/pack/p1/add");
+    jobs_until(&mut rt, |app| app.library_page.review.is_some());
+    assert!(data.path().join("downloads").join("PlFcRe.dat").exists());
+    tap(&mut rt, "review/add");
+    settle(&mut rt);
+    assert_eq!(rt.state.library.skins().len(), 1);
+    // Liked nothing: Likes says what would show.
+    tap(&mut rt, "profile/tab/likes");
+    settle(&mut rt);
+    assert!(rt.find("profile/published/note").is_some());
+}
+
+#[test]
+fn you_says_when_textures_gg_cant_be_reached_and_tries_again() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    let net = ciaos_site();
+    net.set_offline(true);
+    let shared = net.clone();
+    rt.update(move |app, _| app.mods.net = shared);
+    sign_in_as_ciao(&mut rt);
+    rt.frame(FRAME);
+    tap(&mut rt, "sidebar/account");
+    jobs_until(&mut rt, |app| app.profile.user.is_some());
+    assert!(rt.find("profile/published/problem").is_some());
+    net.set_offline(false);
+    tap(&mut rt, "profile/published/again");
+    jobs_until(&mut rt, |app| {
+        app.profile.packs.as_ref().is_some_and(Result::is_ok)
+    });
+    assert!(rt.find("profile/pack/p1").is_some());
+}
+
+#[test]
+fn member_since_and_counts_read_as_the_site_writes_them() {
+    assert_eq!(
+        crate::profile::view::member_since("2026-09-13T01:32:28.273Z").as_deref(),
+        Some("Member since September 2026")
+    );
+    assert_eq!(crate::profile::view::grouped(1_204_000), "1,204,000");
+    assert_eq!(crate::profile::view::grouped(12), "12");
+}

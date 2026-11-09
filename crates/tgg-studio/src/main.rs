@@ -370,16 +370,23 @@ const SCENES: &[Scene] = &[
         });
     }),
     // You, signed in as ciao, with what's been made on this computer.
+    // $TGG_SCENE_HANDLE names whose profile textures.gg is asked for (for a
+    // look; the default has none).
     ("profile", |app| {
+        let handle = std::env::var("TGG_SCENE_HANDLE").unwrap_or_else(|_| "ciao".into());
         app.signin.who = Some(tgg_account::SignedIn {
             account: tgg_account::Account {
-                handle: "ciao".into(),
-                display_name: Some("Ciao".into()),
+                display_name: Some(handle.clone()),
+                handle,
                 id: None,
             },
             verified: true,
         });
+        // Read before the picture is taken.
+        app.jobs.inline = true;
         nav::actions::go(app, nav::Place::Profile);
+        jobs::poll_now(app);
+        app.jobs.inline = false;
     }),
     // The player's own replays, read and resolved against the live
     // textures.gg before the picture (not deterministic: for a look).

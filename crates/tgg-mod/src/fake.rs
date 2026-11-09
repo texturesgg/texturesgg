@@ -312,6 +312,12 @@ impl FakeNet {
 
     /// Publish tgg-melee `version` for this system with the layout
     /// [`FakeNet::LAYOUT`], and make it the newest release.
+    /// Answer `url` with `body`: for front ends that read more of the site
+    /// than the registry, such as a profile and its packs.
+    pub fn serve(&self, url: &str, body: impl Into<Vec<u8>>) {
+        self.state().files.insert(url.to_owned(), body.into());
+    }
+
     pub fn publish_port(&self, version: &str) {
         let target = ports::target().unwrap_or("x86_64-linux-gnu");
         let top = format!("tgg-melee-{version}-{target}");

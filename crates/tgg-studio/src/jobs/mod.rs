@@ -37,6 +37,8 @@ pub enum Done {
     NewMod(Box<crate::newmod::actions::Done>),
     /// Slippi's Dolphin, started from here, closed.
     SlippiEnded,
+    /// You: a profile read from textures.gg, a pack downloaded.
+    Profile(Box<crate::profile::Done>),
     /// The toast with this id has shown long enough.
     NoticeExpired(u64),
 }
@@ -176,8 +178,10 @@ pub fn setup(app: &mut crate::state::App, waker: Waker) {
         if app.mods.disc == crate::mods::Disc::Unknown {
             crate::mods::actions::find_disc(app);
         }
-        // Who's signed in, as the site says now.
-        crate::signin::actions::check(app);
+        // Who's signed in, as the site says now; a snapshot keeps its scene's.
+        if !crate::snapshot() {
+            crate::signin::actions::check(app);
+        }
         if app.settings.check_for_updates.unwrap_or(true) {
             app.jobs.spawn("update check", || {
                 Done::Update(tgg_app::update::check(env!("CARGO_PKG_VERSION")))
@@ -211,6 +215,7 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
                 undoable,
             } => crate::melee::actions::states_read(app, &iso, states, undoable),
             Done::Mods(done) => crate::mods::actions::done(app, *done),
+            Done::Profile(done) => crate::profile::actions::done(app, *done),
             Done::ReportSent(result) => crate::report::actions::sent(app, result),
             Done::SignIn(done) => crate::signin::actions::done(app, *done, tx),
             Done::Replays(done) => crate::replays::actions::done(app, *done),
