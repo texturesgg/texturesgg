@@ -75,7 +75,7 @@ impl FakeNet {
     pub const API: &str = "https://fake.textures.gg";
     pub const RELEASES: &str = "https://fake.textures.gg/tgg-melee";
     /// The game layout the port release has and the catalog serves.
-    pub const LAYOUT: &str = "fake-layout";
+    pub const LAYOUT: &str = "fa4efa4efa4efa4e";
     pub const PORT_VERSION: &str = "0.5.0";
 
     /// A registry and mirror with nothing in them.
@@ -322,9 +322,33 @@ impl FakeNet {
         let target = ports::target().unwrap_or("x86_64-linux-gnu");
         let top = format!("tgg-melee-{version}-{target}");
         let game = tarball(&top, &[(ports::EXECUTABLE, FAKE_GAME.as_bytes(), 0o755)]);
+        let sdk_json = fake_sdk_json(version, target);
         let sdk = tarball(
             &format!("{top}-sdk"),
-            &[("README.txt", b"A fake SDK.\n".as_slice(), 0o644)],
+            &[
+                (crate::sdk::FILE, sdk_json.as_bytes(), 0o644),
+                ("symbols.txt", b"".as_slice(), 0o644),
+                (
+                    "examples/template/manifest.json",
+                    FAKE_TEMPLATE_MANIFEST.as_bytes(),
+                    0o644,
+                ),
+                (
+                    "examples/template/CMakeLists.txt",
+                    FAKE_TEMPLATE_CMAKE.as_bytes(),
+                    0o644,
+                ),
+                (
+                    "examples/template/README.md",
+                    FAKE_TEMPLATE_README.as_bytes(),
+                    0o644,
+                ),
+                (
+                    "examples/template/src/mod.c",
+                    FAKE_TEMPLATE_MOD.as_bytes(),
+                    0o644,
+                ),
+            ],
         );
         let file = |name: String, bytes: &[u8]| ReleaseFile {
             name,
@@ -599,7 +623,26 @@ fn tarball(top: &str, files: &[(&str, &[u8], u32)]) -> Vec<u8> {
     builder
         .append_data(&mut folder, format!("{top}/"), std::io::empty())
         .expect("write to memory");
+    let mut folders = std::collections::BTreeSet::new();
     for (name, bytes, mode) in files {
+        // A folder entry before the first file in it, as a real archive has.
+        let mut parent = std::path::Path::new(name).parent();
+        let mut missing = Vec::new();
+        while let Some(dir) = parent.filter(|dir| !dir.as_os_str().is_empty()) {
+            if folders.insert(dir.to_owned()) {
+                missing.push(dir.to_owned());
+            }
+            parent = dir.parent();
+        }
+        for dir in missing.into_iter().rev() {
+            builder
+                .append_data(
+                    &mut folder,
+                    format!("{top}/{}/", dir.display()),
+                    std::io::empty(),
+                )
+                .expect("write to memory");
+        }
         let mut header = tar::Header::new_gnu();
         header.set_entry_type(tar::EntryType::Regular);
         header.set_mode(*mode);
@@ -802,3 +845,29 @@ pub fn slippi_mapping() -> SlippiMapping {
         minor,
     }
 }
+
+/// The `tgg-game-sdk.json` of a fake release's SDK.
+fn fake_sdk_json(version: &str, target: &str) -> String {
+    serde_json::json!({
+        "api": crate::API,
+        "api_version": "0.1",
+        "name": "tgg-melee",
+        "version": version,
+        "game_abi": FakeNet::LAYOUT,
+        "compiler": "GNU",
+        "compiler_version": "14.2.0",
+        "processor": "x86_64",
+        "target": target,
+        "include_dirs": ["include"],
+        "glibc": "2.31",
+        "symbols": "symbols.txt",
+    })
+    .to_string()
+}
+
+/// A fake SDK's template example, shaped like the real one: the id and the
+/// docs lines a new mod replaces.
+const FAKE_TEMPLATE_MANIFEST: &str = "{\n  \"api\": \"tgg-melee/0\",\n  \"id\": \"my-mod\",\n  \"name\": \"My mod\",\n  \"version\": \"0.1.0\"\n}\n";
+const FAKE_TEMPLATE_CMAKE: &str = "cmake_minimum_required(VERSION 3.25)\nproject(my-mod LANGUAGES C)\ninclude(\"${TGG_SDK}/TggMod.cmake\")\ntgg_use_sdk(\"${TGG_SDK}\")\ntgg_add_mod(my-mod)\n";
+const FAKE_TEMPLATE_README: &str = "# Template\n\n- The docs came with the SDK: `$(tgg sdk path)/docs`. Start with `writing-mods.md`.\n";
+const FAKE_TEMPLATE_MOD: &str = "/* A starting point for a mod. Give it your own id in manifest.json, then\n * swap what's below for your own code. The docs are in your SDK: run\n * `tgg sdk path` and open docs/writing-mods.md there.\n */\n#include \"tgg/events.h\"\n";
