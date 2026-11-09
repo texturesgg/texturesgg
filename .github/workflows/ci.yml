@@ -80,4 +80,4 @@ jobs:
         run: cargo clippy --locked --workspace --exclude tgg-editor --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --locked --workspace --exclude tgg-editor
+        run: cargo test --locked --workspace --exclude tgg-editor --no-fail-fast

@@ -621,7 +621,7 @@ mod tests {
             done["port"]["executable"]
                 .as_str()
                 .expect("exe")
-                .ends_with("tgg-melee")
+                .ends_with(&format!("tgg-melee{}", std::env::consts::EXE_SUFFIX))
         );
     }
 
