@@ -121,8 +121,10 @@ in-game browser will read it directly.
   or else its author's account name, and `official`, whether the admins
   vouch for it. `author` is the author's account name. `port` is the newest
   tgg-melee release the registry builds mods for; `targets` are the systems
-  that release has builds for on it. `installs` counts package downloads
-  (installs and updates).
+  that release has builds for on it. `installs` counts first installs: a
+  package download with `?for=install`, which tgg sends when the player
+  doesn't have the mod yet. Updates, reinstalls and replay playback don't
+  count.
 
   ```json
   {

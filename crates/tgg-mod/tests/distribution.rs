@@ -824,11 +824,25 @@ fn the_store_lists_every_mod_and_details_one() {
 }
 
 #[test]
-fn installing_a_mod_counts_toward_its_installs() {
+fn installing_a_mod_counts_toward_its_installs_and_updating_it_doesnt() {
     let net = FakeNet::new();
     let player = player();
     let port = install_port(&net, &player);
     install_set(&net, &player, &port, "replays");
+    net.publish_mod("tgg.replay-player", "Replay player", "0.2.1", &[]);
+    let sets = tgg_mod::sets(&net).expect("sets");
+    let catalog = tgg_mod::catalog(&net, &port.port()).expect("catalog");
+    let plan = tgg_mod::plan_updates(&sets, &catalog, &local(&player, &port));
+    assert_eq!(plan.steps.iter().filter(|s| s.download.is_some()).count(), 1);
+    tgg_mod::apply_cached(
+        &net,
+        &plan,
+        &player.mods,
+        Some(&player.packages),
+        &no_progress,
+        &go(),
+    )
+    .expect("update");
     let page = tgg_mod::mods(&net, 1).expect("mods");
     // Most installed first: the three Replays mods.
     let top: Vec<(&str, u64)> = page.items[..3]
