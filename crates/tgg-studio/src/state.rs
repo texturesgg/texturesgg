@@ -70,6 +70,9 @@ pub struct App {
     pub mods: Mods,
     /// Work off the window's thread.
     pub jobs: Jobs,
+    /// What tgg-melee had in a slot before the last skin change there, for
+    /// the toast's Undo.
+    pub port_before: Option<crate::library::port::Before>,
     /// A textures.gg link waiting to be opened (see `links`).
     pub link: Option<crate::links::Link>,
 }
@@ -126,6 +129,7 @@ impl App {
             window_height: 0.0,
             jobs: Jobs::default(),
             link: None,
+            port_before: None,
         }
     }
 
@@ -206,8 +210,10 @@ pub struct Notice {
 /// What a toast offers to do.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NoticeAction {
-    /// Put back the slot an install just changed.
+    /// Put back the slot of the Slippi ISO an install just changed.
     Undo(melee_dat::MeleeSlot),
+    /// Put back what tgg-melee had before the last skin change.
+    UndoPort,
     /// Reopen the unsaved edits an earlier session left of a slot, or
     /// discard them. It stays until answered or dismissed.
     Reopen(melee_dat::MeleeSlot),

@@ -199,7 +199,10 @@ const SCENES: &[Scene] = &[
     ("toast", |app| {
         skins(app);
         if let Ok(slot) = "PlFxOr.dat".parse() {
-            app.tell_undoable("Installed DARK GOKU FOX HALO into Fox · Orange.", slot);
+            app.tell_undoable(
+                "Installed DARK GOKU FOX HALO into Fox · Orange in Slippi.",
+                slot,
+            );
         }
     }),
     // What the next launch says when edits were left unsaved.

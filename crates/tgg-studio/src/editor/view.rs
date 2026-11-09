@@ -117,7 +117,7 @@ pub fn actions(document: &Document, p: &Palette) -> El {
             button("Save and install", ButtonKind::Primary, p)
                 .key("editor/install")
                 .help(hint(
-                    "Keep it in your library and write it into its slot",
+                    "Keep it in your library and install it into its slot of your Slippi ISO",
                     Command::SaveAndInstall,
                 ))
                 .on_press_tx(|app: &mut App, tx| actions::save(app, true, None, tx)),

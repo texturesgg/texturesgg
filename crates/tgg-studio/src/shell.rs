@@ -209,6 +209,11 @@ fn notice(app: &App, p: &Palette) -> Option<El> {
                 .key("shell/notice/undo")
                 .on_press(move |app: &mut App| library::actions::undo(app, slot)),
         ],
+        Some(NoticeAction::UndoPort) => vec![
+            text_action("Undo", false, p)
+                .key("shell/notice/undo")
+                .on_press(library::port::undo),
+        ],
         Some(NoticeAction::Reopen(_)) => vec![
             text_action("Reopen", false, p)
                 .key("shell/notice/reopen")

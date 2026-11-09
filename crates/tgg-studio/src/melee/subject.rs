@@ -4,6 +4,7 @@
 
 use super::{Melee, Pane, Subject, actions};
 use crate::library::actions as library;
+use crate::library::port;
 use crate::stage::{actions as stage, view as stage_view};
 use crate::state::App;
 use crate::ui::tokens::{Palette, size, space, text};
@@ -92,7 +93,7 @@ fn costumes(app: &App, p: &Palette) -> El {
                 let slot = costume.slot(fighter);
                 pane_row(
                     label(costume.color.name()).font(text::STRONG).color(p.ink),
-                    Some(state_word(melee, slot, p)),
+                    Some(states(app, slot, p)),
                     showing == Some(slot),
                     p,
                 )
@@ -215,6 +216,24 @@ fn moves(app: &App, p: &Palette) -> Option<El> {
     Some(pane(header, body, p))
 }
 
+/// What a costume holds in the Slippi ISO, in a word, and whether tgg-melee
+/// plays a skin there.
+fn states(app: &App, slot: MeleeSlot, p: &Palette) -> El {
+    let in_port = port::skin_in(app, slot)
+        .filter(|skin| skin.enabled)
+        .map(|skin| {
+            label("· tgg-melee")
+                .font(text::SMALL)
+                .color(p.accent_text)
+                .help(format!("tgg-melee plays {} here", skin.name))
+        });
+    row()
+        .gap(space::XXS)
+        .items_center()
+        .child(state_word(&app.melee, slot, p))
+        .children(in_port)
+}
+
 /// What a slot holds, in a word: the player's skin, a file the app doesn't
 /// know, or the game's own.
 fn state_word(melee: &Melee, slot: MeleeSlot, p: &Palette) -> El {
@@ -260,30 +279,48 @@ fn slot_actions(app: &App, slot: MeleeSlot, p: &Palette) -> El {
                         .font(text::SMALL)
                         .color(p.faint)
                 }));
-            let right =
-                in_slot(id).then(|| label("In this slot").font(text::SMALL).color(p.accent_text));
-            let row = pane_row(left, right, false, p).key(format!("melee/skin/{id}"));
-            if in_slot(id) {
-                row
+            // Where it goes: either game, or both; one it's in says so.
+            let slippi = if in_slot(id) {
+                label("In Slippi").font(text::SMALL).color(p.accent_text)
             } else {
-                row.role("button")
-                    .label(format!("Install {}", skin.name))
-                    .focusable(true)
-                    .cursor(rune::Cursor::Pointer)
-                    .help("Install it into this slot")
+                text_action("Slippi", false, p)
+                    .key(format!("melee/skin/{id}/slippi"))
+                    .help("Install it into this slot of your Slippi ISO")
                     .on_press(move |app: &mut App| library::install(app, id, slot))
-            }
+            };
+            let tgg_melee = if port::plays(app, id, slot) {
+                label("In tgg-melee").font(text::SMALL).color(p.accent_text)
+            } else {
+                text_action("tgg-melee", false, p)
+                    .key(format!("melee/skin/{id}/tgg-melee"))
+                    .help("Install it into this slot in tgg-melee")
+                    .on_press(move |app: &mut App| port::install(app, id, slot))
+            };
+            let right = row()
+                .gap(space::XXS)
+                .items_center()
+                .child(slippi)
+                .child(tgg_melee);
+            pane_row(left, Some(right), false, p).key(format!("melee/skin/{id}"))
         })
         .collect::<Vec<_>>();
     let undo = melee.undoable.contains(&slot).then(|| {
-        text_action("Undo the last install", false, p)
+        text_action("Undo in Slippi", false, p)
             .key("melee/undo")
+            .help("Put back what this slot of your Slippi ISO had before the last install")
             .on_press(move |app: &mut App| library::undo(app, slot))
     });
     let restore = melee.changed(slot).then(|| {
-        text_action("Restore the original", false, p)
+        text_action("Original in Slippi", false, p)
             .key("melee/restore")
+            .help("Put the game's own file back into your Slippi ISO")
             .on_press(move |app: &mut App| library::restore(app, slot))
+    });
+    let remove = port::skin_in(app, slot).map(|_| {
+        text_action("Original in tgg-melee", false, p)
+            .key("melee/port/remove")
+            .help("Take the skin out of tgg-melee, so it plays the game's own file")
+            .on_press(move |app: &mut App| port::remove(app, slot))
     });
     let empty = skins.is_empty().then(|| {
         let fighter = slot.character().map_or("it", |character| character.name());
@@ -305,14 +342,18 @@ fn slot_actions(app: &App, slot: MeleeSlot, p: &Palette) -> El {
         )
         .children(skins)
         .children(empty)
-        .children((undo.is_some() || restore.is_some()).then(|| {
-            row()
-                .px(space::XS)
-                .py(space::XS)
-                .gap(space::XS)
-                .children(undo)
-                .children(restore)
-        }))
+        .children(
+            (undo.is_some() || restore.is_some() || remove.is_some()).then(|| {
+                row()
+                    .flex_wrap()
+                    .px(space::XS)
+                    .py(space::XS)
+                    .gap(space::XS)
+                    .children(undo)
+                    .children(restore)
+                    .children(remove)
+            }),
+        )
 }
 
 /// What the title row offers while a fighter or stage is open: editing the

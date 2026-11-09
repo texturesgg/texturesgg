@@ -37,7 +37,7 @@ pub fn body(app: &App, p: &Palette) -> Vec<El> {
             "library/tab/all",
         ))
         .child(choice(
-            format!("In your ISO {in_game}"),
+            format!("Installed {in_game}"),
             Filter::InGame,
             "library/tab/in-game",
         ))
@@ -91,10 +91,21 @@ pub fn count(app: &App) -> usize {
     app.library.skins().len()
 }
 
-/// Whether `skin` is in the player's game now.
+/// Whether `skin` is in either game now: the Slippi ISO or tgg-melee.
 fn installed(app: &App, skin: &Skin) -> bool {
+    in_slippi(app, skin) || in_tgg_melee(app, skin)
+}
+
+/// Whether `skin` is in the Slippi ISO now.
+fn in_slippi(app: &App, skin: &Skin) -> bool {
     let states = app.melee.states.as_ref();
     skin.slot.is_some_and(|slot| matches!(states.and_then(|states| states.get(&slot)), Some(SlotState::Skin(there)) if there.id == skin.id))
+}
+
+/// Whether tgg-melee plays `skin` now.
+fn in_tgg_melee(app: &App, skin: &Skin) -> bool {
+    skin.slot
+        .is_some_and(|slot| super::port::plays(app, skin.id, slot))
 }
 
 /// The skins the tab shows, grouped by the fighter they were made for (newest
@@ -143,25 +154,34 @@ pub fn card(app: &App, skin: &Skin, p: &Palette) -> El {
         Some(MeleeSlot::Stage(stage)) => stage.name().to_owned(),
         None => "No slot".to_owned(),
     };
-    let in_game = installed(app, skin);
+    let (slippi, tgg_melee) = (in_slippi(app, skin), in_tgg_melee(app, skin));
     let id = skin.id;
     let status = ui::status(
-        if in_game {
-            format!("{goes} · in your ISO")
-        } else {
-            goes
+        match (slippi, tgg_melee) {
+            (true, true) => format!("{goes} · in Slippi and tgg-melee"),
+            (true, false) => format!("{goes} · in Slippi"),
+            (false, true) => format!("{goes} · in tgg-melee"),
+            (false, false) => goes,
         },
-        in_game,
+        slippi || tgg_melee,
         p,
     );
-    let install = skin
+    // Installing it, into whichever game doesn't have it yet.
+    let into_slippi = skin
         .slot
-        .filter(|_| !in_game && app.game.is_some())
+        .filter(|_| !slippi && app.game.is_some())
         .map(|slot| {
-            text_action("Install", false, p)
+            text_action("Into Slippi", false, p)
                 .key(format!("library/install/{}", skin.id))
+                .help("Install it into your Slippi ISO")
                 .on_press(move |app: &mut App| actions::install(app, id, slot))
         });
+    let into_tgg_melee = skin.slot.filter(|_| !tgg_melee).map(|slot| {
+        text_action("Into tgg-melee", false, p)
+            .key(format!("library/install-port/{}", skin.id))
+            .help("Install it into tgg-melee")
+            .on_press(move |app: &mut App| super::port::install(app, id, slot))
+    });
     let remove = text_action("Remove", true, p)
         .key(format!("library/remove/{}", skin.id))
         .on_press(move |app: &mut App| actions::remove(app, id));
@@ -172,7 +192,8 @@ pub fn card(app: &App, skin: &Skin, p: &Palette) -> El {
             row()
                 .gap(space::XXS)
                 .ml(-TEXT_ACTION_INSET)
-                .children(install)
+                .children(into_slippi)
+                .children(into_tgg_melee)
                 .child(remove),
         )
 }

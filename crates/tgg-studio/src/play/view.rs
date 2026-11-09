@@ -163,9 +163,18 @@ fn tgg_melee(app: &App, p: &Palette) -> El {
             set_up("Set up tgg-melee")
         }
         Some(port) => {
-            let on = mods.local.mods.iter().filter(|m| m.enabled).count();
+            let on = mods.installed().iter().filter(|m| m.enabled).count();
+            let skins = tgg_mod::skins(&mods.local)
+                .iter()
+                .filter(|skin| skin.enabled)
+                .count();
             facts.push(fact(
-                format!("Version {} · {}", port.version, mods_on(on)),
+                format!(
+                    "Version {} · {}{}",
+                    port.version,
+                    mods_on(on),
+                    skins_in(skins)
+                ),
                 p,
             ));
             if let Some(update) = mods.port_update() {
@@ -225,5 +234,14 @@ fn mods_on(count: usize) -> String {
         0 => "no mods on".to_owned(),
         1 => "1 mod on".to_owned(),
         n => format!("{n} mods on"),
+    }
+}
+
+/// The skins tgg-melee plays, after its mods; nothing when there are none.
+fn skins_in(count: usize) -> String {
+    match count {
+        0 => String::new(),
+        1 => " · 1 skin".to_owned(),
+        n => format!(" · {n} skins"),
     }
 }

@@ -606,6 +606,44 @@ fn a_skin_comes_out_of_the_library() {
 }
 
 #[test]
+fn a_skin_goes_into_tgg_melee_as_its_own_mod_and_comes_back_out() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, data) = runtime(game_at(&iso));
+    let files = tempfile::tempdir().expect("temp dir");
+    let (skin, bytes) = falco_skin(files.path());
+    add_through_review(&mut rt, skin);
+    tap(&mut rt, "review/add");
+    let id = rt.state.library.skins()[0].id;
+    settle(&mut rt);
+    let installed = data.path().join("mods/skin.plfcre.dat/files/PlFcRe.dat");
+    tap(&mut rt, &format!("library/install-port/{id}"));
+    assert_eq!(std::fs::read(&installed).expect("the skin's mod"), bytes);
+    let notice = rt.state.notice.as_ref().expect("it says so");
+    assert!(notice.text.ends_with("in tgg-melee."), "{}", notice.text);
+    assert!(
+        rt.find(&format!("library/install-port/{id}")).is_none(),
+        "it's in tgg-melee now"
+    );
+    assert!(
+        rt.find(&format!("library/install/{id}")).is_some(),
+        "and not yet in Slippi"
+    );
+    tap(&mut rt, "shell/notice/undo");
+    assert!(!installed.exists(), "Undo takes it back out");
+    tap(&mut rt, &format!("library/install-port/{id}"));
+    let slot = rt.state.library.skins()[0]
+        .slot
+        .expect("made for Falco Red");
+    rt.update(move |app, _| crate::library::port::remove(app, slot));
+    assert!(!installed.exists(), "the original plays again");
+    tap(&mut rt, "shell/notice/undo");
+    assert_eq!(
+        std::fs::read(&installed).expect("Undo puts the skin back"),
+        bytes
+    );
+}
+
+#[test]
 fn a_file_that_isnt_a_skin_says_why_and_adds_nothing() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));

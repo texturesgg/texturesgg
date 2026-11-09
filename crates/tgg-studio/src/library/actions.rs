@@ -219,7 +219,12 @@ pub fn install(app: &mut App, id: SkinId, slot: MeleeSlot) {
                 &app.data.history(),
             )
         })
-        .map(|()| format!("Installed {name} into {}.", slot_label(Some(slot))));
+        .map(|()| {
+            format!(
+                "Installed {name} into {} in Slippi.",
+                slot_label(Some(slot))
+            )
+        });
     finish(app, slot, result, true);
 }
 
@@ -227,7 +232,7 @@ pub fn install(app: &mut App, id: SkinId, slot: MeleeSlot) {
 pub fn undo(app: &mut App, slot: MeleeSlot) {
     let Some(references) = &app.game else { return };
     let result = install::undo(references.game(), slot, &app.library, &app.data.history())
-        .map(|()| format!("Put back what {} had before.", slot_label(Some(slot))));
+        .map(|()| format!("Put back what {} had in Slippi.", slot_label(Some(slot))));
     finish(app, slot, result, false);
 }
 
@@ -246,7 +251,7 @@ pub fn restore(app: &mut App, slot: MeleeSlot) {
         &app.library,
         &app.data.history(),
     )
-    .map(|()| format!("{} is vanilla again.", slot_label(Some(slot))));
+    .map(|()| format!("{} is vanilla again in Slippi.", slot_label(Some(slot))));
     finish(app, slot, result, true);
 }
 

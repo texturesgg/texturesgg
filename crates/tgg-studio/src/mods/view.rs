@@ -143,7 +143,7 @@ fn tabs(mods: &Mods, p: &Palette) -> El {
         ))
         .child(tab_for(
             "Installed",
-            mods.local.mods.len(),
+            mods.installed().len(),
             Tab::Installed,
             "mods/tab/installed",
         ))
@@ -750,7 +750,8 @@ fn mod_text(
 
 /// What's installed, each mod with its switch; updating them all.
 fn installed(mods: &Mods, p: &Palette) -> El {
-    let empty = mods.local.mods.is_empty().then(|| {
+    let installed = mods.installed();
+    let empty = installed.is_empty().then(|| {
         label("Nothing installed yet. Install a collection, or any mod from All mods.")
             .key("mods/installed/empty")
             .font(text::BODY)
@@ -758,7 +759,7 @@ fn installed(mods: &Mods, p: &Palette) -> El {
     });
     // The mods the player is making load from their own folders (dev
     // builds); once there are any, Installed can show just those.
-    let made = mods.local.mods.iter().filter(|m| m.dev).count();
+    let made = installed.iter().filter(|m| m.dev).count();
     let made_only = mods.made_only && made > 0;
     let choices = (made > 0).then(|| {
         let choice = |words: String, which: bool, key: &str| {
@@ -770,7 +771,7 @@ fn installed(mods: &Mods, p: &Palette) -> El {
         row()
             .gap(space::SNUG)
             .child(choice(
-                format!("All {}", mods.local.mods.len()),
+                format!("All {}", installed.len()),
                 false,
                 "mods/installed/all",
             ))
@@ -780,9 +781,7 @@ fn installed(mods: &Mods, p: &Palette) -> El {
                 "mods/installed/made",
             ))
     });
-    let rows = mods
-        .local
-        .mods
+    let rows = installed
         .iter()
         .filter(|m| !made_only || m.dev)
         .map(|m| mod_row(mods, m, p));
@@ -791,7 +790,7 @@ fn installed(mods: &Mods, p: &Palette) -> El {
         .gap(space::SM)
         .children(empty)
         .children(choices)
-        .children((!mods.local.mods.is_empty()).then(|| list(rows, p)))
+        .children((!installed.is_empty()).then(|| list(rows, p)))
 }
 
 /// An installed mod: its switch, name and version, where it came from, and

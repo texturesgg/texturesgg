@@ -267,6 +267,15 @@ impl Mods {
             .unwrap_or_else(|| readable(id))
     }
 
+    /// The mods installed, skins aside: those show under Skins.
+    pub fn installed(&self) -> Vec<&tgg_mod::LocalMod> {
+        self.local
+            .mods
+            .iter()
+            .filter(|m| !tgg_mod::is_skin(m.id()))
+            .collect()
+    }
+
     /// The tgg-melee version in use.
     pub fn port(&self) -> Option<&PortInstall> {
         self.ports.iter().find(|port| port.current)

@@ -6,6 +6,7 @@
 //! it; `view` draws the page and `review` the dialog.
 
 pub mod actions;
+pub mod port;
 pub mod review;
 pub mod view;
 
