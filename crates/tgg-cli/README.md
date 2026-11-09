@@ -64,6 +64,20 @@ off), has updates, or incomplete (a mod missing or not built for the game). Turn
 set's mod off keeps it installed; `on` brings the set back to complete. Changes wait while
 the game runs, and while another tgg (or the app) is changing the mods folder.
 
+## Skins
+
+```text
+tgg skin install FILE [--for PlMrNr.dat] [--name NAME]   a costume or stage file in place of the game's
+tgg skin list                                              installed skins
+tgg skin remove PlMrNr.dat                                 the game's own file again
+```
+
+Each skin is a mod of one file (`skin.plmrnr.dat`), so `tgg mod on|off` turns it on and
+off. The game file comes from the skin's name (`PlMrNr-red.dat` is for `PlMrNr.dat`)
+unless `--for` says. A costume that only changes how the fighter looks doesn't matter for
+netplay; a stage, effects, or a costume that changes the skeleton means the players you
+meet online need the same file.
+
 ## Signing in
 
 ```text
