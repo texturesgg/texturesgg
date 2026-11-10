@@ -53,6 +53,10 @@ pub enum ModCommand {
         /// package records: for the registry's builder.
         #[arg(long, value_parser = commit_arg)]
         source_commit: Option<String>,
+        /// The class the registry's review gave it (display), which the
+        /// package records: for the registry's builder.
+        #[arg(long, value_enum)]
+        class: Option<ClassArg>,
         /// The SDK's folder or tgg-game-sdk.json [default: the SDK of the
         /// game in use]
         #[arg(long, env = "TGG_GAME_SDK")]
@@ -271,6 +275,7 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
             dir,
             source_zip,
             source_commit,
+            class,
             sdk,
             debug,
             cc,
@@ -287,6 +292,11 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
             };
             let mut built = build::build(&dir, &options)?;
             built.package.manifest.source = source_commit;
+            if let Some(ClassArg::Display) = class {
+                tgg_mod::netplay::display_check(&built.package.manifest)
+                    .map_err(|why| anyhow::anyhow!("it can't be a display mod: {why}"))?;
+                built.package.manifest.class = Some(tgg_mod::ModClass::Display);
+            }
             write_package(
                 built.package,
                 built.canonical,
@@ -385,6 +395,11 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
             with_player(api, port, true, |p| p.remove(set.as_deref(), &ids))
         }
     }
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+pub enum ClassArg {
+    Display,
 }
 
 fn commit_arg(arg: &str) -> Result<String, String> {

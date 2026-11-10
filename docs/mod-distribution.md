@@ -430,6 +430,15 @@ build --source-commit`), so two systems' builds of one release match and a
 build of anything else doesn't. Two players with the same set installed
 match. A set's own version isn't part of it; the mods are.
 
+Display mods don't count. A moderator marks a release display on review when
+it only changes what a player sees or keeps (a HUD, the replay recorder, the
+skin loader); the builder writes `"class": "display"` into each build's
+manifest (`tgg mod build --class display`), next to `source`. It holds only
+while the library's records allow it: no function it replaces and no `pad_read`
+(`netplay::display_check`), which tgg checks when building and the game checks
+again when loading. Packing drops a `class` an author writes, and a dev build
+never has one. `netplay::classify` gives such a mod `Netplay::Display`.
+
 ## Work split
 
 Platform session, in this order:
