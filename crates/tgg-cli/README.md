@@ -64,6 +64,20 @@ off), has updates, or incomplete (a mod missing or not built for the game). Turn
 set's mod off keeps it installed; `on` brings the set back to complete. Changes wait while
 the game runs, and while another tgg (or the app) is changing the mods folder.
 
+## Skins
+
+```text
+tgg skin install FILE [--for PlMrNr.dat] [--name NAME]   a costume or menu file in place of the game's
+tgg skin list                                              the skins tgg-melee loads
+tgg skin remove PlMrNr.dat                                 the game's own file again
+tgg skin check FILE [--for PlMrNr.dat]                     whether a costume only changes looks
+```
+
+The tgg.skins mod loads them when the game starts (`tgg mod install tgg.skins`). The game
+file comes from the skin's name (`PlMrNr-red.dat` is for `PlMrNr.dat`) unless `--for` says.
+A costume that only changes looks shows in netplay games too; one that changes the skeleton
+shows offline, and netplay games show the normal costume instead.
+
 ## Signing in
 
 ```text

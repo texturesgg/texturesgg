@@ -517,6 +517,7 @@ fn install_step(
         packages,
         &step.id,
         package,
+        matches!(step.action, Action::Install),
         &mut |bytes, _| report(&label, bytes),
         cancel,
     )?;
