@@ -199,14 +199,7 @@ fn a_profile_plays_as_installed_when_the_installs_match() {
     .expect("mods");
     assert_eq!(resolve(&net, &player, &profile).fit, Fit::AsInstalled);
 
-    // With a built-in module off, or a setting the player hasn't saved, it
-    // needs its own folder.
-    let mut unlocks_off = profile.clone();
-    unlocks_off
-        .game
-        .settings
-        .insert("tgg.unlocks".into(), false);
-    assert_eq!(resolve(&net, &player, &unlocks_off).fit, Fit::NeedsProfile);
+    // With a setting the player hasn't saved, it needs its own folder.
     let mut set = profile.clone();
     set.mods[0].settings.insert("starters".into(), json!(5));
     assert_eq!(resolve(&net, &player, &set).fit, Fit::NeedsProfile);
@@ -317,7 +310,6 @@ fn a_tgg_replay_without_a_profile_reads_its_mods() {
     let profile = tgg_mod::profile_from_slp(&replay, None).expect("profile");
     assert_eq!(profile.game.version, "0.1.0-rc.8");
     assert_eq!(profile.game.layout.as_deref(), Some("layout8"));
-    assert!(!profile.game.settings["tgg.unlocks"]);
     let ids: Vec<&str> = profile.mods.iter().map(|m| m.id.as_str()).collect();
     assert_eq!(ids, ["tgg.ucf", "tgg.legal-stages", "tgg.replay-player"]);
 }

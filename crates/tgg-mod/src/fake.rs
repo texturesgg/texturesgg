@@ -735,7 +735,6 @@ pub fn slippi_mapping() -> SlippiMapping {
         id: id.map(|id| id.parse().expect("a valid id")),
         range: id.map(|_| "^0.1".parse().expect("a range")),
         settings: Default::default(),
-        game: Default::default(),
     };
     let mut codes = vec![
         code(

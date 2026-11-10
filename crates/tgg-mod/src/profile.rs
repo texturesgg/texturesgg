@@ -34,8 +34,6 @@ pub const GAME: &str = "tgg-melee";
 pub const ANY: &str = "any";
 /// The mod that plays replays back, which a replay's profile always names.
 pub const REPLAY_PLAYER: &str = "tgg.replay-player";
-/// The port's built-in modules, and the variable that turns each off.
-pub const BUILTINS: &[(&str, &str)] = &[("tgg.unlocks", "TGG_UNLOCK_ALL")];
 /// The longest profile file read.
 const PROFILE_LIMIT: u64 = 4 * 1024 * 1024;
 /// The longest mapping read.
@@ -71,10 +69,6 @@ pub struct ProfileGame {
     /// The game layout id, when the source knows it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout: Option<String>,
-    /// The built-in modules' on/off state, by module id ([`BUILTINS`]); one
-    /// left out runs as the port defaults (on).
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub settings: BTreeMap<String, bool>,
 }
 
 /// One mod a profile names: an exact `version`, or a `range` (the newest
@@ -183,7 +177,6 @@ impl Profile {
                 name: GAME.to_owned(),
                 version: version.to_owned(),
                 layout: None,
-                settings: BTreeMap::new(),
             },
             mods: Vec::new(),
             missing: Vec::new(),
@@ -365,18 +358,11 @@ fn from_tgg_metadata(tgg: &Value) -> Result<Profile, ProfileError> {
     }
     let mut profile = Profile::new(version.unwrap_or(ANY));
     profile.game.layout = layout.map(str::to_owned);
-    for (id, _) in BUILTINS {
-        profile.game.settings.insert((*id).to_owned(), false);
-    }
     let mods = tgg.get("mods").and_then(Value::as_array);
     for text in mods.into_iter().flatten().filter_map(Value::as_str) {
         let Some((id, version)) = text.split_once(' ') else {
             return Err(ProfileError::Bad(format!("a mod is {text:?}")));
         };
-        if BUILTINS.iter().any(|(builtin, _)| *builtin == id) {
-            profile.game.settings.insert(id.to_owned(), true);
-            continue;
-        }
         let id = id
             .parse()
             .map_err(|_| ProfileError::Bad(format!("a mod is {text:?}")))?;
@@ -458,9 +444,6 @@ pub struct SlippiCode {
     /// Counted settings of that mod the code implies.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub settings: Settings,
-    /// Built-in module states the code implies.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub game: BTreeMap<String, bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -553,7 +536,7 @@ impl SlippiMapping {
         Mapped::Unmapped
     }
 
-    /// `profile` with its mods, built-in module states and `missing` mapped
+    /// `profile` with its mods and `missing` mapped
     /// from its Slippi facts; a profile without them as it is.
     pub fn apply(&self, profile: &Profile) -> Profile {
         let Some(facts) = &profile.slippi else {
@@ -564,19 +547,15 @@ impl SlippiMapping {
         let mut out = profile.clone();
         out.mods.clear();
         out.missing.clear();
-        out.game.settings.clear();
         for code in &facts.codes {
             match self.lookup(code, facts, &version) {
                 Mapped::Code(entry) => {
-                    out.game.settings.extend(entry.game.clone());
                     let Some(id) = &entry.id else {
-                        // A gameplay code the game doesn't do itself either.
-                        if entry.game.is_empty() {
-                            out.missing.push(Missing::NoModFor {
-                                code: code.clone(),
-                                minor: false,
-                            });
-                        }
+                        // A gameplay code no mod reproduces yet
+                        out.missing.push(Missing::NoModFor {
+                            code: code.clone(),
+                            minor: false,
+                        });
                         continue;
                     };
                     match out.mods.iter_mut().find(|m| &m.id == id) {
@@ -869,7 +848,6 @@ pub fn resolve_profile(
         GameNeed::Installed(install) => Some(install.release.game_abi.clone()),
         _ => profile.game.layout.clone(),
     };
-    resolved.game.settings = profile.game.settings.clone();
     resolved.mods = mods
         .iter()
         .map(|m| ProfileEntry {
@@ -883,7 +861,7 @@ pub fn resolve_profile(
     resolved.mods.sort_by(|a, b| a.id.cmp(&b.id));
     resolved.missing = missing.clone();
     let key = key(&resolved);
-    let fit = fit(&game, &mods, &resolved, catalog, local);
+    let fit = fit(&game, &mods, catalog, local);
     ProfilePlan {
         game,
         mods,
@@ -920,12 +898,11 @@ fn game_need(version: &str, ports: &Path) -> GameNeed {
     }
 }
 
-/// The hash of a resolved profile: the game, the built-in modules, and each
+/// The hash of a resolved profile: the game and each
 /// mod's version, package and settings. 16 hex digits.
 fn key(resolved: &Profile) -> String {
     let fields = serde_json::json!({
         "game": resolved.game.version,
-        "builtins": resolved.game.settings,
         "mods": resolved.mods.iter().map(|m| serde_json::json!({
             "id": m.id, "version": m.version, "sha256": m.sha256, "settings": m.settings,
         })).collect::<Vec<_>>(),
@@ -933,16 +910,8 @@ fn key(resolved: &Profile) -> String {
     crate::package::sha256_hex(fields.to_string().as_bytes())[..16].to_owned()
 }
 
-fn fit(
-    game: &GameNeed,
-    mods: &[ProfileMod],
-    resolved: &Profile,
-    catalog: &Catalog,
-    local: &Local,
-) -> Fit {
+fn fit(game: &GameNeed, mods: &[ProfileMod], catalog: &Catalog, local: &Local) -> Fit {
     let current = matches!(game, GameNeed::Installed(install) if install.current);
-    // The built-in modules run on unless the game is told otherwise.
-    let builtins_on = resolved.game.settings.values().all(|on| *on);
     let installed = mods.iter().all(|m| {
         local.get(&m.id).is_some_and(|have| {
             have.enabled && have.fits != Some(false) && have.manifest.version == m.version
@@ -966,7 +935,7 @@ fn fit(
                         && !entry.changes_game
                 })
         });
-    if current && builtins_on && installed && extras_harmless {
+    if current && installed && extras_harmless {
         Fit::AsInstalled
     } else {
         Fit::NeedsProfile
@@ -1036,7 +1005,6 @@ mod tests {
         let profile = from_tgg_metadata(&tgg).expect("profile");
         assert_eq!(profile.game.version, "0.1.0-rc.8");
         assert_eq!(profile.game.layout.as_deref(), Some("abc123"));
-        assert!(!profile.game.settings["tgg.unlocks"]);
         assert_eq!(profile.mods.len(), 2);
         assert_eq!(profile.mods[0].id.as_str(), "tgg.ucf");
         assert_eq!(profile.mods[0].version, Some(Version::new(0, 84, 0)));
