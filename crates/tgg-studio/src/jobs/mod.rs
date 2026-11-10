@@ -39,6 +39,8 @@ pub enum Done {
     SlippiEnded,
     /// You: a profile read from textures.gg, a pack downloaded.
     Profile(Box<crate::profile::Done>),
+    /// What the game makes of skins in tgg-melee's slots (`library::port`).
+    Verdicts(Vec<(tgg_app::ids::SkinId, MeleeSlot, Option<tgg_mod::Verdict>)>),
     /// The toast with this id has shown long enough.
     NoticeExpired(u64),
 }
@@ -222,6 +224,7 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
             Done::NewMod(done) => crate::newmod::actions::done(app, *done),
             Done::SlippiEnded => crate::slippi::actions::ended(app),
             Done::NoticeExpired(id) => app.notice_expired(id),
+            Done::Verdicts(verdicts) => crate::library::port::answered(app, verdicts),
             Done::Update(newer) => {
                 app.update = newer;
                 app.update.is_some()

@@ -152,7 +152,8 @@ impl Game {
             .iter()
             .filter_map(|path| path.parent().map(Path::to_path_buf))
             .chain(dolphin_iso_folders())
-            .chain(folders.iter().cloned());
+            .chain(folders.iter().cloned())
+            .chain(usual_folders());
         let mut seen = Vec::new();
         let mut choices = Vec::new();
         for path in slippi
@@ -395,6 +396,21 @@ fn iso_paths(ini: &str) -> Vec<PathBuf> {
                 .then(|| PathBuf::from(value.trim()))
         })
         .collect()
+}
+
+/// Where players tend to keep a downloaded ISO: a Games folder in their
+/// home, Downloads, Documents and the desktop. Only the files directly in
+/// them are looked at.
+fn usual_folders() -> Vec<PathBuf> {
+    [
+        dirs::home_dir().map(|home| home.join("Games")),
+        dirs::download_dir(),
+        dirs::document_dir(),
+        dirs::desktop_dir(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 /// The disc images directly in `folder`, by extension.

@@ -64,6 +64,10 @@ fn read_disk_now(app: &mut App) {
         Err(error) => mods.problem = Some(capitalized(&error.to_string())),
     }
     mods.fallback = fallback(&app.data.mods, mods);
+    match tgg_mod::skins(&app.data.skins) {
+        Ok(skins) => mods.skins = skins,
+        Err(error) => mods.problem = Some(capitalized(&error.to_string())),
+    }
 }
 
 /// When installed mods aren't built for the current tgg-melee: the newest
@@ -738,10 +742,10 @@ pub fn remove(app: &mut App, id: &ModId) {
     read_disk(app);
 }
 
-/// Look for an unmodified disc of the player's: the one they chose to play,
-/// their game if nothing's been installed into it, then the others in their
-/// game folders. Outside tests only, where the player's folders are looked
-/// through.
+/// Find the disc tgg-melee plays: the one the player chose for it, else
+/// their Slippi ISO, else any Melee in their game folders. Skins in it don't
+/// matter: tgg-melee plays the game as it shipped from any copy. Outside
+/// tests only, where the player's folders are looked through.
 pub fn find_disc(app: &mut App) {
     app.mods.disc = Disc::Looking;
     let chosen: Vec<PathBuf> = app
@@ -756,31 +760,28 @@ pub fn find_disc(app: &mut App) {
         )
         .collect();
     let everywhere = app.persist;
-    app.jobs.spawn("clean disc", move || {
-        let found = chosen.into_iter().find(|path| clean(path)).or_else(|| {
-            everywhere
-                .then(|| {
-                    tgg_app::discover_games()
-                        .into_iter()
-                        .find(|game| game.changed == 0)
-                        .map(|game| game.path)
-                })
-                .flatten()
-        });
+    app.jobs.spawn("disc", move || {
+        let found = chosen
+            .into_iter()
+            .find(|path| tgg_app::Game::open(path).is_ok())
+            .or_else(|| {
+                everywhere
+                    .then(|| {
+                        tgg_app::discover_games()
+                            .into_iter()
+                            .next()
+                            .map(|game| game.path)
+                    })
+                    .flatten()
+            });
         Job::Mods(Box::new(Done::Disc(found)))
     });
-}
-
-/// Whether the disc at `path` is Melee NTSC 1.02 with every costume and
-/// stage as it shipped.
-fn clean(path: &Path) -> bool {
-    tgg_app::Game::open(path).is_ok_and(|game| game.changed_slots().is_empty())
 }
 
 /// Ask for the disc to play.
 pub fn choose_disc(_: &mut App, tx: &mut Tx) {
     let options = FileDialogOptions {
-        title: "Choose an unmodified Melee disc".into(),
+        title: "Choose a Melee disc".into(),
         ..Default::default()
     }
     .filter("Melee NTSC 1.02 disc image", &["iso", "gcm"]);
@@ -791,21 +792,10 @@ pub fn choose_disc(_: &mut App, tx: &mut Tx) {
     });
 }
 
-/// Play the disc at `path`, if it's Melee NTSC 1.02, and remember it. A
-/// changed one plays, but netplay wants the files as they shipped.
+/// Play the disc at `path`, if it's Melee NTSC 1.02, and remember it.
 pub fn use_disc(app: &mut App, path: PathBuf) {
     match tgg_app::Game::open(&path) {
-        Ok(game) => {
-            let changed = game.changed_slots().len();
-            if changed > 0 {
-                app.tell(
-                    format!(
-                        "{} on this disc changed; netplay wants an unmodified one.",
-                        count(changed, "file")
-                    ),
-                    true,
-                );
-            }
+        Ok(_) => {
             let remembered = path.clone();
             app.change_settings(move |settings| settings.play_iso = Some(remembered.clone()));
             app.mods.disc = Disc::Found(path);

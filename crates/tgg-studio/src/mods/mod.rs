@@ -1,6 +1,6 @@
 //! Mods: tgg-melee (the Melee port with a mod loader built in) and the mods
 //! textures.gg publishes for it. The page installs the port and Play starts
-//! it with the player's unmodified disc; under that, three tabs: the curated
+//! it with the player's disc; under that, three tabs: the curated
 //! sets, every mod built for the port (searchable), and what's installed
 //! with each mod's switch and update. Pressing a mod shows its details in a
 //! pane beside the list.
@@ -81,6 +81,11 @@ pub struct Mods {
     pub listings: HashMap<ModId, ModSummary>,
     /// Each mod's registry page, once asked for: `None` while it's on its way.
     pub details: HashMap<ModId, Option<ModDetails>>,
+    /// The skins tgg-melee plays, as skins.json says.
+    pub skins: tgg_mod::Skins,
+    /// What the game makes of each skin in its slot, once asked; `None`
+    /// while it's being asked or when this tgg-melee can't say.
+    pub verdicts: HashMap<(tgg_app::ids::SkinId, melee_dat::MeleeSlot), Option<tgg_mod::Verdict>>,
     /// Icons and screenshots by URL, filled as they arrive.
     pub images: HashMap<String, rune::Pixels>,
     /// The parts of the chosen mod's details shown in full.
@@ -133,6 +138,8 @@ impl Default for Mods {
             versions: false,
             listings: HashMap::new(),
             details: HashMap::new(),
+            skins: tgg_mod::Skins::default(),
+            verdicts: HashMap::new(),
             images: HashMap::new(),
             expanded: Vec::new(),
             removing: Vec::new(),
@@ -267,15 +274,6 @@ impl Mods {
             .unwrap_or_else(|| readable(id))
     }
 
-    /// The mods installed, skins aside: those show under Skins.
-    pub fn installed(&self) -> Vec<&tgg_mod::LocalMod> {
-        self.local
-            .mods
-            .iter()
-            .filter(|m| !tgg_mod::is_skin(m.id()))
-            .collect()
-    }
-
     /// The tgg-melee version in use.
     pub fn port(&self) -> Option<&PortInstall> {
         self.ports.iter().find(|port| port.current)
@@ -384,8 +382,8 @@ pub struct Review {
     pub remove_dropped: bool,
 }
 
-/// The disc tgg-melee plays: an unmodified one, since netplay and replays
-/// want the same game files on every side.
+/// The disc tgg-melee plays. Any copy of Melee NTSC 1.02 does: the port
+/// plays the game as it shipped from it, skins and all.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Disc {
     /// Not looked for yet.
@@ -393,7 +391,7 @@ pub enum Disc {
     Looking,
     /// The player's, found or chosen.
     Found(PathBuf),
-    /// None of the player's discs is unmodified.
+    /// The player has no Melee NTSC 1.02 disc it found.
     Missing,
 }
 
@@ -421,7 +419,7 @@ pub enum Done {
     },
     PortInstalled(Result<PortInstall, Error>),
     Applied(Result<Applied, Error>),
-    /// An unmodified disc of the player's, if one was found.
+    /// The disc of the player's it found, if any.
     Disc(Option<PathBuf>),
     /// The game ended: why, when it didn't end well.
     GameEnded(Result<(), String>),

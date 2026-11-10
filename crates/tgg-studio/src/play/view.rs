@@ -147,7 +147,7 @@ fn slippi(app: &App, p: &Palette) -> El {
 }
 
 /// tgg-melee: the port, with the mods turned on. Play needs it installed
-/// and an unmodified disc for it.
+/// and a disc for it.
 fn tgg_melee(app: &App, p: &Palette) -> El {
     let mods = &app.mods;
     let mut facts = Vec::new();
@@ -163,11 +163,8 @@ fn tgg_melee(app: &App, p: &Palette) -> El {
             set_up("Set up tgg-melee")
         }
         Some(port) => {
-            let on = mods.installed().iter().filter(|m| m.enabled).count();
-            let skins = tgg_mod::skins(&mods.local)
-                .iter()
-                .filter(|skin| skin.enabled)
-                .count();
+            let on = mods.local.mods.iter().filter(|m| m.enabled).count();
+            let skins = mods.skins.slots.len();
             facts.push(fact(
                 format!(
                     "Version {} · {}{}",
@@ -203,7 +200,7 @@ fn tgg_melee(app: &App, p: &Palette) -> El {
                 }
                 Disc::Missing => {
                     facts.push(needs(
-                        "It needs an unmodified Melee disc, and none was found. Your ISO has skins in it.",
+                        "It needs a Melee NTSC 1.02 disc, and none was found.",
                         p,
                     ));
                     more.pop();
@@ -212,7 +209,7 @@ fn tgg_melee(app: &App, p: &Palette) -> El {
                         .on_press_tx(crate::mods::actions::choose_disc)
                 }
                 Disc::Unknown | Disc::Looking => {
-                    facts.push(fact("Looking for an unmodified disc…".to_owned(), p));
+                    facts.push(fact("Looking for your disc…".to_owned(), p));
                     button_off("Play", p).key("play/tgg-melee/waiting")
                 }
             }

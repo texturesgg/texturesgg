@@ -157,7 +157,7 @@ pub fn confirm_review(app: &mut App, install_them: bool) {
                 ) {
                     Ok(()) => {
                         changed.push(slot);
-                        done.push(format!("installed {} into {place}", skin.name));
+                        done.push(format!("installed {} into {place} in Slippi", skin.name));
                     }
                     Err(error) => failed.push(format!("{}: {error}", skin.name)),
                 }
@@ -219,12 +219,7 @@ pub fn install(app: &mut App, id: SkinId, slot: MeleeSlot) {
                 &app.data.history(),
             )
         })
-        .map(|()| {
-            format!(
-                "Installed {name} into {} in Slippi.",
-                slot_label(Some(slot))
-            )
-        });
+        .map(|()| format!("Installed {name} in Slippi."));
     finish(app, slot, result, true);
 }
 

@@ -246,8 +246,7 @@ fn game(app: &App, p: &Palette) -> El {
     )
 }
 
-/// tgg-melee's disc: an unmodified one, which may be the Slippi ISO while
-/// nothing's installed into it, and choosing another.
+/// tgg-melee's disc, which may be the Slippi ISO, and choosing another.
 fn disc(app: &App, p: &Palette) -> El {
     let found = match &app.mods.disc {
         Disc::Found(path) => Some(path.as_path()),
@@ -257,16 +256,16 @@ fn disc(app: &App, p: &Palette) -> El {
         found.is_some() && found == app.game.as_ref().map(|references| references.game().path());
     let line = match &app.mods.disc {
         Disc::Found(_) if same => {
-            "tgg-melee plays your Slippi ISO too, while it's unmodified. Netplay and replays need the game files as they shipped.".to_owned()
+            "tgg-melee plays your Slippi ISO too, as the game shipped. Skins you put in the ISO stay in Slippi.".to_owned()
         }
         Disc::Found(_) => format!(
-            "tgg-melee plays {}, unmodified, since netplay and replays need the game files as they shipped.",
+            "tgg-melee plays {}, as the game shipped.",
             file_name(found)
         ),
         Disc::Missing => {
-            "None of your discs is unmodified, and tgg-melee needs one: netplay and replays need the game files as they shipped.".to_owned()
+            "tgg-melee needs a Melee NTSC 1.02 disc, and none was found.".to_owned()
         }
-        Disc::Unknown | Disc::Looking => "Looking for an unmodified disc…".to_owned(),
+        Disc::Unknown | Disc::Looking => "Looking for your disc…".to_owned(),
     };
     setting(
         "settings/disc",

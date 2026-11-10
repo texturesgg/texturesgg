@@ -242,7 +242,7 @@ pub fn play(app: &mut App, path: &Path) {
     }
     let Disc::Found(_) = &app.mods.disc else {
         return app.tell(
-            "Watching a replay needs an unmodified Melee disc; choose one on the Mods page.",
+            "Watching a replay needs a Melee disc; choose one on the Mods page.",
             true,
         );
     };

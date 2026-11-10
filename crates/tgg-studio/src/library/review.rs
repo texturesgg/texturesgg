@@ -153,7 +153,7 @@ fn buttons(app: &App, review: &Review, p: &Palette) -> Vec<El> {
         );
         if app.game.is_some() {
             buttons.push(
-                button("Add and install", ButtonKind::Primary, p)
+                button("Add and install in Slippi", ButtonKind::Primary, p)
                     .key("review/install")
                     .on_press(|app: &mut App| actions::confirm_review(app, true)),
             );

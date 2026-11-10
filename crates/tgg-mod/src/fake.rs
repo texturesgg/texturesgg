@@ -694,7 +694,13 @@ impl Net for FakeNet {
             }
         } else {
             let (path, query) = url.split_once('?').unwrap_or((url, ""));
-            let Some(body) = state.files.get(path).cloned() else {
+            // Served with its query (a page of results), else without it.
+            let Some(body) = state
+                .files
+                .get(url)
+                .or_else(|| state.files.get(path))
+                .cloned()
+            else {
                 return Err(NetError::NotFound { url: url.into() });
             };
             // A package download marked as a first install counts as one.

@@ -57,18 +57,8 @@ pub fn states_read(
         .as_ref()
         .is_some_and(|references| references.game().path() == iso);
     if current {
-        let changed = states
-            .values()
-            .any(|state| !matches!(state, SlotState::Vanilla));
         app.melee.states = Some(states);
         app.melee.undoable = undoable;
-        // tgg-melee was playing this game while it was unmodified; a skin
-        // installed since means it looks for another.
-        let shared = matches!(&app.mods.disc, crate::mods::Disc::Found(disc) if disc == iso);
-        if changed && shared {
-            app.mods.disc = crate::mods::Disc::Unknown;
-            crate::mods::actions::find_disc(app);
-        }
     }
     current
 }
@@ -82,6 +72,7 @@ pub fn show_tab(app: &mut App, tab: Tab) {
 pub fn opened(app: &mut App) {
     if app.melee.tab == Tab::Mine {
         crate::library::actions::request_renders(app);
+        crate::library::port::ask_all(app);
     }
 }
 
@@ -125,6 +116,15 @@ pub fn choose_costume(app: &mut App, slot: MeleeSlot) {
     if stage::show(app, slot).is_ok() {
         app.melee.chosen.insert(character, slot);
     }
+    // Whether each of the player's skins for it would play online.
+    let skins = app
+        .library
+        .skins()
+        .iter()
+        .filter(|skin| skin.slot.is_some_and(|made_for| made_for.fits(slot)))
+        .map(|skin| (skin.id, slot))
+        .collect();
+    crate::library::port::ask(app, skins);
 }
 
 /// Back to the roster: the stage closes into the plate it opened from.

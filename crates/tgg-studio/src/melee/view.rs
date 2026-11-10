@@ -97,7 +97,7 @@ pub fn view(app: &App, p: &Palette) -> El {
                 .gap(space::LG)
                 .child(col().grow(1.0).min_w(0.0).child(page_head(
                     crate::nav::Place::Skins.label(),
-                    "The skins you have, and what's in the ISO you play on Slippi.",
+                    "Your skins, for Slippi and tgg-melee.",
                     p,
                 )))
                 .children(game(app, p)),

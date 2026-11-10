@@ -143,7 +143,7 @@ fn tabs(mods: &Mods, p: &Palette) -> El {
         ))
         .child(tab_for(
             "Installed",
-            mods.installed().len(),
+            mods.local.mods.len(),
             Tab::Installed,
             "mods/tab/installed",
         ))
@@ -272,8 +272,14 @@ fn notices(app: &App, p: &Palette) -> Vec<El> {
         let choose = button("Choose a disc…", ButtonKind::Secondary, p)
             .key("mods/choose-missing-disc")
             .on_press_tx(actions::choose_disc);
-        notices.push(callout(say("Play needs an unmodified Melee disc: netplay and replays want the same game files on every side.".into(), true), Some(choose), p)
-            .key("mods/disc-missing"));
+        notices.push(
+            callout(
+                say("Play needs a Melee NTSC 1.02 disc.".into(), true),
+                Some(choose),
+                p,
+            )
+            .key("mods/disc-missing"),
+        );
     }
     notices
 }
@@ -750,7 +756,7 @@ fn mod_text(
 
 /// What's installed, each mod with its switch; updating them all.
 fn installed(mods: &Mods, p: &Palette) -> El {
-    let installed = mods.installed();
+    let installed: Vec<&LocalMod> = mods.local.mods.iter().collect();
     let empty = installed.is_empty().then(|| {
         label("Nothing installed yet. Install a collection, or any mod from All mods.")
             .key("mods/installed/empty")

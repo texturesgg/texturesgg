@@ -155,6 +155,8 @@ pub struct Data {
     /// tgg's own data folder: the package cache, the cached catalog and
     /// Slippi mapping, profile folders, and trust answers.
     pub tgg: PathBuf,
+    /// skins.json, the skins tgg-melee plays (tgg.skins reads it).
+    pub skins: PathBuf,
 }
 
 impl Data {
@@ -170,6 +172,7 @@ impl Data {
             history,
             mods: tgg_mod::default_mods_dir(),
             ports: tgg_mod::default_ports_dir(),
+            skins: tgg_mod::skins_file(),
             tgg: tgg_mod::default_data_dir(),
         }
     }
@@ -184,6 +187,7 @@ impl Data {
             // Where tgg-mod looks for them in `tgg`.
             ports: folder.join("tgg-data").join("tgg").join("ports"),
             tgg: folder.join("tgg-data"),
+            skins: folder.join("skins.json"),
         }
     }
 

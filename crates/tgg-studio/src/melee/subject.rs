@@ -219,19 +219,37 @@ fn moves(app: &App, p: &Palette) -> Option<El> {
 /// What a costume holds in the Slippi ISO, in a word, and whether tgg-melee
 /// plays a skin there.
 fn states(app: &App, slot: MeleeSlot, p: &Palette) -> El {
-    let in_port = port::skin_in(app, slot)
-        .filter(|skin| skin.enabled)
-        .map(|skin| {
-            label("· tgg-melee")
-                .font(text::SMALL)
-                .color(p.accent_text)
-                .help(format!("tgg-melee plays {} here", skin.name))
-        });
+    let in_port = port::skin_in(app, slot).map(|skin| {
+        label("· tgg-melee")
+            .font(text::SMALL)
+            .color(p.accent_text)
+            .help(format!("tgg-melee plays {} here", skin.name))
+    });
     row()
         .gap(space::XXS)
         .items_center()
         .child(state_word(&app.melee, slot, p))
         .children(in_port)
+}
+
+/// What the game makes of a skin in tgg-melee, in a word: it plays online
+/// too, or only offline (online shows the normal costume), and why.
+pub fn verdict_word(verdict: &tgg_mod::Verdict, p: &Palette) -> Option<El> {
+    match verdict {
+        tgg_mod::Verdict::LooksOnly => Some(
+            label("Plays online")
+                .font(text::SMALL)
+                .color(p.faint)
+                .help("It only changes how the costume looks, so online games show it too"),
+        ),
+        tgg_mod::Verdict::Counts(why) => Some(
+            label("Offline only")
+                .font(text::SMALL)
+                .color(p.faint)
+                .help(format!("Online games show the normal costume ({why})")),
+        ),
+        tgg_mod::Verdict::NotACostume => None,
+    }
 }
 
 /// What a slot holds, in a word: the player's skin, a file the app doesn't
@@ -278,7 +296,10 @@ fn slot_actions(app: &App, slot: MeleeSlot, p: &Palette) -> El {
                     label(format!("Made for {}", color.name()))
                         .font(text::SMALL)
                         .color(p.faint)
-                }));
+                }))
+                .children(
+                    port::verdict(app, id, slot).and_then(|verdict| verdict_word(verdict, p)),
+                );
             // Where it goes: either game, or both; one it's in says so.
             let slippi = if in_slot(id) {
                 label("In Slippi").font(text::SMALL).color(p.accent_text)
@@ -288,19 +309,21 @@ fn slot_actions(app: &App, slot: MeleeSlot, p: &Palette) -> El {
                     .help("Install it into this slot of your Slippi ISO")
                     .on_press(move |app: &mut App| library::install(app, id, slot))
             };
-            let tgg_melee = if port::plays(app, id, slot) {
-                label("In tgg-melee").font(text::SMALL).color(p.accent_text)
-            } else {
-                text_action("tgg-melee", false, p)
-                    .key(format!("melee/skin/{id}/tgg-melee"))
-                    .help("Install it into this slot in tgg-melee")
-                    .on_press(move |app: &mut App| port::install(app, id, slot))
-            };
+            let tgg_melee = port::takes(slot).then(|| {
+                if port::plays(app, id, slot) {
+                    label("In tgg-melee").font(text::SMALL).color(p.accent_text)
+                } else {
+                    text_action("tgg-melee", false, p)
+                        .key(format!("melee/skin/{id}/tgg-melee"))
+                        .help("Install it into this slot in tgg-melee")
+                        .on_press(move |app: &mut App| port::install(app, id, slot))
+                }
+            });
             let right = row()
-                .gap(space::XXS)
+                .gap(space::SM)
                 .items_center()
                 .child(slippi)
-                .child(tgg_melee);
+                .children(tgg_melee);
             pane_row(left, Some(right), false, p).key(format!("melee/skin/{id}"))
         })
         .collect::<Vec<_>>();

@@ -18,7 +18,11 @@ pub fn view(app: &App, p: &Palette) -> El {
     let mut body = col().w(WIDTH).gap(space::MD)
         .child(label("textures.gg").font(text::WORDMARK).color(p.faint))
         .child(label("Find your Melee").font(text::H1).color(p.ink))
-        .child(label("textures.gg works on your own copy of Super Smash Bros. Melee, NTSC 1.02. Pick one found in your game folders, or choose its ISO.")
+        .child(label(if welcome.games.is_empty() {
+                "textures.gg works on your own copy of Super Smash Bros. Melee, NTSC 1.02. Choose its ISO."
+            } else {
+                "textures.gg works on your own copy of Super Smash Bros. Melee, NTSC 1.02. Pick yours, or choose another ISO."
+            })
             .font(text::BODY).color(p.muted).wrap());
     if !welcome.games.is_empty() {
         body = body.child(games(&welcome.games, p));

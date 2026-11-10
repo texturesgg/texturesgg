@@ -176,18 +176,26 @@ pub fn card(app: &App, skin: &Skin, p: &Palette) -> El {
                 .help("Install it into your Slippi ISO")
                 .on_press(move |app: &mut App| actions::install(app, id, slot))
         });
-    let into_tgg_melee = skin.slot.filter(|_| !tgg_melee).map(|slot| {
-        text_action("Into tgg-melee", false, p)
-            .key(format!("library/install-port/{}", skin.id))
-            .help("Install it into tgg-melee")
-            .on_press(move |app: &mut App| super::port::install(app, id, slot))
-    });
+    let into_tgg_melee = skin
+        .slot
+        .filter(|&slot| !tgg_melee && super::port::takes(slot))
+        .map(|slot| {
+            text_action("Into tgg-melee", false, p)
+                .key(format!("library/install-port/{}", skin.id))
+                .help("Install it into tgg-melee")
+                .on_press(move |app: &mut App| super::port::install(app, id, slot))
+        });
     let remove = text_action("Remove", true, p)
         .key(format!("library/remove/{}", skin.id))
         .on_press(move |app: &mut App| actions::remove(app, id));
     // The actions pull back their own padding, so their words line up with the name's.
     ui::card(picture, &skin.name, status, p)
         .key(format!("library/skin/{}", skin.id))
+        .children(
+            skin.slot
+                .and_then(|slot| super::port::verdict(app, id, slot))
+                .and_then(|verdict| crate::melee::subject::verdict_word(verdict, p)),
+        )
         .child(
             row()
                 .gap(space::XXS)
