@@ -32,13 +32,16 @@ pub enum Netplay {
     /// A moderator reviewed its source as changing only what a player sees,
     /// and its records allow that ([`display_check`]): it is free.
     Display,
+    /// Its author declared it offline: the game switches it off for a whole
+    /// netplay session, so it is free.
+    Offline,
 }
 
 impl Netplay {
     /// Whether peers must match it to play each other. `Costumes` counts
     /// until the game has compared them with the disc.
     pub fn counts(self) -> bool {
-        !matches!(self, Self::Data | Self::Display)
+        !matches!(self, Self::Data | Self::Display | Self::Offline)
     }
 }
 
@@ -89,6 +92,9 @@ pub fn display_check(manifest: &Manifest) -> Result<(), String> {
 
 /// The class of the package `manifest` describes.
 pub fn classify(manifest: &Manifest) -> Netplay {
+    if manifest.class == Some(ModClass::Offline) {
+        return Netplay::Offline;
+    }
     if manifest.class == Some(ModClass::Display) && display_check(manifest).is_ok() {
         return Netplay::Display;
     }
@@ -161,5 +167,23 @@ mod tests {
             Netplay::Code,
             "a replaced function counts"
         );
+    }
+
+    #[test]
+    fn an_offline_mod_is_free_whatever_its_records() {
+        let mut manifest = Manifest::new(
+            "me.save-states".parse().expect("id"),
+            "Save states".into(),
+            semver::Version::new(1, 0, 0),
+        );
+        manifest.entry = Some("mod.so".into());
+        manifest.events = vec!["pad_read".into()];
+        manifest.hooks.replaces = vec!["ftCo_Damage".into()];
+        assert_eq!(classify(&manifest), Netplay::Code);
+        // The game switches it off for a netplay session, so nothing it does
+        // reaches one
+        manifest.class = Some(ModClass::Offline);
+        assert_eq!(classify(&manifest), Netplay::Offline);
+        assert!(!Netplay::Offline.counts());
     }
 }

@@ -6,9 +6,10 @@
 //! and `imports`, read from the library, and `files` and `assets`, read from
 //! the mod's folders, so they never come from the author.
 //!
-//! A mod's netplay class is never written by its author: the game works out
-//! whether a mod counts, and refuses a manifest with a `netplay` field. The
-//! registry's builder may write a `class` its review assigned.
+//! A mod's netplay class is mostly not written by its author: the game works
+//! out whether a mod counts, and refuses a manifest with a `netplay` field. The
+//! registry's builder may write the `display` class its review assigned. The
+//! one class an author writes is `offline`, which the game enforces itself.
 //! [`crate::netplay`] gives the same answer from a manifest.
 
 use crate::decls::Hooks;
@@ -154,21 +155,26 @@ pub struct Manifest {
     /// else.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
-    /// The class a moderator assigned when reviewing the source, written by
-    /// the registry's builder (`tgg mod build --class display`). A display
-    /// mod doesn't count toward the mod-set id when its records allow it
-    /// ([`crate::netplay::display_check`]). Absent for a package built
-    /// anywhere else, which counts by its contents.
+    /// `display`: the class a moderator assigned when reviewing the source,
+    /// written by the registry's builder (`tgg mod build --class display`). A
+    /// display mod doesn't count toward the mod-set id when its records allow
+    /// it ([`crate::netplay::display_check`]). `offline`: written by the
+    /// author; the game switches the mod off for a whole netplay session, so
+    /// it never counts. Absent otherwise: the mod counts by its contents.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub class: Option<ModClass>,
 }
 
-/// A class the registry assigns on review.
+/// A mod's netplay class: `display` the registry assigns on review, `offline`
+/// the author declares.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ModClass {
     /// Changes what a player sees or keeps for themselves, never the match.
     Display,
+    /// For playing alone (save states, a scripted CPU): the game switches it
+    /// off while a netplay session is on.
+    Offline,
 }
 
 /// A Slippi gecko code a mod reproduces: its address (`0x801D45EC`) or a

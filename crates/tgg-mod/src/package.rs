@@ -11,7 +11,7 @@
 
 use crate::decls::{self, DeclError};
 use crate::files::{self, FileError, Files};
-use crate::manifest::{self, DEFAULT_ENTRY, Manifest, ManifestError, WINDOWS_ENTRY};
+use crate::manifest::{self, DEFAULT_ENTRY, Manifest, ManifestError, ModClass, WINDOWS_ENTRY};
 use sha2::{Digest, Sha256};
 use std::io::{Cursor, Read, Write};
 
@@ -134,9 +134,12 @@ impl Package {
         check_images(&manifest, &assets)?;
         files::check("include", &include)?;
         // Only the registry's builder says what source a package came from,
-        // and which class its review gave it.
+        // and gives the display class its review assigned. The author may say
+        // offline: the game enforces that.
         manifest.source = None;
-        manifest.class = None;
+        if manifest.class != Some(ModClass::Offline) {
+            manifest.class = None;
+        }
         manifest.files = files::list(&files);
         manifest.assets = files::list(&assets);
         match &library {
@@ -458,6 +461,29 @@ mod tests {
         assert_eq!(opened.manifest.source, package.manifest.source);
         package.manifest.source = Some("main".into());
         assert!(Package::from_zip(&package.to_zip()).is_err());
+    }
+
+    #[test]
+    fn an_author_may_say_offline_but_not_display() {
+        let pack = |class| {
+            let mut claimed = manifest();
+            claimed.class = Some(class);
+            let files = Files::from([("PlMrNr.dat".to_owned(), b"mario".to_vec())]);
+            Package::pack(claimed, None, files, Files::new(), Files::new())
+                .expect("pack")
+                .manifest
+                .class
+        };
+        assert_eq!(
+            pack(ModClass::Display),
+            None,
+            "only the registry's review gives display"
+        );
+        assert_eq!(
+            pack(ModClass::Offline),
+            Some(ModClass::Offline),
+            "the game enforces offline"
+        );
     }
 
     #[test]
