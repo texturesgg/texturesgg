@@ -22,7 +22,7 @@ use crate::package::Package;
 use crate::port::Port;
 use crate::ports::{self, PortInstall, PortRelease, Running};
 use crate::profile::SlippiMapping;
-use crate::profile::{BUILTINS, GameNeed, Profile, ProfilePlan, Settings};
+use crate::profile::{GameNeed, Profile, ProfilePlan, Settings};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
@@ -57,8 +57,8 @@ pub struct Prepared {
 
 impl Prepared {
     /// The environment the game starts with: its mods folder, its settings
-    /// file, its counted settings for this run (until the port reads
-    /// `TGG_SETTINGS`), and each built-in module that is off.
+    /// file, and its counted settings for this run (until the port reads
+    /// `TGG_SETTINGS`).
     pub fn env(&self) -> Vec<(String, OsString)> {
         let mut env = vec![
             (
@@ -73,11 +73,6 @@ impl Prepared {
         let set = set_variable(&self.profile);
         if !set.is_empty() {
             env.push(("TGG_SET".to_owned(), set.into()));
-        }
-        for (id, variable) in BUILTINS {
-            if self.profile.game.settings.get(*id) == Some(&false) {
-                env.push(((*variable).to_owned(), "0".into()));
-            }
         }
         env
     }
