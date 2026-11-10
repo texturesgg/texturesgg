@@ -910,12 +910,7 @@ fn key(resolved: &Profile) -> String {
     crate::package::sha256_hex(fields.to_string().as_bytes())[..16].to_owned()
 }
 
-fn fit(
-    game: &GameNeed,
-    mods: &[ProfileMod],
-    catalog: &Catalog,
-    local: &Local,
-) -> Fit {
+fn fit(game: &GameNeed, mods: &[ProfileMod], catalog: &Catalog, local: &Local) -> Fit {
     let current = matches!(game, GameNeed::Installed(install) if install.current);
     let installed = mods.iter().all(|m| {
         local.get(&m.id).is_some_and(|have| {
