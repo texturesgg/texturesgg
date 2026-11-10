@@ -83,6 +83,7 @@ shows offline, and netplay games show the normal costume instead.
 ```text
 tgg login [--no-browser]    confirm a code on textures.gg in your browser
 tgg logout
+tgg account ticket meet [--machine]
 ```
 
 `login` shows a code and opens textures.gg's `/device` page, where you confirm it while
@@ -90,6 +91,13 @@ signed in. The token it gets is saved in `textures.gg/credentials.json` in your 
 folder (`~/.config` on Linux), readable only by you, and sent with every request that
 acts as you. It lasts a week from its last use. `logout` ends that session on the site
 and forgets the token.
+
+`account ticket meet` gets a ticket for the netplay meeting point: a pass that works there
+for two minutes, so the game can play online as you without ever holding your token. It
+signs in first if you aren't. With `--machine` it prints JSON lines for the game
+(`tgg/account.h`): `{"event":"signin","code","url"}` while a sign-in waits to be
+confirmed, then `{"event":"ticket","ticket","name","expires"}`, or
+`{"event":"error","message"}`.
 
 `--api URL` (or `TGG_API`) points every command at another textures.gg API, such as a
 local one; the default is `https://api.textures.gg`.

@@ -49,6 +49,9 @@ enum Command {
     },
     /// Sign out of textures.gg.
     Logout,
+    /// Your textures.gg account: tickets for its services.
+    #[command(subcommand)]
+    Account(account::AccountCommand),
     /// Install, pick and run released builds of tgg-melee.
     #[command(subcommand)]
     Port(ports::PortCommand),
@@ -118,6 +121,7 @@ fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Login { no_browser } => account::login(&cli.api, !no_browser),
         Command::Logout => account::logout(&cli.api),
+        Command::Account(command) => account::run(command, &cli.api),
         Command::Port(command) => ports::run(command, &cli.api),
         Command::Replay { file, yes, verbose } => {
             profiles::play(&cli.api, &file, Some(&file), yes, verbose)
