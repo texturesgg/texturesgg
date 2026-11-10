@@ -101,6 +101,14 @@ pub enum Error {
         "{dir} already has {others}; a new mod starts in a new folder, or one with only dotfiles, a README, a license and a Nix flake"
     )]
     FolderInUse { dir: PathBuf, others: String },
+    /// A skin must replace a `.dat` or `.usd` file in the disc's root.
+    #[error("{0} isn't a game file a skin can replace")]
+    NotASkinSlot(String),
+    #[error("{path} isn't a skins file this tgg reads: {why}")]
+    BadSkins { path: PathBuf, why: String },
+    /// The game couldn't check a costume.
+    #[error("tgg-melee couldn't check the costume: {0}")]
+    CheckCostume(String),
     #[error("{path}: {source}")]
     Io {
         path: PathBuf,
