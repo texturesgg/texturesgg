@@ -69,20 +69,41 @@ competitive` and `tgg port run`. Mod makers keep `tgg mod publish`.
 
 ## The disc image
 
-The port converts the disc it's given into its own copies of the game's files,
-keyed by each file's contents, and reads mods' files first. A disc with edited
-files works, but netplay and replays assume every player has the same game
-files, and the disc isn't part of the netplay identity. So the port wants a
-clean NTSC 1.02 disc, and `launch` takes the clean one. A disc the app has
-written skins into is for Dolphin.
+The port plays the files of a clean NTSC 1.02 disc. It compares the disc it's
+given with the clean one the first time it sees an image, keeps copies of the
+clean costume, stage and effects files, and plays those in place of edited
+ones. So the one disc image the app writes skins into for Dolphin also works
+for tgg-melee. An edited file it has no clean copy of plays as it is and counts
+for netplay (tgg-melee's `docs/files-and-assets.md`, "An edited disc").
 
-## Open questions
+## Skins
 
-- **Skins in the port.** A mod can carry game files (`files/`), and a
-  texture-only costume is free to use in netplay, so a skin from the player's
-  library could be installed into the port as a generated files mod instead of
-  only into a disc. Whether the app does that, and who builds it, is for the
-  owner to decide.
+Skins reach tgg-melee through the official tgg.skins mod, which reads
+`skins.json` in the game's data folder when the game starts:
+
+```json
+{
+  "format": 1,
+  "slots": {
+    "PlFxOr.dat": { "path": "/…/9b88….dat", "sha256": "9b88…", "name": "Dark Fox" }
+  }
+}
+```
+
+- `skins_file()` is where it lives; `skins(file)` reads it (empty when there
+  is none); `set_skin(file, "PlFxOr.dat", path, name)` puts a skin in a slot,
+  replacing the slot's; `clear_skin(file, slot)` takes it out. Changes apply at
+  the next start. The app passes its library file's path; `tgg skin install`
+  keeps its own copy in `<data>/tgg/skins/`.
+- Costumes and menu or trophy files load. Stages, effects and fighter files
+  don't yet.
+- `costume_verdict(port, iso, slot, skin)` asks the port whether a costume
+  only changes looks (`Verdict::LooksOnly`): it then shows in netplay games
+  too. `Verdict::Counts(why)`: it shows offline, and a netplay game shows the
+  normal costume on that machine only. The game decides that itself, so a skin
+  never changes who someone can play.
+- The app installs tgg.skins (`skins::LOADER`) the first time a player puts a
+  skin into tgg-melee, if it isn't installed.
 
 ## Registry (HTTP, site)
 

@@ -42,6 +42,8 @@
 //!   mods a replay or a netplay host needs: reading them ([`slp`] for
 //!   replays), resolving, preparing and launching them; and the package
 //!   cache.
+//! - [`skins`]: the skins tgg.skins loads (`skins.json`), and whether a
+//!   costume changes only looks.
 //! - [`scaffold`]: starting a new mod from an SDK example, a release's SDK,
 //!   the build tools on `PATH`, and the mod docs' address.
 
@@ -68,6 +70,7 @@ pub mod profile;
 pub mod registry;
 pub mod scaffold;
 pub mod sdk;
+pub mod skins;
 pub mod slp;
 pub mod symbols;
 pub mod trust;
@@ -119,6 +122,9 @@ pub use scaffold::{
     CreatedMod, NewMod, Repository, Tools, docs_url, new_mod, release_sdk, sdk_examples, tools,
 };
 pub use sdk::Sdk;
+pub use skins::{
+    SkinSlot, Skins, Verdict, clear_skin, costume_verdict, set_skin, skins, skins_file,
+};
 pub use slp::{ReplayInfo, ReplayPlayer, replay_info};
 pub use symbols::Symbols;
 pub use trust::{Trust, remember_trust, trust};
