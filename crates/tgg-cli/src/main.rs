@@ -17,7 +17,6 @@ mod releases;
 mod scaffold;
 mod sdks;
 mod signals;
-mod skins;
 mod toolchain;
 mod ui;
 
@@ -67,9 +66,6 @@ enum Command {
     /// Mod profiles: the exact mods a replay or a profile file needs.
     #[command(subcommand)]
     Profile(profiles::ProfileCommand),
-    /// Skins in tgg-melee: a costume or stage file in place of the game's.
-    #[command(subcommand)]
-    Skin(skins::SkinCommand),
     /// The SDK mods build against.
     #[command(subcommand)]
     Sdk(sdks::SdkCommand),
@@ -123,7 +119,6 @@ fn run(cli: Cli) -> Result<()> {
             profiles::play(&cli.api, &file, Some(&file), yes, verbose)
         }
         Command::Profile(command) => profiles::run(command, &cli.api),
-        Command::Skin(command) => skins::run(command),
         Command::Sdk(command) => sdks::run(command),
         Command::Mod(command) => mods::run(command, &cli.api),
         Command::Config(command) => config::run(command),

@@ -75,29 +75,13 @@ files, and the disc isn't part of the netplay identity. So the port wants a
 clean NTSC 1.02 disc, and `launch` takes the clean one. A disc the app has
 written skins into is for Dolphin.
 
-## Skins
+## Open questions
 
-A skin from the player's library goes into the port as a mod of that one
-file, generated on the player's machine (`tgg_mod::skins`, `tgg skin`):
-
-- `install_skin(mods, "PlMrNr.dat", name, bytes)` writes the mod
-  `skin.plmrnr.dat` with the skin at `files/PlMrNr.dat`. One mod per game
-  file: installing another skin for that file replaces it in place, and a
-  skin the player turned off stays off. Names longer than the game reads (63
-  bytes) are cut short.
-- `skins(&local)` and `skin_for(&local, "PlMrNr.dat")` list what's
-  installed; `uninstall_skin` puts the game's own file back; on and off are
-  `set_enabled` on the skin's id. Skins have no lock entry, so updates and
-  sets leave them alone. The registry never serves an id under `skin.`.
-- Netplay is the game's call, made at load ([files and
-  assets](https://github.com/texturesgg/tgg-melee/blob/main/docs/files-and-assets.md#files-and-netplay)):
-  a costume that only changes how the fighter looks is free; stages,
-  effects, fighter data and costumes that change the skeleton count, so
-  players must match them. `Skin::netplay` is `Costumes` or `Files`; the app
-  says so for `Files`. tgg-mod takes a costume skin to be free (it stays out
-  of `profile_from_local` and doesn't make a replay need a profile).
-- A profile game (a replay, a netplay host's mods) runs from its own folder,
-  so the player's skins aren't in it.
+- **Skins in the port.** A mod can carry game files (`files/`), and a
+  texture-only costume is free to use in netplay, so a skin from the player's
+  library could be installed into the port as a generated files mod instead of
+  only into a disc. Whether the app does that, and who builds it, is for the
+  owner to decide.
 
 ## Registry (HTTP, site)
 

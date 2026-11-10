@@ -167,9 +167,6 @@ fn every_version() -> String {
     "*".to_owned()
 }
 
-/// The longest name the game reads, in bytes of UTF-8.
-pub const NAME_LIMIT: usize = 63;
-
 /// The tags a manifest's `tags` may name.
 pub const TAGS: &[&str] = &[
     "competitive",
@@ -218,8 +215,6 @@ pub enum ManifestError {
     Id(String),
     #[error("the manifest needs a name")]
     Name,
-    #[error("the name {0:?} is longer than {NAME_LIMIT} bytes")]
-    NameTooLong(String),
     #[error("the entry {0:?} must be a file name, not a path")]
     Entry(String),
     #[error(
@@ -277,9 +272,6 @@ impl Manifest {
         }
         if self.name.trim().is_empty() {
             return Err(ManifestError::Name);
-        }
-        if self.name.len() > NAME_LIMIT {
-            return Err(ManifestError::NameTooLong(self.name.clone()));
         }
         if let Some(entry) = &self.entry
             && (entry.is_empty() || entry.contains(['/', '\\']) || entry.starts_with('.'))

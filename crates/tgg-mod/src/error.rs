@@ -101,11 +101,6 @@ pub enum Error {
         "{dir} already has {others}; a new mod starts in a new folder, or one with only dotfiles, a README, a license and a Nix flake"
     )]
     FolderInUse { dir: PathBuf, others: String },
-    /// A skin must replace a `.dat` or `.usd` file in the disc's root.
-    #[error("{0} isn't a game file a skin can replace")]
-    NotASkinFile(String),
-    #[error("the skin for {0} can't be installed: {1}")]
-    BadSkin(String, String),
     #[error("{path}: {source}")]
     Io {
         path: PathBuf,

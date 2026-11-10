@@ -287,19 +287,14 @@ pub fn profile_from_file(path: &Path) -> Result<Profile, Error> {
 }
 
 /// The player's own profile: the port in use and every turned-on mod that
-/// counts toward the mod-set id, at its installed version, costume skins
-/// aside ([`crate::skins`]). Settings are
+/// counts toward the mod-set id, at its installed version. Settings are
 /// left out: the crate can't yet tell a counted setting from one the
 /// player keeps to themselves.
 pub fn profile_from_local(local: &Local) -> Profile {
     let mut profile = Profile::new(local.port.as_ref().map_or(ANY, |port| &port.version));
     profile.game.layout = local.port.as_ref().map(|port| port.game_abi.clone());
     for m in &local.mods {
-        if !m.enabled
-            || m.fits == Some(false)
-            || !crate::netplay::classify(&m.manifest).counts()
-            || crate::skins::free_costume(m)
-        {
+        if !m.enabled || m.fits == Some(false) || !crate::netplay::classify(&m.manifest).counts() {
             continue;
         }
         profile.mods.push(ProfileEntry {
@@ -965,7 +960,6 @@ fn fit(
         .filter(|have| have.enabled && !mods.iter().any(|m| m.id == *have.id()))
         .all(|have| {
             !crate::netplay::classify(&have.manifest).counts()
-                || crate::skins::free_costume(have)
                 || catalog.mods.iter().any(|entry| {
                     entry.manifest.id == *have.id()
                         && entry.manifest.version == have.manifest.version
