@@ -77,3 +77,89 @@ pub fn logout(api: &str) -> Result<()> {
     }
     Ok(())
 }
+
+#[derive(clap::Subcommand)]
+pub enum AccountCommand {
+    /// A short-lived ticket for one textures.gg service, such as `meet` (the
+    /// netplay meeting point), so a program can act as you there without
+    /// your sign-in. Signs in first when you aren't.
+    Ticket {
+        /// The service: meet.
+        service: String,
+        /// Print JSON lines for the game (`tgg/account.h`): `signin` with a
+        /// code to confirm when you aren't signed in, then `ticket` or
+        /// `error`.
+        #[arg(long)]
+        machine: bool,
+    },
+}
+
+pub fn run(command: AccountCommand, api: &str) -> Result<()> {
+    match command {
+        AccountCommand::Ticket { service, machine } => {
+            if !machine {
+                let ticket = ticket(api, &service, |login| {
+                    println!(
+                        "Your code is {}. Confirm it on textures.gg:",
+                        login.display_code()
+                    );
+                    println!("  {}", login.link());
+                })?;
+                println!("{}", ticket.ticket);
+                return Ok(());
+            }
+            let emit = |value: Value| println!("{value}");
+            match ticket(api, &service, |login| {
+                emit(serde_json::json!({
+                    "event": "signin",
+                    "code": login.display_code(),
+                    "url": login.link(),
+                }));
+            }) {
+                Ok(ticket) => {
+                    emit(serde_json::json!({
+                        "event": "ticket",
+                        "ticket": ticket.ticket,
+                        "name": ticket.name,
+                        "expires": ticket.expires,
+                    }));
+                    Ok(())
+                }
+                Err(error) => {
+                    emit(serde_json::json!({"event": "error", "message": format!("{error:#}")}));
+                    Err(error)
+                }
+            }
+        }
+    }
+}
+
+/// What the API answers for a ticket.
+#[derive(serde::Deserialize)]
+struct Ticket {
+    ticket: String,
+    name: String,
+    /// When it stops working, in milliseconds since 1970.
+    expires: u64,
+}
+
+/// A ticket for `service`, signing in first (with `on_code` showing the code)
+/// when there's no sign-in or it has expired.
+fn ticket(
+    api: &str,
+    service: &str,
+    on_code: impl FnOnce(&tgg_account::DeviceLogin),
+) -> Result<Ticket> {
+    let path = match service {
+        "meet" => "/api/meet/ticket",
+        other => anyhow::bail!("there's no textures.gg service called {other}; try meet"),
+    };
+    let site = Site::new(api)?;
+    match site.0.post::<Ticket>(path, &Value::Null) {
+        Err(tgg_account::Error::NotSignedIn | tgg_account::Error::SessionExpired) => {
+            site.0.login(true, on_code).map_err(cli)?;
+            site.post(path, &Value::Null)
+        }
+        result => result.map_err(cli),
+    }
+}
