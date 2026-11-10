@@ -187,6 +187,8 @@ pub fn confirm_review(app: &mut App, install_them: bool) {
     }
     slots_changed(app, &changed);
     request_renders(app);
+    // Whether the new ones would play online in tgg-melee.
+    super::port::ask_all(app);
 }
 
 /// Take the skin `id` out of the library. Its file stays, for the install
