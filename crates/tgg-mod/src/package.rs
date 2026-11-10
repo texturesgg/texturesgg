@@ -133,8 +133,10 @@ impl Package {
         files::check("assets", &assets)?;
         check_images(&manifest, &assets)?;
         files::check("include", &include)?;
-        // Only the registry's builder says what source a package came from.
+        // Only the registry's builder says what source a package came from,
+        // and which class its review gave it.
         manifest.source = None;
+        manifest.class = None;
         manifest.files = files::list(&files);
         manifest.assets = files::list(&assets);
         match &library {

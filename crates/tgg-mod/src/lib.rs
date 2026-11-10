@@ -92,7 +92,7 @@ pub use local::{
     Local, LocalMod, LocalSet, SetStatus, local, set_enabled, uninstall, uninstall_set,
 };
 pub use lock::{Lock, LockEntry, game_running};
-pub use manifest::{Manifest, ModId};
+pub use manifest::{Manifest, ModClass, ModId};
 pub use net::{HttpNet, Net, NetError};
 pub use netplay::Netplay;
 pub use package::Package;

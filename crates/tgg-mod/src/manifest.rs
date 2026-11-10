@@ -6,9 +6,10 @@
 //! and `imports`, read from the library, and `files` and `assets`, read from
 //! the mod's folders, so they never come from the author.
 //!
-//! A mod's netplay class is never written down: the game works out whether a
-//! mod counts, and refuses a manifest with a `netplay` field. [`crate::netplay`]
-//! gives the same answer from a manifest.
+//! A mod's netplay class is never written by its author: the game works out
+//! whether a mod counts, and refuses a manifest with a `netplay` field. The
+//! registry's builder may write a `class` its review assigned.
+//! [`crate::netplay`] gives the same answer from a manifest.
 
 use crate::decls::Hooks;
 use crate::depends::Range;
@@ -153,6 +154,21 @@ pub struct Manifest {
     /// else.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// The class a moderator assigned when reviewing the source, written by
+    /// the registry's builder (`tgg mod build --class display`). A display
+    /// mod doesn't count toward the mod-set id when its records allow it
+    /// ([`crate::netplay::display_check`]). Absent for a package built
+    /// anywhere else, which counts by its contents.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class: Option<ModClass>,
+}
+
+/// A class the registry assigns on review.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ModClass {
+    /// Changes what a player sees or keeps for themselves, never the match.
+    Display,
 }
 
 /// A Slippi gecko code a mod reproduces: its address (`0x801D45EC`) or a
@@ -383,6 +399,7 @@ impl Manifest {
             assets: Vec::new(),
             slippi: Vec::new(),
             source: None,
+            class: None,
         }
     }
 }
