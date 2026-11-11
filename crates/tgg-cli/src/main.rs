@@ -7,6 +7,7 @@ mod defaults;
 mod dev;
 mod docs;
 mod doctor;
+mod fix;
 mod mods;
 mod paths;
 mod player;

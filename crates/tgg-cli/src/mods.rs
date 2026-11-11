@@ -74,6 +74,23 @@ pub enum ModCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Bring a mod's source up to the SDK you have: rename what the decomp
+    /// renamed (the SDK's rename maps), at exactly the spots the compiler
+    /// points at, and build again until nothing changes. Reports what it
+    /// renamed, and what's left for you.
+    Fix {
+        #[arg(default_value = ".", value_parser = dir_arg)]
+        dir: PathBuf,
+        /// Say what it would rename, without writing.
+        #[arg(long)]
+        check: bool,
+        /// The SDK's folder or tgg-game-sdk.json [default: the SDK of the
+        /// game in use]
+        #[arg(long, env = "TGG_GAME_SDK")]
+        sdk: Option<PathBuf>,
+        #[command(flatten)]
+        cc: Cc,
+    },
     /// Build the mod for debugging, put it in the game's mods folder, and run
     /// the game with your disc image.
     Dev {
@@ -305,6 +322,20 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
                 json,
             )
         }
+        ModCommand::Fix {
+            dir,
+            check,
+            sdk,
+            cc,
+        } => crate::fix::fix(
+            &dir,
+            &Options {
+                sdk: sdk.as_deref(),
+                cc: &cc.resolve(),
+                debug: false,
+            },
+            check,
+        ),
         ModCommand::Dev {
             dir,
             watch,

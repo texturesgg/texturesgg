@@ -136,10 +136,83 @@ pub fn build(dir: &Path, options: &Options) -> Result<Built> {
     let sdk = resolve_sdk(options.sdk)?;
     let root = std::path::absolute(dir)?;
     let build = root.join(BUILD);
+    let binary = build.join("tgg");
+    configure(&root, &manifest, &sources, &sdk, options)?;
+    run(
+        Command::new("cmake").arg("--build").arg(&binary),
+        "the build",
+    )?;
+
+    let commands = binary.join("compile_commands.json");
+    if commands.is_file() {
+        std::fs::copy(&commands, build.join("compile_commands.json"))?;
+    }
+    let name = manifest
+        .entry
+        .clone()
+        .unwrap_or_else(|| manifest::default_entry(Some(&sdk.target)).to_owned());
+    let library = binary.join("mods").join(manifest.id.as_str()).join(name);
+    let bytes = read(&library)?;
+    let symbols = Symbols::open(&sdk.symbols)?;
+    let canonical = check_library(&bytes, &sdk, &symbols)?;
+    Ok(Built {
+        package: folders.pack(manifest, Some(bytes))?,
+        canonical: Some(canonical),
+    })
+}
+
+/// What compiling a mod said: whether it built, and the compiler's output
+/// (in the C locale, so its quotes are plain), for `tgg mod fix` to read.
+pub struct Compiled {
+    pub ok: bool,
+    pub output: String,
+    pub sdk: Sdk,
+}
+
+/// Compile the mod in `dir` as `build` does, without checking or packing it,
+/// and keep what the compiler said. `None` for a mod with no C sources.
+pub fn compile(dir: &Path, options: &Options) -> Result<Option<Compiled>> {
+    let manifest = read_manifest(dir)?;
+    let (sources, _) = mod_source(dir)?;
+    if sources.is_empty() {
+        return Ok(None);
+    }
+    let sdk = resolve_sdk(options.sdk)?;
+    let root = std::path::absolute(dir)?;
+    let binary = root.join(BUILD).join("tgg");
+    configure(&root, &manifest, &sources, &sdk, options)?;
+    let out = Command::new("cmake")
+        .arg("--build")
+        .arg(&binary)
+        // Every source compiled again, so every diagnostic is said again
+        .arg("--clean-first")
+        .env("LC_ALL", "C")
+        .output()
+        .map_err(|error| {
+            anyhow!("couldn't run the build: {error}; tgg doctor says what's missing")
+        })?;
+    let mut output = String::from_utf8_lossy(&out.stdout).into_owned();
+    output.push_str(&String::from_utf8_lossy(&out.stderr));
+    Ok(Some(Compiled {
+        ok: out.status.success(),
+        output,
+        sdk,
+    }))
+}
+
+/// Write the mod's CMake project and configure its build folder.
+fn configure(
+    root: &Path,
+    manifest: &Manifest,
+    sources: &[PathBuf],
+    sdk: &Sdk,
+    options: &Options,
+) -> Result<()> {
+    let build = root.join(BUILD);
     let project = build.join("tgg-project");
     let binary = build.join("tgg");
-    let includes = include_dirs(&root, &manifest);
-    write_project(&project, &sdk, &root, &sources, &includes)?;
+    let includes = include_dirs(root, manifest);
+    write_project(&project, sdk, root, sources, &includes)?;
 
     // CMake keeps the generator a build folder started with, so a folder
     // made with another one starts over.
@@ -186,27 +259,7 @@ pub fn build(dir: &Path, options: &Options) -> Result<Built> {
             .env("TGG_MACOS_GCC", &gcc);
     }
     run(configure.arg("--log-level=WARNING"), "cmake")?;
-    run(
-        Command::new("cmake").arg("--build").arg(&binary),
-        "the build",
-    )?;
-
-    let commands = binary.join("compile_commands.json");
-    if commands.is_file() {
-        std::fs::copy(&commands, build.join("compile_commands.json"))?;
-    }
-    let name = manifest
-        .entry
-        .clone()
-        .unwrap_or_else(|| manifest::default_entry(Some(&sdk.target)).to_owned());
-    let library = binary.join("mods").join(manifest.id.as_str()).join(name);
-    let bytes = read(&library)?;
-    let symbols = Symbols::open(&sdk.symbols)?;
-    let canonical = check_library(&bytes, &sdk, &symbols)?;
-    Ok(Built {
-        package: folders.pack(manifest, Some(bytes))?,
-        canonical: Some(canonical),
-    })
+    Ok(())
 }
 
 /// The toolchain file an SDK ships when mods need one on its system.
