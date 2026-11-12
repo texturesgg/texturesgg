@@ -23,6 +23,7 @@ impl Gpu {
             power_preference: wgpu::PowerPreference::HighPerformance,
             force_fallback_adapter: software,
             compatible_surface: None,
+            ..Default::default()
         }))
         .map_err(GpuError::from)?;
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
@@ -104,7 +105,9 @@ pub fn capture(gpu: &Gpu, renderer: &HsdRenderer) -> Result<RgbaImage> {
         .recv()
         .map_err(|_| GpuError::ReadbackLost)?
         .map_err(GpuError::from)?;
-    let mapped = slice.get_mapped_range();
+    let mapped = slice
+        .get_mapped_range()
+        .map_err(|_| GpuError::ReadbackLost)?;
     let mut pixels = Vec::with_capacity(width as usize * height as usize * 4);
     for row in mapped.chunks_exact(bytes_per_row as usize) {
         for pixel in row[..width as usize * 4].as_chunks::<4>().0 {

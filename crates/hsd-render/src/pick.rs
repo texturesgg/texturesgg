@@ -72,14 +72,18 @@ impl PendingPick {
     /// What was picked (`None` for background), once the readback has
     /// arrived; `None` while it's still in flight.
     pub fn take(&self) -> Option<Result<Option<PickId>>> {
-        Some(take_mapped(&self.state)?.map(|()| {
+        Some(take_mapped(&self.state)?.and_then(|()| {
             let id = {
-                let mapped = self.buffer.slice(..).get_mapped_range();
+                let mapped = self
+                    .buffer
+                    .slice(..)
+                    .get_mapped_range()
+                    .map_err(|_| GpuError::ReadbackLost)?;
                 u32::from_le_bytes([mapped[0], mapped[1], mapped[2], mapped[3]])
             };
             self.buffer.unmap();
             // Zero is the cleared background; packets' ids start at one.
-            (id != 0).then_some(PickId(id))
+            Ok((id != 0).then_some(PickId(id)))
         }))
     }
 }

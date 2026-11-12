@@ -313,6 +313,12 @@ impl FakeNet {
 
     /// Publish tgg-melee `version` for this system with the layout
     /// [`FakeNet::LAYOUT`], and make it the newest release.
+    /// Answer `url` with `body`: for front ends that read more of the site
+    /// than the registry, such as a profile and its packs.
+    pub fn serve(&self, url: &str, body: impl Into<Vec<u8>>) {
+        self.state().files.insert(url.to_owned(), body.into());
+    }
+
     pub fn publish_port(&self, version: &str) {
         let target = ports::target().unwrap_or("x86_64-linux-gnu");
         let top = format!("tgg-melee-{version}-{target}");
@@ -688,7 +694,13 @@ impl Net for FakeNet {
             }
         } else {
             let (path, query) = url.split_once('?').unwrap_or((url, ""));
-            let Some(body) = state.files.get(path).cloned() else {
+            // Served with its query (a page of results), else without it.
+            let Some(body) = state
+                .files
+                .get(url)
+                .or_else(|| state.files.get(path))
+                .cloned()
+            else {
                 return Err(NetError::NotFound { url: url.into() });
             };
             // A package download marked as a first install counts as one.

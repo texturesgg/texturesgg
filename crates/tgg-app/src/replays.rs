@@ -1,0 +1,261 @@
+//! Finding the player's replays: the folder Slippi records into (the
+//! Launcher's `rootSlpPath`, else `Slippi` in their home, or in Documents),
+//! and listing the `.slp` files in folders, newest first.
+
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
+
+/// A replay file, and when it was last written.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReplayFile {
+    pub path: PathBuf,
+    pub modified: SystemTime,
+    /// Which of the folders listed it was found in.
+    pub folder: usize,
+}
+
+/// The folder Slippi records replays into, if there is one.
+pub fn slippi_folder() -> Option<PathBuf> {
+    let from_settings = dirs::config_dir()
+        .map(|config| config.join("Slippi Launcher").join("Settings"))
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|json| {
+            json.get("settings")?
+                .get("rootSlpPath")?
+                .as_str()
+                .map(PathBuf::from)
+        });
+    let home = dirs::home_dir();
+    from_settings
+        .into_iter()
+        .chain(home.iter().map(|home| home.join("Slippi")))
+        .chain(dirs::document_dir().map(|documents| documents.join("Slippi")))
+        .find(|folder| folder.is_dir())
+}
+
+/// The `.slp` files in `folders` and the folders under them, newest first,
+/// at most `limit` of them.
+pub fn replays_in(folders: &[PathBuf], limit: usize) -> Vec<ReplayFile> {
+    let mut found = Vec::new();
+    for (index, folder) in folders.iter().enumerate() {
+        walk(folder, index, 0, &mut found);
+    }
+    found.sort_by(|a, b| {
+        b.modified
+            .cmp(&a.modified)
+            .then_with(|| a.path.cmp(&b.path))
+    });
+    found.truncate(limit);
+    found
+}
+
+/// How deep under a folder replays are looked for (Slippi files them by
+/// month).
+const DEPTH: usize = 4;
+
+fn walk(folder: &Path, index: usize, depth: usize, found: &mut Vec<ReplayFile>) {
+    let Ok(entries) = std::fs::read_dir(folder) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(meta) = entry.metadata() else { continue };
+        if meta.is_dir() {
+            if depth < DEPTH {
+                walk(&path, index, depth + 1, found);
+            }
+        } else if path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("slp"))
+        {
+            let modified = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+            found.push(ReplayFile {
+                path,
+                modified,
+                folder: index,
+            });
+        }
+    }
+}
+
+/// When a replay was played, from Slippi's file name (`Game_20260815T011035`),
+/// as "2026-08-15 01:10".
+pub fn played_at(path: &Path) -> Option<String> {
+    let stem = path.file_stem()?.to_str()?;
+    let stamp = stem.strip_prefix("Game_")?;
+    let (date, time) = stamp.split_once('T')?;
+    (date.len() == 8
+        && time.len() >= 4
+        && date
+            .chars()
+            .chain(time.chars().take(4))
+            .all(|c| c.is_ascii_digit()))
+    .then(|| {
+        format!(
+            "{}-{}-{} {}:{}",
+            &date[..4],
+            &date[4..6],
+            &date[6..8],
+            &time[..2],
+            &time[2..4]
+        )
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{played_at, replays_in};
+    use std::path::Path;
+
+    #[test]
+    fn a_slippi_file_name_says_when() {
+        assert_eq!(
+            played_at(Path::new("/x/Game_20260815T011035.slp")).as_deref(),
+            Some("2026-08-15 01:10")
+        );
+        assert_eq!(played_at(Path::new("/x/clip.slp")), None);
+    }
+
+    #[test]
+    fn replays_are_found_under_folders_newest_first() {
+        let folder = tempfile::tempdir().expect("temp");
+        let month = folder.path().join("2026-10");
+        std::fs::create_dir_all(&month).expect("month");
+        std::fs::write(month.join("old.slp"), b"x").expect("write");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(folder.path().join("new.slp"), b"x").expect("write");
+        std::fs::write(folder.path().join("notes.txt"), b"x").expect("write");
+        let found = replays_in(&[folder.path().to_owned()], 10);
+        let names: Vec<_> = found
+            .iter()
+            .map(|file| {
+                file.path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        assert_eq!(names, ["new.slp", "old.slp"]);
+        assert_eq!(replays_in(&[folder.path().to_owned()], 1).len(), 1);
+    }
+}
+
+/// Slippi's character ids (external ids, as Game Start writes them), by the
+/// two-letter code the game's files name each fighter with.
+const CHARACTERS: [&str; 26] = [
+    "Ca", "Dk", "Fx", "Gw", "Kb", "Kp", "Lk", "Lg", "Mr", "Ms", "Mt", "Ns", "Pe", "Pk", "Pp", "Pr",
+    "Ss", "Ys", "Zd", "Sk", "Fc", "Cl", "Dr", "Fe", "Pc", "Gn",
+];
+
+/// The fighter Slippi's character id `id` is.
+pub fn character(id: u8) -> Option<melee_dat::Character> {
+    melee_dat::Character::from_code(CHARACTERS.get(usize::from(id))?)
+}
+
+/// The name of the stage Slippi's stage id `id` is.
+pub fn stage_name(id: u16) -> Option<&'static str> {
+    Some(match id {
+        2 => "Fountain of Dreams",
+        3 => "Pokémon Stadium",
+        4 => "Princess Peach's Castle",
+        5 => "Kongo Jungle",
+        6 => "Brinstar",
+        7 => "Corneria",
+        8 => "Yoshi's Story",
+        9 => "Onett",
+        10 => "Mute City",
+        11 => "Rainbow Cruise",
+        12 => "Jungle Japes",
+        13 => "Great Bay",
+        14 => "Hyrule Temple",
+        15 => "Brinstar Depths",
+        16 => "Yoshi's Island",
+        17 => "Green Greens",
+        18 => "Fourside",
+        19 => "Mushroom Kingdom",
+        20 => "Mushroom Kingdom II",
+        22 => "Venom",
+        23 => "Poké Floats",
+        24 => "Big Blue",
+        25 => "Icicle Mountain",
+        26 => "Icetop",
+        27 => "Flat Zone",
+        28 => "Dream Land",
+        29 => "Yoshi's Island N64",
+        30 => "Kongo Jungle N64",
+        31 => "Battlefield",
+        32 => "Final Destination",
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod id_tests {
+    #[test]
+    fn slippi_ids_name_fighters_and_stages() {
+        assert_eq!(super::character(12).map(|c| c.name()), Some("Peach"));
+        assert_eq!(super::character(2).map(|c| c.name()), Some("Fox"));
+        assert_eq!(super::character(25).map(|c| c.name()), Some("Ganondorf"));
+        assert_eq!(super::stage_name(3), Some("Pokémon Stadium"));
+        assert_eq!(super::character(99), None);
+    }
+}
+
+/// The versus stage Slippi's stage id `id` is, by the file the game loads.
+pub fn stage(id: u16) -> Option<melee_dat::Stage> {
+    let file = match id {
+        2 => "GrIz.dat",
+        3 => "GrPs.dat",
+        4 => "GrCs.dat",
+        5 => "GrKg.dat",
+        6 => "GrZe.dat",
+        7 => "GrCn.dat",
+        8 => "GrSt.dat",
+        9 => "GrOt.dat",
+        10 => "GrMc.dat",
+        11 => "GrRc.dat",
+        12 => "GrGd.dat",
+        13 => "GrGb.dat",
+        14 => "GrSh.dat",
+        15 => "GrKr.dat",
+        16 => "GrYt.dat",
+        17 => "GrGr.dat",
+        18 => "GrFs.dat",
+        19 => "GrI1.dat",
+        20 => "GrI2.dat",
+        22 => "GrVe.dat",
+        23 => "GrPu.dat",
+        24 => "GrBb.dat",
+        25 => "GrIm.dat",
+        27 => "GrFz.dat",
+        28 => "GrOp.dat",
+        29 => "GrOy.dat",
+        30 => "GrOk.dat",
+        31 => "GrNBa.dat",
+        32 => "GrNLa.dat",
+        _ => return None,
+    };
+    melee_dat::Stage::from_file_name(file)
+}
+
+#[cfg(test)]
+mod stage_tests {
+    #[test]
+    fn every_slippi_stage_id_is_a_stage_of_the_game() {
+        for id in [
+            2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 22, 23, 24, 25, 27,
+            28, 29, 30, 31, 32,
+        ] {
+            assert!(
+                super::stage(id).is_some(),
+                "stage id {id} names no stage file the game has"
+            );
+        }
+        assert_eq!(
+            super::stage(31).map(|stage| stage.name()),
+            Some("Battlefield")
+        );
+    }
+}

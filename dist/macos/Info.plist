@@ -9,7 +9,7 @@
     <key>CFBundleDisplayName</key>
     <string>textures.gg</string>
     <key>CFBundleExecutable</key>
-    <string>tgg-editor</string>
+    <string>tgg-studio</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
@@ -32,6 +32,18 @@
     <true/>
     <key>NSHumanReadableCopyright</key>
     <string>© 2026 SaavyLab LLC</string>
+    <!-- Install on textures.gg opens the app: textures-gg://mods/<id>, textures-gg://sets/<name>. -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>gg.textures.app</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>textures-gg</string>
+            </array>
+        </dict>
+    </array>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
 </dict>

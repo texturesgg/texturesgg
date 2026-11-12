@@ -11,7 +11,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROFILE="${PROFILE:-release}"
 VERSION="$(cargo metadata --manifest-path "$ROOT/Cargo.toml" --format-version 1 --no-deps |
-  jq -r '.packages[] | select(.name == "tgg-editor") | .version')"
+  jq -r '.packages[] | select(.name == "tgg-studio") | .version')"
 ARCH="$(uname -m)"
 OUT_DIR="$ROOT/target/package"
 NAME="textures.gg-$VERSION-linux-$ARCH"
@@ -19,19 +19,19 @@ STAGE="$OUT_DIR/$NAME"
 
 cd "$ROOT"
 if [[ "$PROFILE" == release ]]; then
-  cargo build --locked --release -p tgg-editor
+  cargo build --locked --release -p tgg-studio
 else
-  cargo build --locked -p tgg-editor
+  cargo build --locked -p tgg-studio
 fi
 
 rm -rf "$STAGE" "$STAGE.tar.gz"
 mkdir -p "$STAGE/licenses/fonts"
-install -m 755 "$ROOT/target/$PROFILE/tgg-editor" "$STAGE/tgg-editor"
+install -m 755 "$ROOT/target/$PROFILE/tgg-studio" "$STAGE/tgg-studio"
 install -m 644 "$ROOT/dist/linux/gg.textures.app.desktop" "$STAGE/"
 install -m 644 "$ROOT/dist/linux/gg.textures.app.svg" "$STAGE/"
 install -m 644 "$ROOT/dist/linux/gg.textures.app.png" "$STAGE/"
 install -m 644 "$ROOT/LICENSE" "$STAGE/licenses/LICENSE"
-for font in "$ROOT"/crates/tgg-ui/assets/fonts/*/; do
+for font in "$ROOT"/crates/tgg-studio/assets/fonts/*/; do
   install -m 644 "$font/OFL.txt" "$STAGE/licenses/fonts/$(basename "$font").txt"
 done
 
@@ -41,13 +41,17 @@ cat >"$STAGE/install.sh" <<'INSTALL'
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
-install -Dm755 "$HERE/tgg-editor" "$HOME/.local/bin/tgg-editor"
+install -Dm755 "$HERE/tgg-studio" "$HOME/.local/bin/tgg-studio"
+# The app before tgg-studio, whose desktop entry this one replaces.
+rm -f "$HOME/.local/bin/tgg-editor"
 install -Dm644 "$HERE/gg.textures.app.desktop" "$DATA/applications/gg.textures.app.desktop"
 install -Dm644 "$HERE/gg.textures.app.svg" "$DATA/icons/hicolor/scalable/apps/gg.textures.app.svg"
 install -Dm644 "$HERE/gg.textures.app.png" "$DATA/icons/hicolor/512x512/apps/gg.textures.app.png"
 command -v update-desktop-database >/dev/null && update-desktop-database "$DATA/applications" || true
+# Install on textures.gg opens the app (textures-gg:// links).
+command -v xdg-mime >/dev/null && xdg-mime default gg.textures.app.desktop x-scheme-handler/textures-gg || true
 command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -qt "$DATA/icons/hicolor" 2>/dev/null || true
-echo "Installed textures.gg. Open it from your app menu, or run tgg-editor."
+echo "Installed textures.gg. Open it from your app menu, or run tgg-studio."
 case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) echo "Add ~/.local/bin to PATH to run it from a terminal." ;; esac
 INSTALL
 chmod 755 "$STAGE/install.sh"

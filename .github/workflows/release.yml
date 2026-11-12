@@ -1,9 +1,10 @@
 name: Release
 
-# A tag `app-v<version>` (the version in crates/tgg-editor/Cargo.toml)
-# builds the app for macOS and Linux, publishes a GitHub release with both,
-# and points the app's update check at it. A pull request that changes the
-# packaging builds both packages, unsigned, without publishing.
+# A tag `app-v<version>` (the version in crates/tgg-studio/Cargo.toml)
+# builds the app for macOS, Linux and Windows, publishes a GitHub release
+# with all three, and points the app's update check at it. A pull request
+# that changes the packaging builds the packages, unsigned, without
+# publishing.
 #
 # Secrets, in the `release` environment:
 #   MACOS_CERTIFICATE_P12, MACOS_CERTIFICATE_PASSWORD
@@ -34,7 +35,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install gpui-ce's Linux dependencies
+      - name: Install the app's Linux dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install --no-install-recommends -y -qq \
@@ -121,10 +122,37 @@ jobs:
           path: target/package/*.dmg
           if-no-files-found: error
 
+  windows:
+    name: Windows package
+    runs-on: blacksmith-4vcpu-windows-2025
+    defaults:
+      run:
+        shell: bash
+    # Unsigned until SaavyLab's Windows signing is set up; then WINDOWS_SIGN
+    # (see scripts/package-windows.sh) signs the app and the installer.
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check the tag names this version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: scripts/check-release-tag.sh "$GITHUB_REF_NAME"
+
+      - run: scripts/package-windows.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            target/package/*-setup.exe
+            target/package/*.zip
+          if-no-files-found: error
+
   publish:
     name: Publish
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [linux, macos]
+    needs: [linux, macos, windows]
     runs-on: blacksmith-2vcpu-ubuntu-2404
     environment: release
     permissions:
@@ -148,12 +176,14 @@ jobs:
           fi
 
       # Last, so the app only hears of a version that can be downloaded.
+      # (tgg-editor's own check, editor/latest.json, is left alone: the site
+      # tells its players about tgg-studio.)
       - name: Point the update check at it
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           jq -n --arg version "${GITHUB_REF_NAME#app-v}" '{version: $version}' >latest.json
-          npx --yes wrangler@4.146.0 r2 object put vgskins-assets/editor/latest.json \
+          npx --yes wrangler@4.146.0 r2 object put vgskins-assets/studio/latest.json \
             --file latest.json --content-type application/json \
             --cache-control "public, max-age=300" --remote
