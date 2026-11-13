@@ -53,7 +53,8 @@ impl Folders {
 /// manifest, its library (the manifest's entry, else `mod.so` or `mod.dll`)
 /// and its folders. A folder without a library is a mod of files only.
 pub fn pack_folder(dir: &Path) -> Result<Package> {
-    let manifest = read_manifest(dir)?;
+    let mut manifest = read_manifest(dir)?;
+    manifest.sim_writes = read_sim_writes(dir);
     let library = match &manifest.entry {
         Some(entry) => Some(read(&dir.join(entry))?),
         None => [manifest::DEFAULT_ENTRY, manifest::WINDOWS_ENTRY]
@@ -154,6 +155,8 @@ pub fn build(dir: &Path, options: &Options) -> Result<Built> {
     let library = binary.join("mods").join(manifest.id.as_str()).join(name);
     let bytes = read(&library)?;
     report_tier(&manifest, &library);
+    let mut manifest = manifest;
+    manifest.sim_writes = library.parent().map(read_sim_writes).unwrap_or_default();
     let symbols = Symbols::open(&sdk.symbols)?;
     let canonical = check_library(&bytes, &sdk, &symbols)?;
     Ok(Built {
@@ -340,6 +343,20 @@ fn write_project(
         std::fs::write(&path, text).with_context(|| path.display().to_string())?;
     }
     Ok(())
+}
+
+/// What the SDK's build recorded the library changes in the simulation (its
+/// sim-writes.txt beside the library: one `call <function>` or `event <name>` a
+/// line); none when there's no record
+fn read_sim_writes(dir: &Path) -> Vec<String> {
+    std::fs::read_to_string(dir.join("sim-writes.txt"))
+        .map(|text| {
+            text.lines()
+                .filter(|l| !l.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Say which tier the SDK's build put the mod in, and why (its tier.txt

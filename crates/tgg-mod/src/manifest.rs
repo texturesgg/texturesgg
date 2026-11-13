@@ -3,7 +3,7 @@
 //! An author writes the identity fields, `depends`, and what a store shows
 //! (`icon`, `screenshots`, `tags`, `homepage`), and may pin `tier`. Packing
 //! adds `tier`, `game_abi`, `target`, `api_version`, `state`, `hooks`, `events`, `exports`
-//! and `imports`, read from the library, and `files` and `assets`, read from
+//! and `imports`, read from the library, `sim_writes`, from the SDK's record beside it, and `files` and `assets`, read from
 //! the mod's folders, so they never come from the author.
 //!
 //! A mod's netplay class is mostly not written by its author: the game works
@@ -143,6 +143,14 @@ pub struct Manifest {
     /// from the library.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imports: Vec<String>,
+    /// What the library can change in the game's simulation through the API:
+    /// `call <function>` for each sim write it calls and `event <name>` for
+    /// each SIM event it subscribes to whose argument it may change, as the
+    /// SDK's build recorded it (`sim-writes.txt` beside the library). A
+    /// game-tier library can also change anything it hooks. Every entry is
+    /// one of the library's imports or events.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sim_writes: Vec<String>,
     /// The disc files the package replaces or adds under `files/`, in byte
     /// order of path, from packing.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -419,6 +427,7 @@ impl Manifest {
             events: Vec::new(),
             exports: Vec::new(),
             imports: Vec::new(),
+            sim_writes: Vec::new(),
             files: Vec::new(),
             assets: Vec::new(),
             slippi: Vec::new(),
