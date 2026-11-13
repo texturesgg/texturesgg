@@ -67,6 +67,8 @@ pub enum PackageError {
         "a mod without a library names no entry and declares no game layout, hooks, events or exports"
     )]
     FilesOnlyDeclares,
+    #[error("the manifest's sim write \"{0}\" isn't one of its library's calls or events")]
+    SimWrite(String),
     #[error("a package needs a library, files or assets")]
     Empty,
     #[error("{0} in the package is too large")]
@@ -93,6 +95,25 @@ fn tier_of(declared: &decls::Declarations) -> Tier {
     } else {
         Tier::Stable
     }
+}
+
+/// Check that each of the manifest's sim writes is a call the library makes
+/// (a symbol it imports) or an event it subscribes to
+fn check_sim_writes(
+    sim_writes: &[String],
+    declared: &decls::Declarations,
+) -> Result<(), PackageError> {
+    for entry in sim_writes {
+        let known = match entry.split_once(' ') {
+            Some(("call", name)) => declared.symbols.iter().any(|s| s == name),
+            Some(("event", name)) => declared.events.iter().any(|e| e == name),
+            _ => false,
+        };
+        if !known {
+            return Err(PackageError::SimWrite(entry.clone()));
+        }
+    }
+    Ok(())
 }
 
 fn tier_name(tier: Tier) -> &'static str {
@@ -179,6 +200,7 @@ impl Package {
                         built: tier_name(built),
                     });
                 }
+                check_sim_writes(&manifest.sim_writes, &declared)?;
                 manifest.tier = Some(built);
                 manifest.game_abi = declared.game_abi;
                 manifest.target = Some(declared.target.ok_or(PackageError::NoTarget)?);
@@ -206,6 +228,7 @@ impl Package {
                 manifest.events = Vec::new();
                 manifest.exports = Vec::new();
                 manifest.imports = Vec::new();
+                manifest.sim_writes = Vec::new();
             }
         }
         Ok(Self {
@@ -254,6 +277,7 @@ impl Package {
                 {
                     return Err(PackageError::Mismatch);
                 }
+                check_sim_writes(&manifest.sim_writes, &declared)?;
             }
             None => {
                 if manifest.tier.is_some()
@@ -265,6 +289,7 @@ impl Package {
                     || !manifest.events.is_empty()
                     || !manifest.exports.is_empty()
                     || !manifest.imports.is_empty()
+                    || !manifest.sim_writes.is_empty()
                 {
                     return Err(PackageError::FilesOnlyDeclares);
                 }
@@ -480,6 +505,14 @@ mod tests {
         assert!(matches!(
             Package::from_zip(&lying.to_zip()),
             Err(PackageError::Mismatch)
+        ));
+
+        // A sim write the library doesn't make
+        let mut claimed = package.clone();
+        claimed.manifest.sim_writes = vec!["event player_spawn".to_owned()];
+        assert!(matches!(
+            Package::from_zip(&claimed.to_zip()),
+            Err(PackageError::SimWrite(_))
         ));
     }
 
