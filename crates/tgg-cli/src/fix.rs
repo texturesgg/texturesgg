@@ -11,7 +11,7 @@
 //!   it"), renamed where the warning's "in expansion of macro" note points;
 //! - a field the record no longer has ("has no member named"), renamed when a
 //!   map names its record and old name;
-//! - an undeclared name a map renamed (an enum constant, a function).
+//! - an undeclared name a map renamed (an enum constant, a function, a macro).
 //!
 //! Then it builds again, until a pass changes nothing. It only edits a spot
 //! whose text is the old name, inside the mod's own folder, so it can't rename
@@ -38,6 +38,8 @@ struct MapFile {
     #[serde(default)]
     enum_constants: Vec<Rename>,
     #[serde(default)]
+    macros: Vec<Rename>,
+    #[serde(default)]
     changed: Vec<String>,
     #[serde(default)]
     gone: Vec<String>,
@@ -60,7 +62,7 @@ struct FieldRename {
 /// syncs old goes to the newest one
 #[derive(Default)]
 struct Renames {
-    /// Functions, variables and enum constants: old name to new
+    /// Functions, variables, enum constants and macros: old name to new
     names: BTreeMap<String, String>,
     /// Fields: (record, old) to new
     fields: BTreeMap<(String, String), String>,
@@ -91,6 +93,7 @@ impl Renames {
                 .iter()
                 .chain(&map.variables)
                 .chain(&map.enum_constants)
+                .chain(&map.macros)
             {
                 for now in renames.names.values_mut() {
                     if *now == r.old {
