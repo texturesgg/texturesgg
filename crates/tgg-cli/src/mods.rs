@@ -626,10 +626,14 @@ fn install(mods: &ModsDir, port: Option<&Port>, packages: &[PathBuf]) -> Result<
     for path in packages {
         let (package, _) = open_package(path)?;
         let manifest = &package.manifest;
-        // A mod of files only fits the game, not one build of it.
+        // A mod of files only fits the game, not one build of it; a stable-tier
+        // library fits every layout on its target.
         if let Some(port) = port
-            && manifest.game_abi.is_some()
-            && (manifest.game_abi.as_deref() != Some(port.game_abi.as_str())
+            && manifest.target.is_some()
+            && (manifest
+                .game_abi
+                .as_deref()
+                .is_some_and(|abi| abi != port.game_abi)
                 || manifest.target.as_deref() != Some(port.target.as_str()))
         {
             bail!(

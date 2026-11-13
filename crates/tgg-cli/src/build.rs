@@ -153,6 +153,7 @@ pub fn build(dir: &Path, options: &Options) -> Result<Built> {
         .unwrap_or_else(|| manifest::default_entry(Some(&sdk.target)).to_owned());
     let library = binary.join("mods").join(manifest.id.as_str()).join(name);
     let bytes = read(&library)?;
+    report_tier(&manifest, &library);
     let symbols = Symbols::open(&sdk.symbols)?;
     let canonical = check_library(&bytes, &sdk, &symbols)?;
     Ok(Built {
@@ -341,13 +342,41 @@ fn write_project(
     Ok(())
 }
 
+/// Say which tier the SDK's build put the mod in, and why (its tier.txt
+/// beside the library: the tier, then one reason a line)
+fn report_tier(manifest: &Manifest, library: &Path) {
+    let Some(text) = library
+        .parent()
+        .and_then(|dir| std::fs::read_to_string(dir.join("tier.txt")).ok())
+    else {
+        return;
+    };
+    let mut lines = text.lines().filter(|l| !l.is_empty());
+    let tier = lines.next().unwrap_or("game");
+    let reasons: Vec<&str> = lines.collect();
+    match reasons.as_slice() {
+        [] => eprintln!("{}: {tier} tier", manifest.id),
+        [first] => eprintln!("{}: {tier} tier: {first}", manifest.id),
+        [first, rest @ ..] => eprintln!(
+            "{}: {tier} tier: {first} (and {} more)",
+            manifest.id,
+            rest.len()
+        ),
+    }
+}
+
 /// Check a built library's records against the SDK and every symbol it names
 /// against the game's, as the game does at load (the SDK's own build checks
 /// what it links against). Returns its hooks by canonical name.
 fn check_library(library: &[u8], sdk: &Sdk, symbols: &Symbols) -> Result<Hooks> {
     let declared = decls::read(library)?;
+    // A stable-tier library carries no layout: it loads on any game with its
+    // target and API version.
     ensure!(
-        declared.game_abi.as_deref() == Some(sdk.game_abi.as_str())
+        declared
+            .game_abi
+            .as_deref()
+            .is_none_or(|abi| abi == sdk.game_abi)
             && declared.target.as_deref() == Some(sdk.target.as_str())
             && declared.api_version.as_deref() == Some(sdk.api_version.as_str()),
         "the library declares game layout {}, target {} and mod API {}; the SDK is {}, {} and {}",

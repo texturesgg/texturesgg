@@ -43,8 +43,9 @@ competitive` and `tgg port run`. Mod makers keep `tgg mod publish`.
 - **Port install**: one installed tgg-melee release in its own folder under the
   ports folder. Several versions can be installed; one is the current one. A
   port has a target (`x86_64-linux-gnu`, `x86_64-windows-gnu`,
-  `aarch64-apple-darwin`) and a game layout id (`Port::game_abi`). A mod build
-  fits a port when both match.
+  `aarch64-apple-darwin`) and a game layout id (`Port::game_abi`). A game-tier
+  mod build fits a port when both match; a stable-tier build (manifest `"tier":
+  "stable"`, no `game_abi`) fits every port on its target.
 - **Mods folder**: the folder the game loads mods from, shared by every port
   version the player runs. A mod's folder is its id; a turned-off mod's folder
   is `.<id>` (the game skips dot-folders). `tgg_mod::install::ModsDir` already

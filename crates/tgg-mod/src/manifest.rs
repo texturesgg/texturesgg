@@ -1,8 +1,8 @@
 //! What a mod says about itself, in its package's `manifest.json`.
 //!
 //! An author writes the identity fields, `depends`, and what a store shows
-//! (`icon`, `screenshots`, `tags`, `homepage`). Packing adds
-//! `game_abi`, `target`, `api_version`, `state`, `hooks`, `events`, `exports`
+//! (`icon`, `screenshots`, `tags`, `homepage`), and may pin `tier`. Packing
+//! adds `tier`, `game_abi`, `target`, `api_version`, `state`, `hooks`, `events`, `exports`
 //! and `imports`, read from the library, and `files` and `assets`, read from
 //! the mod's folders, so they never come from the author.
 //!
@@ -109,7 +109,14 @@ pub struct Manifest {
     /// The mod's web page, an http or https URL.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub homepage: Option<String>,
-    /// The game layout the library was built against, from the library.
+    /// The API tier the library is built for: `stable` (no game layout, loads
+    /// on any game with its target and API version) or `game` (loads only on
+    /// its layout). Packing writes it from the library; an author may write it
+    /// first to pin it, and packing refuses a library that doesn't match.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tier: Option<Tier>,
+    /// The game layout a game-tier library was built against, from the
+    /// library; absent for the stable tier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub game_abi: Option<String>,
     /// The target triple the library was built for, from the library.
@@ -163,6 +170,16 @@ pub struct Manifest {
     /// it never counts. Absent otherwise: the mod counts by its contents.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub class: Option<ModClass>,
+}
+
+/// A library's API tier
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Tier {
+    /// Only `tgg/`: no game types, no layout record.
+    Stable,
+    /// The game's headers or `tgg/game/`: carries the layout it was built on.
+    Game,
 }
 
 /// A mod's netplay class: `display` the registry assigns on review, `offline`
@@ -393,6 +410,7 @@ impl Manifest {
             screenshots: Vec::new(),
             tags: Vec::new(),
             homepage: None,
+            tier: None,
             game_abi: None,
             target: None,
             api_version: None,

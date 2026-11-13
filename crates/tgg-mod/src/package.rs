@@ -11,7 +11,9 @@
 
 use crate::decls::{self, DeclError};
 use crate::files::{self, FileError, Files};
-use crate::manifest::{self, DEFAULT_ENTRY, Manifest, ManifestError, ModClass, WINDOWS_ENTRY};
+use crate::manifest::{
+    self, DEFAULT_ENTRY, Manifest, ManifestError, ModClass, Tier, WINDOWS_ENTRY,
+};
 use sha2::{Digest, Sha256};
 use std::io::{Cursor, Read, Write};
 
@@ -40,14 +42,17 @@ pub enum PackageError {
     Manifest(#[from] ManifestError),
     #[error(transparent)]
     Declarations(#[from] DeclError),
-    #[error("the library declares no game layout; build it with the SDK")]
-    NoGameLayout,
+    #[error("the manifest pins the {pinned} tier, and the library is built for the {built} tier")]
+    Tier {
+        pinned: &'static str,
+        built: &'static str,
+    },
     #[error("the library declares no target; build it with the SDK")]
     NoTarget,
     #[error("the library declares no mod API version; build it with the SDK")]
     NoApiVersion,
     #[error(
-        "the manifest's hooks, events, exports, imports, game layout, target or API version differ from its library's"
+        "the manifest's hooks, events, exports, imports, tier, game layout, target or API version differ from its library's"
     )]
     Mismatch,
     #[error("not a package zip: {0}")]
@@ -81,6 +86,22 @@ pub const MAX_IMAGE_SIDE: u32 = 4096;
 
 /// Check that the manifest's icon and screenshots are PNGs among `assets`,
 /// as the registry does when it records a release.
+/// A library's tier: game when it carries a layout record, stable without one
+fn tier_of(declared: &decls::Declarations) -> Tier {
+    if declared.game_abi.is_some() {
+        Tier::Game
+    } else {
+        Tier::Stable
+    }
+}
+
+fn tier_name(tier: Tier) -> &'static str {
+    match tier {
+        Tier::Stable => "stable",
+        Tier::Game => "game",
+    }
+}
+
 fn check_images(manifest: &Manifest, assets: &Files) -> Result<(), PackageError> {
     let images = manifest
         .icon
@@ -149,7 +170,17 @@ impl Package {
                     manifest.entry =
                         Some(manifest::default_entry(declared.target.as_deref()).to_owned());
                 }
-                manifest.game_abi = Some(declared.game_abi.ok_or(PackageError::NoGameLayout)?);
+                let built = tier_of(&declared);
+                if let Some(pinned) = manifest.tier
+                    && pinned != built
+                {
+                    return Err(PackageError::Tier {
+                        pinned: tier_name(pinned),
+                        built: tier_name(built),
+                    });
+                }
+                manifest.tier = Some(built);
+                manifest.game_abi = declared.game_abi;
                 manifest.target = Some(declared.target.ok_or(PackageError::NoTarget)?);
                 manifest.api_version =
                     Some(declared.api_version.ok_or(PackageError::NoApiVersion)?);
@@ -166,6 +197,7 @@ impl Package {
                         manifest.library_name().to_owned(),
                     ));
                 }
+                manifest.tier = None;
                 manifest.game_abi = None;
                 manifest.target = None;
                 manifest.api_version = None;
@@ -204,16 +236,14 @@ impl Package {
         match &library {
             Some(library) => {
                 let declared = decls::read(library)?;
-                if declared.game_abi.is_none() {
-                    return Err(PackageError::NoGameLayout);
-                }
                 if declared.target.is_none() {
                     return Err(PackageError::NoTarget);
                 }
                 if declared.api_version.is_none() {
                     return Err(PackageError::NoApiVersion);
                 }
-                if declared.game_abi != manifest.game_abi
+                if Some(tier_of(&declared)) != manifest.tier
+                    || declared.game_abi != manifest.game_abi
                     || declared.target != manifest.target
                     || declared.api_version != manifest.api_version
                     || (declared.state > 0).then_some(declared.state) != manifest.state
@@ -226,7 +256,8 @@ impl Package {
                 }
             }
             None => {
-                if manifest.game_abi.is_some()
+                if manifest.tier.is_some()
+                    || manifest.game_abi.is_some()
                     || manifest.target.is_some()
                     || manifest.api_version.is_some()
                     || manifest.state.is_some()
@@ -362,7 +393,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use crate::decls::tests::{
-        BEFORE, EVENT, EXPORT, IMPORT, REPLACE, SYMBOL, built_with_sdk, library, record,
+        BEFORE, EVENT, EXPORT, GAME_ABI, IMPORT, REPLACE, SYMBOL, built_with_sdk, library, record,
         state_record,
     };
 
@@ -404,6 +435,48 @@ mod tests {
         // A manifest that hides a replacement must not open.
         let mut lying = package.clone();
         lying.manifest.hooks.replaces.clear();
+        assert!(matches!(
+            Package::from_zip(&lying.to_zip()),
+            Err(PackageError::Mismatch)
+        ));
+    }
+
+    /// The tier is what the library carries: no layout record is stable, and
+    /// a pin the library doesn't match is refused, so a manifest can't send a
+    /// layout-bound library to every layout.
+    #[test]
+    fn a_library_without_a_layout_is_stable_and_a_wrong_pin_is_refused() {
+        let stable: Vec<_> = built_with_sdk()
+            .into_iter()
+            .filter(|r| *r != record(GAME_ABI, "6a0e926ca3e90452"))
+            .collect();
+        let package = Package::pack(
+            manifest(),
+            Some(library(&stable)),
+            Files::new(),
+            Files::new(),
+            Files::new(),
+        )
+        .expect("pack");
+        assert_eq!(package.manifest.tier, Some(Tier::Stable));
+        assert_eq!(package.manifest.game_abi, None);
+        assert_eq!(Package::from_zip(&package.to_zip()).expect("open"), package);
+
+        let mut pinned = manifest();
+        pinned.tier = Some(Tier::Stable);
+        assert!(matches!(
+            Package::pack(
+                pinned,
+                Some(library(&built_with_sdk())),
+                Files::new(),
+                Files::new(),
+                Files::new()
+            ),
+            Err(PackageError::Tier { .. })
+        ));
+
+        let mut lying = package.clone();
+        lying.manifest.tier = Some(Tier::Game);
         assert!(matches!(
             Package::from_zip(&lying.to_zip()),
             Err(PackageError::Mismatch)
