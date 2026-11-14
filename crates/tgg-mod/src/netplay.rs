@@ -98,7 +98,9 @@ pub fn classify(manifest: &Manifest) -> Netplay {
     if manifest.class == Some(ModClass::Display) && display_check(manifest).is_ok() {
         return Netplay::Display;
     }
-    if manifest.entry.is_some() || manifest.game_abi.is_some() {
+    // A script's class is its list's: packing records display, and a
+    // gameplay script counts as code does
+    if manifest.script || manifest.entry.is_some() || manifest.game_abi.is_some() {
         return Netplay::Code;
     }
     let counting = manifest.files.iter().filter(|file| !is_free(&file.path));

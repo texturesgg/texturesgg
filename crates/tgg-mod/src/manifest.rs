@@ -178,6 +178,25 @@ pub struct Manifest {
     /// it never counts. Absent otherwise: the mod counts by its contents.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub class: Option<ModClass>,
+    /// A script mod: its code is Luau under `scripts/`, which the game
+    /// compiles and lists itself, and it ships no library. One package
+    /// serves every platform and layout; its `api_version` is the lowest
+    /// mod API its scripts need, and its `sim_writes` what of their list
+    /// changes a match.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub script: bool,
+    /// A script mod's files under `scripts/`, in byte order of path, from
+    /// packing: exactly the ones the game reads.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scripts: Vec<ModFile>,
+    /// What a script mod's scripts use, from packing (`tgg-script pack`):
+    /// `tgg.<name>`, `on <event>` and `change <event>`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub uses: Vec<String>,
+    /// A script mod's settings, as the game reads them (docs/scripts.md);
+    /// kept as written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings: Option<serde_json::Value>,
 }
 
 /// A library's API tier
@@ -297,6 +316,10 @@ pub enum ManifestError {
     Tags,
     #[error("the homepage {0:?} must be an http or https URL")]
     Homepage(String),
+    #[error("a script mod has no entry: its code is scripts/sim.luau and scripts/view.luau")]
+    ScriptEntry,
+    #[error("settings in the manifest are a script mod's; a C mod declares them in its source")]
+    Settings,
 }
 
 impl Manifest {
@@ -344,6 +367,12 @@ impl Manifest {
         }
         if self.depends.contains_key(&self.id) {
             return Err(ManifestError::DependsOnItself);
+        }
+        if self.script && self.entry.is_some() {
+            return Err(ManifestError::ScriptEntry);
+        }
+        if !self.script && self.settings.is_some() {
+            return Err(ManifestError::Settings);
         }
         if let Some(source) = &self.source
             && !is_commit(source)
@@ -433,6 +462,10 @@ impl Manifest {
             slippi: Vec::new(),
             source: None,
             class: None,
+            script: false,
+            scripts: Vec::new(),
+            uses: Vec::new(),
+            settings: None,
         }
     }
 }

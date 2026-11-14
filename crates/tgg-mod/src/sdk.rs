@@ -93,6 +93,15 @@ pub enum SdkError {
 }
 
 impl Sdk {
+    /// The SDK's `tgg-script`, which checks and lists script mods; `None`
+    /// for an SDK from before scripts.
+    pub fn script_tool(&self) -> Option<PathBuf> {
+        ["tgg-script", "tgg-script.exe"]
+            .into_iter()
+            .map(|name| self.root.join("tools").join(name))
+            .find(|path| path.is_file())
+    }
+
     /// Read the SDK at `path`: its folder, or its `tgg-game-sdk.json`.
     pub fn open(path: &Path) -> Result<Self, SdkError> {
         let file = if path.is_dir() {

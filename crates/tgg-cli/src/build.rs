@@ -101,14 +101,52 @@ pub fn resolve_sdk(path: Option<&Path>) -> Result<Sdk> {
     Sdk::open(&folder).with_context(|| folder.display().to_string())
 }
 
-/// Script mods aren't packed yet; `tgg mod dev` runs one from its folder.
+/// A script mod has nothing to compile.
 fn refuse_script(dir: &Path) -> Result<()> {
     ensure!(
         !tgg_mod::is_script(dir),
-        "{} is a script mod: tgg mod dev runs it from its folder, and packing script mods isn't there yet",
+        "{} is a script mod: nothing to compile",
         dir.display()
     );
     Ok(())
+}
+
+/// Pack the script mod in `dir`: the SDK's `tgg-script pack` checks it as
+/// the game would and lists it, and the package takes exactly the files it
+/// read under `scripts/`.
+pub fn build_script(dir: &Path, sdk: Option<&Path>) -> Result<Package> {
+    let sdk = resolve_sdk(sdk)?;
+    let tool = sdk.script_tool().ok_or_else(|| {
+        anyhow!("this game's SDK has no tgg-script; update the game with tgg port install")
+    })?;
+    let out = Command::new(&tool)
+        .arg("pack")
+        .arg(dir)
+        .output()
+        .with_context(|| tool.display().to_string())?;
+    if !out.status.success() {
+        let said = String::from_utf8_lossy(&out.stderr);
+        let said = said.trim();
+        bail!(
+            "{}",
+            if said.is_empty() {
+                "tgg-script refused the scripts"
+            } else {
+                said
+            }
+        );
+    }
+    let listing: tgg_mod::ScriptListing =
+        serde_json::from_slice(&out.stdout).context("tgg-script pack's output")?;
+    let manifest = read_manifest(dir)?;
+    let scripts = files::read_dir(dir, "scripts")?;
+    Ok(Package::pack_script(
+        manifest,
+        scripts,
+        files::read_dir(dir, "files")?,
+        files::read_dir(dir, "assets")?,
+        &listing,
+    )?)
 }
 
 /// A built mod.
@@ -136,7 +174,12 @@ pub struct Options<'a> {
 /// textures.gg, and each SDK compiles, links and checks mods its own way.
 /// CMake's `compile_commands.json` is copied to `build/` for editors.
 pub fn build(dir: &Path, options: &Options) -> Result<Built> {
-    refuse_script(dir)?;
+    if tgg_mod::is_script(dir) {
+        return Ok(Built {
+            package: build_script(dir, options.sdk)?,
+            canonical: None,
+        });
+    }
     let manifest = read_manifest(dir)?;
     let (sources, folders) = mod_source(dir)?;
     if sources.is_empty() {

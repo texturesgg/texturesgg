@@ -16,8 +16,9 @@ use tgg_mod::{
 
 #[derive(Subcommand)]
 pub enum ModCommand {
-    /// Start a mod in DIR from the SDK's template (or another example), and
-    /// build it once so editors find the game's headers.
+    /// Start a mod in DIR: a script (Luau), or native C if you pick it.
+    ///
+    /// C or Luau: https://textures.gg/docs/mods/latest/scripts#when-to-write-c
     New {
         #[arg(default_value = ".", value_parser = dir_arg)]
         dir: PathBuf,
@@ -27,12 +28,15 @@ pub enum ModCommand {
         /// The name players see [default: DIR's name]
         #[arg(long)]
         name: Option<String>,
-        /// The SDK example to start from, such as lcancel-trainer.
-        #[arg(long, conflicts_with = "script")]
+        /// What to start from [default: asked on a terminal, else rule]
+        #[arg(long, value_enum)]
+        template: Option<Template>,
+        /// Start a native C mod: same as --template native.
+        #[arg(long, conflicts_with = "template")]
+        native: bool,
+        /// Start from one of the SDK's examples instead, such as lcancel-trainer.
+        #[arg(long, conflicts_with_all = ["template", "native"])]
         example: Option<String>,
-        /// Start a script mod (Luau) from the SDK's script template.
-        #[arg(long)]
-        script: bool,
         /// The SDK's folder or tgg-game-sdk.json [default: the SDK of the
         /// game in use]
         #[arg(long, env = "TGG_GAME_SDK")]
@@ -41,15 +45,15 @@ pub enum ModCommand {
         cc: Cc,
     },
     /// Build a mod's source against the game's SDK, check it as the game
-    /// will, and pack it: DIR holds manifest.json, the C sources under src/,
-    /// and any of include/, files/ and assets/. A mod without C sources packs
-    /// without compiling.
+    /// will, and pack it: DIR holds manifest.json, the C sources under src/
+    /// or a script mod's scripts/, and any of include/, files/ and assets/.
+    /// A mod without C sources packs without compiling.
     Build {
         #[arg(default_value = ".", value_parser = dir_arg)]
         dir: PathBuf,
         /// First unpack the source from this zip ("-" for stdin) into DIR,
         /// which must be empty or missing. Only manifest.json, src/,
-        /// include/, files/ and assets/ are taken from it.
+        /// include/, files/, assets/ and scripts/ are taken from it.
         #[arg(long)]
         source_zip: Option<PathBuf>,
         /// The commit of the reviewed source this is built from, which the
@@ -280,16 +284,21 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
             dir,
             id,
             name,
+            template,
+            native,
             example,
-            script,
             sdk,
             cc,
         } => crate::scaffold::new(crate::scaffold::New {
             dir: &dir,
             id,
             name,
+            template: if native {
+                Some(Template::Native)
+            } else {
+                template
+            },
             example,
-            script,
             sdk: sdk.as_deref(),
             cc: &cc.resolve(),
         }),
@@ -315,9 +324,19 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
             let mut built = build::build(&dir, &options)?;
             built.package.manifest.source = source_commit;
             if let Some(ClassArg::Display) = class {
+                // A script's class is its scripts': packing gave it
+                if built.package.manifest.script {
+                    anyhow::ensure!(
+                        built.package.manifest.class.is_some(),
+                        "it can't be a display mod: its scripts change the match ({})",
+                        built.package.manifest.sim_writes.join(", ")
+                    );
+                }
                 tgg_mod::netplay::display_check(&built.package.manifest)
                     .map_err(|why| anyhow::anyhow!("it can't be a display mod: {why}"))?;
-                built.package.manifest.class = Some(tgg_mod::ModClass::Display);
+                if built.package.manifest.class.is_none() {
+                    built.package.manifest.class = Some(tgg_mod::ModClass::Display);
+                }
             }
             write_package(
                 built.package,
@@ -431,6 +450,19 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
             with_player(api, port, true, |p| p.remove(set.as_deref(), &ids))
         }
     }
+}
+
+/// What `tgg mod new` starts from.
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum Template {
+    /// A script that changes how the game plays.
+    Rule,
+    /// A script that shows something on screen.
+    Hud,
+    /// A script that adds a menu entry and its screen.
+    Screen,
+    /// A C mod.
+    Native,
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]

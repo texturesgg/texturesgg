@@ -831,7 +831,9 @@ pub fn resolve_profile(
                 id: entry.manifest.id.clone(),
                 name: entry.manifest.name.clone(),
                 version: entry.manifest.version.clone(),
-                needs_trust: !trust.allows(&publisher),
+                // Scripts never ask: the game's sandbox, not the publisher,
+                // is what keeps them off the player's machine
+                needs_trust: !entry.manifest.script && !trust.allows(&publisher),
                 publisher,
                 cached: crate::cache::is_cached(&packages, &entry.package),
                 size: entry.package.size,
