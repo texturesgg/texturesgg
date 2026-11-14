@@ -655,4 +655,50 @@ mod tests {
         let lines = run(&[], false);
         assert_eq!(lines[0]["mods"][0]["needs_trust"], false);
     }
+
+    /// A replay's gameplay script comes without asking, whoever published
+    /// it: the game's sandbox is what keeps scripts off the machine.
+    #[test]
+    fn a_replay_fetches_a_gameplay_script_without_asking() {
+        let setup = setup();
+        let listing = tgg_mod::ScriptListing {
+            class: "gameplay".into(),
+            needs: "0.9".into(),
+            uses: vec!["change player_spawn".into()],
+            sim_writes: vec!["event player_spawn".into()],
+            files: vec!["sim.luau".into()],
+            ..Default::default()
+        };
+        let manifest = tgg_mod::Manifest::new(
+            "tgg.neutral-spawns".parse().expect("id"),
+            "Neutral spawns".into(),
+            "0.1.0".parse().expect("version"),
+        );
+        let scripts = [("sim.luau".to_owned(), b"-- spawns".to_vec())].into();
+        let script = tgg_mod::Package::pack_script(
+            manifest,
+            scripts,
+            Default::default(),
+            Default::default(),
+            &listing,
+        )
+        .expect("pack");
+        setup.net.publish(&script);
+        setup.net.set_publisher(
+            "tgg.neutral-spawns",
+            Publisher {
+                name: "someone".into(),
+                official: false,
+            },
+        );
+        let lines = std::sync::Mutex::new(Vec::new());
+        let emit = |value: Value| lines.lock().expect("lock").push(value);
+        prepare_machine(&setup.ctx(), &setup.slippi_replay(), &[], false, &emit).expect("prepare");
+        let lines = lines.into_inner().expect("lines");
+        assert_eq!(lines[0]["mods"][0]["needs_trust"], false);
+        let done = lines.last().expect("done");
+        assert_eq!(done["event"], "done");
+        let folder = PathBuf::from(done["folder"].as_str().expect("folder"));
+        assert!(folder.join("tgg.neutral-spawns/scripts/sim.luau").is_file());
+    }
 }
