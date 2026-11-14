@@ -1,5 +1,6 @@
 //! Package zips: `manifest.json`, the library it names, and the mod's
-//! `files/`, `assets/` and `include/` folders.
+//! `files/`, `assets/` and `include/` folders; or, for a script mod,
+//! `manifest.json`, `scripts/` and those folders without a library.
 //!
 //! [`Package::pack`] fills the manifest's hooks, events, exports, imports,
 //! game layout and API version from the library, and its lists of files and
@@ -7,7 +8,9 @@
 //! refuses a package whose manifest disagrees, so a catalog or installer can
 //! trust a package's manifest once it opens. A package without a library
 //! ships only files: it names no entry and declares no game layout, hooks or
-//! exports.
+//! exports. A script package ([`Package::pack_script`]) is one package for
+//! every platform and layout: the game compiles and lists its scripts at
+//! load, so its manifest's list is for stores and reviews.
 
 use crate::decls::{self, DeclError};
 use crate::files::{self, FileError, Files};
@@ -34,6 +37,30 @@ pub struct Package {
     pub assets: Files,
     /// Headers for mods that build on this one, by path under `include/`.
     pub include: Files,
+    /// A script mod's Luau, by path under `scripts/`.
+    pub scripts: Files,
+}
+
+/// What `tgg-script pack` says of a script mod: its class, the lowest API
+/// version its scripts need, what they use, what of that changes a match,
+/// and the files under `scripts/` the game reads.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize)]
+pub struct ScriptListing {
+    /// `gameplay` or `display`.
+    pub class: String,
+    /// The first use that changes a match, for a gameplay script.
+    #[serde(default)]
+    pub why: String,
+    pub needs: String,
+    pub uses: Vec<String>,
+    pub sim_writes: Vec<String>,
+    pub files: Vec<String>,
+}
+
+impl ScriptListing {
+    pub fn gameplay(&self) -> bool {
+        self.class != "display"
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -69,8 +96,20 @@ pub enum PackageError {
     FilesOnlyDeclares,
     #[error("the manifest's sim write \"{0}\" isn't one of its library's calls or events")]
     SimWrite(String),
-    #[error("a package needs a library, files or assets")]
+    #[error("a package needs a library, scripts, files or assets")]
     Empty,
+    #[error(
+        "scripts/{0} isn't one of the files the game reads (sim.luau, view.luau and what they require)"
+    )]
+    ScriptUnread(String),
+    #[error("scripts/{0} is read by the scripts and isn't in the package")]
+    ScriptMissing(String),
+    #[error(
+        "a script package has no library, include/, layout, target, hooks, events, exports or imports"
+    )]
+    ScriptDeclares,
+    #[error("a script package names the API version its scripts need")]
+    ScriptNeeds,
     #[error("{0} in the package is too large")]
     TooLarge(String),
     #[error("assets/{0} isn't a PNG of at most {MAX_IMAGE_SIDE} pixels a side and {limit} KiB", limit = .1 / 1024)]
@@ -237,6 +276,70 @@ impl Package {
             files,
             assets,
             include,
+            scripts: Files::new(),
+        })
+    }
+
+    /// A script mod's package: its manifest, `scripts/`, and any `files/`
+    /// and `assets/`, with the manifest's list, class, lowest API version and
+    /// sim writes from `listing` (`tgg-script pack`). `scripts` must be
+    /// exactly the files the listing says the game reads. The author may say
+    /// offline; otherwise the class is the listing's.
+    pub fn pack_script(
+        mut manifest: Manifest,
+        scripts: Files,
+        files: Files,
+        assets: Files,
+        listing: &ScriptListing,
+    ) -> Result<Self, PackageError> {
+        manifest.script = true;
+        manifest.validate()?;
+        manifest.check_listing()?;
+        files::check("scripts", &scripts)?;
+        files::check("files", &files)?;
+        files::check("assets", &assets)?;
+        check_images(&manifest, &assets)?;
+        if let Some(extra) = scripts.keys().find(|path| !listing.files.contains(path)) {
+            return Err(PackageError::ScriptUnread(extra.clone()));
+        }
+        if let Some(missing) = listing
+            .files
+            .iter()
+            .find(|path| !scripts.contains_key(*path))
+        {
+            return Err(PackageError::ScriptMissing(missing.clone()));
+        }
+        if listing.needs.is_empty() {
+            return Err(PackageError::ScriptNeeds);
+        }
+        manifest.source = None;
+        manifest.class = match manifest.class {
+            Some(ModClass::Offline) => Some(ModClass::Offline),
+            _ if listing.gameplay() => None,
+            _ => Some(ModClass::Display),
+        };
+        manifest.entry = None;
+        manifest.tier = Some(Tier::Stable);
+        manifest.game_abi = None;
+        manifest.target = None;
+        manifest.api_version = Some(listing.needs.clone());
+        manifest.state = None;
+        manifest.hooks = Default::default();
+        manifest.events = Vec::new();
+        manifest.exports = Vec::new();
+        manifest.imports = Vec::new();
+        manifest.sim_writes = listing.sim_writes.clone();
+        manifest.uses = listing.uses.clone();
+        manifest.scripts = files::list(&scripts);
+        manifest.files = files::list(&files);
+        manifest.assets = files::list(&assets);
+        Ok(Self {
+            manifest,
+            library: None,
+            files,
+            assets,
+            include: Files::new(),
+            scripts,
         })
     }
 
@@ -256,6 +359,12 @@ impl Package {
             (None, Some(name)) => Some(read_entry(&mut archive, name, LIBRARY_LIMIT)?),
             (None, None) => None,
         };
+        if manifest.script {
+            return Self::script_from_zip(manifest, library, archive);
+        }
+        if !manifest.scripts.is_empty() || !manifest.uses.is_empty() {
+            return Err(PackageError::ScriptDeclares);
+        }
         match &library {
             Some(library) => {
                 let declared = decls::read(library)?;
@@ -312,12 +421,60 @@ impl Package {
         if library.is_none() && files.is_empty() && assets.is_empty() {
             return Err(PackageError::Empty);
         }
+        if archive
+            .file_names()
+            .any(|name| name.starts_with("scripts/"))
+        {
+            return Err(PackageError::ScriptDeclares);
+        }
         Ok(Self {
             manifest,
             library,
             files,
             assets,
             include,
+            scripts: Files::new(),
+        })
+    }
+
+    /// The rest of [`Package::from_zip`] for a script package: no library or
+    /// headers, nothing a library declares, and the scripts it lists.
+    fn script_from_zip(
+        manifest: Manifest,
+        library: Option<Vec<u8>>,
+        mut archive: zip::ZipArchive<Cursor<&[u8]>>,
+    ) -> Result<Self, PackageError> {
+        let declares = library.is_some()
+            || manifest.tier != Some(Tier::Stable)
+            || manifest.game_abi.is_some()
+            || manifest.target.is_some()
+            || manifest.state.is_some()
+            || !manifest.hooks.is_empty()
+            || !manifest.events.is_empty()
+            || !manifest.exports.is_empty()
+            || !manifest.imports.is_empty()
+            || archive
+                .file_names()
+                .any(|name| name.starts_with("include/"));
+        if declares {
+            return Err(PackageError::ScriptDeclares);
+        }
+        if manifest.api_version.is_none() {
+            return Err(PackageError::ScriptNeeds);
+        }
+        let scripts = read_listed(&mut archive, "scripts", &manifest.scripts)?;
+        if scripts.is_empty() {
+            return Err(PackageError::Empty);
+        }
+        let files = read_listed(&mut archive, "files", &manifest.files)?;
+        let assets = read_listed(&mut archive, "assets", &manifest.assets)?;
+        Ok(Self {
+            manifest,
+            library: None,
+            files,
+            assets,
+            include: Files::new(),
+            scripts,
         })
     }
 
@@ -348,6 +505,7 @@ impl Package {
             ("files", &self.files),
             ("assets", &self.assets),
             ("include", &self.include),
+            ("scripts", &self.scripts),
         ] {
             for (path, bytes) in files {
                 write(&format!("{folder}/{path}"), bytes);
@@ -463,6 +621,49 @@ mod tests {
         assert!(matches!(
             Package::from_zip(&lying.to_zip()),
             Err(PackageError::Mismatch)
+        ));
+    }
+
+    /// A script package carries exactly the scripts the game reads and no
+    /// library, so one package can go to every platform and layout.
+    #[test]
+    fn a_script_package_holds_only_the_scripts_the_game_reads() {
+        let listing = ScriptListing {
+            class: "gameplay".into(),
+            why: "changes fighter_damage, sim.luau:6".into(),
+            needs: "0.9".into(),
+            uses: vec!["change fighter_damage".into()],
+            sim_writes: vec!["event fighter_damage".into()],
+            files: vec!["sim.luau".into()],
+        };
+        let scripts = Files::from([("sim.luau".to_owned(), b"-- a rule".to_vec())]);
+        let package = Package::pack_script(
+            manifest(),
+            scripts.clone(),
+            Files::new(),
+            Files::new(),
+            &listing,
+        )
+        .expect("pack");
+        assert!(package.manifest.script);
+        assert_eq!(package.manifest.target, None);
+        assert_eq!(package.manifest.api_version.as_deref(), Some("0.9"));
+        assert_eq!(package.manifest.class, None);
+        assert_eq!(Package::from_zip(&package.to_zip()).expect("open"), package);
+
+        let mut extra = scripts;
+        extra.insert("unused.luau".into(), b"-- never required".to_vec());
+        assert!(matches!(
+            Package::pack_script(manifest(), extra, Files::new(), Files::new(), &listing),
+            Err(PackageError::ScriptUnread(_))
+        ));
+
+        // A library slipped into a script package must not open.
+        let mut with_library = package;
+        with_library.library = Some(b"\x7fELF".to_vec());
+        assert!(matches!(
+            Package::from_zip(&with_library.to_zip()),
+            Err(PackageError::ScriptDeclares)
         ));
     }
 

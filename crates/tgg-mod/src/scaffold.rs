@@ -175,6 +175,9 @@ pub fn new_mod(sdk: &Sdk, new: &NewMod) -> Result<CreatedMod, Error> {
             }
         }
     }
+    if SCRIPT_TEMPLATES.contains(&example) {
+        name_script_template(dir, &created, &new.name)?;
+    }
     let repository = start_repository(dir, &format!("Start {} from the SDK's {example}", new.id));
     Ok(CreatedMod {
         dir: dir.clone(),
@@ -183,6 +186,29 @@ pub fn new_mod(sdk: &Sdk, new: &NewMod) -> Result<CreatedMod, Error> {
         sdk_version: sdk.version.clone(),
         repository,
     })
+}
+
+/// A script template's own files call it "My mod": its README's heading and
+/// the text its scripts show take the mod's name. A file that was already
+/// there is left alone, and a name that isn't plain text in a Luau string
+/// stays out of the scripts.
+fn name_script_template(dir: &Path, created: &[PathBuf], name: &str) -> Result<(), Error> {
+    const PLACEHOLDER: &str = "My mod";
+    let plain = !name.contains(['"', '\\', '\n', '\r']);
+    for file in created {
+        let in_scripts =
+            file.starts_with("scripts") && file.extension().is_some_and(|e| e == "luau");
+        if !(file == Path::new("README.md") || (in_scripts && plain)) {
+            continue;
+        }
+        let path = dir.join(file);
+        if let Ok(text) = std::fs::read_to_string(&path)
+            && text.contains(PLACEHOLDER)
+        {
+            write(&path, text.replace(PLACEHOLDER, name))?;
+        }
+    }
+    Ok(())
 }
 
 /// The build tools a mod needs, where they are on `PATH`.
@@ -439,8 +465,8 @@ fn merge_lines(from: &Path, into: &Path) -> Result<(), Error> {
     write(into, theirs)
 }
 
-/// The example a script mod starts from.
-pub const SCRIPT_TEMPLATE: &str = "script-template";
+/// The examples script mods start from: a rule, a HUD and a menu screen.
+pub const SCRIPT_TEMPLATES: &[&str] = &["script-rule", "script-hud", "script-screen"];
 
 /// Whether the mod in `dir` is a script mod: its manifest says `"script": true`.
 pub fn is_script(dir: &Path) -> bool {

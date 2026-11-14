@@ -168,6 +168,7 @@ impl ModsDir {
             ("files", &package.files),
             ("assets", &package.assets),
             ("include", &package.include),
+            ("scripts", &package.scripts),
         ] {
             for (path, bytes) in files {
                 // Packages check their paths, so each stays inside its folder.
@@ -471,6 +472,7 @@ mod tests {
             files: Default::default(),
             assets: Default::default(),
             include: Default::default(),
+            scripts: Default::default(),
         };
         mods.install(&package).expect("install");
         let id = package.manifest.id.clone();
@@ -493,6 +495,7 @@ mod tests {
             files: Default::default(),
             assets: Default::default(),
             include: Default::default(),
+            scripts: Default::default(),
         };
         mods.install(&package).expect("install");
         let id = package.manifest.id.clone();

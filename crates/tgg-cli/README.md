@@ -212,9 +212,8 @@ loadable on the oldest glibc the game runs on.
 ## `tgg mod`
 
 ```text
-tgg mod new [DIR] [--id ID] [--name NAME] [--example NAME | --script]
-                                         start a mod from the SDK's template, and build it once;
-                                         --script starts a script mod (Luau) instead
+tgg mod new [DIR] [--id ID] [--name NAME] [--template rule|hud|screen|native | --native | --example NAME]
+                                         start a mod: a script (Luau) unless native; asks on a terminal
 tgg mod build [DIR] [--debug] [--sdk SDK] [--source-zip ZIP|-] [-o OUT.zip] [--json]
                                          compile DIR's src/**/*.c against the game's SDK, check it,
                                          and pack it with DIR's files/, assets/ and include/
@@ -231,12 +230,20 @@ tgg mod install [--port EXE] ZIP...      install package zips, refusing another 
 class, the sets that installed it, and whether it fits the game. `enable` and `disable`
 are `on` and `off`.
 
-`new` copies the SDK's `examples/template/` (or `--example`'s) into `DIR`, which may
+`new` starts a script mod by default. On a terminal with no `--template`, it asks what the
+mod is for: a rule (`examples/script-rule/`), something on screen (`script-hud/`), a menu
+screen (`script-screen/`), or a native C mod (`template/`, after a note that native mods need
+a build per platform and a manual review). Elsewhere it starts a rule. It ends with three next
+steps: open the folder in an editor, `tgg mod dev`, `tgg mod build`. "When to write C" in the
+SDK's `docs/scripts.md` says when native is worth it.
+
+`new` copies the template (or `--example`'s) into `DIR`, which may
 already hold dotfiles, a README, a license and a Nix flake (it keeps those, and adds the
 template's `.gitignore` lines to an existing one), sets the manifest's `id` (`DIR`'s name
 unless `--id`) and `name`, and the template README's title and log lines to them,
 runs `git init` and commits the template (without git, or before git knows your name
-and email, it says what to do and goes on), and builds once so
+and email, it says what to do and goes on). A script mod gets the API's types in
+`build/tgg.luau`; a C mod is built once so
 `build/compile_commands.json` is there for the editor: the template's `.clangd` points clangd at it, so completion and go-to-definition
 reach the game's headers. On NixOS, an editor's own clangd may not find the C library's
 headers; run the clangd of the project's dev shell (`direnv exec . clangd`) with
@@ -317,7 +324,13 @@ A script mod (`"script": true` in its manifest) builds nothing: `dev` writes the
 types to `DIR/build/tgg.luau` for the editor, links the mods folder's `<id>` to `DIR`
 itself (on Windows a copy of its `manifest.json`, `scripts/`, `assets/` and `files/`,
 kept in step with it), and runs the game with `TGG_SCRIPT_DEV=<id>`, so a saved script
-runs on the next frame without a restart. `tgg mod build` doesn't pack script mods yet.
+runs on the next frame without a restart. `tgg mod build` runs the SDK's `tools/tgg-script
+pack`, which checks the scripts as the game will and lists them, and packs `manifest.json`,
+the files under `scripts/` the game reads (any other file there is refused), `assets/` and
+`files/`. The manifest records the list (`uses`), what of it changes a match (`sim_writes`),
+the lowest API version the scripts need (`api_version`) and `"class": "display"` when nothing
+changes a match. A script package has no library, target or layout, so the one package
+installs on every platform and game layout, and fetching one never asks for a yes.
 
 ## License
 

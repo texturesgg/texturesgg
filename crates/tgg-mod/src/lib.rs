@@ -95,7 +95,7 @@ pub use lock::{Lock, LockEntry, game_running};
 pub use manifest::{Manifest, ModClass, ModId, Tier};
 pub use net::{HttpNet, Net, NetError};
 pub use netplay::Netplay;
-pub use package::Package;
+pub use package::{Package, ScriptListing};
 pub use plan::{
     Action, Applied, Plan, Problem, Step, apply, apply_cached, plan_mods, plan_set,
     plan_set_update, plan_updates,
@@ -119,8 +119,8 @@ pub use registry::{
     mod_details, mods, sets,
 };
 pub use scaffold::{
-    CreatedMod, NewMod, Repository, SCRIPT_TEMPLATE, SCRIPT_TYPES, Tools, docs_url, is_script,
-    new_mod, release_sdk, sdk_examples, tools, write_script_types,
+    CreatedMod, NewMod, Repository, SCRIPT_TEMPLATES, SCRIPT_TYPES, TEMPLATE, Tools, docs_url,
+    is_script, new_mod, release_sdk, sdk_examples, tools, write_script_types,
 };
 pub use sdk::Sdk;
 pub use skins::{
