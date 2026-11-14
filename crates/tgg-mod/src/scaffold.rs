@@ -297,6 +297,10 @@ fn start_repository(dir: &Path, message: &str) -> Repository {
 const SDK_DOCS_LINE: &str =
     "- The docs came with the SDK: `$(tgg sdk path)/docs`. Start with `writing-mods.md`.";
 
+/// The script template's README line that says where the docs are.
+const SCRIPT_DOCS_LINE: &str =
+    "- The docs came with the SDK: `$(tgg sdk path)/docs`. Start with `scripts.md`.";
+
 fn docs_line(url: &dyn Fn(&str) -> String) -> String {
     format!(
         "- The docs: {}. Start with [writing mods]({}); `tgg docs` opens them, and\n  the SDK has a copy in `$(tgg sdk path)/docs`.",
@@ -321,6 +325,15 @@ fn link_docs(dir: &Path, version: &str) -> Result<(), Error> {
     let url = |page: &str| docs_url(version, page);
     let edits = [
         ("README.md", SDK_DOCS_LINE.to_owned(), docs_line(&url)),
+        (
+            "README.md",
+            SCRIPT_DOCS_LINE.to_owned(),
+            format!(
+                "- The docs: {}. Start with [scripts]({}); `tgg docs` opens them, and\n  the SDK has a copy in `$(tgg sdk path)/docs`.",
+                url("README"),
+                url("scripts")
+            ),
+        ),
         (
             "src/mod.c",
             " * swap what's below for your own code. The docs are in your SDK: run\n * `tgg sdk path` and open docs/writing-mods.md there.".to_owned(),
@@ -424,4 +437,33 @@ fn merge_lines(from: &Path, into: &Path) -> Result<(), Error> {
         theirs.push('\n');
     }
     write(into, theirs)
+}
+
+/// The example a script mod starts from.
+pub const SCRIPT_TEMPLATE: &str = "script-template";
+
+/// Whether the mod in `dir` is a script mod: its manifest says `"script": true`.
+pub fn is_script(dir: &Path) -> bool {
+    std::fs::read(dir.join("manifest.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .is_some_and(|manifest| manifest["script"] == serde_json::Value::Bool(true))
+}
+
+/// Where a script mod's editor finds the API's types: `build/tgg.luau`, which
+/// the template's `.luaurc` names as `@tgg`.
+pub const SCRIPT_TYPES: &str = "build/tgg.luau";
+
+/// Copy the SDK's script API types to the mod's [`SCRIPT_TYPES`], for its
+/// editor. An SDK without them (from before scripts) writes nothing.
+pub fn write_script_types(sdk: &Sdk, dir: &Path) -> Result<bool, Error> {
+    let from = sdk.root.join("luau").join("tgg.luau");
+    if !from.is_file() {
+        return Ok(false);
+    }
+    let to = dir.join(SCRIPT_TYPES);
+    let build = dir.join(BUILD);
+    std::fs::create_dir_all(&build).map_err(Error::io(&build))?;
+    std::fs::copy(&from, &to).map_err(Error::io(&to))?;
+    Ok(true)
 }

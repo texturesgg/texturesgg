@@ -8,7 +8,7 @@ use tgg_mod::sdk::SdkError;
 use tgg_mod::{Files, Hooks, Manifest, Package, Sdk, Symbols, decls, files, manifest, sdk};
 
 /// The parts of a mod's folder that are its source, beside `manifest.json`.
-pub const SOURCE: &[&str] = &["src", "include", "files", "assets"];
+pub const SOURCE: &[&str] = &["src", "include", "files", "assets", "scripts"];
 
 /// Where a build writes what it makes, inside the mod's folder.
 pub const BUILD: &str = "build";
@@ -101,6 +101,16 @@ pub fn resolve_sdk(path: Option<&Path>) -> Result<Sdk> {
     Sdk::open(&folder).with_context(|| folder.display().to_string())
 }
 
+/// Script mods aren't packed yet; `tgg mod dev` runs one from its folder.
+fn refuse_script(dir: &Path) -> Result<()> {
+    ensure!(
+        !tgg_mod::is_script(dir),
+        "{} is a script mod: tgg mod dev runs it from its folder, and packing script mods isn't there yet",
+        dir.display()
+    );
+    Ok(())
+}
+
 /// A built mod.
 pub struct Built {
     pub package: Package,
@@ -126,6 +136,7 @@ pub struct Options<'a> {
 /// textures.gg, and each SDK compiles, links and checks mods its own way.
 /// CMake's `compile_commands.json` is copied to `build/` for editors.
 pub fn build(dir: &Path, options: &Options) -> Result<Built> {
+    refuse_script(dir)?;
     let manifest = read_manifest(dir)?;
     let (sources, folders) = mod_source(dir)?;
     if sources.is_empty() {
@@ -176,6 +187,7 @@ pub struct Compiled {
 /// Compile the mod in `dir` as `build` does, without checking or packing it,
 /// and keep what the compiler said. `None` for a mod with no C sources.
 pub fn compile(dir: &Path, options: &Options) -> Result<Option<Compiled>> {
+    refuse_script(dir)?;
     let manifest = read_manifest(dir)?;
     let (sources, _) = mod_source(dir)?;
     if sources.is_empty() {

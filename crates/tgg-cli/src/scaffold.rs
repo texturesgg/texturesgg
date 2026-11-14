@@ -1,5 +1,6 @@
 //! `tgg mod new`: a new mod from one of the SDK's examples
-//! ([`tgg_mod::new_mod`]), then a first build.
+//! ([`tgg_mod::new_mod`]), then a first build, or for a script mod the API's
+//! types for its editor.
 
 use crate::build::{self, Options};
 use anyhow::{Result, anyhow};
@@ -11,6 +12,8 @@ pub struct New<'a> {
     pub id: Option<ModId>,
     pub name: Option<String>,
     pub example: Option<String>,
+    /// From the SDK's script template
+    pub script: bool,
     /// The SDK, or `None` to use the game in use's.
     pub sdk: Option<&'a Path>,
     pub cc: &'a Path,
@@ -37,7 +40,11 @@ pub fn new(new: New) -> Result<()> {
             dir: dir.to_owned(),
             id,
             name: new.name.unwrap_or(folder_name),
-            example: new.example,
+            example: if new.script {
+                Some(tgg_mod::SCRIPT_TEMPLATE.to_owned())
+            } else {
+                new.example
+            },
         },
     )?;
     build::read_manifest(dir)?;
@@ -59,6 +66,20 @@ pub fn new(new: New) -> Result<()> {
              git config --global user.email you@example.com"
         ),
         Repository::Failed(error) => eprintln!("Couldn't start its git repository: {error}"),
+    }
+
+    if tgg_mod::is_script(dir) {
+        // A script mod isn't compiled; its editor wants the API's types.
+        tgg_mod::write_script_types(&sdk, dir)?;
+        if dir == Path::new(".") {
+            println!("tgg mod dev runs it in the game");
+        } else {
+            println!(
+                "To run it in the game: cd {}, then tgg mod dev",
+                dir.display()
+            );
+        }
+        return Ok(());
     }
 
     // A first build writes build/compile_commands.json, so an editor finds

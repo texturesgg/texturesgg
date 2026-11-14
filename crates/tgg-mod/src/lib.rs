@@ -119,7 +119,8 @@ pub use registry::{
     mod_details, mods, sets,
 };
 pub use scaffold::{
-    CreatedMod, NewMod, Repository, Tools, docs_url, new_mod, release_sdk, sdk_examples, tools,
+    CreatedMod, NewMod, Repository, SCRIPT_TEMPLATE, SCRIPT_TYPES, Tools, docs_url, is_script,
+    new_mod, release_sdk, sdk_examples, tools, write_script_types,
 };
 pub use sdk::Sdk;
 pub use skins::{
