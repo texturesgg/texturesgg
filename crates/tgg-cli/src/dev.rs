@@ -71,6 +71,9 @@ pub fn dev(dev: Dev) -> Result<()> {
     };
     crate::ports::check_runtime(&installed)?;
     let iso = crate::config::iso_or_ask()?;
+    if tgg_mod::is_script(dev.dir) {
+        return script_dev(&dev, &installed, &iso, &sdk);
+    }
     let options = Options {
         sdk: Some(&sdk),
         cc: dev.cc,
@@ -91,11 +94,11 @@ pub fn dev(dev: Dev) -> Result<()> {
     let signals = crate::signals::handle()?;
 
     let result = if dev.gdb {
-        run_gdb(&installed, &iso, dev.args)
+        run_gdb(&installed, &iso, dev.args, &[])
     } else if dev.watch {
         watch(&dev, &installed, &iso, &id, &options, &signals, &link)
     } else {
-        let mut game = Game::start(&installed, &iso, dev.args, &id)?;
+        let mut game = Game::start(&installed, &iso, dev.args, &id, &[])?;
         game.wait()
     };
     if dev.keep {
@@ -115,6 +118,109 @@ fn build_dev(dir: &Path, options: &Options) -> Result<ModId> {
         .context("installing the dev build")?;
     eprintln!("Built {id} {}", built.package.manifest.version);
     Ok(id)
+}
+
+/// The parts of a script mod's folder the game reads.
+const SCRIPT_PARTS: &[&str] = &["manifest.json", "scripts", "assets", "files"];
+
+/// A script mod: nothing to build. The mods folder's `<id>` is a link to the
+/// mod's own folder (on Windows a copy kept in step with it), and the game
+/// runs with `TGG_SCRIPT_DEV=<id>`, so it reloads a script on the frame after
+/// it's saved.
+fn script_dev(dev: &Dev, installed: &Installed, iso: &Path, sdk: &Path) -> Result<()> {
+    let id = build::read_manifest(dev.dir)?.id;
+    let sdk = tgg_mod::Sdk::open(sdk).with_context(|| sdk.display().to_string())?;
+    tgg_mod::write_script_types(&sdk, dev.dir)?;
+    let mods = ModsDir::game();
+    let target = if cfg!(windows) {
+        let staged = dev.dir.join(build::BUILD).join("dev").join(id.as_str());
+        if staged.exists() {
+            std::fs::remove_dir_all(&staged).with_context(|| staged.display().to_string())?;
+        }
+        sync_script(dev.dir, &staged)?;
+        staged
+    } else {
+        std::path::absolute(dev.dir)?
+    };
+    let link = Link::make(&mods, &id, &target)?;
+    warn_about(&mods, &id)?;
+    let signals = crate::signals::handle()?;
+    let env = [("TGG_SCRIPT_DEV", id.as_str())];
+    let result = if dev.gdb {
+        run_gdb(installed, iso, dev.args, &env)
+    } else {
+        let mut game = Game::start(installed, iso, dev.args, &id, &env)?;
+        eprintln!("Save a script and the game runs it on the next frame; Ctrl-C ends the session");
+        let mut seen = snapshot(dev.dir);
+        while game.running() && !signals.stopping() {
+            std::thread::sleep(Duration::from_millis(100));
+            if cfg!(windows) {
+                let now = snapshot(dev.dir);
+                if now != seen {
+                    seen = now;
+                    if let Err(error) = sync_script(dev.dir, &link.link) {
+                        eprintln!("{}", red(&format!("{error:#}")));
+                    }
+                }
+            }
+        }
+        if game.running() {
+            std::thread::sleep(Duration::from_millis(500));
+            game.stop();
+            Ok(())
+        } else {
+            game.wait()
+        }
+    };
+    if dev.keep {
+        link.keep();
+    } else {
+        link.restore()?;
+    }
+    result
+}
+
+/// Bring `to` in step with the script mod in `from`: its [`SCRIPT_PARTS`],
+/// each changed file written beside and renamed over the old one, so the
+/// game never reads half a file, and files no longer in `from` removed.
+fn sync_script(from: &Path, to: &Path) -> Result<()> {
+    std::fs::create_dir_all(to).with_context(|| to.display().to_string())?;
+    for part in SCRIPT_PARTS {
+        sync_path(&from.join(part), &to.join(part))?;
+    }
+    Ok(())
+}
+
+fn sync_path(from: &Path, to: &Path) -> Result<()> {
+    let context = || to.display().to_string();
+    let Ok(meta) = std::fs::metadata(from) else {
+        if to.is_dir() {
+            std::fs::remove_dir_all(to).with_context(context)?;
+        } else if to.exists() {
+            std::fs::remove_file(to).with_context(context)?;
+        }
+        return Ok(());
+    };
+    if meta.is_dir() {
+        std::fs::create_dir_all(to).with_context(context)?;
+        for entry in std::fs::read_dir(from).with_context(|| from.display().to_string())? {
+            let name = entry?.file_name();
+            sync_path(&from.join(&name), &to.join(&name))?;
+        }
+        for entry in std::fs::read_dir(to).with_context(context)? {
+            let name = entry?.file_name();
+            if !from.join(&name).exists() {
+                sync_path(&from.join(&name), &to.join(&name))?;
+            }
+        }
+    } else if std::fs::read(from).ok() != std::fs::read(to).ok() {
+        let mut new = to.as_os_str().to_owned();
+        new.push(".~new");
+        let new = PathBuf::from(new);
+        std::fs::copy(from, &new).with_context(|| new.display().to_string())?;
+        std::fs::rename(&new, to).with_context(context)?;
+    }
+    Ok(())
 }
 
 /// Say before the game starts what would stop the mod from loading beside
@@ -283,10 +389,17 @@ struct Game {
 }
 
 impl Game {
-    fn start(installed: &Installed, iso: &Path, args: &[String], id: &ModId) -> Result<Self> {
+    fn start(
+        installed: &Installed,
+        iso: &Path,
+        args: &[String],
+        id: &ModId,
+        env: &[(&str, &str)],
+    ) -> Result<Self> {
         let mut child = Command::new(installed.executable())
             .arg(iso)
             .args(args)
+            .envs(env.iter().copied())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -355,9 +468,10 @@ fn pass_through(
     })
 }
 
-fn run_gdb(installed: &Installed, iso: &Path, args: &[String]) -> Result<()> {
+fn run_gdb(installed: &Installed, iso: &Path, args: &[String], env: &[(&str, &str)]) -> Result<()> {
     let status = crate::signals::run(
         Command::new("gdb")
+            .envs(env.iter().copied())
             .args(["-ex", "set breakpoint pending on", "--args"])
             .arg(installed.executable())
             .arg(iso)
@@ -408,7 +522,7 @@ fn watch(
     link: &Link,
 ) -> Result<()> {
     let mut seen = snapshot(dev.dir);
-    let mut game = Some(Game::start(installed, iso, dev.args, id)?);
+    let mut game = Some(Game::start(installed, iso, dev.args, id, &[])?);
     eprintln!(
         "Watching {} for changes; Ctrl-C ends the session",
         dev.dir.display()
@@ -433,7 +547,7 @@ fn watch(
                     running.stop();
                 }
                 link.refresh()?;
-                game = Some(Game::start(installed, iso, dev.args, id)?);
+                game = Some(Game::start(installed, iso, dev.args, id, &[])?);
             }
             Err(error) => eprintln!("{}", red(&format!("{error:#}"))),
         }

@@ -28,8 +28,11 @@ pub enum ModCommand {
         #[arg(long)]
         name: Option<String>,
         /// The SDK example to start from, such as lcancel-trainer.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "script")]
         example: Option<String>,
+        /// Start a script mod (Luau) from the SDK's script template.
+        #[arg(long)]
+        script: bool,
         /// The SDK's folder or tgg-game-sdk.json [default: the SDK of the
         /// game in use]
         #[arg(long, env = "TGG_GAME_SDK")]
@@ -278,6 +281,7 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
             id,
             name,
             example,
+            script,
             sdk,
             cc,
         } => crate::scaffold::new(crate::scaffold::New {
@@ -285,6 +289,7 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
             id,
             name,
             example,
+            script,
             sdk: sdk.as_deref(),
             cc: &cc.resolve(),
         }),

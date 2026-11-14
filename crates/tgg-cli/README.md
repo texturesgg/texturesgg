@@ -212,8 +212,9 @@ loadable on the oldest glibc the game runs on.
 ## `tgg mod`
 
 ```text
-tgg mod new [DIR] [--id ID] [--name NAME] [--example NAME]
-                                         start a mod from the SDK's template, and build it once
+tgg mod new [DIR] [--id ID] [--name NAME] [--example NAME | --script]
+                                         start a mod from the SDK's template, and build it once;
+                                         --script starts a script mod (Luau) instead
 tgg mod build [DIR] [--debug] [--sdk SDK] [--source-zip ZIP|-] [-o OUT.zip] [--json]
                                          compile DIR's src/**/*.c against the game's SDK, check it,
                                          and pack it with DIR's files/, assets/ and include/
@@ -311,6 +312,12 @@ five seconds later is killed. `--gdb` runs the game under gdb, which needs its d
 info (`tgg port install --debug`). The game's own switches pass through the environment: `TGG_SKIP_INTRO=1`, `TGG_INPUT_SCRIPT`, `TGG_SYNCTEST=1` (the rollback
 check), `TGG_UNLOCK_ALL=0`. A dev build never matches a registry build, so
 it never matches a netplay peer's.
+
+A script mod (`"script": true` in its manifest) builds nothing: `dev` writes the API's
+types to `DIR/build/tgg.luau` for the editor, links the mods folder's `<id>` to `DIR`
+itself (on Windows a copy of its `manifest.json`, `scripts/`, `assets/` and `files/`,
+kept in step with it), and runs the game with `TGG_SCRIPT_DEV=<id>`, so a saved script
+runs on the next frame without a restart. `tgg mod build` doesn't pack script mods yet.
 
 ## License
 
