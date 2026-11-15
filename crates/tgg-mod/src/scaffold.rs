@@ -467,7 +467,12 @@ fn merge_lines(from: &Path, into: &Path) -> Result<(), Error> {
 
 /// The examples script mods start from: a rule, a HUD, a menu screen and a mode that plays
 /// online.
-pub const SCRIPT_TEMPLATES: &[&str] = &["script-rule", "script-hud", "script-screen", "script-first-to-3"];
+pub const SCRIPT_TEMPLATES: &[&str] = &[
+    "script-rule",
+    "script-hud",
+    "script-screen",
+    "script-first-to-3",
+];
 
 /// Whether the mod in `dir` is a script mod: its manifest says `"script": true`.
 pub fn is_script(dir: &Path) -> bool {

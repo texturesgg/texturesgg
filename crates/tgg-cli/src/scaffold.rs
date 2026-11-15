@@ -40,7 +40,10 @@ fn ask() -> Result<Template> {
         (Template::Rule, "change how the game plays (a rule)"),
         (Template::Hud, "show something on screen (HUD, trainer)"),
         (Template::Screen, "add a menu or screen"),
-        (Template::Mode, "a mode you can play online (rounds, a score)"),
+        (
+            Template::Mode,
+            "a mode you can play online (rounds, a score)",
+        ),
         (
             Template::Native,
             "native C mod (advanced, needs your own builds and a manual review)",
