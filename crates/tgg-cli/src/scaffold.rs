@@ -29,6 +29,7 @@ fn example_of(template: Template) -> &'static str {
         Template::Rule => tgg_mod::SCRIPT_TEMPLATES[0],
         Template::Hud => tgg_mod::SCRIPT_TEMPLATES[1],
         Template::Screen => tgg_mod::SCRIPT_TEMPLATES[2],
+        Template::Mode => tgg_mod::SCRIPT_TEMPLATES[3],
         Template::Native => tgg_mod::TEMPLATE,
     }
 }
@@ -39,6 +40,10 @@ fn ask() -> Result<Template> {
         (Template::Rule, "change how the game plays (a rule)"),
         (Template::Hud, "show something on screen (HUD, trainer)"),
         (Template::Screen, "add a menu or screen"),
+        (
+            Template::Mode,
+            "a mode you can play online (rounds, a score)",
+        ),
         (
             Template::Native,
             "native C mod (advanced, needs your own builds and a manual review)",
