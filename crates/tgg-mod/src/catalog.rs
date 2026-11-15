@@ -64,7 +64,7 @@ pub struct PackageRef {
 pub enum CatalogError {
     #[error("the catalog is not valid: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("the catalog is format {0}; this app reads format {SCHEMA}")]
+    #[error("the catalog is format {0}, but this app reads format {SCHEMA}")]
     Schema(u32),
 }
 

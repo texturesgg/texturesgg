@@ -34,7 +34,7 @@ pub enum ModCommand {
         /// Start a native C mod: same as --template native.
         #[arg(long, conflicts_with = "template")]
         native: bool,
-        /// Start from one of the SDK's examples instead, such as lcancel-trainer.
+        /// Start from one of the SDK's examples instead, like lcancel-trainer.
         #[arg(long, conflicts_with_all = ["template", "native"])]
         example: Option<String>,
         /// The SDK's folder or tgg-game-sdk.json [default: the SDK of the
@@ -44,10 +44,10 @@ pub enum ModCommand {
         #[command(flatten)]
         cc: Cc,
     },
-    /// Build a mod's source against the game's SDK, check it as the game
-    /// will, and pack it: DIR holds manifest.json, the C sources under src/
-    /// or a script mod's scripts/, and any of include/, files/ and assets/.
-    /// A mod without C sources packs without compiling.
+    /// Build, check and pack a mod.
+    ///
+    /// DIR has manifest.json and src/ (C) or scripts/ (Luau), plus include/,
+    /// files/ or assets/ if it uses them. Script mods don't compile anything.
     Build {
         #[arg(default_value = ".", value_parser = dir_arg)]
         dir: PathBuf,
@@ -56,12 +56,12 @@ pub enum ModCommand {
         /// include/, files/, assets/ and scripts/ are taken from it.
         #[arg(long)]
         source_zip: Option<PathBuf>,
-        /// The commit of the reviewed source this is built from, which the
-        /// package records: for the registry's builder.
+        /// The commit of the reviewed source this is built from, recorded in the
+        /// package. Used by the registry's builder.
         #[arg(long, value_parser = commit_arg)]
         source_commit: Option<String>,
-        /// The class the registry's review gave it (display), which the
-        /// package records: for the registry's builder.
+        /// The class the registry's review gave it (display), recorded in the
+        /// package. Used by the registry's builder.
         #[arg(long, value_enum)]
         class: Option<ClassArg>,
         /// The SDK's folder or tgg-game-sdk.json [default: the SDK of the
@@ -81,10 +81,11 @@ pub enum ModCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Bring a mod's source up to the SDK you have: rename what the decomp
-    /// renamed (the SDK's rename maps), at exactly the spots the compiler
-    /// points at, and build again until nothing changes. Reports what it
-    /// renamed, and what's left for you.
+    /// Update a mod's source to the SDK you have.
+    ///
+    /// Renames what the decomp renamed (from the SDK's rename maps) where the
+    /// compiler points, and builds again until nothing changes. Then it says
+    /// what it renamed and what's left for you.
     Fix {
         #[arg(default_value = ".", value_parser = dir_arg)]
         dir: PathBuf,
@@ -112,8 +113,8 @@ pub enum ModCommand {
         /// The installed tgg-melee version to run [default: the one in use]
         #[arg(long)]
         port: Option<String>,
-        /// A local build of the port to run instead of an installed version:
-        /// the folder with the tgg-melee executable and tgg-melee-sdk
+        /// A local build of the port to run instead of an installed version (the
+        /// folder with the tgg-melee executable and tgg-melee-sdk)
         #[arg(long, env = "TGG_GAME", conflicts_with = "port")]
         game: Option<PathBuf>,
         /// Leave the dev build linked in the mods folder afterwards.
@@ -126,18 +127,18 @@ pub enum ModCommand {
         args: Vec<String>,
     },
     /// Create the mod on textures.gg from DIR's manifest.json, under your
-    /// account. tgg mod publish does this the first time too.
+    /// account. tgg mod publish does this for you the first time.
     Register {
         #[arg(default_value = ".", value_parser = dir_arg)]
         dir: PathBuf,
     },
-    /// Build the mod as tgg mod build does, then tag its version and push it
-    /// to its repository on textures.gg, which builds the tag: DIR is the
-    /// mod's git checkout. A mod that doesn't build isn't pushed.
+    /// Build the mod, then tag its version and push it to textures.gg, which
+    /// builds the tag. DIR is the mod's git checkout. A mod that doesn't
+    /// build isn't pushed.
     Publish {
         #[arg(default_value = ".", value_parser = dir_arg)]
         dir: PathBuf,
-        /// Push without building here first; textures.gg still builds it.
+        /// Push without building here first. textures.gg still builds it.
         #[arg(long)]
         skip_build: bool,
         /// The SDK's folder or tgg-game-sdk.json to build with [default: the
@@ -147,7 +148,7 @@ pub enum ModCommand {
         #[command(flatten)]
         cc: Cc,
     },
-    /// Pack a built mod: DIR is the mod's installed folder, as the SDK's
+    /// Pack a built mod. DIR is the mod's installed folder, as the SDK's
     /// tgg_add_mod writes it (manifest.json, the library, and its folders).
     Pack {
         #[arg(value_parser = dir_arg)]
@@ -177,11 +178,11 @@ pub enum ModCommand {
     },
     /// The sets of mods on textures.gg.
     Sets,
-    /// Install mods from textures.gg (ID, or ID@RANGE such as
-    /// tgg.netplay@^0.2), a set of them (--set), or package zips. With
-    /// nothing named, pick a set.
+    /// Install mods from textures.gg (ID, or ID@RANGE like tgg.netplay@^0.2),
+    /// a set of them (--set), or package zips. With nothing named, pick a
+    /// set.
     Install {
-        /// A set from tgg mod sets, such as competitive.
+        /// A set from tgg mod sets, like competitive.
         #[arg(long, conflicts_with = "mods")]
         set: Option<String>,
         /// Don't ask before installing.
@@ -202,13 +203,13 @@ pub enum ModCommand {
         #[arg(short, long)]
         yes: bool,
     },
-    /// Turn installed mods on; with none named, pick them.
+    /// Turn installed mods on. With none named, pick them.
     #[command(visible_alias = "enable")]
     On {
         #[arg(value_parser = id_arg)]
         ids: Vec<ModId>,
     },
-    /// Turn installed mods off (the game skips them); with none named, pick
+    /// Turn installed mods off so the game skips them. With none named, pick
     /// them.
     #[command(visible_alias = "disable")]
     Off {
@@ -226,8 +227,8 @@ pub enum ModCommand {
 
 #[derive(Args)]
 pub struct Cc {
-    /// The C compiler: GCC 12 or later [default: gcc; on macOS Homebrew's
-    /// gcc-15]
+    /// The C compiler, GCC 12 or later [default: gcc, or Homebrew's gcc-15
+    /// on macOS]
     #[arg(long, env = "CC")]
     pub cc: Option<PathBuf>,
 }
@@ -243,7 +244,7 @@ impl Cc {
 
 #[derive(Args, Default)]
 pub struct PortArg {
-    /// The game's executable, to refuse packages built for another game
+    /// The game's executable, to refuse packages built for a different game
     /// layout [default: the tgg-melee in use, if one is installed]
     #[arg(long, env = "TGG_PORT")]
     port: Option<PathBuf>,
@@ -328,7 +329,7 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
                 if built.package.manifest.script {
                     anyhow::ensure!(
                         built.package.manifest.class.is_some(),
-                        "it can't be a display mod: its scripts change the match ({})",
+                        "it can't be a display mod, since its scripts change the match ({})",
                         built.package.manifest.sim_writes.join(", ")
                     );
                 }
@@ -430,7 +431,7 @@ pub fn run(command: ModCommand, api: &str) -> Result<()> {
             with_player(api, port.game()?, yes, |player| {
                 if set.is_none() && mods.is_empty() {
                     if !crate::ui::interactive() {
-                        bail!("name mods, or a set with --set; tgg mod sets lists them");
+                        bail!("name mods, or a set with --set. tgg mod sets lists them");
                     }
                     return match player.pick_set()? {
                         Some(set) => player.install(Some(&set), &[]),
@@ -674,7 +675,7 @@ fn install(mods: &ModsDir, port: Option<&Port>, packages: &[PathBuf]) -> Result<
                 || manifest.target.as_deref() != Some(port.target.as_str()))
         {
             bail!(
-                "{} is built for game layout {} on {}; tgg-melee {} is {} on {}",
+                "{} is built for game layout {} on {}, but tgg-melee {} is {} on {}",
                 manifest.id,
                 manifest.game_abi.as_deref().unwrap_or("none"),
                 manifest.target.as_deref().unwrap_or("no target"),
@@ -697,7 +698,7 @@ fn install(mods: &ModsDir, port: Option<&Port>, packages: &[PathBuf]) -> Result<
         println!("{} {}", manifest.id, manifest.version);
         for overlap in overlaps(manifest, &installed) {
             eprintln!(
-                "warning: {} and {} both ship {}; the game uses {}'s",
+                "warning: {} and {} both ship {}, and the game uses {}'s",
                 manifest.id, overlap.with, overlap.path, overlap.wins
             );
         }

@@ -288,7 +288,7 @@ pub enum ManifestError {
     Json(#[from] serde_json::Error),
     #[error("manifest.json is not UTF-8")]
     Utf8,
-    #[error("the manifest targets {0}; this format is {api}", api = crate::API)]
+    #[error("the manifest targets {0}, but this format is {api}", api = crate::API)]
     Api(String),
     #[error(
         "the id {0:?} must be 1 to 64 lowercase letters, digits, '.', '-' or '_', not starting with '.'"
@@ -299,7 +299,7 @@ pub enum ManifestError {
     #[error("the entry {0:?} must be a file name, not a path")]
     Entry(String),
     #[error(
-        "manifest.json has a netplay field; remove it, the game works out what counts for netplay"
+        "manifest.json has a netplay field. Just remove it, the game works that out itself now"
     )]
     Netplay,
     #[error("the mod depends on itself")]
@@ -316,9 +316,9 @@ pub enum ManifestError {
     Tags,
     #[error("the homepage {0:?} must be an http or https URL")]
     Homepage(String),
-    #[error("a script mod has no entry: its code is scripts/sim.luau and scripts/view.luau")]
+    #[error("a script mod has no entry. Its code goes in scripts/sim.luau and scripts/view.luau")]
     ScriptEntry,
-    #[error("settings in the manifest are a script mod's; a C mod declares them in its source")]
+    #[error("only script mods have settings in the manifest. A C mod declares them in its source")]
     Settings,
 }
 

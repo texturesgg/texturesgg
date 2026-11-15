@@ -29,7 +29,7 @@ enum Op {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("{0:?} isn't a version range: use 1.2.3, 1.2, ^1.2, ~1.2, >=1.2 or *")]
+#[error("{0:?} isn't a version range. Use 1.2.3, 1.2, ^1.2, ~1.2, >=1.2 or *")]
 pub struct RangeError(String);
 
 impl Range {

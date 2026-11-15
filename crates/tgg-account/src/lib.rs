@@ -52,10 +52,10 @@ pub enum Error {
     #[error("you're not signed in to textures.gg")]
     NotSignedIn,
     /// The site refused the saved token: it expired or was signed out.
-    #[error("your textures.gg sign-in has expired or was removed; sign in again")]
+    #[error("your textures.gg sign-in has expired or was removed. Sign in again")]
     SessionExpired,
     /// The device login's code expired before it was confirmed.
-    #[error("the sign-in code expired; start again")]
+    #[error("the sign-in code expired. Start again")]
     Expired,
     #[error("the sign-in was cancelled on textures.gg")]
     Denied,

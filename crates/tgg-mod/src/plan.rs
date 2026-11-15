@@ -89,7 +89,7 @@ impl fmt::Display for Problem {
             }
             Problem::Conflict { id, conflict } => write!(
                 f,
-                "{id} and {} both replace {}; only one of them loads",
+                "{id} and {} both replace {}, so only one of them loads",
                 conflict.with, conflict.replaces
             ),
             Problem::Unmet { id, missing } => {

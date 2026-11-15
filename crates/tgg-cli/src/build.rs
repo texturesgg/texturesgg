@@ -92,7 +92,7 @@ pub fn resolve_sdk(path: Option<&Path>) -> Result<Sdk> {
         None => {
             if crate::ports::current_version()?.is_none() {
                 bail!(
-                    "building C needs the game's SDK: install the game with tgg port install, or pass --sdk"
+                    "building C needs the game's SDK. Install the game with tgg port install, or pass --sdk"
                 );
             }
             crate::sdks::for_installed(&crate::ports::resolve(None)?)?
@@ -105,7 +105,7 @@ pub fn resolve_sdk(path: Option<&Path>) -> Result<Sdk> {
 fn refuse_script(dir: &Path) -> Result<()> {
     ensure!(
         !tgg_mod::is_script(dir),
-        "{} is a script mod: nothing to compile",
+        "{} is a script mod, so there's nothing to compile",
         dir.display()
     );
     Ok(())
@@ -117,7 +117,7 @@ fn refuse_script(dir: &Path) -> Result<()> {
 pub fn build_script(dir: &Path, sdk: Option<&Path>) -> Result<Package> {
     let sdk = resolve_sdk(sdk)?;
     let tool = sdk.script_tool().ok_or_else(|| {
-        anyhow!("this game's SDK has no tgg-script; update the game with tgg port install")
+        anyhow!("this game's SDK has no tgg-script. Update the game with tgg port install")
     })?;
     let out = Command::new(&tool)
         .arg("pack")
@@ -248,7 +248,7 @@ pub fn compile(dir: &Path, options: &Options) -> Result<Option<Compiled>> {
         .env("LC_ALL", "C")
         .output()
         .map_err(|error| {
-            anyhow!("couldn't run the build: {error}; tgg doctor says what's missing")
+            anyhow!("couldn't run the build: {error}. tgg doctor says what's missing")
         })?;
     let mut output = String::from_utf8_lossy(&out.stdout).into_owned();
     output.push_str(&String::from_utf8_lossy(&out.stderr));
@@ -338,7 +338,7 @@ fn include_dirs(root: &Path, manifest: &Manifest) -> Vec<PathBuf> {
         match installed {
             Some(folder) => dirs.push(folder.join("include")),
             None => eprintln!(
-                "{id} isn't installed, so this build can't use its headers; tgg mod install it first"
+                "{id} isn't installed, so this build can't use its headers. Install it with tgg mod install first"
             ),
         }
     }
@@ -352,7 +352,7 @@ fn run(command: &mut Command, what: &str) -> Result<()> {
     let status = command
         .stdout(std::io::stderr())
         .status()
-        .map_err(|error| anyhow!("couldn't run {what}: {error}; tgg doctor says what's missing"))?;
+        .map_err(|error| anyhow!("couldn't run {what}: {error}. tgg doctor says what's missing"))?;
     ensure!(status.success(), "{what} failed: {status}");
     Ok(())
 }
@@ -451,7 +451,7 @@ fn check_library(library: &[u8], sdk: &Sdk, symbols: &Symbols) -> Result<Hooks> 
             .is_none_or(|abi| abi == sdk.game_abi)
             && declared.target.as_deref() == Some(sdk.target.as_str())
             && declared.api_version.as_deref() == Some(sdk.api_version.as_str()),
-        "the library declares game layout {}, target {} and mod API {}; the SDK is {}, {} and {}",
+        "the library declares game layout {}, target {} and mod API {}, but the SDK is {}, {} and {}",
         declared.game_abi.as_deref().unwrap_or("none"),
         declared.target.as_deref().unwrap_or("none"),
         declared.api_version.as_deref().unwrap_or("none"),

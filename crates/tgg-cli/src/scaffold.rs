@@ -41,7 +41,7 @@ fn ask() -> Result<Template> {
         (Template::Screen, "add a menu or screen"),
         (
             Template::Native,
-            "native C mod (advanced: needs your own builds and a manual review)",
+            "native C mod (advanced, needs your own builds and a manual review)",
         ),
     ];
     let items = items
@@ -62,7 +62,7 @@ pub fn new(new: New) -> Result<()> {
         Some(id) => id,
         None => folder_name.parse().map_err(|_| {
             anyhow!(
-                "{folder_name:?} isn't a mod id; pass --id (1 to 64 of a-z, 0-9, '.', '-' and '_')"
+                "{folder_name:?} isn't a mod id. Pass --id with 1 to 64 of a-z, 0-9, '.', '-' and '_'"
             )
         })?,
     };
@@ -138,13 +138,13 @@ fn next_steps(dir: &Path, script: bool) {
     };
     let (editor, dev) = if script {
         (
-            "completion and docs come from build/tgg.luau",
-            "hot reload on save",
+            "build/tgg.luau gives you completion and docs",
+            "It reloads when you save.",
         )
     } else {
         (
-            "headers come from build/compile_commands.json",
-            "rebuilds on save",
+            "build/compile_commands.json gives you the headers",
+            "It rebuilds when you save.",
         )
     };
     let dev_cmd = if script {
@@ -152,7 +152,10 @@ fn next_steps(dir: &Path, script: bool) {
     } else {
         format!("tgg mod dev --watch{arg}")
     };
-    println!("1. Open {folder} in your editor ({editor})");
-    println!("2. {} ({dev})", crate::ui::cmd(dev_cmd));
-    println!("3. {}", crate::ui::cmd(format!("tgg mod build{arg}")));
+    println!("1. Open {folder} in your editor. {editor}.");
+    println!("2. {} to play it. {dev}", crate::ui::cmd(dev_cmd));
+    println!(
+        "3. {} to pack it.",
+        crate::ui::cmd(format!("tgg mod build{arg}"))
+    );
 }

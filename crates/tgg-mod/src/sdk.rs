@@ -78,13 +78,13 @@ pub enum SdkError {
     Io(PathBuf, std::io::Error),
     #[error("{0} is not a game SDK: {1}")]
     Json(PathBuf, serde_json::Error),
-    #[error("the SDK targets {0}; this tool builds {api} mods", api = crate::API)]
+    #[error("the SDK targets {0}, but this tool builds {api} mods", api = crate::API)]
     Api(String),
     #[error("the SDK's {0} {1:?} must be a relative path inside the SDK")]
     Path(&'static str, String),
     #[error("the SDK's game layout {0:?} is not 16 hex digits")]
     GameAbi(String),
-    #[error("the SDK's option {0:?} names a file; files go in force_includes")]
+    #[error("the SDK's option {0:?} names a file. Files go in force_includes")]
     Option(String),
     #[error("the SDK's library {0:?} is not a plain library name")]
     Library(String),

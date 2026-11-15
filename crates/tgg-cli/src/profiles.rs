@@ -20,7 +20,7 @@ pub enum ProfileCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Fetch what a replay or profile needs and build its mods folder.
+    /// Download what a replay or profile needs and set up its mods folder.
     Prepare {
         /// A replay (.slp) or a profile (.json).
         source: PathBuf,
@@ -28,7 +28,7 @@ pub enum ProfileCommand {
         /// for a program to read.
         #[arg(long)]
         machine: bool,
-        /// Fetch this publisher's mods (repeatable).
+        /// Download this publisher's mods (repeatable).
         #[arg(long = "trust", value_name = "PUBLISHER")]
         trust: Vec<String>,
         /// Remember each --trust answer for next time.
@@ -143,14 +143,14 @@ pub fn describe(source: &Path, plan: &ProfilePlan, offline: Option<&str>) -> Vec
     });
     lines.push(crate::ui::heading(what));
     if let Some(offline) = offline {
-        lines.push(format!("{offline}; showing what tgg saw last"));
+        lines.push(format!("{offline}. Showing what tgg saw last"));
     }
     lines.push(match &plan.game {
         GameNeed::Installed(install) if install.current => {
             format!("Game: tgg-melee {}", crate::ui::ver(&install.version))
         }
         GameNeed::Installed(install) => format!(
-            "Game: tgg-melee {} (installed; runs for this session)",
+            "Game: tgg-melee {} (installed, runs for this session)",
             crate::ui::ver(&install.version)
         ),
         GameNeed::Available { version, size: s } => format!(
@@ -159,7 +159,7 @@ pub fn describe(source: &Path, plan: &ProfilePlan, offline: Option<&str>) -> Vec
             s.map(|s| format!(", {}", size(s))).unwrap_or_default()
         ),
         GameNeed::Unavailable { version } => {
-            format!("Game: needs tgg-melee {version}, which tgg can't get")
+            format!("Game: needs tgg-melee {version}, which isn't available")
         }
     });
     if !plan.mods.is_empty() {
@@ -184,7 +184,7 @@ pub fn describe(source: &Path, plan: &ProfilePlan, offline: Option<&str>) -> Vec
         ));
     }
     if !plan.missing.is_empty() {
-        lines.push("Can't be had:".into());
+        lines.push("Not available:".into());
         for missing in &plan.missing {
             lines.push(format!("  {missing}"));
         }
@@ -360,7 +360,7 @@ fn prepare_here(ctx: &Ctx, source: &Path, yes: bool) -> Result<Option<Prepared>>
     let ask = !yes && crate::ui::interactive();
     if plan.missing.iter().any(|m| !m.is_minor()) && !yes {
         if !ask {
-            bail!("it may not play back as it was played; --yes plays it anyway");
+            bail!("it may not play back as it was played. --yes plays it anyway");
         }
         if !crate::ui::confirm("Play it anyway?")? {
             bail!("not played");
@@ -382,19 +382,19 @@ fn prepare_here(ctx: &Ctx, source: &Path, yes: bool) -> Result<Option<Prepared>>
             true
         } else if ask {
             let answer = crate::ui::confirm(format!(
-                "This used {} by {publisher}. Get it for playback?",
+                "This replay used {} by {publisher}. Download it to watch?",
                 names.join(", ")
             ))?;
             tgg_mod::remember_trust(&ctx.data, &publisher, answer)?;
             answer
         } else {
             bail!(
-                "{} by {publisher} needs your yes; run it in a terminal, or pass --yes",
+                "{} by {publisher} needs your OK. Run it in a terminal, or pass --yes",
                 names.join(", ")
             );
         };
         if !allow {
-            bail!("not fetching {publisher}'s mods");
+            bail!("not downloading {publisher}'s mods");
         }
         for m in &mut plan.mods {
             if m.publisher.name == publisher {
@@ -463,7 +463,7 @@ pub fn play(
             let current = tgg_mod::ports::installed_ports(&ports)?
                 .into_iter()
                 .find(|install| install.current)
-                .ok_or_else(|| anyhow!("tgg-melee isn't installed; run tgg port install"))?;
+                .ok_or_else(|| anyhow!("tgg-melee isn't installed. Run tgg port install"))?;
             let running = tgg_mod::ports::launch_with_env(
                 &current,
                 &iso,

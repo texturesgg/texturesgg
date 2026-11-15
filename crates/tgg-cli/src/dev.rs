@@ -33,7 +33,7 @@ pub struct Dev<'a> {
 pub fn dev(dev: Dev) -> Result<()> {
     ensure!(
         !(dev.watch && dev.gdb),
-        "--watch restarts the game on each change, which gdb can't follow; use one"
+        "--watch restarts the game on each change, which gdb can't follow. Use one"
     );
     let (installed, sdk) = match dev.game {
         // A local build carries its debug info and its SDK in the build folder
@@ -44,14 +44,14 @@ pub fn dev(dev: Dev) -> Result<()> {
             };
             ensure!(
                 installed.executable().is_file(),
-                "{} has no {}: --game wants the port's build folder",
+                "{} has no {}. --game needs the port's build folder",
                 folder.display(),
                 crate::ports::EXECUTABLE
             );
             let sdk = folder.join("tgg-melee-sdk");
             ensure!(
                 sdk.join("tgg-game-sdk.json").is_file(),
-                "{} has no tgg-melee-sdk folder: build the port first",
+                "{} has no tgg-melee-sdk folder. Build the port first",
                 folder.display()
             );
             (installed, sdk)
@@ -61,7 +61,7 @@ pub fn dev(dev: Dev) -> Result<()> {
             if dev.gdb {
                 ensure!(
                     installed.has_debug_info(),
-                    "gdb needs the game's debug info: tgg port install {} --debug",
+                    "gdb needs the game's debug info. Run tgg port install {} --debug",
                     installed.version
                 );
             }
@@ -150,7 +150,7 @@ fn script_dev(dev: &Dev, installed: &Installed, iso: &Path, sdk: &Path) -> Resul
         run_gdb(installed, iso, dev.args, &env)
     } else {
         let mut game = Game::start(installed, iso, dev.args, &id, &env)?;
-        eprintln!("Save a script and the game runs it on the next frame; Ctrl-C ends the session");
+        eprintln!("Save a script and the game runs it on the next frame. Ctrl-C to stop.");
         let mut seen = snapshot(dev.dir);
         while game.running() && !signals.stopping() {
             std::thread::sleep(Duration::from_millis(100));
@@ -234,7 +234,7 @@ fn warn_about(mods: &ModsDir, id: &ModId) -> Result<()> {
         eprintln!(
             "{}",
             red(&format!(
-                "{id} replaces {}, and so does {}; the one that loads later is refused",
+                "{id} replaces {}, and so does {}, so the one that loads later is refused",
                 conflict.replaces, conflict.with
             ))
         );
@@ -290,7 +290,7 @@ impl Link {
         } else if std::fs::symlink_metadata(&link).is_ok() {
             ensure!(
                 !aside.exists(),
-                "{} and {} both exist; keep the one you want as {}",
+                "{} and {} both exist. Keep the one you want as {}",
                 link.display(),
                 aside.display(),
                 link.display()
@@ -477,7 +477,7 @@ fn run_gdb(installed: &Installed, iso: &Path, args: &[String], env: &[(&str, &st
             .arg(iso)
             .args(args),
     )
-    .context("running gdb; is it installed?")?;
+    .context("couldn't run gdb. Is it installed?")?;
     ensure!(status.success(), "gdb exited with {status}");
     Ok(())
 }
@@ -524,7 +524,7 @@ fn watch(
     let mut seen = snapshot(dev.dir);
     let mut game = Some(Game::start(installed, iso, dev.args, id, &[])?);
     eprintln!(
-        "Watching {} for changes; Ctrl-C ends the session",
+        "Watching {} for changes. Ctrl-C to stop.",
         dev.dir.display()
     );
     while !signals.stopping() {
@@ -534,7 +534,7 @@ fn watch(
         {
             running.finish();
             game = None;
-            eprintln!("The game ended; it starts again on the next change");
+            eprintln!("The game closed. It starts again on the next change.");
         }
         let now = snapshot(dev.dir);
         if now == seen {

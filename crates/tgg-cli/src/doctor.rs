@@ -267,7 +267,7 @@ fn check_build_tools(report: &mut Report, nixpkgs: Option<&str>) {
         None => report.problem(
             "CMake",
             &format!(
-                "not found; mods build with the SDK's CMake files: {}",
+                "not found. Mods build with the SDK's CMake files: {}",
                 install(Tool::Cmake, nixpkgs)
             ),
         ),
@@ -286,7 +286,7 @@ fn check_build_tools(report: &mut Report, nixpkgs: Option<&str>) {
                 report.problem(
                     "CMake",
                     &format!(
-                        "{version}; mods need {}.{} or later: {}",
+                        "{version}, but mods need {}.{} or later: {}",
                         CMAKE_MIN.0,
                         CMAKE_MIN.1,
                         install(Tool::Cmake, nixpkgs)
@@ -300,7 +300,7 @@ fn check_build_tools(report: &mut Report, nixpkgs: Option<&str>) {
         None if cfg!(windows) => report.problem(
             "Ninja",
             &format!(
-                "not found; mods build with it on Windows: {}",
+                "not found. Mods build with it on Windows: {}",
                 install(Tool::Ninja, nixpkgs)
             ),
         ),
@@ -317,7 +317,7 @@ fn check_build_tools(report: &mut Report, nixpkgs: Option<&str>) {
         None => report.problem(
             "git",
             &format!(
-                "not found; a mod's history and publishing need it: {}",
+                "not found. You need it to publish mods: {}",
                 install(Tool::Git, nixpkgs)
             ),
         ),
@@ -403,7 +403,7 @@ fn check_compiler(report: &mut Report, cc: &Path, nixpkgs: Option<&str>) {
             };
             report.problem(
                 "C compiler",
-                &format!("{name} is GCC {version}; mods need {GCC_MIN} or later: {fix}"),
+                &format!("{name} is GCC {version}, but mods need {GCC_MIN} or later: {fix}"),
             );
         }
     }
@@ -437,7 +437,7 @@ fn check_glibc(report: &mut Report) {
     let Some(text) = output(Path::new("getconf"), &["GNU_LIBC_VERSION"]) else {
         report.problem(
             "glibc",
-            "this system's C library isn't glibc; the game needs glibc 2.34 or later",
+            "this system's C library isn't glibc, and the game needs glibc 2.34 or later",
         );
         return;
     };
@@ -450,7 +450,7 @@ fn check_glibc(report: &mut Report) {
         report.problem(
             "glibc",
             &format!(
-                "{version}; the game needs {}.{} or later",
+                "{version}, but the game needs {}.{} or later",
                 GLIBC_MIN.0, GLIBC_MIN.1
             ),
         );
@@ -497,7 +497,7 @@ pub fn run(cc: &Path) -> Result<()> {
                     nixpkgs = Some(release.toolchain.nixpkgs.clone());
                     installed = Some((port, release));
                 }
-                Err(error) => report.problem("game", &format!("{error:#}; tgg port install")),
+                Err(error) => report.problem("game", &format!("{error:#}: tgg port install")),
             }
         }
     }
@@ -534,7 +534,7 @@ pub fn run(cc: &Path) -> Result<()> {
         if sdk.join(tgg_mod::sdk::FILE).is_file() {
             report.ok("SDK", &sdk.display().to_string());
         } else {
-            report.note("SDK", "not installed yet; the first build installs it");
+            report.note("SDK", "not installed yet. The first build installs it");
         }
         if release.files.debug.is_some() && !port.has_debug_info() {
             report.note(
@@ -549,7 +549,7 @@ pub fn run(cc: &Path) -> Result<()> {
     check_compiler(&mut report, cc, nixpkgs.as_deref());
     check_build_tools(&mut report, nixpkgs.as_deref());
     if cfg!(target_os = "linux") && !on_path("gdb") {
-        report.note("gdb", "not found; only tgg mod dev --gdb needs it");
+        report.note("gdb", "not found. Only tgg mod dev --gdb needs it");
     }
 
     println!();

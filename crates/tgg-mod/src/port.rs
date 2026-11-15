@@ -28,7 +28,7 @@ pub enum PortError {
     NoExecutable(PathBuf),
     #[error("this build has no mod loader")]
     NoRuntime,
-    #[error("this build loads {0} mods; this tool handles {api} mods", api = crate::API)]
+    #[error("this build loads {0} mods, but this tool handles {api} mods", api = crate::API)]
     Api(String),
     #[error("the mod loader section of this build is malformed")]
     Malformed,

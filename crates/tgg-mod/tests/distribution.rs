@@ -419,7 +419,7 @@ fn offline_the_registry_fails_and_local_state_still_reads() {
     assert!(matches!(error, Error::Offline(_)));
     assert_eq!(
         error.to_string(),
-        "can't reach textures.gg; what's installed still works"
+        "can't reach textures.gg. What's installed still works"
     );
     assert!(std::error::Error::source(&error).is_some());
     assert!(matches!(
