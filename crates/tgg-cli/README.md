@@ -232,7 +232,7 @@ are `on` and `off`.
 
 `new` starts a script mod by default. On a terminal with no `--template`, it asks what the
 mod is for: a rule (`examples/script-rule/`), something on screen (`script-hud/`), a menu
-screen (`script-screen/`), or a native C mod (`template/`, after a note that native mods need
+screen (`script-screen/`), a mode you can play online (`script-first-to-3/`), or a native C mod (`template/`, after a note that native mods need
 a build per platform and a manual review). Elsewhere it starts a rule. It ends with three next
 steps: open the folder in an editor, `tgg mod dev`, `tgg mod build`. "When to write C" in the
 SDK's `docs/scripts.md` says when native is worth it.

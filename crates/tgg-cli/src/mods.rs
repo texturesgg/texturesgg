@@ -462,6 +462,8 @@ pub enum Template {
     Hud,
     /// A script that adds a menu entry and its screen.
     Screen,
+    /// A script mode that plays online: a shared screen, rounds and a score.
+    Mode,
     /// A C mod.
     Native,
 }
