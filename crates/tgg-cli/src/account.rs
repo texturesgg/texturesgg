@@ -39,12 +39,12 @@ impl Site {
 fn cli(error: tgg_account::Error) -> anyhow::Error {
     use tgg_account::Error;
     match error {
-        Error::NotSignedIn => anyhow::anyhow!("you're not signed in; run tgg login"),
+        Error::NotSignedIn => anyhow::anyhow!("you're not signed in. Run tgg login"),
         Error::SessionExpired => {
-            anyhow::anyhow!("your sign-in has expired or was removed; run tgg login")
+            anyhow::anyhow!("your sign-in has expired or was removed. Run tgg login")
         }
-        Error::Expired => anyhow::anyhow!("the code expired; run tgg login again"),
-        Error::Offline { api, reason } => anyhow::anyhow!("reaching {api}: {reason}"),
+        Error::Expired => anyhow::anyhow!("the code expired. Run tgg login again"),
+        Error::Offline { api, reason } => anyhow::anyhow!("can't reach {api}: {reason}"),
         error => error.into(),
     }
 }
@@ -80,15 +80,13 @@ pub fn logout(api: &str) -> Result<()> {
 
 #[derive(clap::Subcommand)]
 pub enum AccountCommand {
-    /// A short-lived ticket for one textures.gg service, such as `meet` (the
-    /// netplay meeting point), so a program can act as you there without
-    /// your sign-in. Signs in first when you aren't.
+    /// Get a short-lived ticket for a textures.gg service like `meet`, so a
+    /// program can use it as you. Signs you in first if you aren't.
     Ticket {
         /// The service: meet.
         service: String,
-        /// Print JSON lines for the game (`tgg/account.h`): `signin` with a
-        /// code to confirm when you aren't signed in, then `ticket` or
-        /// `error`.
+        /// Print JSON lines for the game (`tgg/account.h`). That's `signin` with
+        /// a code to confirm if you aren't signed in, then `ticket` or `error`.
         #[arg(long)]
         machine: bool,
     },
@@ -152,7 +150,7 @@ fn ticket(
 ) -> Result<Ticket> {
     let path = match service {
         "meet" => "/api/meet/ticket",
-        other => anyhow::bail!("there's no textures.gg service called {other}; try meet"),
+        other => anyhow::bail!("there's no textures.gg service called {other}. Try meet"),
     };
     let site = Site::new(api)?;
     match site.0.post::<Ticket>(path, &Value::Null) {

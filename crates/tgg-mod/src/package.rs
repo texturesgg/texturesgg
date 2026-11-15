@@ -74,9 +74,9 @@ pub enum PackageError {
         pinned: &'static str,
         built: &'static str,
     },
-    #[error("the library declares no target; build it with the SDK")]
+    #[error("the library declares no target. Build it with the SDK")]
     NoTarget,
-    #[error("the library declares no mod API version; build it with the SDK")]
+    #[error("the library declares no mod API version. Build it with the SDK")]
     NoApiVersion,
     #[error(
         "the manifest's hooks, events, exports, imports, tier, game layout, target or API version differ from its library's"

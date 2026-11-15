@@ -611,7 +611,7 @@ pub(crate) fn parse_mapping(bytes: &[u8]) -> Result<SlippiMapping, String> {
         serde_json::from_slice(bytes).map_err(|error| format!("the Slippi mapping: {error}"))?;
     if mapping.format > FORMAT {
         return Err(format!(
-            "the Slippi mapping is format {}; this tgg reads format {FORMAT}",
+            "the Slippi mapping is format {}, but this tgg reads format {FORMAT}",
             mapping.format
         ));
     }

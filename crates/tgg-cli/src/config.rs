@@ -56,7 +56,9 @@ pub fn iso() -> Result<PathBuf> {
     let iso = match std::env::var_os("TGG_MELEE_ISO").filter(|iso| !iso.is_empty()) {
         Some(iso) => PathBuf::from(iso),
         None => Config::read()?.iso.ok_or_else(|| {
-            anyhow!("tgg needs your Melee disc image (NTSC 1.02): tgg config set iso <path>")
+            anyhow!(
+                "tgg needs your Melee disc image (NTSC 1.02). Set it with tgg config set iso <path>"
+            )
         })?,
     };
     ensure!(iso.is_file(), "{} isn't a file", iso.display());
@@ -73,9 +75,9 @@ pub fn iso_or_ask() -> Result<PathBuf> {
     if !std::io::stdin().is_terminal() || std::env::var_os("TGG_MELEE_ISO").is_some() {
         return Err(error);
     }
-    println!("The game runs from your Melee disc image (NTSC 1.02). tgg asks once.");
+    println!("tgg-melee needs your Melee disc image (NTSC 1.02). You only do this once.");
     loop {
-        print!("Path to the .iso (or Enter to skip): ");
+        print!("Path to your .iso (Enter to skip): ");
         std::io::stdout().flush()?;
         let mut line = String::new();
         if std::io::stdin().read_line(&mut line)? == 0 {
@@ -96,7 +98,7 @@ pub fn iso_or_ask() -> Result<PathBuf> {
                 let mut config = Config::read()?;
                 config.iso = Some(path.clone());
                 config.write()?;
-                println!("Saved; tgg uses it from now on");
+                println!("Saved.");
                 return Ok(path);
             }
             Err(problem) => println!("{problem:#}"),
@@ -133,7 +135,7 @@ fn check_disc(path: &Path) -> Result<()> {
     );
     ensure!(
         header[7] == 2,
-        "{} is Melee NTSC 1.0{}; tgg-melee needs 1.02",
+        "{} is Melee NTSC 1.0{}, but tgg-melee needs 1.02",
         path.display(),
         header[7]
     );

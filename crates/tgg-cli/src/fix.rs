@@ -314,7 +314,7 @@ pub fn fix(dir: &Path, options: &Options, check: bool) -> Result<()> {
     let mut made = Vec::new();
     for pass in 0..MAX_PASSES {
         let Some(compiled) = build::compile(dir, options)? else {
-            println!("{}: no C sources; nothing to fix", dir.display());
+            println!("{}: no C sources, so nothing to fix", dir.display());
             return Ok(());
         };
         let renames = match &renames {
@@ -342,7 +342,7 @@ pub fn fix(dir: &Path, options: &Options, check: bool) -> Result<()> {
         }
         made.extend(done);
         if pass + 1 == MAX_PASSES {
-            eprintln!("tgg mod fix: still changing after {MAX_PASSES} passes; stopping");
+            eprintln!("tgg mod fix: still changing after {MAX_PASSES} passes, so it stopped");
         }
     }
     Ok(())
@@ -394,7 +394,7 @@ fn report(
         }
     }
     if !compiled.ok && left.is_empty() {
-        println!("the build still fails; see its output with tgg mod build");
+        println!("the build still fails. tgg mod build shows its output");
     }
 }
 

@@ -329,7 +329,7 @@ const SCRIPT_DOCS_LINE: &str =
 
 fn docs_line(url: &dyn Fn(&str) -> String) -> String {
     format!(
-        "- The docs: {}. Start with [writing mods]({}); `tgg docs` opens them, and\n  the SDK has a copy in `$(tgg sdk path)/docs`.",
+        "- The docs: {}. Start with [writing mods]({}). `tgg docs` opens them, and\n  the SDK has a copy in `$(tgg sdk path)/docs`.",
         url("README"),
         url("writing-mods")
     )
@@ -355,7 +355,7 @@ fn link_docs(dir: &Path, version: &str) -> Result<(), Error> {
             "README.md",
             SCRIPT_DOCS_LINE.to_owned(),
             format!(
-                "- The docs: {}. Start with [scripts]({}); `tgg docs` opens them, and\n  the SDK has a copy in `$(tgg sdk path)/docs`.",
+                "- The docs: {}. Start with [scripts]({}). `tgg docs` opens them, and\n  the SDK has a copy in `$(tgg sdk path)/docs`.",
                 url("README"),
                 url("scripts")
             ),

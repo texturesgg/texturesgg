@@ -32,13 +32,13 @@ pub type Files = BTreeMap<String, Vec<u8>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum FileError {
-    #[error("{0} is not a disc path: use '/' between non-empty names, none starting with '.'")]
+    #[error("{0} isn't a disc path. Use '/' between non-empty names, none starting with '.'")]
     Path(String),
     #[error("{0} has a path of {PATH_LIMIT} bytes or more")]
     PathTooLong(String),
     #[error("{0} is 4 GiB or larger")]
     TooLarge(String),
-    #[error("{0} and {1} are the same path; disc paths compare without case")]
+    #[error("{0} and {1} are the same path, since disc paths ignore case")]
     SameCase(String, String),
     #[error("{0}: a name that isn't UTF-8")]
     Name(String),

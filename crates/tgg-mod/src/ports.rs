@@ -311,7 +311,7 @@ pub fn unpack(bytes: &[u8], file: &ReleaseFile, dest: &Path) -> Result<(), Error
             }
             other => {
                 return Err(bad(format!(
-                    "holds {} of type {other:?}; releases hold only files and folders",
+                    "holds {} of type {other:?}. Releases hold only files and folders",
                     name.display()
                 )));
             }
