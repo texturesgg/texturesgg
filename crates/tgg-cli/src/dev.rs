@@ -382,7 +382,7 @@ fn remove_dev(link: &Path) -> Result<()> {
 }
 
 /// A running game, its output passed through with this mod's refusals in
-/// red.
+/// red, and its sim budget in yellow once it's over half.
 struct Game {
     child: Child,
     readers: Vec<std::thread::JoinHandle<()>>,
@@ -404,12 +404,11 @@ impl Game {
             .stderr(Stdio::piped())
             .spawn()
             .with_context(|| format!("running {}", installed.executable().display()))?;
-        let refused = format!("mods: {id}: refused");
         let stdout = child.stdout.take().expect("piped");
         let stderr = child.stderr.take().expect("piped");
         let readers = vec![
-            pass_through(stdout, refused.clone(), false),
-            pass_through(stderr, refused, true),
+            pass_through(stdout, id.to_string(), false),
+            pass_through(stderr, id.to_string(), true),
         ];
         crate::signals::handle()?.set_game(Some(child.id()));
         Ok(Self { child, readers })
@@ -443,7 +442,7 @@ impl Game {
 
 fn pass_through(
     from: impl std::io::Read + Send + 'static,
-    refused: String,
+    id: String,
     to_stderr: bool,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
@@ -454,10 +453,9 @@ fn pass_through(
         };
         for line in std::io::BufReader::new(from).lines() {
             let Ok(line) = line else { break };
-            let line = if color && line.contains(&refused) {
-                format!("\x1b[31m{line}\x1b[0m")
-            } else {
-                line
+            let line = match paint(&line, &id) {
+                Some(code) if color => format!("\x1b[{code}m{line}\x1b[0m"),
+                _ => line,
             };
             let _ = if to_stderr {
                 writeln!(std::io::stderr(), "{line}")
@@ -466,6 +464,20 @@ fn pass_through(
             };
         }
     })
+}
+
+/// The color a line of the game's output gets, if any: red for the mod's
+/// refusal, yellow for its sim budget line once it's over half.
+fn paint(line: &str, id: &str) -> Option<&'static str> {
+    if line.contains(&format!("mods: {id}: refused")) {
+        Some("31")
+    } else if line.starts_with(&format!("mods: {id}: sim.luau's busiest"))
+        && line.contains("over half")
+    {
+        Some("33")
+    } else {
+        None
+    }
 }
 
 fn run_gdb(installed: &Installed, iso: &Path, args: &[String], env: &[(&str, &str)]) -> Result<()> {
@@ -560,4 +572,26 @@ fn watch(
         running.stop();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::paint;
+
+    #[test]
+    fn paints_the_mods_refusal_and_its_budget_past_half() {
+        let id = "me.combo";
+        assert_eq!(
+            paint("mods: me.combo: refused, sim.luau:3: no", id),
+            Some("31")
+        );
+        let over = "mods: me.combo: sim.luau's busiest logic frame took 3001 of the 5000 \
+                    safepoints a frame has (60%). That's over half, and running out switches \
+                    it off until the match ends";
+        assert_eq!(paint(over, id), Some("33"));
+        let under = "mods: me.combo: sim.luau's busiest logic frame took 1200 of the 5000 \
+                     safepoints a frame has (24%)";
+        assert_eq!(paint(under, id), None);
+        assert_eq!(paint(&over.replace("me.combo", "other.mod"), id), None);
+    }
 }
