@@ -74,13 +74,12 @@ pub fn button_off(label: &str, p: &Palette) -> El {
 }
 
 /// A button for something already done that pressing undoes ("Added"):
-/// quiet beside the buttons still to press, a yellow check and its words,
-/// washed only under the pointer.
+/// quiet beside the buttons still to press, its words muted, washed only
+/// under the pointer.
 pub fn button_done(label: &str, p: &Palette) -> El {
     row()
         .h(size::CONTROL)
         .px(space::MD - space::TIGHT)
-        .gap(space::XXS)
         .items_center()
         .justify_center()
         .radius(radius::PILL)
@@ -90,7 +89,6 @@ pub fn button_done(label: &str, p: &Palette) -> El {
         .role("button")
         .label(label)
         .focusable(true)
-        .child(icon(Icon::Check, p.accent_text))
         .child(text(label).font(type_::STRONG).color(p.muted))
 }
 

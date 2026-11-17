@@ -330,7 +330,8 @@ fn placeholder_rows(p: &Palette) -> impl Iterator<Item = El> + '_ {
     })
 }
 
-/// A mod's name, and who publishes it unless that's textures.gg itself.
+/// A mod's name, who publishes it unless that's textures.gg itself, and how
+/// often it's been installed.
 fn name_line(app: &App, id: &ModId, name: &str, p: &Palette) -> El {
     let by = app
         .mods
@@ -355,6 +356,7 @@ fn name_line(app: &App, id: &ModId, name: &str, p: &Palette) -> El {
                 .min_w(0.0),
         )
         .children(by)
+        .children(installs(app, id, p))
 }
 
 /// How many times a mod's been installed, faint, with the download glyph.
@@ -375,8 +377,9 @@ fn installs(app: &App, id: &ModId, p: &Palette) -> Option<El> {
     })
 }
 
-/// A mod textures.gg offers: its icon, name, one line of what it does, how
-/// often it's installed, and Add, or Added while the set showing has it.
+/// A mod textures.gg offers: its icon, its name and how often it's
+/// installed, one line of what it does, and Add, or Added while the set
+/// showing has it.
 fn mod_row(app: &App, entry: &CatalogEntry, p: &Palette) -> El {
     let manifest = &entry.manifest;
     let id = manifest.id.clone();
@@ -398,10 +401,7 @@ fn mod_row(app: &App, entry: &CatalogEntry, p: &Palette) -> El {
             row()
                 .key(format!("{key}/added"))
                 .w(ADD_WIDTH)
-                .gap(space::XXS)
-                .items_center()
                 .justify_center()
-                .child(icon(Icon::Check, p.faint))
                 .child(label("Added").font(text::STRONG).color(p.faint)),
         ),
         None if running => Some(button_off("Add", p).key(format!("{key}/add")).w(ADD_WIDTH)),
@@ -437,7 +437,6 @@ fn mod_row(app: &App, entry: &CatalogEntry, p: &Palette) -> El {
                         .truncate()
                 })),
         )
-        .children(installs(app, &id, p))
         .children(end)
 }
 
@@ -466,7 +465,6 @@ fn unbuilt_row(app: &App, summary: &ModSummary, p: &Palette) -> El {
                         .truncate()
                 })),
         )
-        .children(installs(app, id, p))
 }
 
 /// Whether the set showing has the mod, and if so whether it can be taken
