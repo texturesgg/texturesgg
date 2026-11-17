@@ -229,6 +229,16 @@ pub fn prepare_machine(
     let profile = load(source, tgg_mod::cached_mapping(&ctx.data).as_ref())?;
     let (mut plan, _) = plan(ctx, &profile)?;
     emit(plan_json(&plan));
+    // A withdrawn release is never fetched: the game says why instead of
+    // playing without it.
+    if let Some(withdrawn) = plan
+        .missing
+        .iter()
+        .find(|m| matches!(m, tgg_mod::Missing::Withdrawn { .. }))
+    {
+        emit(json!({"event": "error", "message": withdrawn.to_string()}));
+        return Ok(());
+    }
     if remember {
         for publisher in trusted {
             tgg_mod::remember_trust(&ctx.data, publisher, true)?;
@@ -637,6 +647,35 @@ mod tests {
                 .as_str()
                 .expect("exe")
                 .ends_with("tgg-melee")
+        );
+    }
+
+    #[test]
+    fn machine_lines_stop_at_a_withdrawn_release_and_say_why() {
+        let setup = setup();
+        setup.net.withdraw(
+            "tgg.neutral-spawns",
+            "0.1.0",
+            "it spawns everyone off stage",
+            tgg_mod::WithdrawMode::Off,
+        );
+        let replay = setup.slippi_replay();
+        let lines = std::sync::Mutex::new(Vec::new());
+        let emit = |value: Value| lines.lock().expect("lock").push(value);
+        prepare_machine(&setup.ctx(), &replay, &[], false, &emit).expect("prepare");
+        let lines = lines.into_inner().expect("lines");
+        assert_eq!(
+            lines.last(),
+            Some(&json!({"event": "error", "message":
+                "textures.gg withdrew tgg.neutral-spawns 0.1.0: it spawns everyone off stage"}))
+        );
+        // Nothing was downloaded.
+        assert!(
+            !setup
+                .net
+                .requests()
+                .iter()
+                .any(|url| url.contains("/packages/"))
         );
     }
 

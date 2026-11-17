@@ -784,14 +784,17 @@ pub fn resolve_profile(
         .collect();
     let mut chosen: Vec<(&CatalogEntry, Settings)> = Vec::new();
     let not_found = |id: &ModId, version: String, missing: &mut Vec<Missing>| {
-        let item = if let Some(withdrawn) = catalog
-            .withdrawn
-            .iter()
-            .find(|w| w.id == *id && w.version == version)
-        {
+        let item = if let Some(withdrawn) = catalog.withdrawn.iter().find(|w| {
+            // `version` is the exact version or the range wanted.
+            w.id == *id
+                && Range::parse(&version)
+                    .ok()
+                    .zip(w.version.parse::<Version>().ok())
+                    .is_some_and(|(range, withdrawn)| range.matches(&withdrawn))
+        }) {
             Missing::Withdrawn {
                 id: id.clone(),
-                version,
+                version: withdrawn.version.clone(),
                 reason: withdrawn.reason.clone(),
             }
         } else if known(id) {
