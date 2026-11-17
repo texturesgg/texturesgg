@@ -9,15 +9,15 @@ use melee_dat::MeleeSlot;
 use rune::{Drag, Phase, Tx, WheelEvent};
 
 /// How far a drag across the stage turns the camera, in radians per point.
-/// tgg-editor's camera, as are the rates below; the renderer keeps it within
+/// The same as the app before it (tgg-editor), as are the rates below; the renderer keeps it within
 /// what the model allows (`viewport` writes that back).
 const ORBIT_PER_POINT: f64 = 0.01;
 /// How far the wheel moves the camera, per point scrolled.
 const ZOOM_PER_POINT: f64 = 0.002;
 /// How far a press may move, in points, and still be a click.
 const CLICK_SLOP: f32 = 4.0;
-/// A notched wheel's step, in the points tgg-editor's rate is per: gpui
-/// counts a line as 20, where Rune hands it over as 40.
+/// A notched wheel's step, in the points the rates above are per: the app
+/// before Rune counted a line as 20, where Rune hands it over as 40.
 const LINE_POINTS: f32 = 20.0;
 const RUNE_LINE_POINTS: f32 = 40.0;
 

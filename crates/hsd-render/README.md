@@ -5,10 +5,11 @@ A wgpu renderer for HSD models: it draws the `HsdScene` and
 TEV stages, color channels and pixel-engine state to WGSL and wgpu pipelines.
 
 `HsdRenderer` borrows a caller's `wgpu::Device` and `Queue` and encodes into
-a caller's target view, so an offscreen capture, a browser canvas and a gpui
-surface can host it alike. The library knows nothing about a particular game;
-a caller poses a model (with `melee-dat`, for Melee) and hands each frame
-here. wgpu is pinned to gpui-ce's version so the editor can share its device.
+a caller's target view, so an offscreen capture, a browser canvas and an
+app's window can host it alike. The library knows nothing about a particular
+game; a caller poses a model (with `melee-dat`, for Melee) and hands each
+frame here. wgpu is pinned to Rune's version so tgg-studio can share its
+device.
 
 A renderer draws a set of models in one pass, sharing depth: a fighter and
 the effect on its hip, a stage and the fighters on it. `add_model` uploads

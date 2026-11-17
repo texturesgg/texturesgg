@@ -441,8 +441,7 @@ fn dragging_across_the_stage_turns_the_camera_by_how_far_it_went() {
     let after = above;
 
     let mut wheel = rune::WheelEvent::default();
-    // One notch of a mouse wheel (Rune's 40-point line) moves it as one does
-    // in tgg-editor: 4%.
+    // One notch of a mouse wheel (Rune's 40-point line) moves it 4%.
     (wheel.x, wheel.y, wheel.dy) = (x, y, 40.0);
     rt.wheel_event(wheel);
     rt.frame(FRAME);

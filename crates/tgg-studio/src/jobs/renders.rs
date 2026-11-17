@@ -2,7 +2,7 @@
 //! idle pose, off-screen, on a thread of its own with its own GPU device, so
 //! the window never waits. The worker fills each picture's `Pixels` itself,
 //! which redraws whatever shows it. Renders are kept on disk by the file's
-//! SHA-256, where tgg-editor keeps them too, so a costume draws once until
+//! SHA-256, where the app before it (tgg-editor) kept them too, so a costume draws once until
 //! its file changes.
 //!
 //! ```text
@@ -22,7 +22,7 @@ use tgg_app::ids::SkinId;
 use tgg_app::{Game, References};
 
 /// Change when renders should be redrawn: the renderer, pose, or framing.
-/// tgg-editor's, so the two apps share their cache.
+/// tgg-editor's last, so a player's renders from it still count.
 const RENDER_VERSION: u32 = 4;
 /// Renders are square, this many pixels a side.
 pub const SIZE: u32 = 192;

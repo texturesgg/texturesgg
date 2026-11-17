@@ -2,9 +2,6 @@
 //! of its slots holds, the library of skins, installing them and undoing
 //! installs, the settings kept between sessions, the log, and the update
 //! check. tgg-studio draws it.
-//!
-//! Copied from tgg-editor, which keeps its own copies while both apps exist;
-//! a change to one of these modules there is carried here by hand.
 
 pub mod colors;
 pub mod costumes;

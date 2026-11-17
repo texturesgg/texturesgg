@@ -38,7 +38,7 @@
             # The renderer and the crates beneath it also build for the web.
             fenixPackages.targets.wasm32-unknown-unknown.stable.rust-std
           ];
-          # What gpui-ce and wgpu link against. macOS system frameworks
+          # What Rune and wgpu link against. macOS system frameworks
           # (Metal, AppKit) come from nixpkgs' Apple SDK.
           nativeLibraries =
             with pkgs;

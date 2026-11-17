@@ -25,7 +25,7 @@ HsdScene + draw work       the renderer-neutral scene and its evaluated draw wor
     ↓
 hsd-render                 wgpu lowering: geometry, materials, TEV, lighting, draw submission
     ↓
-tgg-editor, the textures.gg site
+tgg-studio, the textures.gg site
                            the desktop app; the site's canvas (WebGPU, WebGL2)
 ```
 
@@ -58,8 +58,8 @@ never interpret raw HSD flags that a contract already resolves.
 | `hsd-render/src/material.rs`, `shader.rs`        | Texture stages, the TEV plan, textures, channel colors, PE lowering, and WGSL generation.                                                                                                                                                                                                                                        |
 | `hsd-render/src/lighting.rs`, `camera.rs`        | Lighting presets and the fixed preview views.                                                                                                                                                                                                                                                                                    |
 | `hsd-render/src/renderer.rs`                     | GPU resources, pipelines, bindings, and draw submission.                                                                                                                                                                                                                                                                         |
-| `crates/tgg-ui`                                | The editor's theme (Gallery and Paper palettes, web tokens as rems) and its components.                                                                                                                                                                                                                                          |
-| `crates/tgg-editor`                            | The desktop app: the player's game and skin library, installs into the ISO, and the texture and color editor around the `hsd-render` viewport.                                                                                                                                                                                   |
+| `crates/tgg-app`                               | What the desktop app does, with no UI: the player's game and skin library, installs into the ISO, and settings.                                                                                                                                                                                                                  |
+| `crates/tgg-studio`                            | The desktop app, on Rune: Play, Mods, Skins, Replays, and the texture and color editor around the `hsd-render` viewport.                                                                                                                                                                                                         |
 | `crates/gc-iso`                                | GameCube disc images: the header and file table, one file read at a time, and one file replaced in place.                                                                                                                                                                                                                        |
 | `hsd-render/src/bin/hsd_render.rs`               | The capture, pixel-regression (`pixel-baseline.json`), idle, animations and pick CLI.                                                                                                                                                                                                                                            |
 
@@ -167,7 +167,7 @@ References are to the [Melee decompilation](https://github.com/doldecomp/melee).
   decompilation and the game itself are the authority.
 - Tests build their DAT bytes by hand. The few that need the game read the
   same disc image, behind the `melee-iso` feature of `melee-dat` and
-  `tgg-editor`; CI compiles them and cannot run them.
+  `tgg-studio`; CI compiles them and cannot run them.
 - CI runs `cargo fmt --check`, `cargo clippy -D warnings` (native, wasm, and
   the `melee-iso` targets), and `cargo test --workspace`.
 

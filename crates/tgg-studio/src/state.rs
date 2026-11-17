@@ -167,7 +167,7 @@ pub struct Data {
 }
 
 impl Data {
-    /// The app's data folder, where tgg-editor keeps them too, and the
+    /// The app's data folder, where the app before it (tgg-editor) kept them too, and the
     /// folders the game and the `tgg` CLI use for mods and ports.
     pub fn of_player() -> Self {
         let root = tgg_app::library::Library::default_root();

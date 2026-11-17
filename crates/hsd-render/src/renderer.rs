@@ -1,7 +1,7 @@
 //! wgpu backend for prepared HSD geometry.
 //!
 //! The renderer borrows a caller-owned device and queue and encodes into a
-//! caller-provided target, so a host (an offscreen capture, a gpui surface)
+//! caller-provided target, so a host (an offscreen capture, an app's window)
 //! owns presentation. GX blends and writes raw 8-bit values, which the display
 //! interprets as sRGB: every color stays raw, so targets must be non-sRGB
 //! formats (no decode on sampling, no encode on output).
