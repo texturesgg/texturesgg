@@ -331,7 +331,7 @@ const SCENES: &[Scene] = &[
             app,
             &*net,
             "Friday night",
-            &["competitive", "replays"],
+            &["competitive"],
             &["tgg.replay-recorder"],
             &["tgg.quick-start"],
         );

@@ -54,7 +54,8 @@ pub fn view(app: &App, p: &Palette) -> El {
     );
     // A mod's details take the panel's place while they show, wide enough
     // for two columns; narrow, they slide in over the page instead.
-    let side = if app.side_by_side() && mods.selected.is_some() {
+    let wide = app.window_width <= 0.0 || app.side_by_side();
+    let side = if wide && mods.selected.is_some() {
         super::details::column(app, p)
     } else {
         super::panel::view(app, p)
@@ -343,7 +344,11 @@ fn what(app: &App, set: &MySet) -> String {
 /// leaves out, plus its own.
 fn count_of(app: &App, set: &MySet) -> usize {
     if set.is_installed() {
-        return set.lines.len();
+        return set
+            .lines
+            .iter()
+            .filter(|line| matches!(line, Line::Mod(m) if !m.left_out))
+            .count();
     }
     let mut ids: BTreeSet<ModId> = BTreeSet::new();
     for link in set.builds_on() {

@@ -26,7 +26,10 @@ const CHANGELOG_BLOCKS: usize = 4;
 /// Whether the pane shows: on Mods, while a mod is chosen.
 pub fn shown(app: &App) -> bool {
     // Side by side, the details are a column of the page instead.
-    app.nav.place == crate::nav::Place::Mods && app.mods.selected.is_some() && !app.side_by_side()
+    app.nav.place == crate::nav::Place::Mods
+        && app.mods.selected.is_some()
+        && app.window_width > 0.0
+        && !app.side_by_side()
 }
 
 /// The pane at the window's right, the whole window tall as the sidebar is

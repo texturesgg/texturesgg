@@ -114,6 +114,7 @@ fn groups(app: &App, key: &str, running: bool, p: &Palette) -> Vec<El> {
     if set.is_installed() {
         return installed(app, key, running, p);
     }
+    let editable = !set.locked && !running;
     match app.sets.plans.get(key) {
         Some(Planned::Ready(plan)) => {
             let mut blocks: Vec<(Group, Vec<&SetMod>)> = Vec::new();
@@ -128,7 +129,7 @@ fn groups(app: &App, key: &str, running: bool, p: &Palette) -> Vec<El> {
                 .flat_map(|(group, rows)| {
                     let title = format!("{} ({})", title(&group), rows.len());
                     std::iter::once(section(&title, p))
-                        .chain(rows.into_iter().map(|m| row_for(app, m, running, p)))
+                        .chain(rows.into_iter().map(move |m| row_for(app, m, editable, p)))
                 })
                 .collect();
             let skipped: Vec<&SetMod> = plan.skipped().collect();
@@ -174,10 +175,10 @@ fn section(words: &str, p: &Palette) -> El {
 }
 
 /// A mod of a set, and what the player can do with its line.
-fn row_for(app: &App, m: &SetMod, running: bool, p: &Palette) -> El {
+fn row_for(app: &App, m: &SetMod, editable: bool, p: &Palette) -> El {
     let id = &m.id;
     let left_out = m.group == Group::LeftOut;
-    let end = if running {
+    let end = if !editable {
         None
     } else {
         match &m.group {
