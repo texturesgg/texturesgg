@@ -441,3 +441,76 @@ fn finishing_clears_marks_a_lost_handle_left() {
     assert!(!folder.exists());
     assert!(!Path::new(&player.data.join("tgg/running.json")).exists());
 }
+
+#[test]
+fn a_withdrawn_release_isnt_fetched_and_an_installed_copy_turns_off_until_restored() {
+    let net = FakeNet::new();
+    let player = player();
+    let port = install_port(&net, &player);
+    // The player has legal-stages from the registry.
+    let set = tgg_mod::sets(&net)
+        .expect("sets")
+        .into_iter()
+        .find(|set| set.name == "competitive")
+        .expect("set");
+    let catalog = tgg_mod::catalog(&net, &port.port()).expect("catalog");
+    let plan = tgg_mod::plan_set(&set, &catalog, &player.local(Some(&port)));
+    tgg_mod::apply(&net, &plan, &player.mods, &no_progress, &go()).expect("install");
+    let stages = id("tgg.legal-stages");
+    assert!(player.mods.join("tgg.legal-stages").is_dir());
+
+    // The set installed 0.1.1; the replay names 0.1.0. Both are pulled.
+    for version in ["0.1.0", "0.1.1"] {
+        net.withdraw(
+            "tgg.legal-stages",
+            version,
+            "it crashes on stage select",
+            tgg_mod::WithdrawMode::Off,
+        );
+    }
+
+    // A replay or lobby naming it can't fetch it, and says why.
+    let replay = player.file("game.slp", &tgg_replay(competitive_profile()));
+    let profile = tgg_mod::profile_from_slp(&replay, None).expect("profile");
+    let plan = resolve(&net, &player, &profile);
+    assert!(plan.mods.iter().all(|m| m.id != stages));
+    assert_eq!(
+        plan.missing
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        ["textures.gg withdrew tgg.legal-stages 0.1.0: it crashes on stage select"]
+    );
+
+    // The installed copy turns off at the next launch, once.
+    let notices =
+        tgg_mod::withdraw::check_withdrawn(&net, &player.data, &player.mods, &port.port())
+            .expect("check");
+    assert_eq!(notices.len(), 1);
+    assert!(
+        notices[0]
+            .to_string()
+            .starts_with("Turned off tgg.legal-stages 0.1.1: it crashes on stage select.")
+    );
+    assert!(player.mods.join(".tgg.legal-stages").is_dir());
+    assert!(!player.mods.join("tgg.legal-stages").exists());
+    let again = tgg_mod::withdraw::check_withdrawn(&net, &player.data, &player.mods, &port.port())
+        .expect("again");
+    assert!(again.is_empty());
+
+    // Offline, the last catalog seen still counts; restored, it comes back on.
+    net.restore("tgg.legal-stages", "0.1.0");
+    net.restore("tgg.legal-stages", "0.1.1");
+    net.set_offline(true);
+    tgg_mod::withdraw::check_withdrawn(&net, &player.data, &player.mods, &port.port())
+        .expect("offline");
+    assert!(player.mods.join(".tgg.legal-stages").is_dir());
+    net.set_offline(false);
+    let notices =
+        tgg_mod::withdraw::check_withdrawn(&net, &player.data, &player.mods, &port.port())
+            .expect("restored");
+    assert_eq!(notices[0].action, tgg_mod::WithdrawAction::TurnedOn);
+    assert!(player.mods.join("tgg.legal-stages").is_dir());
+    let plan = resolve(&net, &player, &profile);
+    assert!(plan.missing.is_empty(), "{:?}", plan.missing);
+}

@@ -652,6 +652,7 @@ fn write_catalog(output: &Path, packages: &[PathBuf]) -> Result<()> {
         snapshot: None,
         mods,
         ids: Vec::new(),
+        withdrawn: Vec::new(),
     };
     std::fs::write(output, catalog.to_json()).with_context(|| output.display().to_string())?;
     println!("{}: {} mods", output.display(), catalog.mods.len());

@@ -38,6 +38,8 @@
 //! - [`local`]: what a mods folder holds, turning mods on and off, and
 //!   uninstalling.
 //! - [`lock`]: `mods.lock.json` and the busy and pid files.
+//! - [`withdraw`]: turning off installed mods whose release the registry
+//!   withdrew, and back on when it is restored.
 //! - [`profile`], [`prepare`], [`trust`], [`cache`]: mod profiles, the exact
 //!   mods a replay or a netplay host needs: reading them ([`slp`] for
 //!   replays), resolving, preparing and launching them; and the package
@@ -74,12 +76,13 @@ pub mod skins;
 pub mod slp;
 pub mod symbols;
 pub mod trust;
+pub mod withdraw;
 
 pub use cache::{
     cached_catalog, cached_mapping, packages_dir, prune_packages, refresh_catalog, refresh_mapping,
     save_catalog, save_mapping,
 };
-pub use catalog::{Catalog, CatalogEntry, PackageRef};
+pub use catalog::{Catalog, CatalogEntry, PackageRef, WithdrawMode, Withdrawn};
 pub use decls::{Declarations, Hooks};
 pub use depends::Range;
 pub use error::{Error, OnProgress, Progress, no_progress};
@@ -129,6 +132,7 @@ pub use skins::{
 pub use slp::{ReplayInfo, ReplayPlayer, replay_info};
 pub use symbols::Symbols;
 pub use trust::{Trust, remember_trust, trust};
+pub use withdraw::{WithdrawAction, WithdrawNotice, apply_withdrawn};
 
 use std::path::PathBuf;
 

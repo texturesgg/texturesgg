@@ -306,6 +306,7 @@ mod tests {
                 sha256: Some(locked.clone()),
                 sets: Vec::new(),
                 direct: true,
+                withdrawn: None,
             },
         );
         std::fs::create_dir_all(&mods).expect("mkdir");
