@@ -1531,8 +1531,8 @@ fn mods_offers_tgg_melee_then_its_sets() {
     );
     open_place(&mut rt, Place::Play);
     assert!(
-        rt.find("play/tgg-melee/play").is_some(),
-        "the Slippi ISO plays, skins and all"
+        rt.find("play/card").is_some(),
+        "Play shows its card once the game is there"
     );
 }
 
@@ -1652,30 +1652,26 @@ fn offline_mods_says_so_and_keeps_what_is_installed() {
 
 #[cfg_attr(windows, ignore = "the fake game is a shell script")]
 #[test]
-fn play_starts_tgg_melee_and_stop_ends_it() {
+fn find_a_match_starts_the_set_and_cancel_ends_it() {
     let (mut rt, _disc, data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
-    // The test disc has a costume of its own; choose it to play anyway.
-    let iso = rt
-        .state
-        .game
-        .as_ref()
-        .expect("a game")
-        .game()
-        .path()
-        .to_owned();
-    rt.update(|app, _| crate::mods::actions::use_disc(app, iso.clone()));
-    rt.frame(FRAME);
+    jobs_until(&mut rt, |app| app.sets.active().is_some());
+    rt.update(|app, _| app.signin.who = Some(crate::signed_in("ciao")));
     open_place(&mut rt, Place::Play);
-    tap(&mut rt, "play/tgg-melee/play");
-    assert!(rt.state.mods.playing.is_some());
+    tap(&mut rt, "play/find");
+    jobs_until(&mut rt, |app| app.mods.playing.is_some());
     assert!(
         tgg_mod::game_running(&data.path().join("mods")),
         "other tgg's see the game running"
     );
-    assert!(rt.find("play/tgg-melee/stop").is_some());
-    tap(&mut rt, "play/tgg-melee/stop");
+    assert!(rt.state.sets.session.is_some(), "Play knows how it started");
+    assert!(
+        rt.find("play/session").is_some() && rt.find("play/find").is_none(),
+        "the button becomes the search, with Cancel"
+    );
+    tap(&mut rt, "play/session");
     jobs_until(&mut rt, |app| app.mods.playing.is_none());
-    assert!(rt.find("play/tgg-melee/play").is_some());
+    assert!(rt.state.sets.session.is_none(), "the session goes with it");
+    assert!(rt.find("play/find").is_some(), "Find a match is back");
 }
 
 #[test]
@@ -2604,7 +2600,7 @@ fn a_replay_that_needs_mods_is_reviewed_then_plays_in_its_own_setup() {
         "a profile game runs"
     );
     open_place(&mut rt, Place::Play);
-    tap(&mut rt, "play/tgg-melee/stop");
+    tap(&mut rt, "play/session");
     jobs_until(&mut rt, |app| app.mods.playing.is_none());
 }
 
@@ -2731,46 +2727,15 @@ fn wide_a_list_and_its_details_sit_side_by_side() {
     assert!(rt.find("mods/details/column").is_none());
 }
 
-/// A stand-in for Slippi's Dolphin: a script that ends at once.
-#[cfg(unix)]
-fn fake_dolphin(folder: &Path) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt;
-    let program = folder.join("dolphin");
-    std::fs::write(&program, "#!/bin/sh\nexit 0\n").expect("write the script");
-    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755))
-        .expect("make it runnable");
-    program
-}
-
-#[cfg(unix)]
 #[test]
-fn slippi_plays_from_its_card_once_its_dolphin_is_found() {
+fn play_says_what_to_set_up_before_it_can_play() {
     let (_folder, iso) = melee_iso();
-    let (mut rt, data) = runtime(game_at(&iso));
+    let (rt, _data) = runtime(game_at(&iso));
     assert!(
-        rt.find("play/slippi/play").is_none() && rt.find("play/slippi/get").is_some(),
-        "without Slippi's Dolphin, it says where to get Slippi"
+        rt.find("play/setup").is_some(),
+        "no tgg-melee yet, so Play says so"
     );
-    let dolphin = fake_dolphin(data.path());
-    rt.update(|app, _| app.slippi.dolphin = Some(dolphin.clone()));
-    rt.frame(FRAME);
-    tap(&mut rt, "play/slippi/play");
-    assert!(rt.state.slippi.running);
-    assert!(rt.find("play/slippi/open").is_some(), "says it's open");
-    jobs_until(&mut rt, |app| !app.slippi.running);
-    assert!(
-        rt.find("play/slippi/play").is_some(),
-        "Play again once it closes"
-    );
-}
-
-#[test]
-fn tgg_melee_says_set_up_until_its_installed() {
-    let (_folder, iso) = melee_iso();
-    let (mut rt, _data) = runtime(game_at(&iso));
-    assert!(rt.find("play/tgg-melee/play").is_none());
-    tap(&mut rt, "play/tgg-melee/set-up");
-    assert_eq!(rt.state.nav.place, Place::Mods, "Set up goes to Mods");
+    assert!(rt.find("play/card").is_none(), "and there's no card");
 }
 
 #[test]

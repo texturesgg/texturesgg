@@ -479,6 +479,10 @@ impl HsdRenderer {
     }
 
     /// Clear `target` and draw every visible packet in HSD pass order.
+    ///
+    /// Its materials write no alpha (the target is opaque), so a caller
+    /// that wants a clear background cuts it out at readback instead: see
+    /// `offscreen::capture_clear`.
     pub fn encode(&self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("HSD pass"),

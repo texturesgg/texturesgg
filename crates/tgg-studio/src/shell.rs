@@ -77,6 +77,9 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         // Its examples' menu, over it.
         .children(newmod::view::menu(app, &p))
         .children(crate::sets::view::trust(app, &p))
+        // Play's set picker's menu, over Settings, and its friend sheet.
+        .children(play::view::menu(app, &p))
+        .children(play::view::friend(app, &p))
 }
 
 /// The button that shows or hides the sidebar.
@@ -224,7 +227,8 @@ fn place_top(app: &App, p: &Palette) -> Vec<El> {
         Place::Skins => melee::subject::title_actions(app, p).into_iter().collect(),
         Place::Mods => mods::view::top_bar(app, p),
         Place::Replays => replays::view::top_bar(app, p),
-        Place::Play | Place::Profile => Vec::new(),
+        Place::Play => play::view::top_bar(app, p),
+        Place::Profile => Vec::new(),
     }
 }
 

@@ -39,8 +39,8 @@ pub enum Done {
     Sets(Box<crate::sets::Done>),
     /// First run: the picked sets were made.
     FirstRun(Box<crate::first_run::Done>),
-    /// Slippi's Dolphin, started from here, closed.
-    SlippiEnded,
+    /// Play: the queues the meeting point lists.
+    Play(Box<crate::play::Done>),
     /// You: a profile read from textures.gg, a pack downloaded.
     Profile(Box<crate::profile::Done>),
     /// What the game makes of skins in tgg-melee's slots (`library::port`).
@@ -212,6 +212,9 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
     changed |= crate::editor::external::check(app, tx);
     // A sign-in under way asks the site whether it's confirmed, when due.
     crate::signin::actions::tick(app);
+    // Play opens its queues and replays, and keeps its clock and the running
+    // game's log read while it shows.
+    crate::play::actions::tick(app, tx);
     if let Some(picked) = app.stage.picked.take() {
         crate::editor::actions::select_picked(app, &picked, tx);
         changed = true;
@@ -231,9 +234,9 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
             Done::SignIn(done) => crate::signin::actions::done(app, *done, tx),
             Done::Replays(done) => crate::replays::actions::done(app, *done),
             Done::NewMod(done) => crate::newmod::actions::done(app, *done),
-            Done::SlippiEnded => crate::slippi::actions::ended(app),
             Done::Sets(done) => crate::sets::actions::done(app, *done),
             Done::FirstRun(done) => crate::first_run::actions::done(app, *done),
+            Done::Play(done) => crate::play::actions::done(app, *done),
             Done::NoticeExpired(id) => app.notice_expired(id),
             Done::Verdicts(verdicts) => crate::library::port::answered(app, verdicts),
             Done::Update(newer) => {

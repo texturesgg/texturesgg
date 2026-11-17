@@ -50,7 +50,6 @@ pub fn button(label: &str, kind: ButtonKind, p: &Palette) -> El {
 }
 
 /// A small button, 26 points tall: one in a row of a list.
-#[expect(dead_code, reason = "Mods' rows use it, in the Mods pull request")]
 pub fn button_small(label: &str, kind: ButtonKind, p: &Palette) -> El {
     pill(label, kind, size::CONTROL_SMALL, p)
 }

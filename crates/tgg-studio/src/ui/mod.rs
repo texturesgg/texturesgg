@@ -17,9 +17,9 @@ mod surfaces;
 pub mod tokens;
 
 pub use controls::{
-    ButtonKind, PLACE_INSET, TEXT_ACTION_INSET, button, button_main, button_off, chip, icon_button,
-    place_row, search_box, search_field, select, select_item, select_menu, select_rule, slider,
-    switch, tab, text_action, text_field,
+    ButtonKind, PLACE_INSET, TEXT_ACTION_INSET, button, button_main, button_off, button_small,
+    chip, icon_button, place_row, search_box, search_field, select, select_item, select_menu,
+    select_rule, slider, switch, tab, text_action, text_field,
 };
 pub use icons::{Icon, icon, person};
 pub use layout::{split, split_details, split_empty, split_list, split_page};
@@ -28,8 +28,8 @@ pub use marks::{
     settings_glyph, sidebar_glyph, skeleton, status, swatch,
 };
 pub use surfaces::{
-    Dialog, DialogWidth, callout, card, card_plate, dialog, page_head, pane, pane_header, pane_row,
-    panel, plate, rule, setting_row, setting_row_with, spacer, title_bar,
+    Dialog, DialogWidth, callout, card, card_plate, dialog, list_row, page_head, pane, pane_header,
+    pane_row, panel, plate, rule, section, setting_row, setting_row_with, spacer, title_bar,
 };
 
 #[cfg(test)]

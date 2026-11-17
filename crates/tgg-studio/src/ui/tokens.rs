@@ -270,6 +270,10 @@ pub mod text {
     pub const MONO_SMALL: TextStyle = TextStyle::new(11.5, 400.0)
         .family(MONO)
         .features("'zero' 1, 'tnum' 1");
+    /// A code read out loud, such as a room's.
+    pub const MONO_CODE: TextStyle = TextStyle::new(19.0, 500.0)
+        .family(MONO)
+        .features("'zero' 1, 'tnum' 1");
 }
 
 /// Motion. Two things move: the sidebar (180 ms) and a page or sheet

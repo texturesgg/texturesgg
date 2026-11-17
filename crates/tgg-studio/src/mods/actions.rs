@@ -810,33 +810,6 @@ pub fn use_disc(app: &mut App, path: PathBuf) {
     }
 }
 
-/// Start tgg-melee with the player's disc and mods, and watch it until it
-/// ends.
-pub fn play(app: &mut App) {
-    if app.mods.playing.is_some() {
-        return;
-    }
-    let (Some(port), Disc::Found(disc)) = (app.mods.port(), &app.mods.disc) else {
-        return;
-    };
-    let log = app.data.ports.with_file_name("game.log");
-    let version = port.version.clone();
-    let running = tgg_mod::ports::launch_with_args(
-        port,
-        disc,
-        &app.data.mods,
-        std::iter::empty::<&str>(),
-        Some(&log),
-    );
-    match running {
-        Ok(running) => {
-            watch(app, running);
-            app.tell(format!("tgg-melee {version} is running."), false);
-        }
-        Err(error) => app.tell(format!("tgg-melee couldn't start: {error}."), true),
-    }
-}
-
 /// Watch the game `running` until it ends or Stop ends it: Play becomes
 /// Stop meanwhile, from wherever it was started (here, or a replay).
 pub fn watch(app: &mut App, mut running: tgg_mod::Running) {
