@@ -17,6 +17,7 @@ mod publish;
 mod releases;
 mod scaffold;
 mod sdks;
+mod sets;
 mod signals;
 mod skins;
 mod toolchain;
@@ -68,6 +69,9 @@ enum Command {
         #[arg(short, long)]
         verbose: bool,
     },
+    /// Your sets: named lists of mods to switch between, like Competitive or one you made.
+    #[command(subcommand)]
+    Set(sets::SetCommand),
     /// The exact game and mods a replay or profile file needs.
     #[command(subcommand)]
     Profile(profiles::ProfileCommand),
@@ -128,6 +132,7 @@ fn run(cli: Cli) -> Result<()> {
             profiles::play(&cli.api, &file, Some(&file), yes, verbose)
         }
         Command::Profile(command) => profiles::run(command, &cli.api),
+        Command::Set(command) => sets::run(command, &cli.api),
         Command::Skin(command) => skins::run(command),
         Command::Sdk(command) => sdks::run(command),
         Command::Mod(command) => mods::run(command, &cli.api),

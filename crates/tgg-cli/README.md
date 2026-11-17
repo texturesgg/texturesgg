@@ -64,6 +64,47 @@ off), has updates, or incomplete (a mod missing or not built for the game). Turn
 set's mod off keeps it installed; `on` brings the set back to complete. Changes wait while
 the game runs, and while another tgg (or the app) is changing the mods folder.
 
+## Sets
+
+```text
+tgg set list                           your sets; * marks the one the game starts with
+tgg set get NAME                       add a set from textures.gg, like competitive
+tgg set new NAME [--on SET]... [--empty]
+                                       a set of yours, building on sets from textures.gg
+tgg set save NAME                      a set of the mods you have on now
+tgg set show [SET]                     its mods by where they come from, and its queue
+tgg set add SET ID [--version V]       add a mod (V is latest, a version or a range)
+tgg set add SET --on SET               build on a set from textures.gg
+tgg set drop SET ID|SET                take a mod or a set it builds on out
+tgg set on|off SET ID                  load a mod, or leave it out
+tgg set copy SET [NAME]
+tgg set rename SET NAME
+tgg set remove SET
+tgg set use SET                        start the game with it (tgg port run, the app's Play)
+tgg set run [SET] [-y] [-v]            run the game with it now
+```
+
+A set is a name and a list. Each line is a mod or a set from textures.gg it builds on:
+"Friday night" can be Competitive plus three mods of yours, with one of Competitive's
+left out. A set you build on is followed as it is now, so when Competitive gets a mod,
+your set has it at the next launch. You can build on up to 4 sets, each one that lists
+only mods. `new` builds on Online play (the Online menu) unless you name other sets.
+A set you add with `get` follows the one on textures.gg; to change it, make your own that
+builds on it.
+
+Running a set builds its own mods folder for that session from tgg's download cache, so
+switching uninstalls nothing and your mods folder isn't touched. Each set keeps its own
+mod settings. Saves and the memory card are shared by every set. Skins aren't part of a
+set: when you have a skin on, tgg adds the skin loader to whatever set you play. A mod
+that's withdrawn or not built for your game yet is skipped, and `run` says why.
+
+Mods take the newest release each time a set runs while textures.gg can be reached, and
+the ones it used last time when it can't. A set's gameplay mods decide which players it
+meets: two sets with the same gameplay mods search together, whatever else they have.
+
+Your mods folder is the set "Installed mods". It's always there, it's the one the game
+starts with until you pick another, and you change it with `tgg mod` as before.
+
 ## Skins
 
 ```text
@@ -160,8 +201,10 @@ lacks, and replaces older builds of them, keeping each one on or off. A mod tgg
 installed this way once and you removed stays removed (`<data>/tgg/default-mods.json`
 lists them). `tgg mod off <id>` turns one off.
 
-`port run` writes the game's output to `game.log` in `<data>/tgg/`, and shows its last
-lines when the game fails; `-v` shows it as the game runs.
+`port run` starts the active set (`tgg set use`). With Installed mods active, it runs your
+mods folder on the version in use, or `--version`. It writes the game's output to
+`game.log` in `<data>/tgg/`, and shows its last lines when the game fails; `-v` shows it
+as the game runs.
 
 On Windows the game needs Microsoft's Visual C++ runtime (`msvcp140.dll`,
 `msvcp140_atomic_wait.dll`, `vcruntime140.dll`, `vcruntime140_1.dll`); `port install` and
