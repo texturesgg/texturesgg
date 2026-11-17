@@ -176,7 +176,7 @@ fn mods_row(
     match stage {
         Stage::Ready => {
             body = body.child(
-                label("Each one you pick becomes a set you can switch between. Change them any time on Mods.")
+                label("Pick any. They go into one set, and you can change it on Mods.")
                     .font(text::BODY)
                     .color(p.muted)
                     .wrap(),
@@ -222,7 +222,7 @@ fn mods_row(
                     format!("{}. It's the set Play starts.", picked_titles(app, &picks))
                 } else {
                     format!(
-                        "{}. Switch between them on Play.",
+                        "{}, in one set called My set. It's the set Play starts.",
                         picked_titles(app, &picks)
                     )
                 })
