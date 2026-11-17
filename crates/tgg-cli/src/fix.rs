@@ -1,17 +1,23 @@
 //! `tgg mod fix`: bring a mod's source up to the SDK you have.
 //!
-//! The decomp renames things. Each sync's rename map (in the SDK's `renames/`)
-//! says what became what, joined on what didn't change: a function's console
-//! address, a field's record and console offset, an enum constant's value.
-//! This builds the mod, reads what the compiler says, and rewrites exactly the
-//! spots it points at:
+//! The decomp renames things, and so does the mod API at a major version. Each
+//! rename map (in the SDK's `renames/`) says what became what: a sync's is
+//! joined on what didn't change (a function's console address, a field's
+//! record and console offset, an enum constant's value), the API's is written
+//! by hand. For C this builds the mod, reads what the compiler says, and
+//! rewrites exactly the spots it points at:
 //!
 //! - a retired function or variable name, which still builds through the SDK's
 //!   `tgg/game/aliases.h` with a warning ("X is now Y: tgg mod fix renames
 //!   it"), renamed where the warning's "in expansion of macro" note points;
 //! - a field the record no longer has ("has no member named"), renamed when a
 //!   map names its record and old name;
-//! - an undeclared name a map renamed (an enum constant, a function, a macro).
+//! - an undeclared name a map renamed (an enum constant, a function, a macro,
+//!   a type);
+//! - an event a map renamed, where the mod subscribes to it (`TGG_ON`).
+//!
+//! A script mod's `.luau` files get the map's script renames wherever they
+//! spell `tgg.<old>`, then the SDK's tgg-script checks what's left.
 //!
 //! Then it builds again, until a pass changes nothing. It only edits a spot
 //! whose text is the old name, inside the mod's own folder, so it can't rename
@@ -40,6 +46,13 @@ struct MapFile {
     #[serde(default)]
     macros: Vec<Rename>,
     #[serde(default)]
+    types: Vec<Rename>,
+    #[serde(default)]
+    events: Vec<Rename>,
+    /// Scripts' names under `tgg.`: "input.pad" to "input.controller"
+    #[serde(default)]
+    script: Vec<Rename>,
+    #[serde(default)]
     changed: Vec<String>,
     #[serde(default)]
     gone: Vec<String>,
@@ -62,8 +75,12 @@ struct FieldRename {
 /// syncs old goes to the newest one
 #[derive(Default)]
 struct Renames {
-    /// Functions, variables, enum constants and macros: old name to new
+    /// Functions, variables, enum constants, macros and types: old name to new
     names: BTreeMap<String, String>,
+    /// Events: old name to new
+    events: BTreeMap<String, String>,
+    /// Scripts' names under `tgg.`: old to new
+    script: BTreeMap<String, String>,
     /// Fields: (record, old) to new
     fields: BTreeMap<(String, String), String>,
     /// What a rename can't describe, for the report
@@ -88,20 +105,16 @@ impl Renames {
                 std::fs::read_to_string(&path).with_context(|| path.display().to_string())?;
             let map: MapFile =
                 serde_json::from_str(&text).with_context(|| path.display().to_string())?;
-            for r in map
+            let names = map
                 .functions
                 .iter()
                 .chain(&map.variables)
                 .chain(&map.enum_constants)
                 .chain(&map.macros)
-            {
-                for now in renames.names.values_mut() {
-                    if *now == r.old {
-                        now.clone_from(&r.new);
-                    }
-                }
-                renames.names.insert(r.old.clone(), r.new.clone());
-            }
+                .chain(&map.types);
+            chain(&mut renames.names, names);
+            chain(&mut renames.events, &map.events);
+            chain(&mut renames.script, &map.script);
             for f in &map.fields {
                 for ((record, _), now) in renames.fields.iter_mut() {
                     if *record == f.record && *now == f.old {
@@ -117,6 +130,29 @@ impl Renames {
         }
         Ok(renames)
     }
+}
+
+/// Add a map's renames to what came before, so an older name goes to the newest
+fn chain<'a>(to: &mut BTreeMap<String, String>, renames: impl IntoIterator<Item = &'a Rename>) {
+    for r in renames {
+        for now in to.values_mut() {
+            if *now == r.old {
+                now.clone_from(&r.new);
+            }
+        }
+        to.insert(r.old.clone(), r.new.clone());
+    }
+}
+
+/// The event a quoted `tgg_event_<event>_fn` names, when a map renamed it
+fn renamed_event<'a>(name: &str, renames: &'a Renames) -> Option<(&'a str, &'a str)> {
+    let event = name
+        .strip_prefix("tgg_event_")
+        .and_then(|n| n.strip_suffix("_fn"))?;
+    renames
+        .events
+        .get_key_value(event)
+        .map(|(old, new)| (old.as_str(), new.as_str()))
 }
 
 /// One place to rewrite: `old` at a line and column becomes `new`
@@ -216,8 +252,34 @@ fn find_edits(output: &str, renames: &Renames, root: &Path) -> (BTreeSet<Edit>, 
         if d.kind != "error" {
             continue;
         }
-        let Some(path) = ours(d.path) else { continue };
         let q = quoted(d.message);
+        // A renamed event: the error can sit in tgg/events.h, with notes after it saying
+        // where the mod's TGG_ON is
+        if let Some((old, new)) = q.iter().find_map(|name| renamed_event(name, renames)) {
+            let notes = lines[i + 1..]
+                .iter()
+                .map_while(|l| parse(l).filter(|n| n.kind == "note"));
+            let mut found = false;
+            for (p, line, column) in std::iter::once((d.path, d.line, d.column))
+                .chain(notes.map(|n| (n.path, n.line, n.column)))
+            {
+                if let Some(path) = ours(p) {
+                    found = true;
+                    edits.insert(Edit {
+                        path,
+                        line,
+                        column,
+                        old: old.to_owned(),
+                        new: new.to_owned(),
+                    });
+                }
+            }
+            if !found {
+                left.push(line.to_string());
+            }
+            continue;
+        }
+        let Some(path) = ours(d.path) else { continue };
         let edit = if d.message.contains("has no member named") {
             // "'Fighter' {aka 'struct Fighter'} has no member named 'x1990'; did
             // you mean 'x1991'?": the member is the quote after "named", the
@@ -237,6 +299,7 @@ fn find_edits(output: &str, renames: &Renames, root: &Path) -> (BTreeSet<Edit>, 
             found.map(|new| (member, new))
         } else if d.message.contains("undeclared")
             || d.message.contains("implicit declaration of function")
+            || d.message.contains("unknown type name")
         {
             let name = q.first().copied().unwrap_or_default();
             renames.names.get(name).map(|new| (name, new))
@@ -245,14 +308,20 @@ fn find_edits(output: &str, renames: &Renames, root: &Path) -> (BTreeSet<Edit>, 
         };
         match edit {
             Some((old, new)) => {
+                // GCC says a function is undeclared once per function body, and the error
+                // means the name is declared nowhere in the file: every use of it there is
+                // the same call (line 0: the whole file)
+                let whole = d.message.contains("implicit declaration of function");
                 edits.insert(Edit {
                     path,
-                    line: d.line,
-                    column: d.column,
+                    line: if whole { 0 } else { d.line },
+                    column: if whole { 0 } else { d.column },
                     old: old.to_owned(),
                     new: new.clone(),
                 });
             }
+            // A header the mod includes in several sources fails in each
+            None if left.contains(&line.to_string()) => {}
             None => left.push(line.to_string()),
         }
     }
@@ -273,6 +342,27 @@ fn apply(edits: &BTreeSet<Edit>) -> Result<Vec<Edit>> {
         // Right to left on a line, so earlier columns stay put
         file_edits.sort_by_key(|e| std::cmp::Reverse((e.line, e.column)));
         for e in file_edits {
+            if e.line == 0 {
+                for (n, line) in lines.iter_mut().enumerate() {
+                    let spots: Vec<usize> = line
+                        .match_indices(e.old.as_str())
+                        .map(|(i, _)| i)
+                        .filter(|&i| {
+                            !line[..i].chars().next_back().is_some_and(is_ident)
+                                && !line[i + e.old.len()..].chars().next().is_some_and(is_ident)
+                        })
+                        .collect();
+                    for &at in spots.iter().rev() {
+                        line.replace_range(at..at + e.old.len(), &e.new);
+                        done.push(Edit {
+                            line: n + 1,
+                            column: at + 1,
+                            ..e.clone()
+                        });
+                    }
+                }
+                continue;
+            }
             let Some(line) = lines.get_mut(e.line.wrapping_sub(1)) else {
                 continue;
             };
@@ -308,7 +398,163 @@ fn is_ident(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
 
+/// The `.luau` files under `dir`, but not in its build folder
+fn luau_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in std::fs::read_dir(dir).with_context(|| dir.display().to_string())? {
+        let path = entry?.path();
+        if path.is_dir() {
+            if path
+                .file_name()
+                .is_some_and(|n| n != "build" && n != ".git")
+            {
+                luau_files(&path, out)?;
+            }
+        } else if path.extension().is_some_and(|x| x == "luau") {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// A script's text with the map's script renames made where it spells `tgg.<old>`, and the
+/// edits, by line
+fn rename_script(text: &str, renames: &Renames, path: &Path) -> (String, Vec<Edit>) {
+    let mut edits = Vec::new();
+    let mut out = String::with_capacity(text.len());
+    for (n, line) in text.split_inclusive('\n').enumerate() {
+        let mut line = line.to_owned();
+        let mut from = 0;
+        while let Some(off) = line[from..].find("tgg.") {
+            let at = from + off;
+            let name_at = at + 4;
+            let starts_word = !line[..at].chars().next_back().is_some_and(is_ident);
+            // The longest dotted name here that a map renamed: "draw.image_stage_name" before
+            // "draw.image_stage"
+            let found = starts_word
+                .then(|| {
+                    renames
+                        .script
+                        .iter()
+                        .filter(|(old, _)| {
+                            line[name_at..].starts_with(old.as_str())
+                                && !line[name_at + old.len()..]
+                                    .chars()
+                                    .next()
+                                    .is_some_and(is_ident)
+                        })
+                        .max_by_key(|(old, _)| old.len())
+                })
+                .flatten();
+            match found {
+                Some((old, new)) => {
+                    line.replace_range(name_at..name_at + old.len(), new);
+                    edits.push(Edit {
+                        path: path.to_owned(),
+                        line: n + 1,
+                        column: name_at + 1,
+                        old: format!("tgg.{old}"),
+                        new: format!("tgg.{new}"),
+                    });
+                    from = name_at + new.len();
+                }
+                None => from = name_at,
+            }
+        }
+        out.push_str(&line);
+    }
+    (out, edits)
+}
+
+/// A script mod: the map's script renames in its `.luau` files, then tgg-script's check
+fn fix_script(dir: &Path, options: &Options, check: bool) -> Result<()> {
+    let root = std::path::absolute(dir)?;
+    let sdk = build::resolve_sdk(options.sdk)?;
+    let renames = Renames::load(&sdk.root)?;
+    let mut files = Vec::new();
+    luau_files(&root, &mut files)?;
+    files.sort();
+    for path in &files {
+        let text = std::fs::read_to_string(path).with_context(|| path.display().to_string())?;
+        let (new_text, edits) = rename_script(&text, &renames, path);
+        let verb = if check { "would rename" } else { "renamed" };
+        for e in &edits {
+            println!(
+                "{verb} {} to {} at {}:{}",
+                e.old,
+                e.new,
+                rel(&e.path, &root),
+                e.line
+            );
+        }
+        if !check && !edits.is_empty() {
+            std::fs::write(path, new_text).with_context(|| path.display().to_string())?;
+        }
+    }
+    if check {
+        return Ok(());
+    }
+    match build::build_script(dir, options.sdk) {
+        Ok(_) => println!("it checks, with no old names"),
+        Err(error) => {
+            let text = format!("{error:#}");
+            println!("left: {text}");
+            for note in notes_about(&text, &renames) {
+                println!("  the rename map says: {note}");
+            }
+        }
+    }
+    Ok(())
+}
+
+/// What the maps say about the names a message mentions. Each note starts with the name it's
+/// about, after its kind for a sync's ("field Fighter.x1990 ...", "tgg_screen_at: use ...",
+/// "tgg.content.stage_name takes ...")
+fn notes_about<'a>(message: &str, renames: &'a Renames) -> Vec<&'a str> {
+    let mentions = |name: &str| {
+        message.match_indices(name).any(|(at, _)| {
+            !message[..at].chars().next_back().is_some_and(is_ident)
+                && !message[at + name.len()..]
+                    .chars()
+                    .next()
+                    .is_some_and(is_ident)
+        })
+    };
+    renames
+        .notes
+        .iter()
+        .filter(|note| {
+            let mut text = note.as_str();
+            for kind in [
+                "a clone's ",
+                "variable ",
+                "function ",
+                "field ",
+                "record ",
+                "macro ",
+            ] {
+                text = text.strip_prefix(kind).unwrap_or(text);
+            }
+            let name: String = text
+                .chars()
+                .take_while(|&c| is_ident(c) || c == '.')
+                .collect();
+            // A field's own name; a script's without tgg.
+            let name = name.trim_start_matches("tgg.");
+            let name = if note.starts_with("field ") {
+                name.rsplit('.').next().unwrap_or(name)
+            } else {
+                name
+            };
+            name.len() > 3 && mentions(name)
+        })
+        .map(String::as_str)
+        .collect()
+}
+
 pub fn fix(dir: &Path, options: &Options, check: bool) -> Result<()> {
+    if tgg_mod::is_script(dir) {
+        return fix_script(dir, options, check);
+    }
     let root = std::path::absolute(dir)?;
     let mut renames: Option<Renames> = None;
     let mut made = Vec::new();
@@ -324,13 +570,12 @@ pub fn fix(dir: &Path, options: &Options, check: bool) -> Result<()> {
         let (edits, left) = find_edits(&compiled.output, renames, &root);
         if edits.is_empty() || check {
             for e in &edits {
-                println!(
-                    "would rename {} to {} at {}:{}",
-                    e.old,
-                    e.new,
-                    rel(&e.path, &root),
-                    e.line
-                );
+                let at = rel(&e.path, &root);
+                if e.line == 0 {
+                    println!("would rename {} to {} everywhere in {at}", e.old, e.new);
+                } else {
+                    println!("would rename {} to {} at {at}:{}", e.old, e.new, e.line);
+                }
             }
             report(&made, &left, &compiled, renames, &root);
             return Ok(());
@@ -382,15 +627,8 @@ fn report(
     }
     for line in left {
         println!("left: {line}");
-        // What the maps say about the names the error quotes
-        for name in quoted(line) {
-            for note in renames
-                .notes
-                .iter()
-                .filter(|n| n.split_whitespace().any(|w| w.contains(name)))
-            {
-                println!("  the rename map says: {note}");
-            }
+        for note in notes_about(line, renames) {
+            println!("  the rename map says: {note}");
         }
     }
     if !compiled.ok && left.is_empty() {
@@ -439,5 +677,49 @@ mod tests {
         // A field no map knows is left for a person, not guessed at
         assert_eq!(left.len(), 1);
         assert!(left[0].contains("unknown_field"));
+    }
+
+    #[test]
+    fn renames_an_event_where_the_mod_subscribes() {
+        let mut renames = Renames::default();
+        renames
+            .events
+            .insert("state_loaded".into(), "snapshot_loaded".into());
+        // GCC's words for TGG_ON(state_loaded, loaded) on line 6 (C locale)
+        let output = "/mod/src/mod.c:6:1: error: unknown type name 'tgg_event_state_loaded_fn'; \
+                      did you mean 'tgg_event_save_loaded_fn'?\n\
+                      /mod/src/mod.c:6:1: error: expression in static assertion is not an integer\n";
+        let (edits, left) = find_edits(output, &renames, Path::new("/mod"));
+        let got: Vec<_> = edits
+            .iter()
+            .map(|e| (e.line, e.old.as_str(), e.new.as_str()))
+            .collect();
+        assert_eq!(got, [(6, "state_loaded", "snapshot_loaded")]);
+        assert_eq!(left.len(), 1, "the assertion that follows from it");
+    }
+
+    #[test]
+    fn renames_what_a_script_spells_under_tgg() {
+        let mut renames = Renames::default();
+        let map = [
+            ("draw.image_stage", "image.stage"),
+            ("draw.image_stage_name", "image.stage_name"),
+            ("input.pad", "input.controller"),
+        ];
+        for (old, new) in map {
+            renames.script.insert(old.into(), new.into());
+        }
+        let text = "local a = tgg.draw.image_stage_name(s)\n\
+                    local p = tgg.input.pad(1) or mytgg.input.pad(1)\n\
+                    tgg.input.pads(2)\n";
+        let (out, edits) = rename_script(text, &renames, Path::new("view.luau"));
+        assert_eq!(
+            out,
+            "local a = tgg.image.stage_name(s)\n\
+             local p = tgg.input.controller(1) or mytgg.input.pad(1)\n\
+             tgg.input.pads(2)\n"
+        );
+        assert_eq!(edits.len(), 2);
+        assert_eq!(edits[1].line, 2);
     }
 }

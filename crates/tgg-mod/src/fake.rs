@@ -210,7 +210,7 @@ impl FakeNet {
         let mut state = self.state();
         for entry in &mut state.catalog {
             if entry.manifest.id.as_str() == id {
-                entry.manifest.entry = Some(format!("{id}.so"));
+                entry.manifest.target = Some("x86_64-linux-gnu".into());
             }
         }
         state.revision += 1;
@@ -933,7 +933,7 @@ fn fake_sdk_json(version: &str, target: &str) -> String {
 
 /// A fake SDK's template example, shaped like the real one: the id and the
 /// docs lines a new mod replaces.
-const FAKE_TEMPLATE_MANIFEST: &str = "{\n  \"api\": \"tgg-melee/0\",\n  \"id\": \"my-mod\",\n  \"name\": \"My mod\",\n  \"version\": \"0.1.0\"\n}\n";
+const FAKE_TEMPLATE_MANIFEST: &str = "{\n  \"api\": \"tgg-melee/1\",\n  \"id\": \"my-mod\",\n  \"name\": \"My mod\",\n  \"version\": \"0.1.0\"\n}\n";
 const FAKE_TEMPLATE_CMAKE: &str = "cmake_minimum_required(VERSION 3.25)\nproject(my-mod LANGUAGES C)\ninclude(\"${TGG_SDK}/TggMod.cmake\")\ntgg_use_sdk(\"${TGG_SDK}\")\ntgg_add_mod(my-mod)\n";
 const FAKE_TEMPLATE_README: &str = "# Template\n\n- The docs came with the SDK: `$(tgg sdk path)/docs`. Start with `writing-mods.md`.\n";
 const FAKE_TEMPLATE_MOD: &str = "/* A starting point for a mod. Give it your own id in manifest.json, then\n * swap what's below for your own code. The docs are in your SDK: run\n * `tgg sdk path` and open docs/writing-mods.md there.\n */\n#include \"tgg/events.h\"\n";

@@ -79,15 +79,11 @@ impl PartialEq<str> for ModId {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Manifest {
-    /// The manifest API: `tgg-melee/0`.
+    /// The manifest API: `tgg-melee/1`.
     pub api: String,
     pub id: ModId,
     pub name: String,
     pub version: Version,
-    /// The library in the package; absent for a mod without one. A package
-    /// with a library always names it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub entry: Option<String>,
     /// Every mod this one needs, each with a version range; the game loads
     /// it after them.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -122,10 +118,15 @@ pub struct Manifest {
     /// The target triple the library was built for, from the library.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
-    /// The mod API `major.minor` the library was built against, from the
-    /// library.
+    /// The mod API `major.minor` the library was built for, from the
+    /// library: the oldest minor it loads on (a script mod's: the oldest its
+    /// scripts need).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_version: Option<String>,
+    /// The library was built with `TGG_EXPERIMENTAL`, from the library: it
+    /// loads only on the API minor `api_version` names.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub experimental: bool,
     /// Bytes of the mod's own state that roll back with the game, from the
     /// library; absent when it keeps none.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -267,13 +268,12 @@ pub const MAX_SCREENSHOTS: usize = 8;
 /// The longest homepage URL, in bytes.
 pub const MAX_HOMEPAGE: usize = 256;
 
-/// The library's name when the manifest names none: `mod.so`, or
-/// [`WINDOWS_ENTRY`] for a Windows build.
+/// A mod's library: `mod.so`, or [`WINDOWS_ENTRY`] for a Windows build.
 pub const DEFAULT_ENTRY: &str = "mod.so";
-/// A Windows mod's library when the manifest names none.
+/// A Windows mod's library.
 pub const WINDOWS_ENTRY: &str = "mod.dll";
 
-/// The library's name for a mod built for `target` that names no entry.
+/// The library's name for a mod built for `target`.
 pub fn default_entry(target: Option<&str>) -> &'static str {
     if target.is_some_and(|target| target.contains("-windows")) {
         WINDOWS_ENTRY
@@ -296,8 +296,10 @@ pub enum ManifestError {
     Id(String),
     #[error("the manifest needs a name")]
     Name,
-    #[error("the entry {0:?} must be a file name, not a path")]
-    Entry(String),
+    #[error(
+        "manifest.json has an entry field. Just remove it, the library is always mod.so or mod.dll now"
+    )]
+    Entry,
     #[error(
         "manifest.json has a netplay field. Just remove it, the game works that out itself now"
     )]
@@ -316,8 +318,6 @@ pub enum ManifestError {
     Tags,
     #[error("the homepage {0:?} must be an http or https URL")]
     Homepage(String),
-    #[error("a script mod has no entry. Its code goes in scripts/sim.luau and scripts/view.luau")]
-    ScriptEntry,
     #[error("only script mods have settings in the manifest. A C mod declares them in its source")]
     Settings,
 }
@@ -333,16 +333,23 @@ impl Manifest {
         if value.get("netplay").is_some() {
             return Err(ManifestError::Netplay);
         }
+        if value.get("entry").is_some() {
+            return Err(ManifestError::Entry);
+        }
         let manifest: Self = serde_json::from_value(value)?;
         manifest.validate()?;
         Ok(manifest)
     }
 
+    /// Whether the package ships a library: packing records the target of
+    /// every one.
+    pub fn has_library(&self) -> bool {
+        !self.script && self.target.is_some()
+    }
+
     /// The library's file name in a package or a mod's folder.
     pub fn library_name(&self) -> &str {
-        self.entry
-            .as_deref()
-            .unwrap_or_else(|| default_entry(self.target.as_deref()))
+        default_entry(self.target.as_deref())
     }
 
     pub fn to_json(&self) -> String {
@@ -360,16 +367,8 @@ impl Manifest {
         if self.name.trim().is_empty() {
             return Err(ManifestError::Name);
         }
-        if let Some(entry) = &self.entry
-            && (entry.is_empty() || entry.contains(['/', '\\']) || entry.starts_with('.'))
-        {
-            return Err(ManifestError::Entry(entry.clone()));
-        }
         if self.depends.contains_key(&self.id) {
             return Err(ManifestError::DependsOnItself);
-        }
-        if self.script && self.entry.is_some() {
-            return Err(ManifestError::ScriptEntry);
         }
         if !self.script && self.settings.is_some() {
             return Err(ManifestError::Settings);
@@ -439,7 +438,6 @@ impl Manifest {
             id,
             name,
             version,
-            entry: None,
             depends: BTreeMap::new(),
             description: None,
             license: None,
@@ -451,6 +449,7 @@ impl Manifest {
             game_abi: None,
             target: None,
             api_version: None,
+            experimental: false,
             state: None,
             hooks: Hooks::default(),
             events: Vec::new(),
@@ -476,7 +475,7 @@ mod tests {
 
     #[test]
     fn a_manifest_with_a_netplay_field_is_refused() {
-        let json = br#"{"api": "tgg-melee/0", "id": "me.x", "name": "X", "version": "1.0.0",
+        let json = br#"{"api": "tgg-melee/1", "id": "me.x", "name": "X", "version": "1.0.0",
             "netplay": "cosmetic"}"#;
         assert!(matches!(Manifest::parse(json), Err(ManifestError::Netplay)));
     }

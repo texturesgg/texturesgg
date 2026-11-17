@@ -83,7 +83,7 @@ pub enum ModCommand {
     },
     /// Update a mod's source to the SDK you have.
     ///
-    /// Renames what the decomp renamed (from the SDK's rename maps) where the
+    /// Renames what the decomp or the mod API renamed (from the SDK's rename maps) where the
     /// compiler points, and builds again until nothing changes. Then it says
     /// what it renamed and what's left for you.
     Fix {
@@ -128,6 +128,7 @@ pub enum ModCommand {
     },
     /// Create the mod on textures.gg from DIR's manifest.json, under your
     /// account. tgg mod publish does this for you the first time.
+    #[command(hide = true)]
     Register {
         #[arg(default_value = ".", value_parser = dir_arg)]
         dir: PathBuf,
@@ -150,6 +151,7 @@ pub enum ModCommand {
     },
     /// Pack a built mod. DIR is the mod's installed folder, as the SDK's
     /// tgg_add_mod writes it (manifest.json, the library, and its folders).
+    #[command(hide = true)]
     Pack {
         #[arg(value_parser = dir_arg)]
         dir: PathBuf,
@@ -163,8 +165,10 @@ pub enum ModCommand {
     },
     /// Print what a package zip, a mod library, or a game executable declares,
     /// as JSON.
+    #[command(hide = true)]
     Inspect { file: PathBuf },
     /// Write a catalog of package zips, with URLs relative to the catalog.
+    #[command(hide = true)]
     Catalog {
         #[arg(short, long)]
         output: PathBuf,
@@ -178,7 +182,7 @@ pub enum ModCommand {
     },
     /// The sets of mods on textures.gg.
     Sets,
-    /// Install mods from textures.gg (ID, or ID@RANGE like tgg.netplay@^0.2),
+    /// Install mods from textures.gg (ID, or ID@RANGE like tgg.netplay@^1.0),
     /// a set of them (--set), or package zips. With nothing named, pick a
     /// set.
     Install {

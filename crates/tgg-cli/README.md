@@ -217,14 +217,18 @@ tgg mod new [DIR] [--id ID] [--name NAME] [--template rule|hud|screen|native | -
 tgg mod build [DIR] [--debug] [--sdk SDK] [--source-zip ZIP|-] [-o OUT.zip] [--json]
                                          compile DIR's src/**/*.c against the game's SDK, check it,
                                          and pack it with DIR's files/, assets/ and include/
+tgg mod fix [DIR] [--check]              rename what the decomp or the mod API renamed, from the SDK's maps
 tgg mod dev [DIR] [--watch] [--gdb]     build it for debugging and run the game with it
-tgg mod register [DIR]                   create the mod on textures.gg from its manifest
 tgg mod publish [DIR]                    build it here, tag v<version> and push it to textures.gg (--skip-build)
+tgg mod register [DIR]                   create the mod on textures.gg from its manifest
 tgg mod pack DIR [-o OUT.zip] [--json]   DIR is a built mod's folder
 tgg mod inspect FILE                     a package zip, a mod library, or a game executable
 tgg mod catalog -o CATALOG.json ZIP...   list packages, with URLs relative to the catalog
 tgg mod install [--port EXE] ZIP...      install package zips, refusing another game layout or a conflict
 ```
+
+`register`, `pack`, `inspect` and `catalog` work as always but stay out of `tgg mod --help`:
+`publish` registers a mod the first time, and the others are for the registry and scripts.
 
 `tgg mod list --json` gives each installed mod's manifest, whether it's on, its netplay
 class, the sets that installed it, and whether it fits the game. `enable` and `disable`
@@ -268,7 +272,10 @@ used as a value, and the link and glibc check are the SDK's. `--debug` builds wi
 editors. `SDK` is the SDK's folder or its `tgg-game-sdk.json`, or `TGG_GAME_SDK`; by
 default it is the SDK of the game in use, installed if it's missing. The package goes to
 `DIR/build/<id>-<version>.zip` unless `-o` says otherwise. A mod without sources needs no
-SDK: `build` packs it without compiling, and leaves `entry` out of its manifest.
+SDK: `build` packs it without compiling. A C mod is built for the oldest mod API minor it
+compiles for, which the package's `api_version` records, so it loads on every game from that
+minor on in the same major. One whose manifest says `"experimental": true` is built for the
+SDK's own minor with `TGG_EXPERIMENTAL`, and loads only on that one.
 `--source-zip` first unpacks `manifest.json` and those folders from a zip (up to 256 MiB),
 or from stdin with `-`, into an empty `DIR`; the registry's builder sends each mod's source
 that way.
