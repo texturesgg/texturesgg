@@ -790,6 +790,7 @@ fn the_store_lists_every_mod_and_details_one() {
     assert_eq!(
         stages.publisher,
         tgg_mod::Publisher {
+            id: Some("official".into()),
             name: "textures.gg".into(),
             official: true
         }

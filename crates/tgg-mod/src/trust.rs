@@ -1,11 +1,16 @@
-//! Which publishers' mods a player lets profiles fetch, remembered per
-//! publisher in `<data>/tgg/trust.json` and shared by every front end:
+//! Which publishers a player lets profiles (a lobby's or a replay's mods)
+//! fetch native code from, remembered per publisher account id in
+//! `<data>/tgg/trust.json` and shared by every front end:
 //!
 //! ```json
-//! { "publishers": { "someone": true, "someone-else": false } }
+//! { "ids": { "4fJk…": true, "9aQ2…": false } }
 //! ```
 //!
-//! Official mods never ask.
+//! Only native mods (a library the game loads) ask: scripts run in the
+//! game's sandbox and files carry no code. Official mods never ask. A
+//! publisher the registry gives no id is asked about every time. Answers
+//! remembered by name before ids existed are ignored, so those players are
+//! asked once more.
 
 use crate::error::Error;
 use crate::registry::Publisher;
@@ -15,22 +20,26 @@ use std::path::{Path, PathBuf};
 
 const FILE: &str = "trust.json";
 
-/// The player's answers, by publisher name.
+/// The player's answers, by publisher account id.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Trust {
     #[serde(default)]
-    pub publishers: BTreeMap<String, bool>,
+    pub ids: BTreeMap<String, bool>,
 }
 
 impl Trust {
-    /// The answer remembered for `publisher`, if any.
-    pub fn answer(&self, publisher: &str) -> Option<bool> {
-        self.publishers.get(publisher).copied()
+    /// The answer remembered for the publisher account `id`, if any.
+    pub fn answer(&self, id: &str) -> Option<bool> {
+        self.ids.get(id).copied()
     }
 
-    /// Whether `publisher`'s mods fetch without asking.
+    /// Whether `publisher`'s native mods fetch without asking.
     pub fn allows(&self, publisher: &Publisher) -> bool {
-        publisher.official || self.answer(&publisher.name) == Some(true)
+        publisher.official
+            || publisher
+                .id
+                .as_deref()
+                .is_some_and(|id| self.answer(id) == Some(true))
     }
 }
 
@@ -50,10 +59,14 @@ pub fn trust(data: &Path) -> Result<Trust, Error> {
     }
 }
 
-/// Remember the player's answer for `publisher`.
-pub fn remember_trust(data: &Path, publisher: &str, allow: bool) -> Result<(), Error> {
+/// Remember the player's answer for `publisher`, by its account id; a
+/// publisher without one isn't remembered.
+pub fn remember_trust(data: &Path, publisher: &Publisher, allow: bool) -> Result<(), Error> {
+    let Some(id) = &publisher.id else {
+        return Ok(());
+    };
     let mut trust = trust(data)?;
-    trust.publishers.insert(publisher.to_owned(), allow);
+    trust.ids.insert(id.clone(), allow);
     let json = serde_json::to_string_pretty(&trust).expect("trust serializes") + "\n";
     crate::cache::write_atomic(&path(data), json.as_bytes())
 }
@@ -62,22 +75,50 @@ pub fn remember_trust(data: &Path, publisher: &str, allow: bool) -> Result<(), E
 mod tests {
     use super::*;
 
-    #[test]
-    fn answers_are_remembered_per_publisher() {
-        let data = tempfile::tempdir().expect("temp dir");
-        let someone = Publisher {
-            name: "someone".into(),
+    fn publisher(id: Option<&str>, name: &str) -> Publisher {
+        Publisher {
+            id: id.map(Into::into),
+            name: name.into(),
             official: false,
-        };
+        }
+    }
+
+    #[test]
+    fn answers_are_remembered_by_account_id_not_name() {
+        let data = tempfile::tempdir().expect("temp dir");
+        let someone = publisher(Some("acct-1"), "someone");
         assert!(!trust(data.path()).expect("trust").allows(&someone));
-        remember_trust(data.path(), "someone", true).expect("remember");
-        remember_trust(data.path(), "other", false).expect("remember");
+        remember_trust(data.path(), &someone, true).expect("remember");
+        remember_trust(data.path(), &publisher(Some("acct-2"), "other"), false).expect("remember");
         let trust = trust(data.path()).expect("trust");
         assert!(trust.allows(&someone));
-        assert_eq!(trust.answer("other"), Some(false));
+        // A new name on the same account is still trusted; the old name on
+        // another account isn't.
+        assert!(trust.allows(&publisher(Some("acct-1"), "renamed")));
+        assert!(!trust.allows(&publisher(Some("acct-3"), "someone")));
+        assert_eq!(trust.answer("acct-2"), Some(false));
         assert!(trust.allows(&Publisher {
+            id: None,
             name: "textures.gg".into(),
             official: true
         }));
+    }
+
+    #[test]
+    fn a_publisher_without_an_id_is_asked_every_time() {
+        let data = tempfile::tempdir().expect("temp dir");
+        let nameless = publisher(None, "someone");
+        remember_trust(data.path(), &nameless, true).expect("remember");
+        assert!(!trust(data.path()).expect("trust").allows(&nameless));
+    }
+
+    #[test]
+    fn answers_remembered_by_name_are_ignored() {
+        let data = tempfile::tempdir().expect("temp dir");
+        let file = path(data.path());
+        std::fs::create_dir_all(file.parent().expect("folder")).expect("mkdir");
+        std::fs::write(&file, r#"{ "publishers": { "someone": true } }"#).expect("write");
+        let trust = trust(data.path()).expect("trust");
+        assert!(!trust.allows(&publisher(Some("acct-1"), "someone")));
     }
 }

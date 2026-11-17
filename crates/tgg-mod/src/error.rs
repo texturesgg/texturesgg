@@ -87,8 +87,10 @@ pub enum Error {
     /// A replay file can't be read.
     #[error("{path} isn't a replay tgg can read: {why}")]
     BadReplay { path: PathBuf, why: String },
-    /// A profile's mod needs the player's yes before it's fetched.
-    #[error("{name} by {publisher} needs your yes before it's fetched")]
+    /// A profile's native mod needs the player's yes before it's fetched.
+    #[error(
+        "{name} runs native code on your computer, published by {publisher}. It needs your yes first"
+    )]
     NeedsTrust { name: String, publisher: String },
     /// The game version a profile needs isn't one tgg can get.
     #[error("tgg-melee {0} can't be had for this system")]

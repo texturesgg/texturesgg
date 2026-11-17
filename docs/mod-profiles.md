@@ -232,8 +232,9 @@ a frozen one is read to its end (a few MB).
 Two optional fields on each `GET /api/registry/catalog` entry, beside `netplay` and
 `package`:
 
-- `publisher`: `{ "name", "official" }`, as the mods list gives it. Without it a mod is
-  unofficial and published by "unknown".
+- `publisher`: `{ "id", "name", "official" }`, as the mods list gives it; `id` is the
+  publishing account's, which never changes. Without it a mod is unofficial and published
+  by "unknown".
 - `changes_game`: whether the build changes how the game plays. Absent means `true`. The
   registry fills it from each build's synctest results later; until then every mod changes
   the game, so a replay plays as installed only when the installed mods are exactly its
@@ -244,8 +245,8 @@ Two optional fields on each `GET /api/registry/catalog` entry, beside `netplay` 
 JSON lines on stdout, one object each, told apart by `event`:
 
 ```json
-{"event":"plan","key":"3f9a…","fit":"needs-profile","game":{"version":"0.1.0-rc.8","state":"available","size":18000000},"mods":[{"id":"tgg.neutral-spawns","name":"Neutral spawns","version":"0.1.2","publisher":{"name":"textures.gg","official":true},"cached":false,"size":4096,"needs_trust":false}],"missing":[{"why":"no-mod-for","code":"0x801D24FC"}]}
-{"event":"needs-trust","publishers":[{"name":"someone","mods":["someone.mod"]}]}
+{"event":"plan","key":"3f9a…","fit":"needs-profile","game":{"version":"0.1.0-rc.8","state":"available","size":18000000},"mods":[{"id":"tgg.neutral-spawns","name":"Neutral spawns","version":"0.1.2","publisher":{"id":"…","name":"textures.gg","official":true},"cached":false,"size":4096,"needs_trust":false}],"missing":[{"why":"no-mod-for","code":"0x801D24FC"}]}
+{"event":"needs-trust","publishers":[{"id":"4fJk…","name":"someone","native":true,"mods":["someone.mod"]}]}
 {"event":"progress","step":0,"steps":3,"label":"Downloading Neutral spawns","bytes":4096,"total":4096}
 {"event":"done","fit":"needs-profile","folder":"/home/me/.local/share/tgg/profiles/3f9a…","settings":"/home/me/.local/share/tgg/profiles/3f9a…/settings.json","port":{"version":"0.1.0-rc.8","executable":"/home/me/.local/share/tgg/ports/0.1.0-rc.8/tgg-melee"},"env":{"TGG_MODS_DIR":"…","TGG_SETTINGS":"…"}}
 {"event":"error","message":"can't reach textures.gg; what's installed still works"}
@@ -255,9 +256,11 @@ JSON lines on stdout, one object each, told apart by `event`:
   `game.state` is `installed`, `available` (`size` in bytes, or null
   when tgg hasn't seen that release) or `unavailable`. `fit` is `as-installed` or
   `needs-profile`.
-- `needs-trust` ends the run (exit 0) when a mod needs the player's yes and its publisher
-  wasn't allowed: the caller asks, then runs again with `--trust <publisher>` for each yes
-  (`--remember` also stores the answers, as `remember_trust` does).
+- `needs-trust` ends the run (exit 0) when a native mod needs the player's yes and its
+  publisher wasn't allowed. Each publisher has `id` (its account id, or its name when the
+  registry gives none), `name` to show, and `native` (always true: only native code asks).
+  The caller asks, then runs again with `--trust <id>` for each yes (`--remember` also
+  stores the answers, as `remember_trust` does).
 - `progress` lines follow while packages and the port download.
 - `done` ends a run that worked. With `fit` `as-installed`, `folder` and `settings` are
   null and `port` is the current port: no restart needed. Otherwise `env` is what to start
@@ -276,7 +279,7 @@ Support` or `%LOCALAPPDATA%`, the folder `ports/` is in):
   resolved profile, with each package's `sha256`) and `settings.json` (its counted
   settings, laid out as the port's `settings.json`).
 - `running.json`: `[{ "pid", "executable", "key", "folder" }]`, the profile games running.
-- `trust.json`: `{ "publishers": { "<name>": true|false } }`.
+- `trust.json`: `{ "ids": { "<publisher account id>": true|false } }`.
 
 ### What the port reads
 
@@ -313,7 +316,7 @@ pub fn resolve_profile(profile: &Profile, catalog: &Catalog, mapping: &SlippiMap
 pub struct ProfilePlan {
     pub game: GameNeed,            // Installed(PortInstall) | Available{version, size: Option<u64>}
                                    //   | Unavailable{version}; .version()
-    pub mods: Vec<ProfileMod>,     // id, name, version, publisher {name, official}, cached, size,
+    pub mods: Vec<ProfileMod>,     // id, name, version, publisher {id, name, official}, cached, size,
                                    //   needs_trust, package, settings, changes_game
     pub missing: Vec<Missing>,     // Unknown{id} | NotBuilt{id, version} | Unapproved{id, version}
                                    //   | NoModFor{code, minor}; .is_minor()
@@ -321,7 +324,9 @@ pub struct ProfilePlan {
     pub fit: Fit,                  // AsInstalled | NeedsProfile
     pub profile: Profile,          // the resolved profile (exact versions, this platform's sha256)
 }
-impl ProfilePlan { pub fn size(&self) -> u64; pub fn untrusted(&self) -> Vec<&str>; }
+impl ProfilePlan { pub fn size(&self) -> u64; pub fn untrusted(&self) -> Vec<&Publisher>;
+                    pub fn needing(&self, &Publisher) -> impl Iterator<Item = &ProfileMod>;
+                    pub fn trust_for_session(&mut self, ids: &[String]); }
 
 // Preparing: network and disk (fetches into the cache, builds the folder; installs the
 // needed port version alongside the others without making it current). Refuses with
@@ -338,9 +343,9 @@ pub fn launch_profile(port: &PortInstall, iso: &Path, prepared: &Prepared,
 pub fn finish_profile(data: &Path) -> Result<bool, Error>;   // clears ended games; still running?
 pub fn profile_games(data: &Path) -> Vec<RunningProfile>;   // the live running.json entries
 
-// Trust: answers remembered per publisher, shared by every front end
-pub fn trust(data: &Path) -> Result<Trust, Error>;          // .answer(name), .allows(&Publisher)
-pub fn remember_trust(data: &Path, publisher: &str, allow: bool) -> Result<(), Error>;
+// Trust: answers remembered per publisher account id, shared by every front end
+pub fn trust(data: &Path) -> Result<Trust, Error>;          // .answer(id), .allows(&Publisher)
+pub fn remember_trust(data: &Path, publisher: &Publisher, allow: bool) -> Result<(), Error>;
 
 // The package cache
 pub fn apply_cached(net, plan, mods, packages: Option<&Path>, progress, cancel); // apply uses
@@ -431,9 +436,13 @@ Playing a replay means running code the player didn't pick.
 - Only approved registry releases are ever fetched. Unapproved, unknown or unbuilt mods
   are `missing`, never fetched from anywhere else.
 - Official mods (publisher `official`) fetch without asking.
-- Other mods ask once: "This replay used *Name* by *Publisher*. Get it for playback?"
-  Answers are remembered per publisher in tgg's config (`remember_trust`), shared by the
-  app, `tgg` and the in-game prompt.
+- Scripts and mods that are only files fetch without asking: scripts run in the game's
+  sandbox, and files carry no code.
+- Other native mods (a library the game loads) ask, saying it's native code that runs on
+  the player's computer and who published it. Answers are remembered per publisher
+  account id, never per name (a name can change or be copied), in `trust.json`
+  (`remember_trust`), shared by the app, `tgg` and the in-game prompt. A publisher the
+  registry gives no id is asked about every time.
 - A profile's mods run only for that session; nothing is installed into the player's own
   mods.
 
