@@ -4,8 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-  # rune.yml starts it on the pull request it opens, which can't start CI itself.
-  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
