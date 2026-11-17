@@ -23,3 +23,13 @@ resolver = "2"
 # No crate here needs `unsafe`; the parsers read untrusted files.
 [workspace.lints.rust]
 unsafe_code = "forbid"
+
+# Rune's own fixes to crates it uses (its root Cargo.toml says what each
+# fixes). Cargo doesn't inherit a dependency's patches, so an app that builds
+# Rune repeats them, at the same rev as `rune` in crates/tgg-studio.
+[patch.crates-io]
+winit = { git = "https://github.com/anomalyco/rune", rev = "842c28c2ca5dd1506c1e4a67052db61800aed721" }
+parley_engine = { git = "https://github.com/anomalyco/rune", rev = "842c28c2ca5dd1506c1e4a67052db61800aed721" }
+wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "842c28c2ca5dd1506c1e4a67052db61800aed721" }
+accesskit_windows = { git = "https://github.com/anomalyco/rune", rev = "842c28c2ca5dd1506c1e4a67052db61800aed721" }
+accesskit_macos = { git = "https://github.com/anomalyco/rune", rev = "842c28c2ca5dd1506c1e4a67052db61800aed721" }
