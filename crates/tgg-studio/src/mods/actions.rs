@@ -1,6 +1,6 @@
 //! What the player does on the Mods page, and what comes back from its jobs.
 
-use super::{Disc, Done, Fallback, Playing, Registry, Review, Tab, Work};
+use super::{Disc, Done, Fallback, Filter, NewSet, Playing, Registry, Reload, Review, Work};
 use crate::jobs::Done as Job;
 use crate::state::App;
 use rune::{FileDialogOptions, Tx};
@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tgg_mod::{Error, ModId, Plan, Progress};
+use tgg_mod::sets::{self, MySet, Want};
+use tgg_mod::{Error, Local, ModId, Plan, Progress};
 
 /// How often the thread watching the game looks whether it's ended, or
 /// been asked to stop.
@@ -33,6 +34,15 @@ pub fn opened(app: &mut App) {
     if app.mods.disc == Disc::Unknown {
         find_disc(app);
     }
+    if app
+        .mods
+        .chosen_set
+        .as_deref()
+        .is_some_and(|key| app.sets.get(key).is_none())
+    {
+        app.mods.chosen_set = None;
+    }
+    ensure_plan(app);
 }
 
 /// Read the installed ports and the mods folder again, and check the mods
@@ -217,14 +227,42 @@ pub fn fetch(app: &mut App) {
     });
 }
 
-/// Show the list `tab`.
-pub fn show_tab(app: &mut App, tab: Tab) {
-    app.mods.tab = tab;
+/// Work out the plan of the set the page shows, when it has none yet.
+pub fn ensure_plan(app: &mut App) {
+    let Some(key) = super::current_set(app).map(|set| set.key.clone()) else {
+        return;
+    };
+    if !app.sets.plans.contains_key(&key) {
+        crate::sets::actions::plan(app, &key);
+    }
 }
 
-/// Installed shows only the mods the player is making, or every one.
-pub fn show_made(app: &mut App, made_only: bool) {
-    app.mods.made_only = made_only;
+/// Work out the plan of the set the page shows again, after its mods or the
+/// folders changed.
+fn replan(app: &mut App) {
+    if let Some(key) = super::current_set(app).map(|set| set.key.clone()) {
+        crate::sets::actions::plan(app, &key);
+    }
+}
+
+/// Show the set `key` on the right, its plan worked out.
+pub fn choose_set(app: &mut App, key: &str) {
+    app.mods.chosen_set = Some(key.to_owned());
+    app.mods.selected = None;
+    ensure_plan(app);
+}
+
+/// Show the mods the filter `filter` keeps.
+pub fn set_filter(app: &mut App, filter: Filter) {
+    app.mods.filter = filter;
+}
+
+/// Show the mod `id`'s details: from a link, or You's mods.
+pub fn show_mod(app: &mut App, id: &ModId) {
+    app.mods.filter = Filter::All;
+    if app.mods.selected.as_ref() != Some(id) {
+        select(app, id);
+    }
 }
 
 /// Show the mod `id`'s details beside the list, or hide them when they
@@ -256,8 +294,318 @@ pub fn review_mod(app: &mut App, id: &ModId) {
     app.mods.review = Some(Review {
         title: format!("Install {}", app.mods.name_of(id)),
         plan,
-        dropped: Vec::new(),
-        remove_dropped: false,
+    });
+}
+
+/// Run `change` on a set on a job of its own, then hand back the sets as
+/// they are now: a set change always ends in `Done::SetChanged`, so the
+/// cards, the panel and the plans follow disk.
+fn change(
+    app: &mut App,
+    job: &'static str,
+    change: impl FnOnce(&Path, &Local) -> Result<(Option<String>, Option<String>), String>
+    + Send
+    + 'static,
+) {
+    let (data, local) = (app.data.tgg.clone(), app.mods.local.clone());
+    app.jobs.spawn(job, move || {
+        let result = change(&data, &local);
+        let list = sets::list(&data, &local)
+            .map(|list| (list, sets::active(&data)))
+            .map_err(|error| error.to_string());
+        Job::Mods(Box::new(Done::SetChanged(Box::new(Reload {
+            list,
+            result,
+        }))))
+    });
+}
+
+/// Make the set `key` the one Play starts.
+pub fn use_set(app: &mut App, key: &str) {
+    let (for_job, show) = (key.to_owned(), key.to_owned());
+    change(app, "use a set", move |data, _| {
+        sets::activate(data, &for_job).map_err(|error| error.to_string())?;
+        Ok((None, Some(show)))
+    });
+}
+
+/// Make a set of the player's named "My <name>" where `locked` was, which
+/// builds on it.
+fn own_from(
+    net: &dyn tgg_mod::Net,
+    data: &Path,
+    local: &Local,
+    locked: &MySet,
+) -> Result<MySet, String> {
+    let link = locked
+        .builds_on()
+        .next()
+        .ok_or_else(|| format!("{} doesn't build on a set", locked.name))?
+        .to_owned();
+    let wanted = format!("My {}", locked.name);
+    let mine = match sets::new(data, &wanted) {
+        Ok(mine) => mine,
+        // Its name is taken, or too long with "My" before it.
+        Err(_) => sets::copy(data, local, &locked.key, None).map_err(|error| error.to_string())?,
+    };
+    sets::build_on(net, data, local, &mine.key, &link).map_err(|error| error.to_string())
+}
+
+/// Make a set of the player's from the locked `key`, and show it.
+pub fn make_own(app: &mut App, key: &str) {
+    let Some(locked) = app.sets.get(key).cloned().filter(|set| set.locked) else {
+        return;
+    };
+    let net = app.mods.net.clone();
+    change(app, "make your own set", move |data, local| {
+        let mine = own_from(&*net, data, local, &locked)?;
+        Ok((Some(format!("Made {}.", mine.name)), Some(mine.key)))
+    });
+}
+
+/// Add the mod `id` to the set the page shows: a line of the player's set,
+/// an install into the mods folder for Installed mods, or a set of the
+/// player's made from the locked one first.
+pub fn add(app: &mut App, id: &ModId) {
+    let Some(set) = super::current_set(app).cloned() else {
+        return;
+    };
+    if set.is_installed() {
+        if app.mods.local.get(id).is_some() {
+            set_on(app, id, true);
+        } else {
+            install(app, id);
+        }
+        return;
+    }
+    let name = app.mods.name_of(id);
+    if set.locked {
+        let (net, id) = (app.mods.net.clone(), id.clone());
+        let old = set.name.clone();
+        change(app, "make your own set", move |data, local| {
+            let mut mine = own_from(&*net, data, local, &set)?;
+            mine.add(id, Want::Latest);
+            sets::save(data, &mine).map_err(|error| error.to_string())?;
+            Ok((
+                Some(format!("Made {} from {old} and added {name}.", mine.name)),
+                Some(mine.key),
+            ))
+        });
+        return;
+    }
+    let (key, id) = (set.key.clone(), id.clone());
+    change(app, "add a mod", move |data, local| {
+        let mut set = sets::load(data, local, &key).map_err(|error| error.to_string())?;
+        set.add(id, Want::Latest);
+        sets::save(data, &set).map_err(|error| error.to_string())?;
+        Ok((None, Some(key)))
+    });
+}
+
+/// Install the mod `id` into the mods folder, as the page always has: a
+/// script at once, a native mod through the review that says what it does.
+fn install(app: &mut App, id: &ModId) {
+    let Some(entry) = app.mods.newest(id).cloned() else {
+        return;
+    };
+    let Ok(any) = "*".parse() else { return };
+    if !entry.manifest.script {
+        review_mod(app, id);
+        return;
+    }
+    let Some(catalog) = &app.mods.catalog else {
+        return;
+    };
+    let plan = tgg_mod::plan_mods(&[(id.clone(), any)], catalog, &app.mods.local);
+    apply_plan(
+        app,
+        format!("Installing {}", entry.manifest.name),
+        plan,
+        None,
+    );
+}
+
+/// Take the mod `id`'s line out of the set the page shows.
+pub fn take_out(app: &mut App, id: &ModId) {
+    let Some(set) = super::current_set(app).cloned() else {
+        return;
+    };
+    if set.locked || set.is_installed() {
+        return;
+    }
+    let (key, id) = (set.key.clone(), id.clone());
+    change(app, "take a mod out", move |data, local| {
+        let mut set = sets::load(data, local, &key).map_err(|error| error.to_string())?;
+        set.drop_line(id.as_str());
+        sets::save(data, &set).map_err(|error| error.to_string())?;
+        Ok((None, Some(key)))
+    });
+}
+
+/// Leave the mod `id` of a set the shown set builds on out, or put it back.
+pub fn leave_out(app: &mut App, id: &ModId, out: bool) {
+    let Some(set) = super::current_set(app).cloned() else {
+        return;
+    };
+    if set.locked || set.is_installed() {
+        return;
+    }
+    let (key, id) = (set.key.clone(), id.clone());
+    change(app, "leave a mod out", move |data, local| {
+        let mut set = sets::load(data, local, &key).map_err(|error| error.to_string())?;
+        set.leave_out(&id, out);
+        sets::save(data, &set).map_err(|error| error.to_string())?;
+        Ok((None, Some(key)))
+    });
+}
+
+/// Turn the mod `id` of the mods folder on or off.
+pub fn set_on(app: &mut App, id: &ModId, on: bool) {
+    set_enabled(app, id, on);
+    replan(app);
+}
+
+/// Open the New set sheet.
+pub fn open_new_set(app: &mut App) {
+    app.mods.rename = None;
+    app.mods.building_on = false;
+    app.mods.new_set = Some(NewSet::opened(&app.mods.sets));
+}
+
+pub fn close_new_set(app: &mut App) {
+    app.mods.new_set = None;
+}
+
+/// Tick or untick the textures.gg set `link` for the new set to build on.
+pub fn toggle_new_set_set(app: &mut App, link: &str) {
+    let Some(sheet) = &mut app.mods.new_set else {
+        return;
+    };
+    match sheet.builds_on.iter().position(|have| have == link) {
+        Some(at) => {
+            sheet.builds_on.remove(at);
+        }
+        None => sheet.builds_on.push(link.to_owned()),
+    }
+}
+
+/// Make the set filled in on the New set sheet, and show it.
+pub fn create_new_set(app: &mut App) {
+    let Some(sheet) = app.mods.new_set.take() else {
+        return;
+    };
+    let name = sheet.name.text.trim().to_owned();
+    if name.is_empty() {
+        return;
+    }
+    let links = sheet.builds_on.clone();
+    let online = app
+        .mods
+        .sets
+        .iter()
+        .any(|set| set.name == sets::ONLINE_PLAY);
+    let say = (!online).then(|| "textures.gg has no Online play set yet".to_owned());
+    let net = app.mods.net.clone();
+    change(app, "new set", move |data, local| {
+        let mut mine = sets::new(data, &name).map_err(|error| error.to_string())?;
+        for link in &links {
+            mine = sets::build_on(&*net, data, local, &mine.key, link)
+                .map_err(|error| error.to_string())?;
+        }
+        Ok((say, Some(mine.key)))
+    });
+}
+
+/// Open the Rename sheet on the set the page shows.
+pub fn open_rename(app: &mut App) {
+    let Some(set) = super::current_set(app) else {
+        return;
+    };
+    if set.locked || set.is_installed() {
+        return;
+    }
+    let mut name = rune::TextEdit::default();
+    name.text = set.name.clone();
+    app.mods.new_set = None;
+    app.mods.building_on = false;
+    app.mods.rename = Some(name);
+}
+
+pub fn close_rename(app: &mut App) {
+    app.mods.rename = None;
+}
+
+/// Rename the set the page shows to what's typed.
+pub fn rename(app: &mut App) {
+    let Some(name) = app
+        .mods
+        .rename
+        .take()
+        .map(|edit| edit.text.trim().to_owned())
+    else {
+        return;
+    };
+    let Some(set) = super::current_set(app) else {
+        return;
+    };
+    if name.is_empty() || name == set.name {
+        return;
+    }
+    let (key, name) = (set.key.clone(), name);
+    change(app, "rename a set", move |data, local| {
+        let renamed = sets::rename(data, local, &key, &name).map_err(|error| error.to_string())?;
+        Ok((None, Some(renamed.key)))
+    });
+}
+
+/// Delete the set the page shows. Its mods stay in the mods folder.
+pub fn delete_set(app: &mut App, key: &str) {
+    let key = key.to_owned();
+    let for_job = key.clone();
+    change(app, "delete a set", move |data, _| {
+        sets::remove(data, &for_job).map_err(|error| error.to_string())?;
+        Ok((None, None))
+    });
+    if app.mods.chosen_set.as_deref() == Some(key.as_str()) {
+        app.mods.chosen_set = None;
+    }
+}
+
+/// Open the sheet that builds the shown set on another one.
+pub fn open_build_on(app: &mut App) {
+    app.mods.new_set = None;
+    app.mods.rename = None;
+    app.mods.building_on = true;
+}
+
+pub fn close_build_on(app: &mut App) {
+    app.mods.building_on = false;
+}
+
+/// Build the shown set on the textures.gg set `link`.
+pub fn build_on(app: &mut App, link: &str) {
+    app.mods.building_on = false;
+    let Some(set) = super::current_set(app) else {
+        return;
+    };
+    if set.locked || set.is_installed() {
+        return;
+    }
+    let (key, link) = (set.key.clone(), link.to_owned());
+    let net = app.mods.net.clone();
+    change(app, "build on a set", move |data, local| {
+        sets::build_on(&*net, data, local, &key, &link).map_err(|error| error.to_string())?;
+        Ok((None, Some(key)))
+    });
+}
+
+/// Add the textures.gg set `link` to the player's sets, as it is, and show
+/// it: a link from textures.gg opens this way.
+pub fn add_set(app: &mut App, link: &str) {
+    let (net, link) = (app.mods.net.clone(), link.to_owned());
+    change(app, "add a set", move |data, _| {
+        let set = sets::get(&*net, data, &link).map_err(|error| error.to_string())?;
+        Ok((None, Some(set.key)))
     });
 }
 
@@ -290,14 +638,6 @@ pub fn done(app: &mut App, done: Done) -> bool {
             app.mods.work = None;
             match result {
                 Ok(applied) => {
-                    // Then what the update dropped, as the player chose.
-                    let mut removed = 0;
-                    for id in std::mem::take(&mut app.mods.removing) {
-                        match tgg_mod::uninstall(&app.data.mods, &id) {
-                            Ok(()) => removed += 1,
-                            Err(error) => tgg_app::log(&format!("removing {id}: {error}")),
-                        }
-                    }
                     let (new, updated) = (applied.installed.len(), applied.updated.len());
                     let mut parts = Vec::new();
                     if new > 0 {
@@ -305,9 +645,6 @@ pub fn done(app: &mut App, done: Done) -> bool {
                     }
                     if updated > 0 {
                         parts.push(format!("updated {}", count(updated, "mod")));
-                    }
-                    if removed > 0 {
-                        parts.push(format!("removed {}", count(removed, "mod")));
                     }
                     let said = match parts.split_last() {
                         None => "Your mods are up to date.".to_owned(),
@@ -324,11 +661,55 @@ pub fn done(app: &mut App, done: Done) -> bool {
                 ),
                 Err(error) => app.tell(format!("Couldn't install: {error}."), true),
             }
-            // Stopped or failed: what it dropped stays.
-            app.mods.removing.clear();
             read_disk(app);
+            replan(app);
         }
         Done::Disc(found) => app.mods.disc = found.map_or(Disc::Missing, Disc::Found),
+        Done::SetChanged(reload) => {
+            let Reload { list, result } = *reload;
+            match list {
+                Ok((list, active)) => {
+                    // Plans of sets that are gone go with them.
+                    app.sets
+                        .plans
+                        .retain(|key, _| list.iter().any(|set| set.key == *key));
+                    app.sets.list = list;
+                    app.sets.active = active;
+                }
+                Err(why) => app.tell(capitalized(&why), true),
+            }
+            if app
+                .mods
+                .chosen_set
+                .as_deref()
+                .is_some_and(|key| app.sets.get(key).is_none())
+            {
+                app.mods.chosen_set = None;
+            }
+            match result {
+                Ok((say, show)) => {
+                    if let Some(show) = show {
+                        app.mods.chosen_set = Some(show);
+                        app.mods.selected = None;
+                    }
+                    if let Some(say) = say {
+                        app.tell(say, false);
+                    }
+                }
+                Err(why) => app.tell(capitalized(&why), true),
+            }
+            // The set showing, and the active one Play starts, follow
+            // their new lines.
+            let mut keys = vec![app.sets.active.clone()];
+            keys.extend(app.mods.chosen_set.clone());
+            keys.sort();
+            keys.dedup();
+            for key in keys {
+                if app.sets.get(&key).is_some() {
+                    crate::sets::actions::plan(app, &key);
+                }
+            }
+        }
         Done::Details(id, result) => {
             let details = result
                 .inspect_err(|error| tgg_app::log(&format!("the details of {id}: {error}")))
@@ -433,6 +814,7 @@ fn fetched(
         request_image(app, &url);
     }
     read_disk(app);
+    replan(app);
 }
 
 /// Every mod the registry lists, page by page, up to `LISTING_PAGES`.
@@ -541,77 +923,6 @@ fn install_release(app: &mut App, release: tgg_mod::PortRelease) {
     });
 }
 
-/// Show what installing the set `name` will do.
-pub fn review_set(app: &mut App, name: &str) {
-    let (Some(set), Some(catalog)) = (
-        app.mods.sets.iter().find(|set| set.name == name),
-        &app.mods.catalog,
-    ) else {
-        return;
-    };
-    let mods = &app.mods;
-    // Installed, it updates: against its newest version and the newest
-    // releases, not as an install that leaves fitting versions be.
-    let (verb, plan) = if mods.local.lock.set(name).is_some() {
-        match tgg_mod::plan_set_update(name, &mods.sets, catalog, &mods.local) {
-            Ok(plan) => ("Update", plan),
-            Err(error) => return app.tell(format!("Couldn't plan the update: {error}."), true),
-        }
-    } else {
-        ("Install", tgg_mod::plan_set(set, catalog, &mods.local))
-    };
-    let title = format!("{verb} {}", set.title);
-    let dropped = dropped(mods, Some(name));
-    app.mods.review = Some(Review {
-        title,
-        plan,
-        dropped,
-        remove_dropped: true,
-    });
-}
-
-/// Show what updating everything installed will do.
-pub fn review_updates(app: &mut App) {
-    let Some(catalog) = &app.mods.catalog else {
-        return;
-    };
-    let plan = tgg_mod::plan_updates(&app.mods.sets, catalog, &app.mods.local);
-    let dropped = dropped(&app.mods, None);
-    app.mods.review = Some(Review {
-        title: "Update your mods".into(),
-        plan,
-        dropped,
-        remove_dropped: true,
-    });
-}
-
-/// The mods an update of the installed collection `only` (or of every one)
-/// drops: installed for collections whose newest versions no longer list
-/// them, and not on their own or for a collection that still does.
-fn dropped(mods: &super::Mods, only: Option<&str>) -> Vec<ModId> {
-    let newest = |name: &str| mods.sets.iter().find(|set| set.name == name);
-    let lists = |name: &str, id: &ModId| {
-        newest(name)
-            .or_else(|| mods.local.lock.set(name))
-            .is_some_and(|set| set.mods.iter().any(|m| m.id == *id))
-    };
-    mods.local
-        .lock
-        .mods
-        .iter()
-        .filter(|(_, entry)| !entry.direct && !entry.sets.is_empty())
-        .filter(|(_, entry)| only.is_none_or(|name| entry.sets.iter().any(|set| set == name)))
-        // Only collections being updated drop mods; the rest keep theirs.
-        .filter(|(id, entry)| {
-            entry.sets.iter().all(|set| {
-                let updated = only.is_none_or(|name| name == set);
-                updated && newest(set).is_some() && !lists(set, id)
-            })
-        })
-        .map(|(id, _)| id.clone())
-        .collect()
-}
-
 /// Show what updating the mod `id` alone will do: its newest release that
 /// still fits its collections, and anything new that release needs. Its
 /// collections' own versions stay as they are, as does every other mod.
@@ -634,23 +945,14 @@ pub fn review_mod_update(app: &mut App, id: &ModId) {
     if plan.steps.len() == 1 && plan.problems.is_empty() {
         if app.mods.work.is_none() {
             let doing = format!("Updating {}", app.mods.name_of(id));
-            apply_plan(app, doing, plan, Vec::new(), Some(id.clone()));
+            apply_plan(app, doing, plan, Some(id.clone()));
         }
         return;
     }
     app.mods.review = Some(Review {
         title: format!("Update {}", app.mods.name_of(id)),
         plan,
-        dropped: Vec::new(),
-        remove_dropped: false,
     });
-}
-
-/// Remove the mods an update drops along with it, or keep them.
-pub fn set_remove_dropped(app: &mut App, remove: bool) {
-    if let Some(review) = &mut app.mods.review {
-        review.remove_dropped = remove;
-    }
 }
 
 pub fn cancel_review(app: &mut App) {
@@ -665,27 +967,15 @@ pub fn confirm_review(app: &mut App) {
     let Some(review) = app.mods.review.take() else {
         return;
     };
-    let removing = if review.remove_dropped {
-        review.dropped
-    } else {
-        Vec::new()
-    };
-    apply_plan(app, review.title, review.plan, removing, None);
+    apply_plan(app, review.title, review.plan, None);
 }
 
-/// Apply `plan` on a job, named `doing`, then remove `removing`; `target`
-/// when it updates that one mod alone.
-fn apply_plan(
-    app: &mut App,
-    doing: String,
-    plan: Plan,
-    removing: Vec<ModId>,
-    target: Option<ModId>,
-) {
+/// Apply `plan` on a job, named `doing`; `target` when it updates that one
+/// mod alone.
+fn apply_plan(app: &mut App, doing: String, plan: Plan, target: Option<ModId>) {
     let (net, mods) = (app.mods.net.clone(), app.data.mods.clone());
     // Packages come from, and go into, tgg's cache, shared with profiles.
     let packages = tgg_mod::packages_dir(&app.data.tgg);
-    app.mods.removing = removing;
     let work = start(app, doing);
     if let Some(work) = &mut app.mods.work {
         work.target = target;
@@ -720,16 +1010,6 @@ pub fn set_enabled(app: &mut App, id: &ModId, on: bool) {
             ),
             true,
         );
-    }
-    read_disk(app);
-}
-
-/// Uninstall the set `name`: the mods only it installed.
-pub fn remove_set(app: &mut App, name: &str) {
-    let title = app.mods.set_title(name);
-    match tgg_mod::uninstall_set(&app.data.mods, name) {
-        Ok(()) => app.tell(format!("Removed {title}."), false),
-        Err(error) => app.tell(format!("Couldn't remove {title}: {error}."), true),
     }
     read_disk(app);
 }

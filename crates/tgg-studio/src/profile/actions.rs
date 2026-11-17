@@ -236,14 +236,10 @@ pub fn pack_path(pack: &Pack) -> String {
     )
 }
 
-/// Show the mod `id`, one the player is making, among them on Mods.
+/// Show the mod `id`, one the player is making, on Mods.
 pub fn open_mod(app: &mut App, id: &ModId) {
     nav::go(app, Place::Mods);
-    crate::mods::actions::show_tab(app, crate::mods::Tab::Installed);
-    crate::mods::actions::show_made(app, true);
-    if app.mods.selected.as_ref() != Some(id) {
-        crate::mods::actions::select(app, id);
-    }
+    crate::mods::actions::show_mod(app, id);
 }
 
 /// Show the skins the player made, among their skins on Skins.

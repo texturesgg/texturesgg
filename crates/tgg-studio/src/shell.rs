@@ -66,6 +66,7 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .children(library::review::view(app, &p))
         .children(editor::view::prompt(app, &p))
         .children(mods::review::view(app, &p))
+        .children(mods::sheet::view(app, &p))
         .children(mods::versions::view(app, &p))
         .children(preferences::view::view(app, &p))
         // A select's menu, over Settings.
@@ -74,8 +75,6 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .children(signin::view::sign_in(app, &p))
         .children(replays::review::view(app, &p))
         .children(newmod::view::view(app, &p))
-        // Its examples' menu, over it.
-        .children(newmod::view::menu(app, &p))
         .children(crate::sets::view::trust(app, &p))
         // Play's set picker's menu, over Settings, and its friend sheet.
         .children(play::view::menu(app, &p))

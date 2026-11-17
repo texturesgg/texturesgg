@@ -19,10 +19,6 @@ pub enum Icon {
     Gear,
     Close,
     Chevron,
-    #[expect(
-        dead_code,
-        reason = "Mods' New set tile uses it, in the Mods pull request"
-    )]
     Plus,
     Check,
 }

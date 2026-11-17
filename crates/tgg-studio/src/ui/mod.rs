@@ -29,7 +29,7 @@ pub use marks::{
 };
 pub use surfaces::{
     Dialog, DialogWidth, callout, card, card_plate, dialog, list_row, page_head, pane, pane_header,
-    pane_row, panel, plate, rule, section, setting_row, setting_row_with, spacer, title_bar,
+    pane_row, panel, plate, rule, section, setting_row, spacer, title_bar,
 };
 
 #[cfg(test)]

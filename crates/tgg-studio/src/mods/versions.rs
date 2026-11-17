@@ -17,7 +17,7 @@ const LIST_HEIGHT: f32 = 360.0;
 /// The dialog over a scrim, while it shows.
 pub fn view(app: &App, p: &Palette) -> Option<El> {
     let mods = &app.mods;
-    if !mods.versions || app.nav.place != crate::nav::Place::Mods {
+    if !mods.versions {
         return None;
     }
     let rows = versions(mods)

@@ -1,22 +1,26 @@
-//! Mods: tgg-melee (the Melee port with a mod loader built in) and the mods
-//! textures.gg publishes for it. The page installs the port and Play starts
-//! it with the player's disc; under that, three tabs: the curated
-//! sets, every mod built for the port (searchable), and what's installed
-//! with each mod's switch and update. Pressing a mod shows its details in a
-//! pane beside the list.
+//! Mods: the player's sets across the top, every mod textures.gg publishes
+//! for the port below, and the set showing on the right with its mods in
+//! groups. Pressing a mod's row shows its details where the set panel was;
+//! Add puts the mod in the set showing, or in the mods folder when that's
+//! Installed mods.
 //!
-//! Everything comes from `tgg-mod`: the network only when the page opens or
-//! the player asks (no polling), installs and launches on threads of their
-//! own, and what's installed read from disk as it changes. `actions` changes
-//! it; `view` draws the page, `details` the pane and `review` the dialog
-//! shown before an install.
+//! A set is the sets library's (`tgg_mod::sets`, core `docs/sets.md`):
+//! textures.gg's own are locked and built on, the player's can be changed.
+//! Every change to one runs on a job of its own and comes back with the
+//! list as it is now, so the cards and the panel always agree with disk.
+//! `actions` changes it; `view` draws the page, `panel` the set panel,
+//! `sheet` the New set and Rename dialogs, `details` a mod's, and `review`
+//! the dialog a native mod's install asks with.
 
 pub mod actions;
 pub mod details;
+pub mod panel;
 pub mod review;
+pub mod sheet;
 pub mod versions;
 pub mod view;
 
+use crate::state::App;
 use rune::TextEdit;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -58,9 +62,17 @@ pub struct Mods {
     pub disc: Disc,
     /// The game, while it runs.
     pub playing: Option<Playing>,
-    pub tab: Tab,
-    /// Installed shows only the mods the player is making (dev builds).
-    pub made_only: bool,
+    /// The set the page shows on the right; the active one until a card is
+    /// pressed.
+    pub chosen_set: Option<String>,
+    /// Which of the mods across the page's list show.
+    pub filter: Filter,
+    /// The New set sheet, while it's open.
+    pub new_set: Option<NewSet>,
+    /// The Rename sheet's name, while it's open.
+    pub rename: Option<TextEdit>,
+    /// Whether the "Build on another set" sheet is open.
+    pub building_on: bool,
     /// What the player's looking for among every mod.
     pub search: TextEdit,
     /// The mod whose details show beside the list.
@@ -90,9 +102,6 @@ pub struct Mods {
     pub images: HashMap<String, rune::Pixels>,
     /// The parts of the chosen mod's details shown in full.
     pub expanded: Vec<Expand>,
-    /// Mods to remove once the install under way has applied: those an
-    /// update dropped.
-    pub removing: Vec<ModId>,
 }
 
 /// An older tgg-melee to go back to: its version, and how many installed
@@ -103,13 +112,86 @@ pub struct Fallback {
     pub unfit: usize,
 }
 
-/// Which list the page shows under the game.
+/// What the player's looking for across the official sets: the sets
+/// textures.gg publishes that a new set can build on (one level, so only
+/// ones that list mods).
+#[derive(Default)]
+pub struct NewSet {
+    /// What it's called.
+    pub name: TextEdit,
+    /// The textures.gg sets it builds on, by link name.
+    pub builds_on: Vec<String>,
+}
+
+impl NewSet {
+    /// The sheet opened afresh: Online play built on, when textures.gg has
+    /// it.
+    pub fn opened(sets: &[tgg_mod::Set]) -> Self {
+        let online = sets
+            .iter()
+            .any(|set| set.name == tgg_mod::sets::ONLINE_PLAY);
+        Self {
+            name: TextEdit::default(),
+            builds_on: if online {
+                vec![tgg_mod::sets::ONLINE_PLAY.to_owned()]
+            } else {
+                Vec::new()
+            },
+        }
+    }
+
+    /// Whether it can be made as filled in.
+    pub fn named(&self) -> bool {
+        !self.name.text.trim().is_empty()
+    }
+}
+
+/// Which of the mods the page lists.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Tab {
+pub enum Filter {
     #[default]
-    Sets,
     All,
-    Installed,
+    Rules,
+    Training,
+    OnlineModes,
+    OnScreen,
+}
+
+impl Filter {
+    /// Every filter, in the order the chips show.
+    pub const ALL: [Filter; 5] = [
+        Filter::All,
+        Filter::Rules,
+        Filter::Training,
+        Filter::OnlineModes,
+        Filter::OnScreen,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Filter::All => "All",
+            Filter::Rules => "Rules",
+            Filter::Training => "Training",
+            Filter::OnlineModes => "Online modes",
+            Filter::OnScreen => "On screen",
+        }
+    }
+
+    /// Whether a mod tagged `tags` shows under it. The registry's tags are
+    /// the only thing each mod says about itself that these can read:
+    /// `competitive` changes how a match plays, `training` drills it,
+    /// `netplay` is what online play is built on, and `visual` is what only
+    /// your screen shows.
+    pub fn shows(self, tags: &[String]) -> bool {
+        let has = |tag: &str| tags.iter().any(|have| have == tag);
+        match self {
+            Filter::All => true,
+            Filter::Rules => has("competitive"),
+            Filter::Training => has("training"),
+            Filter::OnlineModes => has("netplay"),
+            Filter::OnScreen => has("visual"),
+        }
+    }
 }
 
 impl Default for Mods {
@@ -128,8 +210,11 @@ impl Default for Mods {
             review: None,
             disc: Disc::Unknown,
             playing: None,
-            tab: Tab::default(),
-            made_only: false,
+            chosen_set: None,
+            filter: Filter::default(),
+            new_set: None,
+            rename: None,
+            building_on: false,
             search: TextEdit::default(),
             selected: None,
             fallback: None,
@@ -142,7 +227,6 @@ impl Default for Mods {
             verdicts: HashMap::new(),
             images: HashMap::new(),
             expanded: Vec::new(),
-            removing: Vec::new(),
         }
     }
 }
@@ -171,7 +255,7 @@ impl Mods {
         newest
     }
 
-    /// The mods offered that the search matches.
+    /// The mods offered that the search matches, and the filter shows.
     pub fn found(&self) -> Vec<&CatalogEntry> {
         self.offered()
             .into_iter()
@@ -183,7 +267,24 @@ impl Mods {
                     manifest.description.as_deref(),
                 )
             })
+            .filter(|entry| self.filter.shows(self.tags(&entry.manifest.id)))
             .collect()
+    }
+
+    /// The tags the registry gives the mod `id`: its release's, else its
+    /// listing's; none when it has none to give.
+    pub fn tags(&self, id: &ModId) -> &[String] {
+        let released = self
+            .catalog
+            .as_ref()
+            .and_then(|catalog| catalog.mods.iter().find(|entry| entry.manifest.id == *id))
+            .map(|entry| entry.manifest.tags.as_slice())
+            .filter(|tags| !tags.is_empty());
+        released.unwrap_or_else(|| {
+            self.listings
+                .get(id)
+                .map_or(&[], |summary| summary.tags.as_slice())
+        })
     }
 
     /// The mods the registry lists that aren't built for this tgg-melee yet,
@@ -197,6 +298,7 @@ impl Mods {
             .filter(|summary| {
                 self.matches(&summary.id, &summary.name, summary.description.as_deref())
             })
+            .filter(|summary| self.filter.shows(&summary.tags))
             .collect();
         unbuilt.sort_by_key(|summary| (!summary.publisher.official, summary.name.to_lowercase()));
         unbuilt
@@ -251,20 +353,6 @@ impl Mods {
             .collect()
     }
 
-    /// The installed mods the newer tgg-melee on offer has no build of yet,
-    /// by name.
-    pub fn unbuilt_for_update(&self) -> Vec<String> {
-        let Some(built) = &self.next_built else {
-            return Vec::new();
-        };
-        self.local
-            .mods
-            .iter()
-            .filter(|m| !built.contains(m.id()))
-            .map(|m| m.manifest.name.clone())
-            .collect()
-    }
-
     /// A mod's name, from what's installed or the catalog, else its id.
     pub fn name_of(&self, id: &ModId) -> String {
         self.local
@@ -303,12 +391,6 @@ impl Mods {
     /// Whether tgg-melee `version` is installed already.
     pub fn has_port(&self, version: &str) -> bool {
         self.ports.iter().any(|port| port.version == version)
-    }
-
-    /// Whether anything installed has a newer version.
-    pub fn has_updates(&self) -> bool {
-        self.local.mods.iter().any(|m| m.update.is_some())
-            || self.local.sets.iter().any(|set| set.update.is_some())
     }
 
     /// A set's title, by its name, from the registry or the lock.
@@ -375,11 +457,6 @@ impl Work {
 pub struct Review {
     pub title: String,
     pub plan: Plan,
-    /// Mods an update drops: installed only because a collection listed
-    /// them, which its newest version no longer does.
-    pub dropped: Vec<ModId>,
-    /// Whether applying it removes them too (else they stay, on their own).
-    pub remove_dropped: bool,
 }
 
 /// The disc tgg-melee plays. Any copy of Melee NTSC 1.02 does: the port
@@ -425,6 +502,43 @@ pub enum Done {
     GameEnded(Result<(), String>),
     /// The registry's page for a mod.
     Details(ModId, Result<ModDetails, Error>),
+    /// A set changed on disk, or why it couldn't: the sets as they are now,
+    /// what to say, and which set to show.
+    SetChanged(Box<Reload>),
+}
+
+/// A set change that ran on a job.
+pub struct Reload {
+    /// The sets as they are now, and the active one's key; or why they
+    /// couldn't be read.
+    pub list: Result<(Vec<tgg_mod::sets::MySet>, String), String>,
+    /// What the change says, and the set to show after it; or why it
+    /// failed.
+    pub result: Result<(Option<String>, Option<String>), String>,
+}
+
+/// The set the page shows: the one the player pressed, else the active one
+/// when it has mods.
+pub fn current_set(app: &App) -> Option<&tgg_mod::sets::MySet> {
+    let chosen = app
+        .mods
+        .chosen_set
+        .as_deref()
+        .and_then(|key| app.sets.get(key));
+    chosen.or_else(|| {
+        app.sets
+            .active()
+            .filter(|set| !set.is_installed() || !set.lines.is_empty())
+    })
+}
+
+/// "1 mod", "8 mods".
+pub fn mod_count(count: usize) -> String {
+    if count == 1 {
+        "1 mod".to_owned()
+    } else {
+        format!("{count} mods")
+    }
 }
 
 /// `bytes` as a player reads a size: "840 KB", "12.4 MB".

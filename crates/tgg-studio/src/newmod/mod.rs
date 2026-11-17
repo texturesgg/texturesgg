@@ -1,11 +1,11 @@
-//! New mod: starting a code mod on this computer, from the installed
-//! tgg-melee's SDK. The player names it, picks where it goes and which of
-//! the SDK's examples it starts from, and sees whether the tools that build
-//! mods are installed; then it's made (its files, a git repository) and the
-//! next steps show: the commands that build and run it, its folder, the
-//! docs. The app never builds or publishes a mod: that's the `tgg` command
-//! and textures.gg. `actions` changes it; `view` draws the dialog;
-//! `library` is what it asks tgg-mod.
+//! Start a mod: the five things `tgg mod new` asks about (a rule,
+//! something on screen, a menu or screen, an online mode, native C), a
+//! name, and Create. The mod is made from the installed tgg-melee's SDK in
+//! a folder of its own, and the sheet then says where it is, the command
+//! that runs it, and how to open it and read the guide. The app never
+//! builds or publishes a mod: that's the `tgg` command and textures.gg.
+//! `actions` changes it; `view` draws the sheet; `library` is what it asks
+//! tgg-mod.
 
 pub mod actions;
 pub mod library;
@@ -16,29 +16,81 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
-/// The example a new mod starts from unless the player picks another.
-pub const TEMPLATE: &str = "template";
+/// What a mod is for, and so the SDK example it starts from.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Kind {
+    /// A script that changes how the game plays.
+    #[default]
+    Rule,
+    /// A script that shows something on screen: a counter, a trainer.
+    OnScreen,
+    /// A script that adds a menu entry and its screen.
+    Menu,
+    /// A script mode that plays online.
+    OnlineMode,
+    /// A C mod, for what scripts can't reach.
+    Native,
+}
 
-/// The New mod dialog's state.
+impl Kind {
+    /// Every kind, in the order the sheet shows them.
+    pub const ALL: [Kind; 5] = [
+        Kind::Rule,
+        Kind::OnScreen,
+        Kind::Menu,
+        Kind::OnlineMode,
+        Kind::Native,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Kind::Rule => "A rule",
+            Kind::OnScreen => "Something on screen",
+            Kind::Menu => "A menu or screen",
+            Kind::OnlineMode => "An online mode",
+            Kind::Native => "Native C",
+        }
+    }
+
+    /// The line under its name.
+    pub fn line(self) -> &'static str {
+        match self {
+            Kind::Rule => "Change how the game plays",
+            Kind::OnScreen => "Counters, trainers, overlays",
+            Kind::Menu => "Add your own place in the menus",
+            Kind::OnlineMode => "Your own way to play with friends",
+            Kind::Native => "For what scripts can't do",
+        }
+    }
+
+    /// The SDK example it starts from.
+    pub fn template(self) -> &'static str {
+        match self {
+            Kind::Rule => tgg_mod::SCRIPT_TEMPLATES[0],
+            Kind::OnScreen => tgg_mod::SCRIPT_TEMPLATES[1],
+            Kind::Menu => tgg_mod::SCRIPT_TEMPLATES[2],
+            Kind::OnlineMode => tgg_mod::SCRIPT_TEMPLATES[3],
+            Kind::Native => tgg_mod::TEMPLATE,
+        }
+    }
+}
+
+/// The Start a mod sheet's state.
 #[derive(Default)]
 pub struct NewMod {
-    /// The dialog shows.
+    /// The sheet shows.
     pub open: bool,
-    /// The mod's name, as the player types it.
+    /// What the player's making.
+    pub kind: Kind,
+    /// Its name, as the player types it.
     pub name: rune::TextEdit,
-    /// Its id, when the player types one; else it comes from the name.
-    pub id: rune::TextEdit,
     /// The folder the mod's own folder (named by its id) goes in.
     pub parent: PathBuf,
-    /// The installed tgg-melee's SDK and its examples, once it's here, or
-    /// why it couldn't be had.
-    pub sdk: Option<Result<(Sdk, Vec<String>), String>>,
+    /// The installed tgg-melee's SDK, once it's here, or why it couldn't be
+    /// had.
+    pub sdk: Option<Result<Sdk, String>>,
     /// The SDK on its way (the first time): how far, and stopping it.
     pub fetching: Option<Fetching>,
-    /// The example it starts from.
-    pub example: String,
-    /// The examples' menu is open.
-    pub menu: bool,
     /// Which of the tools that build mods are installed, once looked for.
     pub tools: Option<Tools>,
     pub stage: Stage,
@@ -75,32 +127,35 @@ impl Fetching {
 }
 
 impl NewMod {
-    /// The SDK's examples, once it's here.
-    pub fn examples(&self) -> Option<&[String]> {
-        match &self.sdk {
-            Some(Ok((_, examples))) => Some(examples),
-            _ => None,
-        }
-    }
-
-    /// The id the mod gets: the one typed, else one from the name.
+    /// The id the mod gets, from its name.
     pub fn id_text(&self) -> String {
-        let typed = self.id.text.trim();
-        if typed.is_empty() {
-            id_from(&self.name.text)
-        } else {
-            typed.to_owned()
-        }
+        id_from(&self.name.text)
     }
 
-    /// The id, when it's a valid one.
+    /// The id, when the name makes a valid one.
     pub fn mod_id(&self) -> Option<tgg_mod::ModId> {
         self.id_text().parse().ok()
+    }
+
+    /// What players see it called: the name typed, else its id.
+    pub fn title(&self) -> String {
+        match self.name.text.trim() {
+            "" => self.id_text(),
+            name => name.to_owned(),
+        }
     }
 
     /// The folder the mod is made in.
     pub fn folder(&self) -> PathBuf {
         self.parent.join(self.id_text())
+    }
+
+    /// Whether Create can be pressed: the SDK here, a name that makes a
+    /// valid id, and nothing being made.
+    pub fn ready(&self) -> bool {
+        matches!(self.stage, Stage::Editing | Stage::Failed(_))
+            && matches!(self.sdk, Some(Ok(_)))
+            && self.mod_id().is_some()
     }
 }
 
@@ -118,7 +173,7 @@ pub fn id_from(name: &str) -> String {
     id.trim_end_matches('-').chars().take(64).collect()
 }
 
-/// Where new mods go unless the player picks a folder: `mods` in their
+/// Where new mods go unless the player picked a folder: `mods` in their
 /// home folder.
 pub fn default_parent() -> PathBuf {
     dirs::home_dir()

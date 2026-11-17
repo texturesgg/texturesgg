@@ -25,10 +25,6 @@ mod preferences;
 mod profile;
 mod replays;
 mod report;
-#[expect(
-    dead_code,
-    reason = "first run, Play and Mods use the sets, in the pull requests after this one"
-)]
 mod sets;
 mod shell;
 mod signin;
@@ -243,11 +239,14 @@ const SCENES: &[Scene] = &[
         editor::colors::apply(app);
         editor::actions::leave(app, &mut rune::Tx::default());
     }),
-    // Mods against a fake textures.gg, in a folder of its own: nothing
-    // installed; tgg-melee and Competitive installed, a mod turned off and
-    // one with an update; the review before installing Replays; and an
-    // install under way.
-    ("mods", |app| mods_scene(app, false)),
+    // Mods against a fake textures.gg, in a folder of its own: Competitive
+    // and Replays added from it, Competitive Using and shown.
+    ("mods", |app| {
+        let net = mods_scene(app, true);
+        add_scene_set(app, &*net, "competitive");
+        add_scene_set(app, &*net, "replays");
+        show_scene_sets(app, &*net, "competitive", "competitive");
+    }),
     // Play before tgg-melee is installed: one line saying what to set up.
     ("play-new", |app| {
         mods_scene(app, false);
@@ -322,73 +321,47 @@ const SCENES: &[Scene] = &[
             );
         }
     }),
-    ("mods-installed", |app| mods_scene(app, true)),
-    // Updating Competitive to a version without Quick start, Online rules
-    // newer.
-    ("mods-update-review", |app| {
-        mods_scene(app, true);
-        if let Some(set) = app
-            .mods
-            .sets
-            .iter_mut()
-            .find(|set| set.name == "competitive")
-        {
-            set.version += 1;
-            set.mods.retain(|m| m.id.as_str() != "tgg.quick-start");
-        }
-        mods::actions::read_disk(app);
-        mods::actions::review_set(app, "competitive");
+    // Friday night: Competitive plus Replays, one mod added, one left out,
+    // and one textures.gg withdrew.
+    ("mods-own-set", |app| {
+        let net = mods_scene(app, true);
+        add_scene_set(app, &*net, "competitive");
+        add_scene_set(app, &*net, "replays");
+        make_scene_set(
+            app,
+            &*net,
+            "Friday night",
+            &["competitive", "replays"],
+            &["tgg.replay-recorder"],
+            &["tgg.quick-start"],
+        );
+        net.withdraw(
+            "tgg.skip-results",
+            "0.1.0",
+            "crashes on Windows",
+            tgg_mod::WithdrawMode::Off,
+        );
+        show_scene_sets(app, &*net, "friday-night", "friday-night");
     }),
-    // tgg-melee's versions: the one installed, and a newer one offered.
-    ("mods-versions", |app| {
-        mods_scene(app, true);
-        let newer = app.mods.releases.first().cloned().map(|mut release| {
-            release.version = "0.6.0".into();
-            release
-        });
-        app.mods.releases.splice(0..0, newer);
-        mods::actions::show_versions(app, true);
+    // Installed mods shown: the mods folder, each mod's switch.
+    ("mods-installed-set", |app| {
+        let net = mods_scene(app, true);
+        show_scene_sets(app, &*net, "installed", "installed");
     }),
-    // Online rules updating on its own, its progress in its row.
-    ("mods-updating-one", |app| {
-        mods_scene(app, true);
-        mods::actions::show_tab(app, mods::Tab::Installed);
-        let progress = tgg_mod::Progress {
-            step: 0,
-            steps: 1,
-            label: "Downloading Online rules".into(),
-            bytes: 1,
-            total: Some(2),
-        };
-        app.mods.work = Some(mods::Work {
-            doing: "Updating Online rules".into(),
-            progress: std::sync::Arc::new(std::sync::Mutex::new(Some(progress))),
-            cancel: std::sync::Arc::default(),
-            target: "tgg.online-rules".parse().ok(),
-        });
+    // Rules picked: only the mods that change how a match plays.
+    ("mods-filter", |app| {
+        let net = mods_scene(app, true);
+        add_scene_set(app, &*net, "competitive");
+        show_scene_sets(app, &*net, "competitive", "competitive");
+        mods::actions::set_filter(app, mods::Filter::Rules);
     }),
-    // Before textures.gg first answers: placeholders where the collections go.
-    ("mods-loading", |app| {
-        mods_scene(app, true);
-        app.mods.sets.clear();
-        app.mods.catalog = None;
-        app.mods.registry = mods::Registry::Asking;
-    }),
-    ("mods-installed-tab", |app| {
-        mods_scene(app, true);
-        mods::actions::show_tab(app, mods::Tab::Installed);
-    }),
-    ("mods-all", |app| {
-        mods_scene(app, true);
-        mods::actions::show_tab(app, mods::Tab::All);
-    }),
-    // Direct connect's details beside every mod.
+    // Direct connect's details where the set panel was.
     ("mods-details", |app| {
-        mods_scene(app, true);
-        mods::actions::show_tab(app, mods::Tab::All);
+        let net = mods_scene(app, true);
+        add_scene_set(app, &*net, "competitive");
+        show_scene_sets(app, &*net, "competitive", "competitive");
         if let Ok(id) = "tgg.direct-connect".parse::<tgg_mod::ModId>() {
             // Its page fetched here, not on a job, so it's there for the picture.
-            let net = app.mods.net.clone();
             if let Ok(details) = tgg_mod::mod_details(&*net, &id) {
                 for shot in &details.screenshots {
                     scene_image(app, &*net, &shot.url);
@@ -398,25 +371,48 @@ const SCENES: &[Scene] = &[
             mods::actions::select(app, &id);
         }
     }),
-    ("mods-review", |app| {
+    // New set: Online play isn't on textures.gg yet, and the sheet says so.
+    ("mods-new-set", |app| {
         mods_scene(app, true);
-        mods::actions::review_set(app, "replays");
+        mods::actions::open_new_set(app);
     }),
-    ("mods-installing", |app| {
-        mods_scene(app, false);
-        // The work alone, with nothing downloading: the picture is of the bar.
-        let progress = tgg_mod::Progress {
-            step: 0,
-            steps: 1,
-            label: "Downloading tgg-melee 0.5.0".into(),
-            bytes: 4,
-            total: Some(10),
-        };
-        app.mods.work = Some(mods::Work {
-            doing: "Installing tgg-melee 0.5.0".into(),
-            progress: std::sync::Arc::new(std::sync::Mutex::new(Some(progress))),
-            cancel: std::sync::Arc::default(),
-            target: None,
+    // Start a mod: A rule, named.
+    ("mods-start-a-mod", |app| {
+        mods_scene(app, true);
+        new_mod_scene(app);
+    }),
+    // The mod made, where it is and how to run it.
+    ("mods-start-a-mod-created", |app| {
+        mods_scene(app, true);
+        new_mod_scene(app);
+        app.new_mod.stage = newmod::Stage::Created(tgg_mod::CreatedMod {
+            dir: app.new_mod.folder(),
+            id: "neutral-spawns".parse().expect("an id"),
+            example: newmod::Kind::Rule.template().into(),
+            sdk_version: "0.1.0".into(),
+            repository: tgg_mod::Repository::Committed,
+        });
+    }),
+    // Friday night's game running: the page shows it read-only.
+    ("mods-running", |app| {
+        let net = mods_scene(app, true);
+        add_scene_set(app, &*net, "competitive");
+        make_scene_set(
+            app,
+            &*net,
+            "Friday night",
+            &["competitive"],
+            &["tgg.replay-recorder"],
+            &[],
+        );
+        show_scene_sets(app, &*net, "friday-night", "friday-night");
+        app.mods.playing = Some(mods::Playing {
+            stop: std::sync::Arc::default(),
+        });
+        app.sets.session = Some(crate::sets::Session {
+            how: crate::sets::How::Offline,
+            name: "Friday night".into(),
+            started: std::time::Instant::now(),
         });
     }),
     // The launch video's start: a player new to mods, against the live
@@ -432,31 +428,6 @@ const SCENES: &[Scene] = &[
         if let Some(references) = &app.game {
             app.mods.disc = mods::Disc::Found(references.game().path().to_owned());
         }
-    }),
-    // New mod over Mods, filled in, CMake missing (the SDK and tools as
-    // given here, not looked for).
-    ("new-mod", |app| {
-        mods_scene(app, true);
-        new_mod_scene(app);
-        app.new_mod.name.text = "Neutral spawns".into();
-    }),
-    // New mod for the player's own tgg-melee: its real SDK and tools.
-    ("new-mod-here", |app| {
-        mods::actions::read_disk(app);
-        newmod::actions::open(app);
-    }),
-    // A mod just started.
-    ("new-mod-created", |app| {
-        mods_scene(app, true);
-        new_mod_scene(app);
-        app.new_mod.name.text = "Neutral spawns".into();
-        app.new_mod.stage = newmod::Stage::Created(newmod::library::CreatedMod {
-            dir: app.new_mod.folder(),
-            id: "neutral-spawns".parse().expect("an id"),
-            example: newmod::TEMPLATE.into(),
-            sdk_version: "0.1.0".into(),
-            repository: newmod::library::Repository::Committed,
-        });
     }),
     ("settings", preferences::actions::open),
     ("settings-menu", |app| {
@@ -674,8 +645,8 @@ fn show_shared(app: &mut App, code: &str, name: &str) {
     }
 }
 
-/// For scenes: New mod open, the SDK's examples and the tools found given
-/// rather than looked for: GCC and git installed, CMake not.
+/// For scenes: Start a mod open, its SDK and the tools found given rather
+/// than fetched: GCC and git installed, CMake not.
 fn new_mod_scene(app: &mut App) {
     let json = format!(
         r#"{{"api": "{}", "api_version": "1.0", "name": "tgg-melee", "version": "0.1.0",
@@ -686,16 +657,10 @@ fn new_mod_scene(app: &mut App) {
     );
     let sdk = tgg_mod::Sdk::parse(json.as_bytes(), std::path::Path::new("/sdk"))
         .expect("the scene's SDK reads");
-    let examples = vec![
-        newmod::TEMPLATE.into(),
-        "damage-log".into(),
-        "lcancel-trainer".into(),
-    ];
     app.new_mod = newmod::NewMod {
         open: true,
         parent: PathBuf::from("/home/player/mods"),
-        example: newmod::TEMPLATE.into(),
-        sdk: Some(Ok((sdk, examples))),
+        sdk: Some(Ok(sdk)),
         tools: Some(newmod::library::Tools {
             cc: Some(PathBuf::from("/usr/bin/gcc")),
             cmake: None,
@@ -704,6 +669,7 @@ fn new_mod_scene(app: &mut App) {
         }),
         ..newmod::NewMod::default()
     };
+    app.new_mod.name.text = "Neutral spawns".into();
 }
 
 /// For scenes: first run over a fake textures.gg, its releases and sets
@@ -744,9 +710,10 @@ fn scene_disc(app: &mut App) {
 
 /// For scenes: Mods against a fake textures.gg, its mods and ports in a
 /// scratch folder, filled in place so nothing arrives mid-snapshot. With
-/// `installed`, tgg-melee and Competitive are installed, Quick start turned
-/// off, and textures.gg has a newer Online rules.
-fn mods_scene(app: &mut App, installed: bool) {
+/// `installed`, tgg-melee is installed, Competitive's mods are in the mods
+/// folder with Quick start turned off, and textures.gg has a newer Online
+/// rules.
+fn mods_scene(app: &mut App, installed: bool) -> std::sync::Arc<tgg_mod::FakeNet> {
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
     let folder = std::env::temp_dir().join("tgg-studio-scene-mods");
@@ -754,6 +721,9 @@ fn mods_scene(app: &mut App, installed: bool) {
     app.data.mods = folder.join("mods");
     app.data.ports = folder.join("tgg-data").join("tgg").join("ports");
     app.data.tgg = folder.join("tgg-data");
+    app.data.skins = folder.join("skins.json");
+    app.data.library = folder.join("library");
+    app.data.history = folder.join("games");
     let net = Arc::new(tgg_mod::FakeNet::new());
     let releases = tgg_mod::port_releases(&*net).unwrap_or_default();
     let never = AtomicBool::new(false);
@@ -766,16 +736,17 @@ fn mods_scene(app: &mut App, installed: bool) {
             &never,
         );
     }
-    let port = tgg_mod::installed_ports(&app.data.ports)
-        .ok()
-        .and_then(|ports| ports.into_iter().find(|port| port.current));
+    let ports = tgg_mod::installed_ports(&app.data.ports).unwrap_or_default();
+    let port = ports.iter().find(|port| port.current).cloned();
     let sets = tgg_mod::sets(&*net).unwrap_or_default();
     let catalog = port
         .as_ref()
         .and_then(|port| tgg_mod::catalog(&*net, &port.port()).ok());
-    if let (Some(catalog), Some(competitive)) =
-        (&catalog, sets.iter().find(|set| set.name == "competitive"))
-    {
+    if let (true, Some(catalog), Some(competitive)) = (
+        installed,
+        &catalog,
+        sets.iter().find(|set| set.name == "competitive"),
+    ) {
         let plan = tgg_mod::plan_set(competitive, catalog, &tgg_mod::Local::empty());
         let _ = tgg_mod::apply_cached(
             &*net,
@@ -788,7 +759,6 @@ fn mods_scene(app: &mut App, installed: bool) {
         if let Ok(id) = "tgg.quick-start".parse() {
             let _ = tgg_mod::set_enabled(&app.data.mods, &id, false);
         }
-        net.publish_mod("tgg.online-rules", "Online rules", "0.1.1", &[]);
     }
     // As the app fetches: before tgg-melee is installed, its newest release's catalog.
     let layout = port.as_ref().map(tgg_mod::PortInstall::port).or_else(|| {
@@ -806,15 +776,84 @@ fn mods_scene(app: &mut App, installed: bool) {
             app.mods.listings.insert(summary.id.clone(), summary);
         }
     }
-    app.mods.net = net;
+    app.mods.net = net.clone();
     app.mods.releases = releases;
+    app.mods.ports = ports;
+    let layout = port.as_ref().map(tgg_mod::PortInstall::port);
+    app.mods.local =
+        tgg_mod::local(&app.data.mods, layout.as_ref()).unwrap_or_else(|_| tgg_mod::Local::empty());
+    app.mods.skins = tgg_mod::skins(&app.data.skins).unwrap_or_default();
     app.mods.sets = sets;
     app.mods.catalog = catalog;
     app.mods.registry = mods::Registry::Answered;
     app.mods.disc = app.game.as_ref().map_or(mods::Disc::Missing, |references| {
         mods::Disc::Found(references.game().path().to_owned())
     });
-    nav::actions::go(app, nav::Place::Mods);
+    app.nav.place = nav::Place::Mods;
+    net
+}
+
+/// For scenes: add the textures.gg set `link` to the player's sets as it
+/// is, locked.
+fn add_scene_set(app: &mut App, net: &dyn tgg_mod::Net, link: &str) {
+    let _ = tgg_mod::sets::get(net, &app.data.tgg, link);
+}
+
+/// For scenes: a set of the player's named `name`, building on `links`,
+/// with `add`'s mods added and `left_out`'s left out.
+fn make_scene_set(
+    app: &mut App,
+    net: &dyn tgg_mod::Net,
+    name: &str,
+    links: &[&str],
+    add: &[&str],
+    left_out: &[&str],
+) {
+    let (data, local) = (app.data.tgg.clone(), app.mods.local.clone());
+    let Ok(mut set) = tgg_mod::sets::new(&data, name) else {
+        return;
+    };
+    for link in links {
+        match tgg_mod::sets::build_on(net, &data, &local, &set.key, link) {
+            Ok(built) => set = built,
+            Err(_) => return,
+        }
+    }
+    for id in add {
+        if let Ok(id) = id.parse() {
+            set.add(id, tgg_mod::sets::Want::Latest);
+        }
+    }
+    for id in left_out {
+        if let Ok(id) = id.parse() {
+            set.leave_out(&id, true);
+        }
+    }
+    let _ = tgg_mod::sets::save(&data, &set);
+}
+
+/// For scenes: the sets as the scene's folder has them, `active` the one
+/// Play starts and `chosen` the one the page shows, their plans worked out
+/// here so nothing arrives mid-snapshot.
+fn show_scene_sets(app: &mut App, net: &dyn tgg_mod::Net, active: &str, chosen: &str) {
+    use std::sync::Arc;
+    let _ = tgg_mod::sets::activate(&app.data.tgg, active);
+    app.sets.list = tgg_mod::sets::list(&app.data.tgg, &app.mods.local).unwrap_or_default();
+    app.sets.active = active.to_owned();
+    app.mods.chosen_set = Some(chosen.to_owned());
+    for key in [active, chosen] {
+        let Some(set) = app.sets.get(key).cloned() else {
+            continue;
+        };
+        if set.is_installed() {
+            continue;
+        }
+        if let Ok(plan) = tgg_mod::sets::plan(net, &app.data.tgg, &app.data.mods, &set, false) {
+            app.sets
+                .plans
+                .insert(key.to_owned(), crate::sets::Planned::Ready(Arc::new(plan)));
+        }
+    }
 }
 
 /// For scenes: Play with tgg-melee and Competitive installed, Friday night
