@@ -28,8 +28,16 @@ fn white(alpha: f32) -> Color {
     rgb(0xFFFFFF).alpha(alpha)
 }
 
-/// The sidebar's smoked glass over the system's blur of what's behind the
-/// window, where the system blurs (macOS): `rgba(36,36,34,.8)`.
+/// Whether the sidebar is glass: the window is see-through there and the
+/// desktop shows through it. On macOS the system blurs what's behind it
+/// (`SystemMaterial::Popover`); on Linux the compositor does where it blurs
+/// every see-through window (Hyprland, SwayFX), and elsewhere (GNOME, KWin,
+/// which blurs only windows that ask) the smoke alone shows. Windows keeps it
+/// solid.
+pub const GLASS: bool = cfg!(any(target_os = "macos", target_os = "linux"));
+
+/// The sidebar's smoked glass over the blur of what's behind the window,
+/// where it's glass (`GLASS`): `rgba(36,36,34,.8)`.
 pub fn glass() -> Color {
     rgb(0x242422).alpha(0.8)
 }
@@ -37,7 +45,7 @@ pub fn glass() -> Color {
 /// One palette's colors.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Palette {
-    /// The sidebar, where the system can't blur behind the window.
+    /// The sidebar, where it isn't glass.
     pub sunk: Color,
     /// The content, to the window's edge.
     pub bg: Color,

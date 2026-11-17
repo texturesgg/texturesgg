@@ -552,10 +552,12 @@ fn main() {
         let app = rune::App::new(spec)
             .window_options(rune::WindowOptions {
                 position,
-                // On macOS the system blurs what's behind the window under
-                // the sidebar (`shell::sidebar`); everything else fills its
-                // own part. Rune blurs behind windows nowhere else.
-                transparent: cfg!(target_os = "macos"),
+                // See-through where the sidebar is glass (`ui::tokens::GLASS`):
+                // the sidebar fills its part with smoke, everything else fills
+                // its own part solid. Where the GPU can't present a
+                // see-through window, Rune makes it opaque and the smoke sits
+                // on black, close to the solid sidebar.
+                transparent: ui::tokens::GLASS,
                 ..Default::default()
             })
             // Coming back to the window: a sign-in or sign-out made with `tgg` shows.

@@ -145,9 +145,9 @@ fn sidebar(app: &App, p: &Palette) -> El {
         .motion(motion::SIDEBAR)
         .clip_rounded(0.0)
         .fill(p.sunk);
-    // Where the system blurs what's behind the window (macOS), the sidebar
-    // is smoked glass; everywhere else it's solid.
-    let base = if cfg!(target_os = "macos") {
+    // Smoked glass where the window is see-through (`tokens::GLASS`); solid
+    // everywhere else. The material is macOS's blur; elsewhere it's a no-op.
+    let base = if crate::ui::tokens::GLASS {
         base.system_material(rune::SystemMaterial::Popover)
             .fill(crate::ui::tokens::glass())
     } else {
