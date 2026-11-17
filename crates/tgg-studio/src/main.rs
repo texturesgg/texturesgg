@@ -455,6 +455,10 @@ fn main() {
         let app = rune::App::new(spec)
             .window_options(rune::WindowOptions {
                 position,
+                // On macOS the system blurs what's behind the window under
+                // the sidebar (`shell::sidebar`); everything else fills its
+                // own part. Rune blurs behind windows nowhere else.
+                transparent: cfg!(target_os = "macos"),
                 ..Default::default()
             })
             // Coming back to the window: a sign-in or sign-out made with `tgg` shows.
