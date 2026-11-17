@@ -297,6 +297,12 @@ const SCENES: &[Scene] = &[
         play_queues(app, false);
         app.play.menu = true;
     }),
+    // Native code from a publisher the player hasn't trusted, before a game.
+    ("play-trust", |app| {
+        play_scene(app);
+        play_queues(app, false);
+        trust_scene(app);
+    }),
     // A toast after an install, offering Undo.
     ("toast", |app| {
         skins_on(app, melee::Tab::Using);
@@ -1140,6 +1146,28 @@ fn hosting_scene(app: &mut App) {
     }
     let _ = std::fs::write(&log, "tgg.direct-connect: meet: in room FOXD-7K2Q\n");
     app.play.log.room = Some("FOXD-7K2Q".into());
+}
+
+/// For scenes: Friday night's game waits on the player's yes to native code
+/// from a publisher other than textures.gg.
+fn trust_scene(app: &mut App) {
+    let Some(set) = app.sets.get("friday-night").cloned() else {
+        return;
+    };
+    let Some(crate::sets::Planned::Ready(plan)) = app.sets.plans.get("friday-night").cloned()
+    else {
+        return;
+    };
+    app.sets.trust = Some(crate::sets::Trust {
+        how: crate::sets::How::Search,
+        source: crate::sets::Source::Set { set, plan },
+        publishers: vec![(
+            "u-fizzi".into(),
+            "Fizzi".into(),
+            vec!["Rollback".into(), "Frame data".into()],
+        )],
+        remember: false,
+    });
 }
 
 /// For scenes: what the set plays without, above the card.

@@ -10,13 +10,17 @@ use rune::{El, col, row, text as label};
 pub fn trust(app: &App, p: &Palette) -> Option<El> {
     let trust = app.sets.trust.as_ref()?;
     let lines = trust.publishers.iter().map(|(_, name, mods)| {
-        label(format!(
-            "{} runs native code on your computer. It's published by {name}, not textures.gg.",
-            mods.join(", ")
-        ))
-        .font(text::BODY)
-        .color(p.ink)
-        .wrap()
+        let words = match mods.as_slice() {
+            [one] => format!(
+                "{one} runs native code on your computer. It's published by {name}, not textures.gg."
+            ),
+            [rest @ .., last] => format!(
+                "{} and {last} run native code on your computer. They're published by {name}, not textures.gg.",
+                rest.join(", ")
+            ),
+            [] => format!("{name}'s mods run native code on your computer."),
+        };
+        label(words).font(text::BODY).color(p.ink).wrap()
     });
     let remember = trust.remember;
     let body = col().px(space::LG).gap(space::SM).children(lines).child(
