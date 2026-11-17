@@ -4,7 +4,8 @@ name: Rune
 # the pin (crates/tgg-studio/Cargo.toml, and the root Cargo.toml's
 # [patch.crates-io], which must name the same rev) to Rune's newest `dev`, in
 # one pull request from `bot/rune` that it keeps up to date, and runs CI on it.
-# Once an app-v* release tag exists it stops, and Rune moves by hand.
+# Once tgg-studio's first release is tagged (app-v0.3.0 or later; app-v0.1.0
+# and app-v0.2.0 were tgg-editor's) it stops, and Rune moves by hand.
 #
 # A pull request opened with the workflow's token doesn't start CI, so this
 # starts it (ci.yml's workflow_dispatch); its checks land on the PR's commit.
@@ -15,6 +16,10 @@ on:
   schedule:
     - cron: "17 14 * * *"
   workflow_dispatch:
+    inputs:
+      rev:
+        description: "A Rune commit (40 hex digits) to move to, instead of dev's newest"
+        required: false
 
 permissions:
   contents: write
@@ -39,12 +44,18 @@ jobs:
 
       - name: Find dev's newest rev
         id: rev
+        env:
+          REV: ${{ inputs.rev }}
         run: |
-          if [ -n "$(git ls-remote --tags origin 'refs/tags/app-v*')" ]; then
-            echo "tgg-studio has had a release; Rune moves by hand now."
+          first=0.3.0
+          newest="$(git ls-remote --tags origin 'refs/tags/app-v*' |
+            sed -n 's#.*refs/tags/app-v\([^^]*\)$#\1#p' | sort -V | tail -1)"
+          if [ -n "$newest" ] && [ "$(printf '%s\n%s\n' "$first" "$newest" | sort -V | head -1)" = "$first" ]; then
+            echo "tgg-studio has had a release (app-v$newest); Rune moves by hand now."
             exit 0
           fi
-          new="$(git ls-remote https://github.com/anomalyco/rune refs/heads/dev | cut -f1)"
+          new="${REV:-$(git ls-remote https://github.com/anomalyco/rune refs/heads/dev | cut -f1)}"
+          [[ "$new" =~ ^[0-9a-f]{40}$ ]] || { echo "not a full commit: '$new'"; exit 1; }
           old="$(sed -n 's/^rev = "\([0-9a-f]\{40\}\)"$/\1/p' crates/tgg-studio/Cargo.toml)"
           [ -n "$new" ] && [ -n "$old" ] || { echo "no rev found (dev: '$new', pinned: '$old')"; exit 1; }
           if [ "$new" = "$old" ]; then
@@ -77,7 +88,7 @@ jobs:
           patches < Cargo.toml > ours
           total="$(gh api "repos/anomalyco/rune/compare/$OLD...$NEW" --jq .total_commits)"
           {
-            echo "Moves Rune from \`${OLD:0:8}\` to \`${NEW:0:8}\`, the newest \`dev\`: $total commits ([compare](https://github.com/anomalyco/rune/compare/$OLD...$NEW))."
+            echo "Moves Rune from \`${OLD:0:8}\` to \`${NEW:0:8}\`: $total commits ([compare](https://github.com/anomalyco/rune/compare/$OLD...$NEW))."
             echo
             echo "Opened by \`.github/workflows/rune.yml\`, which keeps Rune current until tgg-studio's first release. CI runs on it from that workflow. If it fails, a Rune change needs the app to follow; push the fix to this branch."
             if ! diff -q ours theirs > /dev/null; then
