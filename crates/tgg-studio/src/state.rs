@@ -68,6 +68,8 @@ pub struct App {
     pub slippi: crate::slippi::Slippi,
     /// tgg-melee and its mods.
     pub mods: Mods,
+    /// The player's sets, and starting a game from one.
+    pub sets: crate::sets::Sets,
     /// Work off the window's thread.
     pub jobs: Jobs,
     /// What tgg-melee had in a slot before the last skin change there, for
@@ -117,6 +119,7 @@ impl App {
             editor: None,
             renders: Renders::default(),
             mods: Mods::default(),
+            sets: crate::sets::Sets::default(),
             slippi: crate::slippi::Slippi::default(),
             preferences: Preferences::default(),
             report: None,

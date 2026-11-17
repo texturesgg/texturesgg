@@ -36,13 +36,18 @@ pub fn opened(app: &mut App) {
 }
 
 /// Read the installed ports and the mods folder again, and check the mods
-/// against what textures.gg last said it has.
+/// against what textures.gg last said it has. The player's sets follow
+/// (Installed mods is the mods folder).
 pub fn read_disk(app: &mut App) {
     let before = (app.mods.ports.clone(), app.mods.local.clone());
     read_disk_now(app);
+    let changed = (&app.mods.ports, &app.mods.local) != (&before.0, &before.1);
     // What replays need depends on what's installed: plan them again.
-    if (&app.mods.ports, &app.mods.local) != (&before.0, &before.1) {
+    if changed {
         crate::replays::actions::installs_changed(app);
+    }
+    if changed || app.sets.list.is_empty() {
+        crate::sets::actions::read(app);
     }
 }
 
@@ -340,6 +345,7 @@ pub fn done(app: &mut App, done: Done) -> bool {
         }
         Done::GameEnded(result) => {
             app.mods.playing = None;
+            app.sets.session = None;
             // A profile game's folder goes once nothing runs on it.
             if let Err(error) = tgg_mod::finish_profile(&app.data.tgg) {
                 tgg_app::log(&format!("finishing profile games: {error}"));

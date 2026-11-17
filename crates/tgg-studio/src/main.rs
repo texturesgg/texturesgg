@@ -24,6 +24,7 @@ mod preferences;
 mod profile;
 mod replays;
 mod report;
+mod sets;
 mod shell;
 mod signin;
 mod slippi;

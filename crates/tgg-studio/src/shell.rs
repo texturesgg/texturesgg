@@ -70,6 +70,7 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .children(newmod::view::view(app, &p))
         // Its examples' menu, over it.
         .children(newmod::view::menu(app, &p))
+        .children(crate::sets::view::trust(app, &p))
 }
 
 /// The button that shows or hides the sidebar.

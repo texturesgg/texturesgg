@@ -35,6 +35,8 @@ pub enum Done {
     Replays(Box<crate::replays::Done>),
     /// New mod: the SDK's examples and the tools found, or the mod made.
     NewMod(Box<crate::newmod::actions::Done>),
+    /// Sets: read, a plan worked out, a game got ready.
+    Sets(Box<crate::sets::Done>),
     /// Slippi's Dolphin, started from here, closed.
     SlippiEnded,
     /// You: a profile read from textures.gg, a pack downloaded.
@@ -223,6 +225,7 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
             Done::Replays(done) => crate::replays::actions::done(app, *done),
             Done::NewMod(done) => crate::newmod::actions::done(app, *done),
             Done::SlippiEnded => crate::slippi::actions::ended(app),
+            Done::Sets(done) => crate::sets::actions::done(app, *done),
             Done::NoticeExpired(id) => app.notice_expired(id),
             Done::Verdicts(verdicts) => crate::library::port::answered(app, verdicts),
             Done::Update(newer) => {
