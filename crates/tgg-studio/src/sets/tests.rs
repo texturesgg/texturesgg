@@ -26,7 +26,10 @@ fn find_a_match_starts_the_active_sets_game_searching_from_its_own_folder() {
     let folder = tempfile::tempdir().expect("a temporary folder");
     let net = Arc::new(FakeNet::new());
     let mut app = App::new(
-        Start::Welcome(Default::default()),
+        Start::FirstRun {
+            game: None,
+            state: Default::default(),
+        },
         Default::default(),
         Data::in_folder(folder.path()),
         false,
