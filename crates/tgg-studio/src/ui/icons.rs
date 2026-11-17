@@ -19,6 +19,10 @@ pub enum Icon {
     Gear,
     Close,
     Chevron,
+    #[expect(
+        dead_code,
+        reason = "Mods' New set tile uses it, in the Mods pull request"
+    )]
     Plus,
     Check,
 }
@@ -27,7 +31,13 @@ pub enum Icon {
 pub fn icon(icon: Icon, color: Color) -> El {
     let shape = Shape::new().view_box(GRID, GRID);
     let stroke = |shape: Shape, points: &[[f32; 2]], closed: bool| {
-        shape.stroke_with(points.to_vec(), closed, size::ICON_STROKE, LineCap::Round, color)
+        shape.stroke_with(
+            points.to_vec(),
+            closed,
+            size::ICON_STROKE,
+            LineCap::Round,
+            color,
+        )
     };
     let shape = match icon {
         Icon::Play => stroke(shape, &[[7.0, 4.5], [18.5, 12.0], [7.0, 19.5]], true),
@@ -61,7 +71,11 @@ pub fn icon(icon: Icon, color: Color) -> El {
             // Most of a circle, from its left round underneath to its upper
             // left, and the arrowhead at its start.
             let arc = arc([12.0, 12.0], 8.0, 180.0, -129.0);
-            stroke(stroke(shape, &arc, false), &[[4.0, 4.0], [4.0, 8.0], [8.0, 8.0]], false)
+            stroke(
+                stroke(shape, &arc, false),
+                &[[4.0, 4.0], [4.0, 8.0], [8.0, 8.0]],
+                false,
+            )
         }
         Icon::Sidebar => stroke(
             stroke(shape, &rounded_rect([3.0, 4.0], [18.0, 16.0], 3.0), true),
@@ -107,9 +121,10 @@ pub fn icon(icon: Icon, color: Color) -> El {
 
 /// The account glyph, a head and shoulders: its own, as it needs a curve.
 pub fn person(color: Color) -> El {
-    let shoulders = Path::new()
-        .move_to([4.0, 21.0])
-        .cubic_to([5.0, 16.0], [19.0, 16.0], [20.0, 21.0]);
+    let shoulders =
+        Path::new()
+            .move_to([4.0, 21.0])
+            .cubic_to([5.0, 16.0], [19.0, 16.0], [20.0, 21.0]);
     let shape = Shape::new()
         .view_box(GRID, GRID)
         .stroke_with(

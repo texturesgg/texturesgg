@@ -73,12 +73,7 @@ pub fn view(app: &App, p: &Palette) -> El {
             (!notices.is_empty()).then(|| col().max_w(COLUMN).gap(space::XS).children(notices)),
         )
         .children(first_run(mods, p))
-        .child(
-            col()
-                .gap(space::MD)
-                .child(tabs(mods, p))
-                .child(list),
-        );
+        .child(col().gap(space::MD).child(tabs(mods, p)).child(list));
     col()
         .key("mods/scroll")
         .grow(1.0)

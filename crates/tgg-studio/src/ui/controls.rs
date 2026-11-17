@@ -50,11 +50,16 @@ pub fn button(label: &str, kind: ButtonKind, p: &Palette) -> El {
 }
 
 /// A small button, 26 points tall: one in a row of a list.
+#[expect(dead_code, reason = "Mods' rows use it, in the Mods pull request")]
 pub fn button_small(label: &str, kind: ButtonKind, p: &Palette) -> El {
     pill(label, kind, size::CONTROL_SMALL, p)
 }
 
 /// A page's main action, 40 points tall.
+#[expect(
+    dead_code,
+    reason = "Play's Find a match uses it, in the Play pull request"
+)]
 pub fn button_main(label: &str, kind: ButtonKind, p: &Palette) -> El {
     pill(label, kind, size::CONTROL_MAIN, p)
 }
@@ -202,11 +207,7 @@ pub fn slider(fraction: f32, p: &Palette) -> El {
                 .radius(1.5)
                 .fill(p.accent),
         )
-        .child(
-            el().size(KNOB, KNOB)
-                .radius(KNOB / 2.0)
-                .fill(p.ink),
-        )
+        .child(el().size(KNOB, KNOB).radius(KNOB / 2.0).fill(p.ink))
         .child(
             el().grow(1.0)
                 .min_w(0.0)

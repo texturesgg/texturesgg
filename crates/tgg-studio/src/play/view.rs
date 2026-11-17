@@ -3,7 +3,7 @@
 use crate::mods::Disc;
 use crate::nav::Place;
 use crate::state::App;
-use crate::ui::tokens::{Palette, size, space, text};
+use crate::ui::tokens::{Palette, space, text};
 use crate::ui::{
     ButtonKind, TEXT_ACTION_INSET, button, button_off, page_head, panel, spacer, text_action,
 };

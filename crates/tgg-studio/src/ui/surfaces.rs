@@ -50,6 +50,7 @@ pub fn page_head(title: &str, line: &str, p: &Palette) -> El {
 }
 
 /// A section's label, over its group: muted, small.
+#[expect(dead_code, reason = "Play and Mods use it, in their pull requests")]
 pub fn section(label: &str, p: &Palette) -> El {
     text(label)
         .font(type_::LABEL)
@@ -59,6 +60,7 @@ pub fn section(label: &str, p: &Palette) -> El {
 
 /// A row in a list: padded, rounded, washed while hovered. The caller
 /// fills it, keys it, and makes pressing it do something.
+#[expect(dead_code, reason = "Play and Mods use it, in their pull requests")]
 pub fn list_row(p: &Palette) -> El {
     row()
         .px(space::SM)
