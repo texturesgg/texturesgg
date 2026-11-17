@@ -118,6 +118,12 @@ pub enum Missing {
     NotBuilt { id: ModId, version: String },
     /// No approved release at `version`.
     Unapproved { id: ModId, version: String },
+    /// A moderator withdrew the release at `version`, for `reason`.
+    Withdrawn {
+        id: ModId,
+        version: String,
+        reason: String,
+    },
     /// A Slippi code no mod reproduces. `minor` when the mapping lists it
     /// among the codes that rarely change a replay (one plays as is,
     /// likely).
@@ -143,6 +149,11 @@ impl std::fmt::Display for Missing {
                 write!(f, "{id} {version} isn't built for this game")
             }
             Missing::Unapproved { id, version } => write!(f, "{id} {version} isn't approved"),
+            Missing::Withdrawn {
+                id,
+                version,
+                reason,
+            } => write!(f, "textures.gg withdrew {id} {version}: {reason}"),
             Missing::NoModFor { code, minor: false } => {
                 write!(f, "no mod reproduces the Slippi code {code}")
             }
@@ -773,7 +784,17 @@ pub fn resolve_profile(
         .collect();
     let mut chosen: Vec<(&CatalogEntry, Settings)> = Vec::new();
     let not_found = |id: &ModId, version: String, missing: &mut Vec<Missing>| {
-        let item = if known(id) {
+        let item = if let Some(withdrawn) = catalog
+            .withdrawn
+            .iter()
+            .find(|w| w.id == *id && w.version == version)
+        {
+            Missing::Withdrawn {
+                id: id.clone(),
+                version,
+                reason: withdrawn.reason.clone(),
+            }
+        } else if known(id) {
             Missing::NotBuilt {
                 id: id.clone(),
                 version,

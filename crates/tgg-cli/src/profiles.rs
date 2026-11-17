@@ -53,7 +53,21 @@ impl Ctx<'_> {
     }
 }
 
-fn http(api: &str) -> tgg_mod::HttpNet {
+/// Before the game starts with the mods folder `mods`: act on what
+/// textures.gg withdrew, saying what changed. A failure to check says so and
+/// doesn't stop the game.
+pub(crate) fn check_withdrawn(net: &dyn Net, data: &Path, mods: &Path, port: &tgg_mod::Port) {
+    match tgg_mod::withdraw::check_withdrawn(net, data, mods, port) {
+        Ok(notices) => {
+            for notice in notices {
+                println!("{notice}");
+            }
+        }
+        Err(error) => eprintln!("Couldn't check for withdrawn mods: {error}"),
+    }
+}
+
+pub(crate) fn http(api: &str) -> tgg_mod::HttpNet {
     let releases = std::env::var("TGG_RELEASES")
         .ok()
         .filter(|value| !value.is_empty())
@@ -464,6 +478,7 @@ pub fn play(
                 .into_iter()
                 .find(|install| install.current)
                 .ok_or_else(|| anyhow!("tgg-melee isn't installed. Run tgg port install"))?;
+            check_withdrawn(ctx.net, &ctx.data, &ctx.mods, &current.port());
             let running = tgg_mod::ports::launch_with_env(
                 &current,
                 &iso,

@@ -115,8 +115,11 @@ in-game browser will read it directly.
   for one layout: every approved release with a build for it (manifest,
   netplay class, package URL, SHA-256, size), plus `snapshot`, an id for this
   state of the catalog, and `ids`, every mod id the registry has (built for
-  this layout or not). 404 when the layout has no builds: the crate says
-  "textures.gg has no mods for tgg-melee X yet".
+  this layout or not), and `withdrawn`, the releases a moderator pulled after
+  approval: `{id, version, reason, mode, sha256: [...]}` with every package
+  hash the release had on any layout, `mode` being `off` or `warn`. 404 when
+  the layout has no builds: the crate says "textures.gg has no mods for
+  tgg-melee X yet".
 - `GET /api/registry/sets`: every set: `{name, title, description, version,
   mods: [{id, range}]}`. 404 reads as no sets.
 - `GET /api/registry/mods?page=&pageSize=&sort=`: every mod with an approved
@@ -409,6 +412,16 @@ release mirror.
   installed atomically (staged beside its folder, then swapped, as `ModsDir`
   does); cancelling between mods leaves every mod either old or new; the lock
   is written last.
+- **Withdrawn releases** leave the catalog, so nothing installs or fetches
+  them (a lobby or replay naming one says "textures.gg withdrew X Y: reason").
+  `apply_withdrawn` compares the catalog's `withdrawn` list with the lock's
+  package hashes: `off` turns the mod off (its folder becomes `.<id>`) once
+  and records why in the lock, so it is turned back on when the release is
+  restored and never turned off again after the player turns it back on;
+  `warn` leaves it on and says why each time. Installing, updating and
+  `check_withdrawn` (which front ends call before launching the game; it
+  uses the last catalog seen when offline) apply it. A mod tgg didn't
+  install is left alone.
 - **Concurrency**: `apply`, `set_enabled`, `uninstall` and `uninstall_set` take
   an advisory lock file in the mods folder and return `Busy` when another tgg
   holds it.

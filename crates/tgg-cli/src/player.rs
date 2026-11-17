@@ -156,6 +156,7 @@ impl Player<'_> {
             .collect::<Result<Vec<_>>>()?;
         let port = self.port()?;
         let catalog = tgg_mod::catalog(self.net, port)?;
+        self.withdrawn(&catalog)?;
         let local = self.local()?;
         let plan = match set {
             Some(name) => {
@@ -188,6 +189,8 @@ impl Player<'_> {
         }
         let sets = tgg_mod::sets(self.net)?;
         let catalog = tgg_mod::catalog(self.net, port)?;
+        self.withdrawn(&catalog)?;
+        let local = self.local()?;
         let plan = match set {
             Some(name) => tgg_mod::plan_set_update(name, &sets, &catalog, &local)?,
             None => tgg_mod::plan_updates(&sets, &catalog, &local),
@@ -205,6 +208,15 @@ impl Player<'_> {
         self.carry_out(&plan, "Update")?;
         if set.is_none() {
             self.port_update();
+        }
+        Ok(())
+    }
+
+    /// Act on the catalog's withdrawn releases in the mods folder, saying
+    /// what changed.
+    fn withdrawn(&self, catalog: &tgg_mod::Catalog) -> Result<()> {
+        for notice in tgg_mod::apply_withdrawn(&self.mods, catalog)? {
+            self.out.line(notice);
         }
         Ok(())
     }

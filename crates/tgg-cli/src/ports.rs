@@ -325,13 +325,20 @@ pub fn run(command: PortCommand, api: &str) -> Result<()> {
             check_runtime(&installed)?;
             let iso = crate::config::iso_or_ask()?;
             let install = ports::installed_port(&crate::paths::ports()?, &installed.version)?;
+            let mods = tgg_mod::default_mods_dir();
+            crate::profiles::check_withdrawn(
+                &crate::profiles::http(api),
+                &crate::paths::data()?,
+                &mods,
+                &install.port(),
+            );
             let log = crate::paths::state()?.join(GAME_LOG);
             println!("Starting tgg-melee {}", installed.version);
             let signals = crate::signals::handle()?;
             let mut running = ports::launch_with_args(
                 &install,
                 &iso,
-                &tgg_mod::default_mods_dir(),
+                &mods,
                 &args,
                 (!verbose).then_some(log.as_path()),
             )?;

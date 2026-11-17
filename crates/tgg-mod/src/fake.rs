@@ -2,7 +2,7 @@
 //! app's flow tests, so they can drive installing, updating, turning mods
 //! on and off and uninstalling with no network.
 
-use crate::catalog::{self, Catalog, CatalogEntry, PackageRef};
+use crate::catalog::{self, Catalog, CatalogEntry, PackageRef, WithdrawMode, Withdrawn};
 use crate::manifest::Manifest;
 use crate::net::{Net, NetError};
 use crate::package::{self, Package};
@@ -53,6 +53,8 @@ pub struct FakeNet {
 struct State {
     offline: bool,
     catalog: Vec<CatalogEntry>,
+    /// Withdrawn releases: the catalog entry each had, and its listing.
+    withdrawn: Vec<(CatalogEntry, Withdrawn)>,
     revision: u32,
     sets: Vec<Set>,
     /// Package zips and mirror files by URL.
@@ -199,6 +201,45 @@ impl FakeNet {
                 entry.publisher = Some(publisher.clone());
             }
         }
+        state.revision += 1;
+    }
+
+    /// Withdraw the release `id` `version`, as a moderator would: it leaves
+    /// the catalog and its package stops downloading, and the catalog lists
+    /// it as withdrawn with `reason` and `mode`.
+    pub fn withdraw(&self, id: &str, version: &str, reason: &str, mode: WithdrawMode) {
+        let mut state = self.state();
+        let Some(at) = state.catalog.iter().position(|entry| {
+            entry.manifest.id.as_str() == id && entry.manifest.version.to_string() == version
+        }) else {
+            panic!("no release {id} {version} to withdraw");
+        };
+        let entry = state.catalog.remove(at);
+        state.withdrawn.push((
+            entry,
+            Withdrawn {
+                id: id.parse().expect("an id"),
+                version: version.into(),
+                reason: reason.into(),
+                mode,
+                sha256: Vec::new(),
+            },
+        ));
+        state.revision += 1;
+    }
+
+    /// Put back the withdrawn release `id` `version`.
+    pub fn restore(&self, id: &str, version: &str) {
+        let mut state = self.state();
+        let Some(at) = state
+            .withdrawn
+            .iter()
+            .position(|(_, entry)| entry.id.as_str() == id && entry.version == version)
+        else {
+            panic!("no withdrawn release {id} {version}");
+        };
+        let (entry, _) = state.withdrawn.remove(at);
+        state.catalog.push(entry);
         state.revision += 1;
     }
 
@@ -529,6 +570,14 @@ impl FakeNet {
                 ids.dedup();
                 ids
             },
+            withdrawn: state
+                .withdrawn
+                .iter()
+                .map(|(entry, withdrawn)| Withdrawn {
+                    sha256: vec![entry.package.sha256.clone()],
+                    ..withdrawn.clone()
+                })
+                .collect(),
         };
         catalog.to_json().into_bytes()
     }
@@ -688,6 +737,14 @@ impl Net for FakeNet {
             }
         } else {
             let (path, query) = url.split_once('?').unwrap_or((url, ""));
+            // A withdrawn release's package no longer downloads.
+            if state
+                .withdrawn
+                .iter()
+                .any(|(entry, _)| path == format!("{}{}", Self::API, entry.package.url))
+            {
+                return Err(NetError::NotFound { url: url.into() });
+            }
             let Some(body) = state.files.get(path).cloned() else {
                 return Err(NetError::NotFound { url: url.into() });
             };
