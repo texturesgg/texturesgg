@@ -73,9 +73,12 @@ pub fn button_off(label: &str, p: &Palette) -> El {
         .child(text(label).font(type_::STRONG).color(p.faint))
 }
 
+/// An icon button's side, in points.
+pub const ICON_BUTTON: f32 = size::CONTROL - space::TIGHT;
+
 /// A square button holding a glyph, as the top bar's are.
 pub fn icon_button(glyph: El, label: &str, p: &Palette) -> El {
-    el().size(size::CONTROL - space::TIGHT, size::CONTROL - space::TIGHT)
+    el().size(ICON_BUTTON, ICON_BUTTON)
         .radius(radius::CONTROL)
         .center()
         .hover(p.current)

@@ -1,14 +1,20 @@
-//! The viewport: the app's compositor. Rune lays out the stage's effect slot
-//! like any box; each frame this finds the slot, keeps the model's clock
-//! (Melee's 60 Hz ticks), poses the model and what its move spawns on it
-//! (the shine at the hip, the blaster and its lasers), has hsd-render draw
-//! them into a texture the slot's size, then copies it in while Rune draws
-//! the rest of the window. It owns only GPU resources and the clock; what
-//! shows, the camera and whether it plays are the stage's state.
+//! The viewport: the app's compositor. Rune lays out effect slots like any
+//! box; each frame this finds them, keeps each model's clock (Melee's 60 Hz
+//! ticks), poses the model and what its move spawns on it (the shine at the
+//! hip, the blaster and its lasers), has hsd-render draw them into a texture
+//! the slot's size, then copies it in while Rune draws the rest of the
+//! window. It owns only GPU resources and the clocks; what shows, the camera
+//! and whether it plays are the app's state.
+//!
+//! Two models can show, each on a stand of its own: the stage (Skins' plate
+//! and the editor) and Play's fighter. The fighter is drawn at twice its
+//! size with nothing behind it and filtered down as it's copied in, so it
+//! stands on the page with smooth edges; it holds still while a game runs,
+//! leaving the GPU to the game.
 
 use super::copy::{self, Copy, Target};
 use super::spawns::Spawns;
-use super::{Shown, VIEWPORT};
+use super::{FIGHTER, Shown, VIEWPORT};
 use crate::state::App;
 use dat_parser::descriptor::jobj::flags::BILLBOARD_FIELD;
 use dat_parser::hsd::scene::{HsdTextureIndex, HsdTextureSourceId};
@@ -24,9 +30,18 @@ use rune::render::KIND_EFFECT;
 const TICK: f64 = 1.0 / 60.0;
 /// Catch-up cap after a stall, so a hitch never replays seconds of animation.
 const MAX_TICKS: u32 = 4;
+/// How many pixels a side Play's fighter is drawn per pixel it shows.
+const FIGHTER_SUPERSAMPLE: u32 = 2;
 
 #[derive(Default)]
 pub struct Viewport {
+    stage: Stand,
+    fighter: Stand,
+}
+
+/// One model's drawing: its GPU copy and its clock.
+#[derive(Default)]
+struct Stand {
     gpu: Option<Gpu>,
     /// Time not yet spent on a tick, in seconds.
     clock: f64,
@@ -38,6 +53,42 @@ pub struct Viewport {
     /// compositor returns, so a pick encoded this frame starts reading back
     /// on the next.
     pick: Pick,
+}
+
+/// Which model a stand draws.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Which {
+    Stage,
+    Fighter,
+}
+
+impl Which {
+    fn mark(self) -> u32 {
+        match self {
+            Self::Stage => VIEWPORT,
+            Self::Fighter => FIGHTER,
+        }
+    }
+
+    fn shown(self, app: &mut App) -> Option<&mut Shown> {
+        match self {
+            Self::Stage => app.stage.shown.as_mut(),
+            Self::Fighter => app.play.fighter.as_mut(),
+        }
+    }
+
+    /// Pixels drawn a side per pixel shown.
+    fn supersample(self) -> u32 {
+        match self {
+            Self::Stage => 1,
+            Self::Fighter => FIGHTER_SUPERSAMPLE,
+        }
+    }
+
+    /// Whether the model holds still: Play's fighter, while a game runs.
+    fn holds(self, app: &App) -> bool {
+        self == Self::Fighter && (app.mods.playing.is_some() || app.sets.session.is_some())
+    }
 }
 
 /// Where the pick in flight is.
@@ -66,22 +117,58 @@ struct Gpu {
 
 type Error = Box<dyn std::error::Error>;
 
-impl Viewport {
-    /// The slot's rect in device pixels this frame, when it shows.
-    fn slot(f: &Frame<'_, App>) -> Option<[f32; 4]> {
-        f.rt.instances
-            .iter()
-            .enumerate()
-            .find(|(n, i)| i.params[1] == KIND_EFFECT && f.rt.marks.get(*n) == Some(&VIEWPORT))
-            .map(|(_, i)| i.rect)
+/// The rect in device pixels of the slot marked `mark` this frame, when it
+/// shows.
+fn slot(f: &Frame<'_, App>, mark: u32) -> Option<[f32; 4]> {
+    f.rt.instances
+        .iter()
+        .enumerate()
+        .find(|(n, i)| i.params[1] == KIND_EFFECT && f.rt.marks.get(*n) == Some(&mark))
+        .map(|(_, i)| i.rect)
+}
+
+impl Stand {
+    /// Find the slot `which` draws in; when it shows, run the clock, keep the
+    /// GPU copy current, and draw into the target, recording ahead of Rune's
+    /// pass. A model that fails to draw is taken off.
+    fn render(&mut self, f: &mut Frame<'_, App>, which: Which) {
+        let Some([_, _, w, h]) = slot(f, which.mark()) else {
+            // Off the page, nothing draws and the clock waits.
+            self.clock = 0.0;
+            self.playing = false;
+            return;
+        };
+        let side = which.supersample();
+        let size = (
+            (w.round() as u32).max(1) * side,
+            (h.round() as u32).max(1) * side,
+        );
+        if let Err(error) = self.draw(f, size, which) {
+            tgg_app::log(&format!("viewport: {error}"));
+            match which {
+                Which::Stage => f.rt.state.stage.shown = None,
+                Which::Fighter => f.rt.state.play.fighter = None,
+            }
+            self.gpu = None;
+            self.pick = Pick::None;
+        }
+        let holds = which.holds(&f.rt.state);
+        self.playing = !holds
+            && which
+                .shown(&mut f.rt.state)
+                .is_some_and(|shown| shown.playing && shown.model.is_animated());
     }
 
-    /// Run the clock, keep the GPU copy current, and draw into the target,
-    /// recording ahead of Rune's pass.
-    fn draw(&mut self, f: &mut Frame<'_, App>, size: (u32, u32)) -> Result<(), Error> {
+    fn draw(
+        &mut self,
+        f: &mut Frame<'_, App>,
+        size: (u32, u32),
+        which: Which,
+    ) -> Result<(), Error> {
         let key = f.device_key();
         let (device, queue) = (f.device, f.queue);
-        let Some(shown) = f.rt.state.stage.shown.as_mut() else {
+        let holds = which.holds(&f.rt.state);
+        let Some(shown) = which.shown(&mut f.rt.state) else {
             return Ok(());
         };
         let stale = self
@@ -102,7 +189,7 @@ impl Viewport {
                 shown.orbit,
             )?;
             let copy = Copy::new(device);
-            let target = copy.target(device, size);
+            let target = copy.target(device, size, which == Which::Fighter);
             let spawns = Spawns::new(shown.shared.clone());
             // A pick on the old renderer never resolves, or names its packets.
             self.pick = Pick::None;
@@ -124,7 +211,7 @@ impl Viewport {
         let gpu = self.gpu.as_mut().expect("built above");
         if gpu.target.size != size {
             gpu.renderer.resize(device, queue, size.0, size.1)?;
-            gpu.target = gpu.copy.target(device, size);
+            gpu.target = gpu.copy.target(device, size, gpu.target.cutout);
         }
         if std::mem::take(&mut shown.restart) {
             gpu.spawns.reset();
@@ -134,7 +221,12 @@ impl Viewport {
         // within its bounds, the zoom in range), so a drag past a limit turns
         // back from the limit, not from somewhere past it.
         shown.orbit = gpu.renderer.orbit();
-        let ticks = advance(&mut self.clock, shown, gpu, f.dt)?;
+        let ticks = if holds {
+            self.clock = 0.0;
+            0
+        } else {
+            advance(&mut self.clock, shown, gpu, f.dt)?
+        };
         let turned =
             gpu.posed_orbit != Some(gpu.renderer.orbit()) && faces_camera(shown, &gpu.spawns);
         if ticks > 0 || std::mem::take(&mut shown.posed) || turned {
@@ -342,39 +434,30 @@ fn pose(
 impl Compositor<App> for Viewport {
     fn animating(&self) -> bool {
         // A pick in flight needs frames to arrive on.
-        self.playing || !matches!(self.pick, Pick::None)
+        self.stage.playing || self.fighter.playing || !matches!(self.stage.pick, Pick::None)
     }
 
     fn render(&mut self, f: &mut Frame<'_, App>) {
-        self.poll_pick(f);
-        if let Some([_, _, w, h]) = Self::slot(f) {
-            let size = ((w.round() as u32).max(1), (h.round() as u32).max(1));
-            if let Err(error) = self.draw(f, size) {
-                tgg_app::log(&format!("viewport: {error}"));
-                f.rt.state.stage.shown = None;
-                self.gpu = None;
-                self.pick = Pick::None;
-            }
-            Self::report(f);
-            f.rt.state.stage.rejected.append(&mut self.refused);
-        } else {
-            // Off the stage, nothing draws and the clock waits.
-            self.clock = 0.0;
+        self.stage.poll_pick(f);
+        self.stage.render(f, Which::Stage);
+        if slot(f, VIEWPORT).is_some() {
+            Stand::report(f);
         }
-        self.playing =
-            f.rt.state
-                .stage
-                .shown
-                .as_ref()
-                .is_some_and(|shown| shown.playing && shown.model.is_animated());
+        self.fighter.render(f, Which::Fighter);
+        for stand in [&mut self.stage, &mut self.fighter] {
+            f.rt.state.stage.rejected.append(&mut stand.refused);
+        }
         let (device, queue, size) = (f.device, f.queue, f.size);
         let clear = f.rt.clear_color();
         f.ui.prepare(device, queue, &mut f.rt.text.atlas, &f.rt.instances, size);
-        let gpu = &mut self.gpu;
+        let (stage, fighter) = (&mut self.stage.gpu, &mut self.fighter.gpu);
         f.ui.draw_with(f.encoder, f.target, clear, &mut |pass, site| {
-            if site.mark == VIEWPORT
-                && let Some(gpu) = gpu.as_mut()
-            {
+            let gpu = match site.mark {
+                VIEWPORT => stage.as_mut(),
+                FIGHTER => fighter.as_mut(),
+                _ => None,
+            };
+            if let Some(gpu) = gpu {
                 gpu.copy.draw(device, pass, site, &gpu.target);
             }
         });

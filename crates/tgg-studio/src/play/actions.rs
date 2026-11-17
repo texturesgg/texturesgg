@@ -19,6 +19,13 @@ const QUEUES_URL: &str = "https://meet.textures.gg/v1/queues?limit=20";
 const QUEUES_MOST: u64 = 256 * 1024;
 /// How often the running game's log and room report are read.
 const LOG_EVERY: Duration = Duration::from_millis(900);
+/// How Play's fighter is seen: turned from facing straight out, in radians,
+/// toward the words beside it, with some depth; and how much closer than
+/// the renderer's own framing.
+const HERO_YAW: f64 = 0.5;
+const HERO_ZOOM: f64 = 0.85;
+/// How far a drag across Play's fighter turns it, in radians per point.
+const SPIN_PER_POINT: f64 = 0.012;
 
 /// Play opened: read the queues once, and the replays its card shows.
 pub fn opened(app: &mut App) {
@@ -212,10 +219,56 @@ pub fn hero(app: &mut App) {
     if let Some(slot) = slot {
         app.renders.request_fighter(&iso, slot);
     }
+    stand(app);
 }
 
-/// Ask for Fox's picture straight away, so the card has one while the
-/// replays are read.
+/// Put the hero's fighter (Fox's, before it's known) in 3D on Play, unless
+/// it's there already. When its model can't be read, Play shows its picture.
+pub fn stand(app: &mut App) {
+    let Some(slot) = app.play.hero.or_else(|| fox_slot(app)) else {
+        return;
+    };
+    if app
+        .play
+        .fighter
+        .as_ref()
+        .is_some_and(|fighter| fighter.slot == slot)
+    {
+        return;
+    }
+    app.play.fighter = match crate::stage::actions::load(app, slot) {
+        Ok(mut fighter) => {
+            fighter.orbit.yaw = HERO_YAW;
+            fighter.orbit.zoom *= HERO_ZOOM;
+            Some(fighter)
+        }
+        Err(problem) => {
+            tgg_app::log(&format!("Play's fighter: {problem}"));
+            None
+        }
+    };
+}
+
+/// A drag across Play's fighter turns it around where it stands.
+pub fn spin(app: &mut App, drag: &mut rune::Drag, _: &mut rune::Tx) {
+    let Some(fighter) = &mut app.play.fighter else {
+        return;
+    };
+    match drag.phase {
+        rune::Phase::Down => fighter.gesture = Some([0.0, 0.0]),
+        rune::Phase::Move => {
+            let Some([heard, _]) = fighter.gesture else {
+                return;
+            };
+            fighter.gesture = Some([drag.dx, 0.0]);
+            fighter.orbit.yaw -= f64::from(drag.dx - heard) * SPIN_PER_POINT;
+        }
+        rune::Phase::Up => fighter.gesture = None,
+    }
+}
+
+/// Ask for Fox's picture straight away, and stand him on Play, so the card
+/// has him while the replays are read.
 fn request_fox(app: &mut App) {
     let (Some(iso), Some(slot)) = (
         app.game
@@ -226,6 +279,7 @@ fn request_fox(app: &mut App) {
         return;
     };
     app.renders.request_fighter(&iso, slot);
+    stand(app);
 }
 
 /// Fox's first costume, before there's a match to show.

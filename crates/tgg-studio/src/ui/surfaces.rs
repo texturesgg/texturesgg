@@ -259,17 +259,6 @@ pub fn setting_row_with(name: &str, line: El, control: El, p: &Palette) -> El {
         .child(control)
 }
 
-/// A card: a 3.5% white wash with a 5% hairline inside it, padded. Holds
-/// one thing on a page (the game, a set). The caller sizes it.
-pub fn panel(p: &Palette) -> El {
-    col()
-        .padding(space::MD)
-        .gap(space::SM)
-        .fill(p.surface)
-        .border(size::LINE, p.line)
-        .radius(radius::CARD)
-}
-
 /// A notice in a slim card: what needs the player (an update, a mod left
 /// out, a missing disc), and the one action for it at its end. The caller
 /// passes the words and the action already built.

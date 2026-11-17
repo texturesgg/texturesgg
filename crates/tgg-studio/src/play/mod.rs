@@ -74,6 +74,10 @@ pub struct Play {
     pub hero: Option<melee_dat::MeleeSlot>,
     /// Play has opened once: its queues are asked for and its replays read.
     pub opened: bool,
+    /// The hero's fighter in 3D, idling: the model of `hero`'s slot (or
+    /// Fox's), drawn live by the viewport. `None` until it's read, or when
+    /// it can't be, and the picture shows instead.
+    pub fighter: Option<crate::stage::Shown>,
 }
 
 /// What the running game's log says that Play shows: who it found to play.

@@ -260,6 +260,8 @@ const MONO: Family = Family::Named("DM Mono");
 pub mod text {
     use super::{MONO, SANS, TextStyle};
 
+    /// The one thing a page is about, bigger than its title: Play's set.
+    pub const DISPLAY: TextStyle = TextStyle::new(34.0, 700.0).family(SANS).tracking(-0.9);
     /// A page's one big title, where it has one.
     pub const H1: TextStyle = TextStyle::new(24.0, 700.0).family(SANS).tracking(-0.4);
     /// A code to read out.

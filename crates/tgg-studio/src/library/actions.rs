@@ -265,6 +265,16 @@ fn slots_changed(app: &mut App, slots: &[MeleeSlot]) {
     {
         app.tell(problem, true);
     }
+    // Play's fighter in its new costume.
+    if app
+        .play
+        .fighter
+        .as_ref()
+        .is_some_and(|fighter| slots.contains(&fighter.slot))
+    {
+        app.play.fighter = None;
+        crate::play::actions::stand(app);
+    }
 }
 
 /// Turn `skins` on in tgg-melee, or off: the skins mod plays each in its
