@@ -321,7 +321,7 @@ pub fn prepare_machine(
     Ok(())
 }
 
-fn ctx<'a>(net: &'a dyn Net, cancel: &'a AtomicBool) -> Result<Ctx<'a>> {
+pub(crate) fn ctx<'a>(net: &'a dyn Net, cancel: &'a AtomicBool) -> Result<Ctx<'a>> {
     Ok(Ctx {
         net,
         data: crate::paths::data()?,
@@ -393,6 +393,20 @@ fn prepare_here(ctx: &Ctx, source: &Path, yes: bool) -> Result<Option<Prepared>>
             bail!("not played");
         }
     }
+    ask_trust(ctx, &mut plan, yes)?;
+    if plan.fit == Fit::AsInstalled {
+        return Ok(None);
+    }
+    with_progress(|progress| {
+        tgg_mod::prepare_profile(ctx.net, &plan, &ctx.data, progress, ctx.cancel)
+    })
+    .map(Some)
+}
+
+/// Ask in a terminal (or take `yes`) for each publisher of native code
+/// `plan` needs the player's yes for, remembering the answers given there.
+pub(crate) fn ask_trust(ctx: &Ctx, plan: &mut ProfilePlan, yes: bool) -> Result<()> {
+    let ask = !yes && crate::ui::interactive();
     let untrusted: Vec<tgg_mod::Publisher> = plan.untrusted().into_iter().cloned().collect();
     for publisher in untrusted {
         let name = &publisher.name;
@@ -418,9 +432,14 @@ fn prepare_here(ctx: &Ctx, source: &Path, yes: bool) -> Result<Option<Prepared>>
         let key = publisher.id.clone().unwrap_or_else(|| name.clone());
         plan.trust_for_session(&[key]);
     }
-    if plan.fit == Fit::AsInstalled {
-        return Ok(None);
-    }
+    Ok(())
+}
+
+/// Run `prepare` with a progress bar (or a line per step without a
+/// terminal).
+pub(crate) fn with_progress(
+    prepare: impl FnOnce(tgg_mod::OnProgress) -> Result<Prepared, Error>,
+) -> Result<Prepared> {
     let bar = crate::ui::bar("", 0);
     let shown = std::sync::Mutex::new(String::new());
     let progress = |progress: tgg_mod::Progress| match &bar {
@@ -437,11 +456,11 @@ fn prepare_here(ctx: &Ctx, source: &Path, yes: bool) -> Result<Option<Prepared>>
             }
         }
     };
-    let prepared = tgg_mod::prepare_profile(ctx.net, &plan, &ctx.data, &progress, ctx.cancel);
+    let prepared = prepare(&progress);
     if let Some(bar) = &bar {
         bar.finish_and_clear();
     }
-    Ok(Some(prepared?))
+    Ok(prepared?)
 }
 
 /// `tgg replay` and `tgg port run --profile`: prepare `source` and play it,
@@ -514,7 +533,7 @@ fn wait(
     finish(status, signals, executable, log)
 }
 
-fn finish(
+pub(crate) fn finish(
     status: std::io::Result<std::process::ExitStatus>,
     signals: &crate::signals::Signals,
     executable: &Path,
