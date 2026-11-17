@@ -676,8 +676,12 @@ pub(crate) fn png(width: u32, height: u32, rgb: [u8; 3]) -> Vec<u8> {
     out
 }
 
-/// The fake port's game: it runs for a while and ends.
+/// The fake port's game: it writes its environment beside itself
+/// (`<executable>.env`, renamed into place so a reader never sees it half
+/// written), so a test can see what it was started with, then runs for a
+/// while and ends.
 const FAKE_GAME: &str = "#!/bin/sh\n\
+env > \"$0.env.part\" && mv \"$0.env.part\" \"$0.env\"\n\
 i=0\n\
 while [ \"$i\" -lt \"${TGG_FAKE_GAME_SECONDS:-30}\" ]; do sleep 1; i=$((i + 1)); done\n";
 

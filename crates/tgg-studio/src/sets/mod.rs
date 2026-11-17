@@ -14,6 +14,9 @@
 pub mod actions;
 pub mod view;
 
+#[cfg(test)]
+mod tests;
+
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::sync::atomic::AtomicBool;
