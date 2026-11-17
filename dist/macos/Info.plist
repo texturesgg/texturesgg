@@ -31,7 +31,7 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>© 2026 SaavyLab LLC</string>
+    <string>© 2026 Saavylab LLC</string>
     <!-- Install on textures.gg opens the app: textures-gg://mods/<id>, textures-gg://sets/<name>. -->
     <key>CFBundleURLTypes</key>
     <array>

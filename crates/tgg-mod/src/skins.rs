@@ -92,7 +92,7 @@ pub fn skins(file: &Path) -> Result<Skins, Error> {
     let format: Format = serde_json::from_slice(&bytes).map_err(|e| damaged(e.to_string()))?;
     if format.format > FORMAT {
         return Err(damaged(format!(
-            "it's format {}; this tgg reads format {FORMAT}; update tgg",
+            "it's format {}, but this tgg reads format {FORMAT}. Update tgg",
             format.format
         )));
     }

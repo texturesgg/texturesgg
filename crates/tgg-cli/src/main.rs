@@ -7,6 +7,7 @@ mod defaults;
 mod dev;
 mod docs;
 mod doctor;
+mod fix;
 mod mods;
 mod paths;
 mod player;
@@ -16,6 +17,7 @@ mod publish;
 mod releases;
 mod scaffold;
 mod sdks;
+mod sets;
 mod signals;
 mod skins;
 mod toolchain;
@@ -49,45 +51,51 @@ enum Command {
     },
     /// Sign out of textures.gg.
     Logout,
-    /// Install, pick and run released builds of tgg-melee.
+    /// Your textures.gg account.
+    #[command(subcommand)]
+    Account(account::AccountCommand),
+    /// Install, switch between and run versions of tgg-melee.
     #[command(subcommand)]
     Port(ports::PortCommand),
-    /// Play a replay (.slp) with exactly the game and mods it was played
-    /// with, fetched for this session; your own mods stay as they are.
+    /// Watch a replay (.slp) with the same game and mods it was played with.
+    /// Your own mods aren't touched.
     Replay {
         file: std::path::PathBuf,
-        /// Don't ask: fetch every mod it needs and play even if some can't
-        /// be had.
+        /// Don't ask. Download every mod it needs, and play even if some
+        /// aren't available.
         #[arg(short, long)]
         yes: bool,
         /// Show the game's own output as it runs.
         #[arg(short, long)]
         verbose: bool,
     },
-    /// Mod profiles: the exact mods a replay or a profile file needs.
+    /// Your sets: named lists of mods to switch between, like Competitive or one you made.
+    #[command(subcommand)]
+    Set(sets::SetCommand),
+    /// The exact game and mods a replay or profile file needs.
     #[command(subcommand)]
     Profile(profiles::ProfileCommand),
-    /// Skins in tgg-melee: a costume or menu file in place of the game's.
+    /// Install and manage skins for tgg-melee.
     #[command(subcommand)]
     Skin(skins::SkinCommand),
-    /// The SDK mods build against.
+    /// The SDK that mods build against.
     #[command(subcommand)]
     Sdk(sdks::SdkCommand),
-    /// Code mods for tgg-melee: build, publish, install.
+    /// Make, publish and install mods for tgg-melee.
     #[command(subcommand)]
     Mod(mods::ModCommand),
-    /// Open the mod docs for the installed game (offline, the SDK's copy).
+    /// Open the mod docs. Works offline.
     Docs {
-        /// A page, such as writing-mods or hooks [default: the index]
+        /// A page, like writing-mods or hooks [default: the index]
         page: Option<String>,
     },
-    /// Check this machine can build and run mods, and say how to fix what's
-    /// missing.
+    /// Check that this machine can play and make mods, and say how to fix
+    /// what's missing.
     Doctor {
         #[command(flatten)]
         cc: mods::Cc,
     },
-    /// Settings, such as your disc image.
+    /// Settings, like your disc image.
     #[command(subcommand)]
     Config(config::ConfigCommand),
 }
@@ -118,11 +126,13 @@ fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Command::Login { no_browser } => account::login(&cli.api, !no_browser),
         Command::Logout => account::logout(&cli.api),
+        Command::Account(command) => account::run(command, &cli.api),
         Command::Port(command) => ports::run(command, &cli.api),
         Command::Replay { file, yes, verbose } => {
             profiles::play(&cli.api, &file, Some(&file), yes, verbose)
         }
         Command::Profile(command) => profiles::run(command, &cli.api),
+        Command::Set(command) => sets::run(command, &cli.api),
         Command::Skin(command) => skins::run(command),
         Command::Sdk(command) => sdks::run(command),
         Command::Mod(command) => mods::run(command, &cli.api),

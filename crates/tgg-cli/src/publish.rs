@@ -60,12 +60,12 @@ pub fn check(dir: &Path, build: Option<&Options>) -> Result<Manifest> {
     mod_source(dir)?;
     ensure!(
         git(dir, &["rev-parse", "--git-dir"]).is_ok(),
-        "{} isn't a git repository; the registry builds what is committed (git init, then commit)",
+        "{} isn't a git repo. textures.gg builds from your commits, so run git init and commit first",
         dir.display()
     );
     ensure!(
         git(dir, &["status", "--porcelain"])?.is_empty(),
-        "commit your changes first; the registry builds what is committed"
+        "commit your changes first. textures.gg builds from your commits"
     );
     if let Some(options) = build {
         build::build(dir, options).context(
@@ -102,7 +102,7 @@ pub fn publish(site: &Site, dir: &Path, manifest: &Manifest) -> Result<()> {
     ) {
         Ok(commit) if commit == head => {}
         Ok(_) => bail!(
-            "{tag} already tags another commit; bump the version in manifest.json to release again"
+            "{tag} already tags another commit. Bump the version in manifest.json to release again"
         ),
         Err(_) => {
             git(dir, &["tag", "-a", &tag, "-m", &tag])?;
@@ -134,7 +134,7 @@ pub fn publish(site: &Site, dir: &Path, manifest: &Manifest) -> Result<()> {
         .context("running git")?;
     ensure!(status.success(), "git push failed");
     println!(
-        "Pushed {} {}. It builds in a few seconds; its page on textures.gg shows the result.",
+        "Pushed {} {}. It builds in a few seconds, and its page on textures.gg shows the result.",
         manifest.id, manifest.version
     );
     Ok(())
@@ -172,7 +172,7 @@ mod tests {
     }
 
     const MANIFEST: &str =
-        r#"{"api":"tgg-melee/0","id":"me.check","name":"Check","version":"1.0.0"}"#;
+        r#"{"api":"tgg-melee/1","id":"me.check","name":"Check","version":"1.0.0"}"#;
 
     #[test]
     fn a_mod_that_doesnt_build_isnt_published() {

@@ -113,7 +113,8 @@ pub enum SetStatus {
     Incomplete,
 }
 
-/// Whether `manifest` fits `port`: a mod with no library fits every game.
+/// Whether `manifest` fits `port`: a mod with no library fits every game, a
+/// stable-tier one every layout on its target.
 pub fn fits(manifest: &Manifest, port: &Port) -> bool {
     manifest
         .game_abi

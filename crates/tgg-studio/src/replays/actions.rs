@@ -285,7 +285,7 @@ pub fn confirm(app: &mut App) {
     if review.remember {
         for publisher in review.plan.untrusted() {
             if let Err(error) = tgg_mod::remember_trust(&app.data.tgg, publisher, true) {
-                tgg_app::log(&format!("remembering trust in {publisher}: {error}"));
+                tgg_app::log(&format!("remembering trust in {}: {error}", publisher.name));
             }
         }
     }

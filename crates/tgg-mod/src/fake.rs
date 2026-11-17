@@ -2,7 +2,7 @@
 //! app's flow tests, so they can drive installing, updating, turning mods
 //! on and off and uninstalling with no network.
 
-use crate::catalog::{self, Catalog, CatalogEntry, PackageRef};
+use crate::catalog::{self, Catalog, CatalogEntry, PackageRef, WithdrawMode, Withdrawn};
 use crate::manifest::Manifest;
 use crate::net::{Net, NetError};
 use crate::package::{self, Package};
@@ -53,6 +53,8 @@ pub struct FakeNet {
 struct State {
     offline: bool,
     catalog: Vec<CatalogEntry>,
+    /// Withdrawn releases: the catalog entry each had, and its listing.
+    withdrawn: Vec<(CatalogEntry, Withdrawn)>,
     revision: u32,
     sets: Vec<Set>,
     /// Package zips and mirror files by URL.
@@ -143,6 +145,8 @@ impl FakeNet {
                 description: description.into(),
                 version: 1,
                 mods: listed,
+                owner: None,
+                builds_on: Vec::new(),
             }
         };
         net.publish_set(set(
@@ -202,6 +206,57 @@ impl FakeNet {
         state.revision += 1;
     }
 
+    /// List the mod `id` as native code (a library the game loads), as the
+    /// catalog lists a C mod. Its package stays the same.
+    pub fn set_native(&self, id: &str) {
+        let mut state = self.state();
+        for entry in &mut state.catalog {
+            if entry.manifest.id.as_str() == id {
+                entry.manifest.target = Some("x86_64-linux-gnu".into());
+            }
+        }
+        state.revision += 1;
+    }
+
+    /// Withdraw the release `id` `version`, as a moderator would: it leaves
+    /// the catalog and its package stops downloading, and the catalog lists
+    /// it as withdrawn with `reason` and `mode`.
+    pub fn withdraw(&self, id: &str, version: &str, reason: &str, mode: WithdrawMode) {
+        let mut state = self.state();
+        let Some(at) = state.catalog.iter().position(|entry| {
+            entry.manifest.id.as_str() == id && entry.manifest.version.to_string() == version
+        }) else {
+            panic!("no release {id} {version} to withdraw");
+        };
+        let entry = state.catalog.remove(at);
+        state.withdrawn.push((
+            entry,
+            Withdrawn {
+                id: id.parse().expect("an id"),
+                version: version.into(),
+                reason: reason.into(),
+                mode,
+                sha256: Vec::new(),
+            },
+        ));
+        state.revision += 1;
+    }
+
+    /// Put back the withdrawn release `id` `version`.
+    pub fn restore(&self, id: &str, version: &str) {
+        let mut state = self.state();
+        let Some(at) = state
+            .withdrawn
+            .iter()
+            .position(|(_, entry)| entry.id.as_str() == id && entry.version == version)
+        else {
+            panic!("no withdrawn release {id} {version}");
+        };
+        let (entry, _) = state.withdrawn.remove(at);
+        state.catalog.push(entry);
+        state.revision += 1;
+    }
+
     /// Make every request fail as if there were no connection, or stop.
     pub fn set_offline(&self, offline: bool) {
         self.state().offline = offline;
@@ -250,6 +305,7 @@ impl FakeNet {
                 signature: None,
             },
             publisher: Some(Publisher {
+                id: Some("official".into()),
                 name: "textures.gg".into(),
                 official: true,
             }),
@@ -300,6 +356,11 @@ impl FakeNet {
         let mut state = self.state();
         state.sets.retain(|have| have.name != set.name);
         state.sets.push(set);
+    }
+
+    /// Take the set `name` down.
+    pub fn remove_set(&self, name: &str) {
+        self.state().sets.retain(|have| have.name != name);
     }
 
     /// The set `name` as served.
@@ -414,6 +475,7 @@ impl FakeNet {
                     description: entry.manifest.description.clone(),
                     author: "texturesgg".into(),
                     publisher: Publisher {
+                        id: Some("official".into()),
                         name: "textures.gg".into(),
                         official: true,
                     },
@@ -535,6 +597,14 @@ impl FakeNet {
                 ids.dedup();
                 ids
             },
+            withdrawn: state
+                .withdrawn
+                .iter()
+                .map(|(entry, withdrawn)| Withdrawn {
+                    sha256: vec![entry.package.sha256.clone()],
+                    ..withdrawn.clone()
+                })
+                .collect(),
         };
         catalog.to_json().into_bytes()
     }
@@ -694,6 +764,14 @@ impl Net for FakeNet {
             }
         } else {
             let (path, query) = url.split_once('?').unwrap_or((url, ""));
+            // A withdrawn release's package no longer downloads.
+            if state
+                .withdrawn
+                .iter()
+                .any(|(entry, _)| path == format!("{}{}", Self::API, entry.package.url))
+            {
+                return Err(NetError::NotFound { url: url.into() });
+            }
             // Served with its query (a page of results), else without it.
             let Some(body) = state
                 .files
@@ -747,7 +825,6 @@ pub fn slippi_mapping() -> SlippiMapping {
         id: id.map(|id| id.parse().expect("a valid id")),
         range: id.map(|_| "^0.1".parse().expect("a range")),
         settings: Default::default(),
-        game: Default::default(),
     };
     let mut codes = vec![
         code(
@@ -875,7 +952,7 @@ fn fake_sdk_json(version: &str, target: &str) -> String {
 
 /// A fake SDK's template example, shaped like the real one: the id and the
 /// docs lines a new mod replaces.
-const FAKE_TEMPLATE_MANIFEST: &str = "{\n  \"api\": \"tgg-melee/0\",\n  \"id\": \"my-mod\",\n  \"name\": \"My mod\",\n  \"version\": \"0.1.0\"\n}\n";
+const FAKE_TEMPLATE_MANIFEST: &str = "{\n  \"api\": \"tgg-melee/1\",\n  \"id\": \"my-mod\",\n  \"name\": \"My mod\",\n  \"version\": \"0.1.0\"\n}\n";
 const FAKE_TEMPLATE_CMAKE: &str = "cmake_minimum_required(VERSION 3.25)\nproject(my-mod LANGUAGES C)\ninclude(\"${TGG_SDK}/TggMod.cmake\")\ntgg_use_sdk(\"${TGG_SDK}\")\ntgg_add_mod(my-mod)\n";
 const FAKE_TEMPLATE_README: &str = "# Template\n\n- The docs came with the SDK: `$(tgg sdk path)/docs`. Start with `writing-mods.md`.\n";
 const FAKE_TEMPLATE_MOD: &str = "/* A starting point for a mod. Give it your own id in manifest.json, then\n * swap what's below for your own code. The docs are in your SDK: run\n * `tgg sdk path` and open docs/writing-mods.md there.\n */\n#include \"tgg/events.h\"\n";

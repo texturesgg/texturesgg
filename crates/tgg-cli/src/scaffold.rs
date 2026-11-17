@@ -1,19 +1,60 @@
-//! `tgg mod new`: a new mod from one of the SDK's examples
-//! ([`tgg_mod::new_mod`]), then a first build.
+//! `tgg mod new`: a new mod from one of the SDK's templates or examples
+//! ([`tgg_mod::new_mod`]). A script mod gets the API's types for its editor;
+//! a C mod a first build, so its editor finds the game's headers.
 
 use crate::build::{self, Options};
+use crate::mods::Template;
 use anyhow::{Result, anyhow};
 use std::path::Path;
 use tgg_mod::{ModId, NewMod, Repository};
+
+/// Where to ask for what scripts can't reach yet.
+const API_ISSUES: &str = "https://github.com/texturesgg/texturesgg/issues/new";
 
 pub struct New<'a> {
     pub dir: &'a Path,
     pub id: Option<ModId>,
     pub name: Option<String>,
+    /// `None`: asked on a terminal, else a rule.
+    pub template: Option<Template>,
+    /// An SDK example instead of a template.
     pub example: Option<String>,
     /// The SDK, or `None` to use the game in use's.
     pub sdk: Option<&'a Path>,
     pub cc: &'a Path,
+}
+
+fn example_of(template: Template) -> &'static str {
+    match template {
+        Template::Rule => tgg_mod::SCRIPT_TEMPLATES[0],
+        Template::Hud => tgg_mod::SCRIPT_TEMPLATES[1],
+        Template::Screen => tgg_mod::SCRIPT_TEMPLATES[2],
+        Template::Mode => tgg_mod::SCRIPT_TEMPLATES[3],
+        Template::Native => tgg_mod::TEMPLATE,
+    }
+}
+
+/// What the mod is for, asked once.
+fn ask() -> Result<Template> {
+    let items = [
+        (Template::Rule, "change how the game plays (a rule)"),
+        (Template::Hud, "show something on screen (HUD, trainer)"),
+        (Template::Screen, "add a menu or screen"),
+        (
+            Template::Mode,
+            "a mode you can play online (rounds, a score)",
+        ),
+        (
+            Template::Native,
+            "native C mod (advanced, needs your own builds and a manual review)",
+        ),
+    ];
+    let items = items
+        .into_iter()
+        .map(|(template, label)| (template, label.to_owned(), String::new()))
+        .collect();
+    crate::ui::pick("What's it for?", items, Some(Template::Rule))?
+        .ok_or_else(|| anyhow!("nothing made"))
 }
 
 pub fn new(new: New) -> Result<()> {
@@ -26,28 +67,35 @@ pub fn new(new: New) -> Result<()> {
         Some(id) => id,
         None => folder_name.parse().map_err(|_| {
             anyhow!(
-                "{folder_name:?} isn't a mod id; pass --id (1 to 64 of a-z, 0-9, '.', '-' and '_')"
+                "{folder_name:?} isn't a mod id. Pass --id with 1 to 64 of a-z, 0-9, '.', '-' and '_'"
             )
         })?,
     };
     let sdk = build::resolve_sdk(new.sdk)?;
+    let example = match (new.example, new.template) {
+        (Some(example), _) => example,
+        (None, Some(template)) => example_of(template).to_owned(),
+        (None, None) if crate::ui::interactive() => example_of(ask()?).to_owned(),
+        (None, None) => example_of(Template::Rule).to_owned(),
+    };
+    if example == tgg_mod::TEMPLATE {
+        println!(
+            "Native mods need a build for each platform and a manual review. If it's for \
+             something scripts can't reach, asking for it in the API may be the better fix: \
+             {API_ISSUES}"
+        );
+    }
     let created = tgg_mod::new_mod(
         &sdk,
         &NewMod {
             dir: dir.to_owned(),
             id,
             name: new.name.unwrap_or(folder_name),
-            example: new.example,
+            example: Some(example),
         },
     )?;
     build::read_manifest(dir)?;
 
-    let (id, example) = (&created.id, &created.example);
-    if dir.file_name().is_some_and(|folder| folder == id.as_str()) {
-        println!("Created {id} from the SDK's {example}");
-    } else {
-        println!("Created {id} in {} from the SDK's {example}", dir.display());
-    }
     match created.repository {
         Repository::Committed | Repository::AlreadyThere => {}
         Repository::NoGit => println!(
@@ -61,20 +109,58 @@ pub fn new(new: New) -> Result<()> {
         Repository::Failed(error) => eprintln!("Couldn't start its git repository: {error}"),
     }
 
-    // A first build writes build/compile_commands.json, so an editor finds
-    // the game's headers right away.
-    let options = Options {
-        sdk: Some(&sdk.root),
-        cc: new.cc,
-        debug: false,
-    };
-    match build::build(dir, &options) {
-        Ok(_) if dir == Path::new(".") => println!("Built it; tgg mod dev runs it in the game"),
-        Ok(_) => println!(
-            "Built it. To run it in the game: cd {}, then tgg mod dev",
-            dir.display()
-        ),
-        Err(error) => eprintln!("It doesn't build yet: {error:#}"),
+    let script = tgg_mod::is_script(dir);
+    if script {
+        tgg_mod::write_script_types(&sdk, dir)?;
+    } else {
+        // A first build writes build/compile_commands.json, so an editor
+        // finds the game's headers right away.
+        let options = Options {
+            sdk: Some(&sdk.root),
+            cc: new.cc,
+            debug: false,
+        };
+        if let Err(error) = build::build(dir, &options) {
+            eprintln!("It doesn't build yet: {error:#}");
+        }
     }
+    next_steps(dir, script);
     Ok(())
+}
+
+/// The three things to do next.
+fn next_steps(dir: &Path, script: bool) {
+    let here = dir == Path::new(".");
+    let folder = if here {
+        "this folder".to_owned()
+    } else {
+        crate::ui::path(dir.display())
+    };
+    let arg = if here {
+        String::new()
+    } else {
+        format!(" {}", dir.display())
+    };
+    let (editor, dev) = if script {
+        (
+            "build/tgg.luau gives you completion and docs",
+            "It reloads when you save.",
+        )
+    } else {
+        (
+            "build/compile_commands.json gives you the headers",
+            "It rebuilds when you save.",
+        )
+    };
+    let dev_cmd = if script {
+        format!("tgg mod dev{arg}")
+    } else {
+        format!("tgg mod dev --watch{arg}")
+    };
+    println!("1. Open {folder} in your editor. {editor}.");
+    println!("2. {} to play it. {dev}", crate::ui::cmd(dev_cmd));
+    println!(
+        "3. {} to pack it.",
+        crate::ui::cmd(format!("tgg mod build{arg}"))
+    );
 }

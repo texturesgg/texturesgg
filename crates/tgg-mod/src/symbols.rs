@@ -54,13 +54,13 @@ pub enum ParseError {
 pub enum SymbolError {
     #[error("{0}: the game has nothing by that name")]
     Unknown(String),
-    #[error("{0}: static in several files ({1}); name it as file.c:{0}")]
+    #[error("{0}: static in several files ({1}), so name it as file.c:{0}")]
     Ambiguous(String, String),
     #[error("{0}: the compiler also copied this static, so calls to the copy would skip the hook")]
     Copied(String),
-    #[error("{0} is a variable; hooks go on functions")]
+    #[error("{0} is a variable, and hooks go on functions")]
     Variable(String),
-    #[error("{0} belongs to the mod runtime; call it, don't hook it")]
+    #[error("{0} belongs to the mod runtime. Call it, don't hook it")]
     Runtime(String),
 }
 

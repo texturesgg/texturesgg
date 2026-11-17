@@ -64,6 +64,47 @@ off), has updates, or incomplete (a mod missing or not built for the game). Turn
 set's mod off keeps it installed; `on` brings the set back to complete. Changes wait while
 the game runs, and while another tgg (or the app) is changing the mods folder.
 
+## Sets
+
+```text
+tgg set list                           your sets; * marks the one the game starts with
+tgg set get NAME                       add a set from textures.gg, like competitive
+tgg set new NAME [--on SET]... [--empty]
+                                       a set of yours, building on sets from textures.gg
+tgg set save NAME                      a set of the mods you have on now
+tgg set show [SET]                     its mods by where they come from, and its queue
+tgg set add SET ID [--version V]       add a mod (V is latest, a version or a range)
+tgg set add SET --on SET               build on a set from textures.gg
+tgg set drop SET ID|SET                take a mod or a set it builds on out
+tgg set on|off SET ID                  load a mod, or leave it out
+tgg set copy SET [NAME]
+tgg set rename SET NAME
+tgg set remove SET
+tgg set use SET                        start the game with it (tgg port run, the app's Play)
+tgg set run [SET] [-y] [-v]            run the game with it now
+```
+
+A set is a name and a list. Each line is a mod or a set from textures.gg it builds on:
+"Friday night" can be Competitive plus three mods of yours, with one of Competitive's
+left out. A set you build on is followed as it is now, so when Competitive gets a mod,
+your set has it at the next launch. You can build on up to 4 sets, each one that lists
+only mods. `new` builds on Online play (the Online menu) unless you name other sets.
+A set you add with `get` follows the one on textures.gg; to change it, make your own that
+builds on it.
+
+Running a set builds its own mods folder for that session from tgg's download cache, so
+switching uninstalls nothing and your mods folder isn't touched. Each set keeps its own
+mod settings. Saves and the memory card are shared by every set. Skins aren't part of a
+set: when you have a skin on, tgg adds the skin loader to whatever set you play. A mod
+that's withdrawn or not built for your game yet is skipped, and `run` says why.
+
+Mods take the newest release each time a set runs while textures.gg can be reached, and
+the ones it used last time when it can't. A set's gameplay mods decide which players it
+meets: two sets with the same gameplay mods search together, whatever else they have.
+
+Your mods folder is the set "Installed mods". It's always there, it's the one the game
+starts with until you pick another, and you change it with `tgg mod` as before.
+
 ## Skins
 
 ```text
@@ -83,6 +124,7 @@ shows offline, and netplay games show the normal costume instead.
 ```text
 tgg login [--no-browser]    confirm a code on textures.gg in your browser
 tgg logout
+tgg account ticket meet [--machine]
 ```
 
 `login` shows a code and opens textures.gg's `/device` page, where you confirm it while
@@ -90,6 +132,13 @@ signed in. The token it gets is saved in `textures.gg/credentials.json` in your 
 folder (`~/.config` on Linux), readable only by you, and sent with every request that
 acts as you. It lasts a week from its last use. `logout` ends that session on the site
 and forgets the token.
+
+`account ticket meet` gets a ticket for the netplay meeting point: a pass that works there
+for two minutes, so the game can play online as you without ever holding your token. It
+signs in first if you aren't. With `--machine` it prints JSON lines for the game
+(`tgg/account.h`): `{"event":"signin","code","url"}` while a sign-in waits to be
+confirmed, then `{"event":"ticket","ticket","name","expires"}`, or
+`{"event":"error","message"}`.
 
 `--api URL` (or `TGG_API`) points every command at another textures.gg API, such as a
 local one; the default is `https://api.textures.gg`.
@@ -152,8 +201,10 @@ lacks, and replaces older builds of them, keeping each one on or off. A mod tgg
 installed this way once and you removed stays removed (`<data>/tgg/default-mods.json`
 lists them). `tgg mod off <id>` turns one off.
 
-`port run` writes the game's output to `game.log` in `<data>/tgg/`, and shows its last
-lines when the game fails; `-v` shows it as the game runs.
+`port run` starts the active set (`tgg set use`). With Installed mods active, it runs your
+mods folder on the version in use, or `--version`. It writes the game's output to
+`game.log` in `<data>/tgg/`, and shows its last lines when the game fails; `-v` shows it
+as the game runs.
 
 On Windows the game needs Microsoft's Visual C++ runtime (`msvcp140.dll`,
 `msvcp140_atomic_wait.dll`, `vcruntime140.dll`, `vcruntime140_1.dll`); `port install` and
@@ -204,30 +255,42 @@ loadable on the oldest glibc the game runs on.
 ## `tgg mod`
 
 ```text
-tgg mod new [DIR] [--id ID] [--name NAME] [--example NAME]
-                                         start a mod from the SDK's template, and build it once
+tgg mod new [DIR] [--id ID] [--name NAME] [--template rule|hud|screen|native | --native | --example NAME]
+                                         start a mod: a script (Luau) unless native; asks on a terminal
 tgg mod build [DIR] [--debug] [--sdk SDK] [--source-zip ZIP|-] [-o OUT.zip] [--json]
                                          compile DIR's src/**/*.c against the game's SDK, check it,
                                          and pack it with DIR's files/, assets/ and include/
+tgg mod fix [DIR] [--check]              rename what the decomp or the mod API renamed, from the SDK's maps
 tgg mod dev [DIR] [--watch] [--gdb]     build it for debugging and run the game with it
-tgg mod register [DIR]                   create the mod on textures.gg from its manifest
 tgg mod publish [DIR]                    build it here, tag v<version> and push it to textures.gg (--skip-build)
+tgg mod register [DIR]                   create the mod on textures.gg from its manifest
 tgg mod pack DIR [-o OUT.zip] [--json]   DIR is a built mod's folder
 tgg mod inspect FILE                     a package zip, a mod library, or a game executable
 tgg mod catalog -o CATALOG.json ZIP...   list packages, with URLs relative to the catalog
 tgg mod install [--port EXE] ZIP...      install package zips, refusing another game layout or a conflict
 ```
 
+`register`, `pack`, `inspect` and `catalog` work as always but stay out of `tgg mod --help`:
+`publish` registers a mod the first time, and the others are for the registry and scripts.
+
 `tgg mod list --json` gives each installed mod's manifest, whether it's on, its netplay
 class, the sets that installed it, and whether it fits the game. `enable` and `disable`
 are `on` and `off`.
 
-`new` copies the SDK's `examples/template/` (or `--example`'s) into `DIR`, which may
+`new` starts a script mod by default. On a terminal with no `--template`, it asks what the
+mod is for: a rule (`examples/script-rule/`), something on screen (`script-hud/`), a menu
+screen (`script-screen/`), a mode you can play online (`script-first-to-3/`), or a native C mod (`template/`, after a note that native mods need
+a build per platform and a manual review). Elsewhere it starts a rule. It ends with three next
+steps: open the folder in an editor, `tgg mod dev`, `tgg mod build`. "When to write C" in the
+SDK's `docs/scripts.md` says when native is worth it.
+
+`new` copies the template (or `--example`'s) into `DIR`, which may
 already hold dotfiles, a README, a license and a Nix flake (it keeps those, and adds the
 template's `.gitignore` lines to an existing one), sets the manifest's `id` (`DIR`'s name
 unless `--id`) and `name`, and the template README's title and log lines to them,
 runs `git init` and commits the template (without git, or before git knows your name
-and email, it says what to do and goes on), and builds once so
+and email, it says what to do and goes on). A script mod gets the API's types in
+`build/tgg.luau`; a C mod is built once so
 `build/compile_commands.json` is there for the editor: the template's `.clangd` points clangd at it, so completion and go-to-definition
 reach the game's headers. On NixOS, an editor's own clangd may not find the C library's
 headers; run the clangd of the project's dev shell (`direnv exec . clangd`) with
@@ -252,7 +315,10 @@ used as a value, and the link and glibc check are the SDK's. `--debug` builds wi
 editors. `SDK` is the SDK's folder or its `tgg-game-sdk.json`, or `TGG_GAME_SDK`; by
 default it is the SDK of the game in use, installed if it's missing. The package goes to
 `DIR/build/<id>-<version>.zip` unless `-o` says otherwise. A mod without sources needs no
-SDK: `build` packs it without compiling, and leaves `entry` out of its manifest.
+SDK: `build` packs it without compiling. A C mod is built for the oldest mod API minor it
+compiles for, which the package's `api_version` records, so it loads on every game from that
+minor on in the same major. One whose manifest says `"experimental": true` is built for the
+SDK's own minor with `TGG_EXPERIMENTAL`, and loads only on that one.
 `--source-zip` first unpacks `manifest.json` and those folders from a zip (up to 256 MiB),
 or from stdin with `-`, into an empty `DIR`; the registry's builder sends each mod's source
 that way.
@@ -303,6 +369,18 @@ five seconds later is killed. `--gdb` runs the game under gdb, which needs its d
 info (`tgg port install --debug`). The game's own switches pass through the environment: `TGG_SKIP_INTRO=1`, `TGG_INPUT_SCRIPT`, `TGG_SYNCTEST=1` (the rollback
 check), `TGG_UNLOCK_ALL=0`. A dev build never matches a registry build, so
 it never matches a netplay peer's.
+
+A script mod (`"script": true` in its manifest) builds nothing: `dev` writes the API's
+types to `DIR/build/tgg.luau` for the editor, links the mods folder's `<id>` to `DIR`
+itself (on Windows a copy of its `manifest.json`, `scripts/`, `assets/` and `files/`,
+kept in step with it), and runs the game with `TGG_SCRIPT_DEV=<id>`, so a saved script
+runs on the next frame without a restart. `tgg mod build` runs the SDK's `tools/tgg-script
+pack`, which checks the scripts as the game will and lists them, and packs `manifest.json`,
+the files under `scripts/` the game reads (any other file there is refused), `assets/` and
+`files/`. The manifest records the list (`uses`), what of it changes a match (`sim_writes`),
+the lowest API version the scripts need (`api_version`) and `"class": "display"` when nothing
+changes a match. A script package has no library, target or layout, so the one package
+installs on every platform and game layout, and fetching one never asks for a yes.
 
 ## License
 

@@ -43,8 +43,9 @@ competitive` and `tgg port run`. Mod makers keep `tgg mod publish`.
 - **Port install**: one installed tgg-melee release in its own folder under the
   ports folder. Several versions can be installed; one is the current one. A
   port has a target (`x86_64-linux-gnu`, `x86_64-windows-gnu`,
-  `aarch64-apple-darwin`) and a game layout id (`Port::game_abi`). A mod build
-  fits a port when both match.
+  `aarch64-apple-darwin`) and a game layout id (`Port::game_abi`). A game-tier
+  mod build fits a port when both match; a stable-tier build (manifest `"tier":
+  "stable"`, no `game_abi`) fits every port on its target.
 - **Mods folder**: the folder the game loads mods from, shared by every port
   version the player runs. A mod's folder is its id; a turned-off mod's folder
   is `.<id>` (the game skips dot-folders). `tgg_mod::install::ModsDir` already
@@ -114,8 +115,11 @@ in-game browser will read it directly.
   for one layout: every approved release with a build for it (manifest,
   netplay class, package URL, SHA-256, size), plus `snapshot`, an id for this
   state of the catalog, and `ids`, every mod id the registry has (built for
-  this layout or not). 404 when the layout has no builds: the crate says
-  "textures.gg has no mods for tgg-melee X yet".
+  this layout or not), and `withdrawn`, the releases a moderator pulled after
+  approval: `{id, version, reason, mode, sha256: [...]}` with every package
+  hash the release had on any layout, `mode` being `off` or `warn`. 404 when
+  the layout has no builds: the crate says "textures.gg has no mods for
+  tgg-melee X yet".
 - `GET /api/registry/sets`: every set: `{name, title, description, version,
   mods: [{id, range}]}`. 404 reads as no sets.
 - `GET /api/registry/mods?page=&pageSize=&sort=`: every mod with an approved
@@ -408,6 +412,16 @@ release mirror.
   installed atomically (staged beside its folder, then swapped, as `ModsDir`
   does); cancelling between mods leaves every mod either old or new; the lock
   is written last.
+- **Withdrawn releases** leave the catalog, so nothing installs or fetches
+  them (a lobby or replay naming one says "textures.gg withdrew X Y: reason").
+  `apply_withdrawn` compares the catalog's `withdrawn` list with the lock's
+  package hashes: `off` turns the mod off (its folder becomes `.<id>`) once
+  and records why in the lock, so it is turned back on when the release is
+  restored and never turned off again after the player turns it back on;
+  `warn` leaves it on and says why each time. Installing, updating and
+  `check_withdrawn` (which front ends call before launching the game; it
+  uses the last catalog seen when offline) apply it. A mod tgg didn't
+  install is left alone.
 - **Concurrency**: `apply`, `set_enabled`, `uninstall` and `uninstall_set` take
   an advisory lock file in the mods folder and return `Busy` when another tgg
   holds it.
@@ -429,6 +443,15 @@ built it from (the manifest's `source`, which the builder writes with `tgg mod
 build --source-commit`), so two systems' builds of one release match and a
 build of anything else doesn't. Two players with the same set installed
 match. A set's own version isn't part of it; the mods are.
+
+Display mods don't count. A moderator marks a release display on review when
+it only changes what a player sees or keeps (a HUD, the replay recorder, the
+skin loader); the builder writes `"class": "display"` into each build's
+manifest (`tgg mod build --class display`), next to `source`. It holds only
+while the library's records allow it: no function it replaces and no `pad_read`
+(`netplay::display_check`), which tgg checks when building and the game checks
+again when loading. Packing drops a `class` an author writes, and a dev build
+never has one. `netplay::classify` gives such a mod `Netplay::Display`.
 
 ## Work split
 

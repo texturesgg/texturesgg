@@ -38,10 +38,14 @@
 //! - [`local`]: what a mods folder holds, turning mods on and off, and
 //!   uninstalling.
 //! - [`lock`]: `mods.lock.json` and the busy and pid files.
+//! - [`withdraw`]: turning off installed mods whose release the registry
+//!   withdrew, and back on when it is restored.
 //! - [`profile`], [`prepare`], [`trust`], [`cache`]: mod profiles, the exact
 //!   mods a replay or a netplay host needs: reading them ([`slp`] for
 //!   replays), resolving, preparing and launching them; and the package
 //!   cache.
+//! - [`sets`]: the player's sets, named lists of mods and textures.gg
+//!   sets they build on, run through the profile path.
 //! - [`skins`]: the skins tgg.skins loads (`skins.json`), and whether a
 //!   costume changes only looks.
 //! - [`scaffold`]: starting a new mod from an SDK example, a release's SDK,
@@ -70,16 +74,18 @@ pub mod profile;
 pub mod registry;
 pub mod scaffold;
 pub mod sdk;
+pub mod sets;
 pub mod skins;
 pub mod slp;
 pub mod symbols;
 pub mod trust;
+pub mod withdraw;
 
 pub use cache::{
     cached_catalog, cached_mapping, packages_dir, prune_packages, refresh_catalog, refresh_mapping,
     save_catalog, save_mapping,
 };
-pub use catalog::{Catalog, CatalogEntry, PackageRef};
+pub use catalog::{Catalog, CatalogEntry, PackageRef, WithdrawMode, Withdrawn};
 pub use decls::{Declarations, Hooks};
 pub use depends::Range;
 pub use error::{Error, OnProgress, Progress, no_progress};
@@ -92,10 +98,10 @@ pub use local::{
     Local, LocalMod, LocalSet, SetStatus, local, set_enabled, uninstall, uninstall_set,
 };
 pub use lock::{Lock, LockEntry, game_running};
-pub use manifest::{Manifest, ModId};
+pub use manifest::{Manifest, ModClass, ModId, Tier};
 pub use net::{HttpNet, Net, NetError};
 pub use netplay::Netplay;
-pub use package::Package;
+pub use package::{Package, ScriptListing};
 pub use plan::{
     Action, Applied, Plan, Problem, Step, apply, apply_cached, plan_mods, plan_set,
     plan_set_update, plan_updates,
@@ -119,7 +125,8 @@ pub use registry::{
     mod_details, mods, sets,
 };
 pub use scaffold::{
-    CreatedMod, NewMod, Repository, Tools, docs_url, new_mod, release_sdk, sdk_examples, tools,
+    CreatedMod, NewMod, Repository, SCRIPT_TEMPLATES, SCRIPT_TYPES, TEMPLATE, Tools, docs_url,
+    is_script, new_mod, release_sdk, sdk_examples, tools, write_script_types,
 };
 pub use sdk::Sdk;
 pub use skins::{
@@ -128,11 +135,12 @@ pub use skins::{
 pub use slp::{ReplayInfo, ReplayPlayer, replay_info};
 pub use symbols::Symbols;
 pub use trust::{Trust, remember_trust, trust};
+pub use withdraw::{WithdrawAction, WithdrawNotice, apply_withdrawn};
 
 use std::path::PathBuf;
 
 /// The manifest API this crate's packages target.
-pub const API: &str = "tgg-melee/0";
+pub const API: &str = "tgg-melee/1";
 
 /// The folder the game loads mods from, by the game's own rule:
 /// `$TGG_MODS_DIR`, else `mods` in [`game_data_dir`].

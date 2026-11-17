@@ -93,8 +93,8 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
                 .gap(space::XS)
                 .child(
                     label(format!(
-                        "Some of its mods aren't official: by {}. They run only while the replay plays.",
-                        untrusted.join(", ")
+                        "Some of its mods run native code, published by {}, not textures.gg. They run only while the replay plays.",
+                        untrusted.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", ")
                     ))
                     .font(text::SMALL)
                     .color(p.muted)

@@ -547,7 +547,7 @@ fn show_shared(app: &mut App, code: &str, name: &str) {
 /// rather than looked for: GCC and git installed, CMake not.
 fn new_mod_scene(app: &mut App) {
     let json = format!(
-        r#"{{"api": "{}", "api_version": "0.1", "name": "tgg-melee", "version": "0.1.0",
+        r#"{{"api": "{}", "api_version": "1.0", "name": "tgg-melee", "version": "0.1.0",
             "game_abi": "0123456789abcdef", "compiler": "GNU", "compiler_version": "15.3.0",
             "processor": "x86_64", "target": "x86_64-linux-gnu", "include_dirs": [],
             "glibc": "2.34", "symbols": "symbols.txt"}}"#,

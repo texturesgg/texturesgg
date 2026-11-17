@@ -8,11 +8,11 @@ use tgg_mod::Verdict;
 
 #[derive(Subcommand)]
 pub enum SkinCommand {
-    /// Use a skin file (a .dat, such as PlMrNr.dat or one named PlMrNr-red.dat)
-    /// in place of the game file it's for. tgg keeps a copy.
+    /// Use a skin file (a .dat like PlMrNr.dat or PlMrNr-red.dat) in place of
+    /// the game file it's for. tgg keeps a copy.
     Install {
         file: PathBuf,
-        /// The game file it replaces [default: from its name: PlMrNr.dat for
+        /// The game file it replaces [default: from its name, so PlMrNr.dat for
         /// PlMrNr-red.dat]
         #[arg(long = "for", value_name = "GAME_FILE")]
         game_file: Option<String>,
@@ -24,11 +24,11 @@ pub enum SkinCommand {
     List,
     /// Put the game's own file back.
     Remove {
-        /// The game file, such as PlMrNr.dat
+        /// The game file, like PlMrNr.dat
         game_file: String,
     },
-    /// Say whether a costume only changes looks, so it also shows in netplay
-    /// games.
+    /// Say whether a costume only changes looks, which means it also shows
+    /// in netplay.
     Check {
         file: PathBuf,
         #[arg(long = "for", value_name = "GAME_FILE")]
@@ -57,7 +57,7 @@ pub fn run(command: SkinCommand) -> Result<()> {
             println!("{name} replaces {game_file} from the next start");
             if !loader_installed() {
                 println!(
-                    "tgg.skins loads them: tgg mod install {}",
+                    "tgg.skins loads them. Install it with tgg mod install {}",
                     tgg_mod::skins::LOADER
                 );
             }
@@ -86,12 +86,12 @@ pub fn run(command: SkinCommand) -> Result<()> {
             let port = tgg_mod::installed_ports(&crate::paths::ports()?)?
                 .into_iter()
                 .find(|port| port.current)
-                .context("no tgg-melee installed: tgg port install")?;
+                .context("tgg-melee isn't installed. Run tgg port install")?;
             let iso = crate::config::iso()?;
             match tgg_mod::costume_verdict(&port, &iso, &game_file, &file)? {
-                Verdict::LooksOnly => println!("Only changes looks: it shows in netplay games too"),
+                Verdict::LooksOnly => println!("Only changes looks, so it shows in netplay too"),
                 Verdict::Counts(why) => println!(
-                    "Changes more than looks ({why}): it shows offline, and netplay games show the normal costume"
+                    "Changes more than looks ({why}), so it only shows offline. Netplay shows the normal costume."
                 ),
                 Verdict::NotACostume => println!("{game_file} isn't a costume"),
             }

@@ -22,6 +22,45 @@ pub struct Catalog {
     /// one that doesn't exist. Empty when the registry doesn't say.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ids: Vec<ModId>,
+    /// Releases a moderator pulled after approval, with every package they
+    /// had on any layout; [`crate::withdraw`] acts on installed copies.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub withdrawn: Vec<Withdrawn>,
+}
+
+/// A release the registry withdrew: it is no longer offered, and what tgg
+/// does with an installed copy is its `mode`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Withdrawn {
+    pub id: ModId,
+    pub version: String,
+    /// Why, in a few words players read.
+    pub reason: String,
+    #[serde(default)]
+    pub mode: WithdrawMode,
+    /// Every package of the release, on every layout.
+    pub sha256: Vec<String>,
+}
+
+/// What tgg does with an installed copy of a withdrawn release.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WithdrawMode {
+    /// Leave it on and say why: broken, not harmful.
+    Warn,
+    /// Turn it off and say why. A mode this tgg doesn't know reads as this.
+    #[default]
+    #[serde(other)]
+    Off,
+}
+
+impl Catalog {
+    /// The withdrawn release a package with this SHA-256 belongs to.
+    pub fn withdrawn(&self, sha256: &str) -> Option<&Withdrawn> {
+        self.withdrawn
+            .iter()
+            .find(|entry| entry.sha256.iter().any(|hash| hash == sha256))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,7 +103,7 @@ pub struct PackageRef {
 pub enum CatalogError {
     #[error("the catalog is not valid: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("the catalog is format {0}; this app reads format {SCHEMA}")]
+    #[error("the catalog is format {0}, but this app reads format {SCHEMA}")]
     Schema(u32),
 }
 
@@ -76,6 +115,7 @@ impl Catalog {
             snapshot: None,
             mods: Vec::new(),
             ids: Vec::new(),
+            withdrawn: Vec::new(),
         }
     }
 
