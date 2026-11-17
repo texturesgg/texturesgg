@@ -3,6 +3,7 @@
 //! shared, and how the app starts.
 
 use crate::editor::Document;
+use crate::first_run::FirstRun;
 use crate::jobs::Jobs;
 use crate::jobs::renders::Renders;
 use crate::library::Page as LibraryPage;
@@ -14,7 +15,6 @@ use crate::replays::Replays;
 use crate::report::Report;
 use crate::signin::SignIn;
 use crate::stage::Stage;
-use crate::welcome::Welcome;
 use std::path::PathBuf;
 use tgg_app::References;
 use tgg_app::library::Library;
@@ -26,10 +26,11 @@ pub struct App {
     /// Whether changes to settings are written back to disk; off in tests,
     /// so they never touch the player's.
     pub persist: bool,
-    /// The player's game; `None` until they choose one, while Welcome shows.
+    /// The player's game; `None` until they choose one.
     pub game: Option<References>,
+    /// First run, while it shows: until there's a disc and tgg-melee.
+    pub first_run: Option<FirstRun>,
     pub nav: Nav,
-    pub welcome: Welcome,
     pub melee: Melee,
     /// The player's skins, kept by content hash: shared by every place.
     pub library: Library,
@@ -81,11 +82,14 @@ pub struct App {
 
 /// Where the app starts.
 pub enum Start {
-    /// The player's game, found or given.
+    /// The app set up: the player's game is theirs, and tgg-melee is
+    /// installed.
     Game(References),
-    /// Welcome, with the games found in the player's folders and, when an
-    /// ISO was given or saved but can't be used, why.
-    Welcome(Welcome),
+    /// First run, with the game when one was found or given already.
+    FirstRun {
+        game: Option<References>,
+        state: FirstRun,
+    },
 }
 
 impl App {
@@ -94,9 +98,9 @@ impl App {
     /// tests). Nothing is read in the background until it runs.
     pub fn new(start: Start, settings: Settings, data: Data, persist: bool) -> Self {
         let nav = Nav::from_settings(&settings);
-        let (game, welcome) = match start {
-            Start::Game(references) => (Some(references), Welcome::default()),
-            Start::Welcome(welcome) => (None, welcome),
+        let (game, first_run) = match start {
+            Start::Game(references) => (Some(references), None),
+            Start::FirstRun { game, state } => (game, Some(state)),
         };
         // Where the sign-in is kept when the CLI's place can't be used (tests).
         let credentials = data.library.with_file_name("credentials.json");
@@ -108,8 +112,8 @@ impl App {
             settings,
             persist,
             game,
+            first_run,
             nav,
-            welcome,
             melee,
             library: Library::open_at(data.library.clone()),
             library_page: LibraryPage::default(),

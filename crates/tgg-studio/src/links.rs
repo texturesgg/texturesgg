@@ -1,7 +1,7 @@
 //! Links from textures.gg's Install buttons: `textures-gg://mods/<id>`
 //! opens Mods on that mod, `textures-gg://sets/<name>` on installing that
 //! set. A link waits until there's something to open it on: a game chosen
-//! (Welcome first) and textures.gg's catalog for the tgg-melee in use.
+//! (first run picks it) and textures.gg's catalog for the tgg-melee in use.
 //!
 //! macOS hands links to the running app (`on_open_url`). Windows and Linux
 //! start the app with the link as an argument; a copy already running is
@@ -87,7 +87,7 @@ pub fn apply(app: &mut App) -> bool {
         return false;
     }
     if app.nav.place != Place::Mods {
-        // Welcome was showing when it came.
+        // First run was showing when it came.
         crate::nav::actions::go(app, Place::Mods);
     }
     match &app.mods.registry {

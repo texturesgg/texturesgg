@@ -1,9 +1,9 @@
 //! The window's frame: the sidebar beside the content, and the top bar
-//! inside the content. Welcome takes the whole window until the player has a
-//! game. The sidebar hides completely; the button that brings it back is the
-//! first thing in the top bar, and the same button in the sidebar hides it.
-//! No borders between regions. Drawing only: what it shows comes from the
-//! app's state, and pressing calls `nav::actions`.
+//! inside the content. First run takes the whole window until the player has
+//! a disc and tgg-melee. The sidebar hides completely; the button that brings
+//! it back is the first thing in the top bar, and the same button in the
+//! sidebar hides it. No borders between regions. Drawing only: what it shows
+//! comes from the app's state, and pressing calls `nav::actions`.
 
 use crate::nav::{Place, actions as nav};
 use crate::state::{App, NoticeAction};
@@ -13,8 +13,8 @@ use crate::ui::{
     title_bar,
 };
 use crate::{
-    editor, keys, library, melee, mods, newmod, play, preferences, profile, replays, report,
-    signin, welcome,
+    editor, first_run, keys, library, melee, mods, newmod, play, preferences, profile, replays,
+    report, signin,
 };
 use rune::{Cx, El, col, el, row, text as label};
 
@@ -25,8 +25,14 @@ const TRAFFIC_LIGHTS: f32 = 72.0;
 pub fn view(app: &App, _: &mut Cx<App>) -> El {
     // Dark only for launch.
     let p = Palette::gallery();
-    if app.game.is_none() {
-        return welcome::view::view(app, &p);
+    // First run takes the whole window until there's a disc and tgg-melee;
+    // signing in is still asked in its dialog over it.
+    if app.first_run.is_some() {
+        return col()
+            .w_full()
+            .h_full()
+            .child(first_run::view::view(app, &p))
+            .children(signin::view::sign_in(app, &p));
     }
     // No fill of its own: the sidebar and the content each fill theirs, so
     // where the window is see-through the sidebar's glass shows.

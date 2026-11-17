@@ -18,7 +18,7 @@ pub fn open_game(app: &mut App, references: References) {
     app.game = Some(references);
     refresh(app);
     // The first look for tgg-melee's disc ran before there was a game (a
-    // first run picks it on Welcome); this one may be it.
+    // first run picks it); this one may be it.
     if matches!(
         app.mods.disc,
         crate::mods::Disc::Missing | crate::mods::Disc::Looking

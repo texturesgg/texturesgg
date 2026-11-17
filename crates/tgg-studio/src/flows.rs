@@ -1,16 +1,15 @@
 //! The shell's flows, driven through Rune's headless runtime: places, the
-//! sidebar, and Welcome finding a game. No GPU and no game files; games are
-//! disc images written by hand.
+//! sidebar, and first run finding a game. No GPU and no game files; games
+//! are disc images written by hand.
 
+use crate::first_run::FirstRun;
 use crate::melee::Subject;
 use crate::nav::Place;
 use crate::shell;
 use crate::state::{App, Data, Start};
-use crate::welcome::Welcome;
 use rune::{Env, Key, KeyEvent, Mods, Runtime};
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
-use tgg_app::GameChoice;
 use tgg_app::settings::Settings;
 
 const WINDOW: (f32, f32) = (1280.0, 800.0);
@@ -131,12 +130,16 @@ fn ctrl_backslash_shows_and_hides_the_sidebar() {
 }
 
 #[test]
-fn without_a_game_welcome_asks_for_one() {
-    let (rt, _data) = runtime(Start::Welcome(Welcome::default()));
-    assert!(rt.find("welcome/choose").is_some());
+fn first_run_asks_for_a_disc_and_the_game() {
+    let (rt, _data) = runtime(Start::FirstRun {
+        game: None,
+        state: FirstRun::default(),
+    });
+    assert!(rt.find("first-run/choose-disc").is_some());
+    assert!(rt.find("first-run/download").is_some());
     assert!(
         rt.find(Place::Play.key()).is_none(),
-        "no places until there's a game"
+        "no places until there's a game and tgg-melee"
     );
 }
 
@@ -145,52 +148,108 @@ fn an_iso_that_isnt_melee_is_refused_in_the_players_words() {
     let folder = tempfile::tempdir().expect("temp dir");
     let other = folder.path().join("other.iso");
     std::fs::write(&other, tgg_app::game::test_disc(b"GALE01", 0, b"file")).expect("write disc");
-    let (mut rt, _data) = runtime(Start::Welcome(Welcome::default()));
-    tap(&mut rt, "welcome/choose");
+    let (mut rt, _data) = runtime(Start::FirstRun {
+        game: None,
+        state: FirstRun::default(),
+    });
+    tap(&mut rt, "first-run/choose-disc");
     rt.resolve_file_dialog(Some(other))
         .expect("a dialog was open");
     rt.frame(FRAME);
     assert!(rt.state.game.is_none());
-    let problem = rt.state.welcome.problem.clone().expect("Welcome says why");
+    let problem = rt
+        .state
+        .first_run
+        .as_ref()
+        .and_then(|first| first.problem.clone())
+        .expect("first run says why");
     assert!(
         problem.contains("1.02"),
         "it names the version Melee must be: {problem}"
     );
-    assert!(rt.find("welcome/problem").is_some());
+    assert!(rt.find("first-run/problem").is_some());
 }
 
 #[test]
 fn choosing_a_melee_iso_opens_the_game_and_remembers_it() {
     let (folder, iso) = melee_iso();
-    let (mut rt, _data) = runtime(Start::Welcome(Welcome::default()));
-    tap(&mut rt, "welcome/choose");
+    let (mut rt, _data) = runtime(Start::FirstRun {
+        game: None,
+        state: FirstRun::default(),
+    });
+    tap(&mut rt, "first-run/choose-disc");
     rt.resolve_file_dialog(Some(iso.clone()))
         .expect("a dialog was open");
     rt.frame(FRAME);
     assert!(rt.state.game.is_some());
-    assert_eq!(rt.state.nav.place, Place::Play);
+    assert!(
+        rt.state.first_run.is_some(),
+        "first run stays until tgg-melee is installed"
+    );
     assert_eq!(rt.state.settings.iso_path.as_deref(), Some(iso.as_path()));
     assert_eq!(
         rt.state.settings.game_folders,
         vec![folder.path().to_path_buf()]
     );
-    assert!(rt.find(Place::Play.key()).is_some(), "the places show");
+    assert_eq!(rt.state.mods.disc, crate::mods::Disc::Found(iso));
+    assert!(rt.find(Place::Play.key()).is_none(), "no places yet");
 }
 
 #[test]
-fn a_game_found_in_the_players_folders_opens_with_one_press() {
+fn a_game_found_starts_first_run_with_that_game() {
     let (_folder, iso) = melee_iso();
-    let welcome = Welcome {
-        games: vec![GameChoice {
-            path: iso,
-            slippi_plays: true,
-            changed: 0,
-        }],
-        problem: None,
-    };
-    let (mut rt, _data) = runtime(Start::Welcome(welcome));
-    tap(&mut rt, "welcome/game/0");
+    let game = tgg_app::Game::open(&iso).expect("the test disc opens");
+    let references = tgg_app::game_references(game).expect("references");
+    let (rt, _data) = runtime(Start::FirstRun {
+        game: Some(references),
+        state: FirstRun::default(),
+    });
     assert!(rt.state.game.is_some());
+    assert!(rt.state.first_run.is_some());
+    assert!(rt.find("first-run/download").is_some());
+    assert!(rt.find(Place::Play.key()).is_none());
+}
+
+#[test]
+fn first_run_installs_the_game_and_makes_the_picked_set() {
+    let (_folder, iso) = melee_iso();
+    let game = tgg_app::Game::open(&iso).expect("the test disc opens");
+    let references = tgg_app::game_references(game).expect("references");
+    let (mut rt, _data) = runtime(Start::FirstRun {
+        game: Some(references),
+        state: FirstRun::default(),
+    });
+    rt.state.mods.net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    crate::first_run::actions::opened(&mut rt.state);
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered && !app.mods.releases.is_empty()
+    });
+    crate::mods::actions::use_disc(&mut rt.state, iso.clone());
+    rt.frame(FRAME);
+    tap(&mut rt, "first-run/download");
+    assert_eq!(
+        rt.state.first_run.as_ref().map(|first| first.stage),
+        Some(crate::first_run::Stage::Downloading)
+    );
+    jobs_until(&mut rt, |app| {
+        app.first_run
+            .as_ref()
+            .is_some_and(|first| first.stage == crate::first_run::Stage::Done)
+            && app.sets.list.iter().any(|set| set.name == "Competitive")
+    });
+    assert!(rt.state.mods.port().is_some(), "tgg-melee is installed");
+    let competitive = rt
+        .state
+        .sets
+        .list
+        .iter()
+        .find(|set| set.name == "Competitive")
+        .expect("the picked set was added");
+    assert!(competitive.locked);
+    assert_eq!(
+        rt.state.sets.active, competitive.key,
+        "and it's the one Play starts"
+    );
 }
 
 #[test]

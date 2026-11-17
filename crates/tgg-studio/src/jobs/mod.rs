@@ -37,6 +37,8 @@ pub enum Done {
     NewMod(Box<crate::newmod::actions::Done>),
     /// Sets: read, a plan worked out, a game got ready.
     Sets(Box<crate::sets::Done>),
+    /// First run: the picked sets were made.
+    FirstRun(Box<crate::first_run::Done>),
     /// Slippi's Dolphin, started from here, closed.
     SlippiEnded,
     /// You: a profile read from textures.gg, a pack downloaded.
@@ -165,6 +167,11 @@ fn states_of(game: &tgg_app::Game, library: &Library) -> HashMap<MeleeSlot, Slot
 /// Once the window runs: keep its waker, and start reading the game.
 pub fn setup(app: &mut crate::state::App, waker: Waker) {
     app.jobs.set_waker(waker);
+    // Before there is a game: the disc found on its own, textures.gg's
+    // offers for what's installed.
+    if app.first_run.is_some() {
+        crate::first_run::actions::opened(app);
+    }
     crate::melee::actions::refresh(app);
     // Edits a closed window or a crash left unsaved.
     crate::editor::draft::offer(app);
@@ -226,6 +233,7 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
             Done::NewMod(done) => crate::newmod::actions::done(app, *done),
             Done::SlippiEnded => crate::slippi::actions::ended(app),
             Done::Sets(done) => crate::sets::actions::done(app, *done),
+            Done::FirstRun(done) => crate::first_run::actions::done(app, *done),
             Done::NoticeExpired(id) => app.notice_expired(id),
             Done::Verdicts(verdicts) => crate::library::port::answered(app, verdicts),
             Done::Update(newer) => {
@@ -234,6 +242,9 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
             }
         };
     }
+    // First run adopts a disc found on its own, and moves on once the game
+    // has installed.
+    changed |= crate::first_run::actions::poll(app);
     // A link from textures.gg opens once what it needs has arrived.
     changed |= crate::links::apply(app);
     changed

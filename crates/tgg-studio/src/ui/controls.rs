@@ -56,10 +56,6 @@ pub fn button_small(label: &str, kind: ButtonKind, p: &Palette) -> El {
 }
 
 /// A page's main action, 40 points tall.
-#[expect(
-    dead_code,
-    reason = "Play's Find a match uses it, in the Play pull request"
-)]
 pub fn button_main(label: &str, kind: ButtonKind, p: &Palette) -> El {
     pill(label, kind, size::CONTROL_MAIN, p)
 }

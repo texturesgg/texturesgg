@@ -11,6 +11,7 @@
 //! ```
 
 mod editor;
+mod first_run;
 mod jobs;
 mod keys;
 mod library;
@@ -35,7 +36,6 @@ mod slippi;
 mod stage;
 mod state;
 mod ui;
-mod welcome;
 mod window;
 
 #[cfg(test)]
@@ -43,19 +43,71 @@ mod flows;
 #[cfg(all(test, feature = "melee-iso"))]
 mod iso_flows;
 
+use first_run::{FirstRun, Stage};
 use rune::AppSpec;
 use state::{App, Data, Start};
 use std::path::{Path, PathBuf};
 use tgg_app::settings;
-use welcome::Welcome;
 
 /// A screen, as a named edit of the app at launch, for `--snap --scene`.
 type Scene = (&'static str, fn(&mut App));
 
 const SCENES: &[Scene] = &[
-    ("welcome", |app| {
+    // First run: the disc, the game, the mods to start with, and signing in.
+    ("first-run-no-disc", |app| {
+        first_run_scene(app);
         app.game = None;
-        app.welcome.games = tgg_app::discover_games();
+        app.mods.disc = mods::Disc::Missing;
+    }),
+    ("first-run-ready", |app| {
+        first_run_scene(app);
+        scene_disc(app);
+    }),
+    ("first-run-downloading", |app| {
+        first_run_scene(app);
+        scene_disc(app);
+        if let Some(first) = app.first_run.as_mut() {
+            first.stage = Stage::Downloading;
+        }
+        let progress = tgg_mod::Progress {
+            step: 0,
+            steps: 1,
+            label: "Downloading tgg-melee 0.5.0".into(),
+            bytes: 12_400_000,
+            total: Some(48_000_000),
+        };
+        app.mods.work = Some(mods::Work {
+            doing: "Installing tgg-melee 0.5.0".into(),
+            progress: std::sync::Arc::new(std::sync::Mutex::new(Some(progress))),
+            cancel: std::sync::Arc::default(),
+            target: None,
+        });
+    }),
+    ("first-run-done", |app| {
+        first_run_scene(app);
+        scene_disc(app);
+        if let Some(first) = app.first_run.as_mut() {
+            first.stage = Stage::Done;
+        }
+        app.signin.who = Some(tgg_account::SignedIn {
+            account: tgg_account::Account {
+                handle: "ciao".into(),
+                display_name: None,
+                id: None,
+            },
+            verified: true,
+        });
+    }),
+    ("first-run-none-picked", |app| {
+        first_run_scene(app);
+        scene_disc(app);
+        if let Some(first) = app.first_run.as_mut() {
+            first.picks = first_run::Picks {
+                competitive: false,
+                practice: false,
+                replays: false,
+            };
+        }
     }),
     ("stages", |app| skins(app).melee.tab = melee::Tab::Stages),
     ("skins", |app| {
@@ -470,12 +522,8 @@ fn main() {
             // textures-gg:// links, on macOS.
             .on_open_url(links::opened_with)
             .init(move || {
-                let mut app = App::new(
-                    start(iso.as_deref()),
-                    settings::load(),
-                    Data::of_player(),
-                    true,
-                );
+                let data = Data::of_player();
+                let mut app = App::new(start(iso.as_deref(), &data), settings::load(), data, true);
                 open_files(&mut app);
                 if let Some(link) = links::in_arguments(rune::extra_args()) {
                     links::open(&mut app, link);
@@ -494,35 +542,61 @@ fn main() {
     tgg_app::external::remove_temporary_directory();
 }
 
-/// The app as a plain launch finds it, for Rune's tooling.
+/// The app as a plain launch finds it, for Rune's tooling. Scenes show the
+/// app as set up when a game is found: they aren't the player's first run.
 fn launch() -> App {
-    App::new(start(None), settings::load(), Data::of_player(), true)
+    let data = Data::of_player();
+    let start = match start(None, &data) {
+        Start::FirstRun {
+            game: Some(game), ..
+        } => Start::Game(game),
+        other => other,
+    };
+    App::new(start, settings::load(), data, true)
 }
 
 /// The game given, else the one chosen before, else the one Slippi Launcher
-/// plays or one in Dolphin's folders, remembered so the next launch opens
-/// it directly. Welcome lists the games found otherwise, or says why a
-/// given one won't do. A snapshot remembers nothing: it's not the player
-/// choosing.
-fn start(iso: Option<&Path>) -> Start {
+/// plays or one in Dolphin's folders, remembered so the next launch opens it
+/// directly. With none of those, a game found in the player's folders is
+/// theirs without a press. First run shows until there is one and tgg-melee
+/// is installed; a given or remembered game it can't use says why.
+fn start(iso: Option<&Path>, data: &Data) -> Start {
+    let installed = tgg_mod::installed_ports(&data.ports)
+        .is_ok_and(|ports| ports.iter().any(|port| port.current));
     let found = tgg_app::find_game(iso).map(|found| found.map(|(game, _)| game));
-    let problem = match found {
+    let (game, problem) = match found {
         Ok(Some(game)) => {
             if !snapshot() {
                 tgg_app::remember_game(&game);
             }
             match tgg_app::game_references(game) {
-                Ok(references) => return Start::Game(references),
-                Err(error) => error.to_string(),
+                Ok(references) => (Some(references), String::new()),
+                Err(error) => (None, error.to_string()),
             }
         }
-        Ok(None) => String::new(),
-        Err(error) => error.to_string(),
+        Ok(None) => (None, String::new()),
+        Err(error) => (None, error.to_string()),
     };
-    Start::Welcome(Welcome {
-        games: tgg_app::discover_games(),
+    // Nothing given or saved: the first Melee in the player's folders.
+    let game = game.or_else(|| {
+        if iso.is_some() {
+            return None;
+        }
+        let choice = tgg_app::discover_games().into_iter().next()?;
+        let game = tgg_app::Game::open(&choice.path).ok()?;
+        if !snapshot() {
+            tgg_app::remember_game(&game);
+        }
+        tgg_app::game_references(game).ok()
+    });
+    if installed && let Some(game) = game {
+        return Start::Game(game);
+    }
+    let state = FirstRun {
         problem: (!problem.is_empty()).then_some(problem),
-    })
+        ..FirstRun::default()
+    };
+    Start::FirstRun { game, state }
 }
 
 /// `--iso PATH`, if given. Rune reads its own flags (`--snap`, `--scene`)
@@ -579,6 +653,42 @@ fn new_mod_scene(app: &mut App) {
         }),
         ..newmod::NewMod::default()
     };
+}
+
+/// For scenes: first run over a fake textures.gg, its releases and sets
+/// filled in place so nothing arrives mid-snapshot.
+fn first_run_scene(app: &mut App) -> &mut App {
+    let folder = std::env::temp_dir().join("tgg-studio-scene-first-run");
+    let _ = std::fs::remove_dir_all(&folder);
+    app.data.mods = folder.join("mods");
+    app.data.ports = folder.join("tgg-data").join("tgg").join("ports");
+    app.data.tgg = folder.join("tgg-data");
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let mut releases = tgg_mod::port_releases(&*net).unwrap_or_default();
+    if let Some(release) = releases.first_mut() {
+        // A size a player knows, as the real one is.
+        release.files.game.size = 48_000_000;
+    }
+    let mut sets = tgg_mod::sets(&*net).unwrap_or_default();
+    // The fake has Competitive and Replays; Practice is textures.gg's third.
+    if let Some(mut practice) = sets.iter().find(|set| set.name == "competitive").cloned() {
+        practice.name = "practice".into();
+        practice.title = "Practice".into();
+        practice.description = "Drills, trainers, save states and a practice stage.".into();
+        sets.push(practice);
+    }
+    app.mods.net = net;
+    app.mods.releases = releases;
+    app.mods.sets = sets;
+    app.mods.registry = mods::Registry::Answered;
+    app.mods.disc = mods::Disc::Missing;
+    app.first_run = Some(FirstRun::default());
+    app
+}
+
+/// For scenes: the disc found, without needing one on this computer.
+fn scene_disc(app: &mut App) {
+    app.mods.disc = mods::Disc::Found(PathBuf::from("/scene/melee.iso"));
 }
 
 /// For scenes: Mods against a fake textures.gg, its mods and ports in a
