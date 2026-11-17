@@ -129,6 +129,21 @@ pub fn plan_profile(
     mods: &Path,
     profile: &Profile,
 ) -> Result<(ProfilePlan, Option<String>), Error> {
+    plan_profile_with(net, data, mods, profile, &|_, _| profile.clone())
+}
+
+/// [`plan_profile`], resolving the profile `choose` gives once it is known
+/// whether textures.gg can be reached (`true` when it can't), and the
+/// catalog it resolves against. `game` is the
+/// profile whose game picks the catalog.
+pub(crate) fn plan_profile_with(
+    net: &dyn Net,
+    data: &Path,
+    mods: &Path,
+    game: &Profile,
+    choose: &dyn Fn(bool, &Catalog) -> Profile,
+) -> Result<(ProfilePlan, Option<String>), Error> {
+    let profile = game;
     let mut offline: Option<String> = None;
     let mapping = match cache::refresh_mapping(net, data) {
         Ok(mapping) => mapping,
@@ -180,8 +195,9 @@ pub fn plan_profile(
         .find(|install| install.current);
     let local = crate::local::local(mods, current.as_ref().map(PortInstall::port).as_ref())?;
     let trust = crate::trust::trust(data)?;
+    let profile = choose(offline.is_some(), &catalog);
     let plan =
-        crate::profile::resolve_profile(profile, &catalog, &mapping, &ports_dir, &local, &trust);
+        crate::profile::resolve_profile(&profile, &catalog, &mapping, &ports_dir, &local, &trust);
     Ok((plan, offline))
 }
 

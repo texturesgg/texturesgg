@@ -145,6 +145,8 @@ impl FakeNet {
                 description: description.into(),
                 version: 1,
                 mods: listed,
+                owner: None,
+                builds_on: Vec::new(),
             }
         };
         net.publish_set(set(
@@ -354,6 +356,11 @@ impl FakeNet {
         let mut state = self.state();
         state.sets.retain(|have| have.name != set.name);
         state.sets.push(set);
+    }
+
+    /// Take the set `name` down.
+    pub fn remove_set(&self, name: &str) {
+        self.state().sets.retain(|have| have.name != name);
     }
 
     /// The set `name` as served.
