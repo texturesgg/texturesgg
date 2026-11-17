@@ -1,0 +1,127 @@
+name: Rune
+
+# Until tgg-studio's first release, Rune stays current: each day this moves
+# the pin (crates/tgg-studio/Cargo.toml, and the root Cargo.toml's
+# [patch.crates-io], which must name the same rev) to Rune's newest `dev`, in
+# one pull request from `bot/rune` that it keeps up to date, and runs CI on it.
+# Once an app-v* release tag exists it stops, and Rune moves by hand.
+#
+# A pull request opened with the workflow's token doesn't start CI, so this
+# starts it (ci.yml's workflow_dispatch); its checks land on the PR's commit.
+# Where the organization doesn't let Actions open pull requests, it keeps one
+# issue open instead, with a link that opens the pull request in one click.
+
+on:
+  schedule:
+    - cron: "17 14 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+  issues: write
+
+concurrency:
+  group: rune
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Move Rune to dev
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Find dev's newest rev
+        id: rev
+        run: |
+          if [ -n "$(git ls-remote --tags origin 'refs/tags/app-v*')" ]; then
+            echo "tgg-studio has had a release; Rune moves by hand now."
+            exit 0
+          fi
+          new="$(git ls-remote https://github.com/anomalyco/rune refs/heads/dev | cut -f1)"
+          old="$(sed -n 's/^rev = "\([0-9a-f]\{40\}\)"$/\1/p' crates/tgg-studio/Cargo.toml)"
+          [ -n "$new" ] && [ -n "$old" ] || { echo "no rev found (dev: '$new', pinned: '$old')"; exit 1; }
+          if [ "$new" = "$old" ]; then
+            echo "Rune is at dev's newest rev, ${new:0:8}."
+            exit 0
+          fi
+          # The open pull request already holds this rev, on today's main.
+          if git fetch -q origin bot/rune 2>/dev/null &&
+            git show FETCH_HEAD:crates/tgg-studio/Cargo.toml | grep -q "$new" &&
+            git merge-base --is-ancestor HEAD FETCH_HEAD; then
+            echo "bot/rune already moves Rune to ${new:0:8}."
+            exit 0
+          fi
+          echo "old=$old" >> "$GITHUB_OUTPUT"
+          echo "new=$new" >> "$GITHUB_OUTPUT"
+
+      - name: Move the pin and the patches
+        if: steps.rev.outputs.new
+        env:
+          OLD: ${{ steps.rev.outputs.old }}
+          NEW: ${{ steps.rev.outputs.new }}
+        run: |
+          sed -i "s/$OLD/$NEW/g" Cargo.toml crates/tgg-studio/Cargo.toml
+          cargo update -p rune
+          cargo metadata --locked --format-version 1 > /dev/null
+
+          # Rune asks apps to repeat its [patch.crates-io]; say so when its list changes.
+          patches() { sed -n '/^\[patch\.crates-io\]/,/^\[/s/^\([A-Za-z0-9_-]*\) = .*/\1/p' | sort; }
+          curl -fsSL "https://raw.githubusercontent.com/anomalyco/rune/$NEW/Cargo.toml" | patches > theirs
+          patches < Cargo.toml > ours
+          total="$(gh api "repos/anomalyco/rune/compare/$OLD...$NEW" --jq .total_commits)"
+          {
+            echo "Moves Rune from \`${OLD:0:8}\` to \`${NEW:0:8}\`, the newest \`dev\`: $total commits ([compare](https://github.com/anomalyco/rune/compare/$OLD...$NEW))."
+            echo
+            echo "Opened by \`.github/workflows/rune.yml\`, which keeps Rune current until tgg-studio's first release. CI runs on it from that workflow. If it fails, a Rune change needs the app to follow; push the fix to this branch."
+            if ! diff -q ours theirs > /dev/null; then
+              echo
+              echo "**Rune's \`[patch.crates-io]\` changed.** The root \`Cargo.toml\` repeats it; make it match:"
+              echo
+              echo '```diff'
+              diff -u ours theirs | tail -n +3
+              echo '```'
+            fi
+          } > body.md
+          rm ours theirs
+
+      - name: Open or update the pull request
+        if: steps.rev.outputs.new
+        env:
+          NEW: ${{ steps.rev.outputs.new }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C bot/rune
+          git commit -qam "tgg-studio: Rune at dev ${NEW:0:8}"
+          git push -qf origin bot/rune
+          title="tgg-studio: Rune at dev ${NEW:0:8}"
+          if [ "$(gh pr view bot/rune --json state --jq .state 2>/dev/null)" = OPEN ]; then
+            gh pr edit bot/rune --title "$title" --body-file body.md
+          else
+            # The org may not let Actions open pull requests: then an issue
+            # says the branch is ready, with a link that opens the PR.
+            if ! gh pr create --base main --head bot/rune --title "$title" --body-file body.md; then
+              issue_title="Rune: a newer dev is ready on bot/rune"
+              link="https://github.com/$GITHUB_REPOSITORY/compare/main...bot/rune?quick_pull=1&title=$(jq -rn --arg t "$title" '$t|@uri')"
+              {
+                echo "\`bot/rune\` moves Rune to \`${NEW:0:8}\`. Actions can't open the pull request here; [open it]($link) and paste this in:"
+                echo
+                cat body.md
+              } > issue.md
+              issue="$(gh issue list --state open --search "in:title \"$issue_title\"" --json number,title \
+                --jq ".[] | select(.title == \"$issue_title\") | .number" | head -1)"
+              if [ -n "$issue" ]; then
+                gh issue edit "$issue" --body-file issue.md
+              else
+                gh issue create --title "$issue_title" --body-file issue.md
+              fi
+            fi
+          fi
+          gh workflow run ci.yml --ref bot/rune

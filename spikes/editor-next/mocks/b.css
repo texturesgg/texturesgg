@@ -1,0 +1,173 @@
+/* Direction B: Catalog. The editor as a well-made reference book:
+   typography and hairline rules carry the structure, data is set in mono and
+   aligned, the fighter is a framed plate with a caption. No glass, no glow,
+   no gradient tiles, no shadows except on things that float. */
+
+@font-face { font-family: "Schibsted Grotesk"; font-weight: 400; src: url(fonts/SchibstedGrotesk-400.ttf); }
+@font-face { font-family: "Schibsted Grotesk"; font-weight: 500; src: url(fonts/SchibstedGrotesk-500.ttf); }
+@font-face { font-family: "Schibsted Grotesk"; font-weight: 600; src: url(fonts/SchibstedGrotesk-600.ttf); }
+@font-face { font-family: "Schibsted Grotesk"; font-weight: 700; src: url(fonts/SchibstedGrotesk-700.ttf); }
+@font-face { font-family: "Schibsted Grotesk"; font-weight: 800; src: url(fonts/SchibstedGrotesk-800.ttf); }
+@font-face { font-family: "DM Mono"; font-weight: 400; src: url(fonts/DMMono-Regular.ttf); }
+@font-face { font-family: "DM Mono"; font-weight: 500; src: url(fonts/DMMono-Medium.ttf); }
+
+[data-theme="paper"] {
+  --sunk: #ebe6da;
+  --bg: #f3efe6; --surface: #faf7f0; --raise: #fffdf8;
+  --ink: #1c1b19; --muted: #5c574e; --faint: #8a8377;
+  --line: #e0d9ca; --line-strong: #b8af9c;
+  --accent: #f5c84b; --accent-text: #7a5a00; --accent-wash: rgba(245, 200, 75, 0.22);
+  --danger: #b42e24; --success: #27713b;
+  --on-ink: #faf7f0;
+  --hover: rgba(28, 27, 25, 0.04); --sel: rgba(245, 200, 75, 0.2);
+  --pop: 0 24px 60px rgba(28, 27, 25, 0.18);
+  --plate: #ebe6da;
+}
+:root, [data-theme="gallery"] {
+  --sunk: #0c0c0b;
+  --bg: #111110; --surface: #1b1b19; --raise: #262522;
+  --ink: #f2efe8; --muted: #a8a39a; --faint: #77726a;
+  --line: #2f2e2a; --line-strong: #3a3934;
+  --accent: #f5c84b; --accent-text: #f5c84b; --accent-wash: rgba(245, 200, 75, 0.14);
+  --danger: #f07167; --success: #7bd88f;
+  --on-ink: #111110;
+  --hover: rgba(255, 248, 230, 0.035); --sel: rgba(245, 200, 75, 0.12);
+  --pop: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --plate: #161614;
+}
+:root {
+  --sans: "Schibsted Grotesk", system-ui, sans-serif;
+  --mono: "DM Mono", ui-monospace, monospace;
+  --r: 4px;
+  /* Motion: the same palette as Rune's tokens, so it ports one to one.
+     One curve, four durations. Movement explains a change; nothing loops
+     except the fighter. */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --fade: 150ms;
+  --snappy: 250ms;
+  --default: 300ms;
+  --calm: 400ms;
+}
+[data-theme="paper"] { color-scheme: light; }
+:root, [data-theme="gallery"] { color-scheme: dark; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 1ms !important; animation-duration: 1ms !important; }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); }
+body { font: 400 13.5px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+button, input, select { font: inherit; color: inherit; }
+button { background: none; border: 0; padding: 0; cursor: pointer; }
+.m { font-family: var(--mono); font-size: 12.5px; font-feature-settings: "zero", "tnum"; }
+.mu { color: var(--muted); } .fa { color: var(--faint); }
+.num { font-variant-numeric: tabular-nums; text-align: right; }
+.grow { flex: 1; min-width: 0; }
+.row { display: flex; align-items: center; }
+
+/* ---------- type ---------- */
+.t-display { font-size: 56px; line-height: 1; font-weight: 800; letter-spacing: -0.045em; margin: 0; }
+.t-h1 { font-size: 40px; line-height: 1.05; font-weight: 800; letter-spacing: -0.04em; margin: 0; }
+.t-h2 { font-size: 28px; line-height: 1.1; font-weight: 700; letter-spacing: -0.03em; margin: 0; }
+.t-h3 { font-size: 18px; line-height: 1.25; font-weight: 700; letter-spacing: -0.015em; margin: 0; }
+.t-label { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.t-small { font-size: 12.5px; color: var(--muted); }
+
+/* A section opens with a strong rule and a numbered label, like a chapter. */
+.sect { border-top: 2px solid var(--ink); padding-top: 10px; }
+.sect-h { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+.sect-h .no { font: 500 12px var(--mono); color: var(--faint); }
+.sect-h h3 { font-size: 14px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+.sect-h .aside { margin-left: auto; font-size: 12.5px; color: var(--muted); }
+
+/* ---------- controls ---------- */
+.b {
+  height: 28px; padding: 0 11px; border-radius: var(--r);
+  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+  font-weight: 600; font-size: 13px; border: 1px solid var(--line-strong); background: var(--raise);
+  transition: background 120ms var(--ease), border-color 120ms var(--ease);
+}
+.b:hover { border-color: var(--ink); }
+.b:active { transform: translateY(0.5px); }
+.b.ink { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
+.b.ink:hover { opacity: 0.9; }
+.b.quiet { border-color: transparent; background: none; color: var(--muted); padding: 0 6px; }
+.b.quiet:hover { color: var(--ink); background: var(--hover); }
+.b.danger { color: var(--danger); }
+.b.lg { height: 34px; padding: 0 14px; font-size: 13.5px; }
+.b .k { font: 500 11px var(--mono); opacity: 0.6; margin-left: 2px; }
+.b.ink .k { opacity: 0.6; color: inherit; border-color: currentColor; }
+
+.k, kbd { font: 500 11px var(--mono); color: var(--muted); padding: 0 5px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 3px; line-height: 16px; display: inline-block; }
+
+.input { height: 28px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--raise); padding: 0 9px; display: flex; align-items: center; gap: 8px; color: var(--faint); }
+.input input { border: 0; outline: 0; background: none; flex: 1; min-width: 0; color: var(--ink); }
+.input:focus-within { border-color: var(--ink); box-shadow: 0 0 0 3px var(--accent-wash); }
+
+/* Text tabs with an ink underline. */
+.tabs { display: flex; gap: 18px; border-bottom: 1px solid var(--line); }
+.tabs button { height: 34px; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; display: flex; gap: 6px; align-items: center; }
+.tabs button:hover { color: var(--ink); }
+.tabs button.on { color: var(--ink); border-bottom-color: var(--ink); }
+.tabs .m { color: var(--faint); font-size: 11.5px; }
+
+/* Square check, not a pill switch. */
+.check { width: 15px; height: 15px; border: 1.5px solid var(--line-strong); border-radius: 3px; display: inline-grid; place-items: center; flex: none; background: var(--raise); }
+.check.on { background: var(--ink); border-color: var(--ink); }
+.check.on::after { content: ""; width: 7px; height: 4px; border: solid var(--on-ink); border-width: 0 0 1.8px 1.8px; transform: translateY(-1px) rotate(-45deg); }
+
+/* Status is a mark and a word, never a coloured pill. */
+.st { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; white-space: nowrap; }
+.st::before { content: ""; width: 7px; height: 7px; flex: none; }
+.st.on::before { background: var(--ink); }
+.st.off::before { border: 1.5px solid var(--line-strong); width: 4px; height: 4px; }
+.st.bad { color: var(--danger); font-weight: 600; } .st.bad::before { background: var(--danger); transform: rotate(45deg); width: 6px; height: 6px; }
+.st.up { color: var(--accent-text); font-weight: 600; } .st.up::before { background: var(--accent); }
+.st.mine::before { background: var(--accent); border-radius: 50%; }
+.st.none::before { display: none; }
+
+/* ---------- tables ---------- */
+.tbl { width: 100%; border-collapse: collapse; }
+.tbl th { text-align: left; font-weight: 600; font-size: 12px; color: var(--faint); height: 28px; border-bottom: 1px solid var(--line-strong); padding: 0 10px; white-space: nowrap; }
+.tbl td { height: 40px; padding: 0 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.tbl tr.dense td { height: 30px; }
+.tbl tbody tr { cursor: default; }
+.tbl tbody tr:hover td { background: var(--hover); }
+.tbl tbody tr.sel td { background: var(--sel); }
+.tbl tbody tr.sel td:first-child { box-shadow: inset 2px 0 0 var(--accent-text); }
+.tbl tbody tr.dim td { color: var(--faint); }
+.tbl td.th-num, .tbl th.num { text-align: right; }
+
+/* ---------- plate: the viewport, framed with a caption ---------- */
+.plate { background: var(--plate); border: 1px solid var(--line); position: relative; }
+.plate canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.plate .ground { position: absolute; left: 0; right: 0; height: 1px; background: var(--line-strong); }
+.plate .corner { position: absolute; font: 500 11.5px var(--mono); color: var(--faint); }
+.caption { display: flex; gap: 10px; align-items: baseline; padding: 8px 0 0; font-size: 12.5px; color: var(--muted); }
+.caption b { color: var(--ink); font-weight: 600; }
+
+/* ---------- swatch ---------- */
+.sw { width: 14px; height: 14px; border-radius: 2px; flex: none; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15); display: inline-block; }
+
+/* ---------- app frame ---------- */
+.app { display: grid; grid-template-rows: 44px 1fr 26px; height: 100vh; overflow: hidden; }
+.top { display: flex; align-items: center; gap: 22px; padding: 0 16px; border-bottom: 1px solid var(--line-strong); background: var(--surface); }
+.wordmark { font-weight: 800; letter-spacing: -0.03em; font-size: 15px; }
+.wordmark span { color: var(--faint); }
+.nav { display: flex; gap: 2px; height: 100%; }
+.nav a { display: flex; align-items: center; gap: 7px; padding: 0 11px; color: var(--muted); font-weight: 600; text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.nav a:hover { color: var(--ink); }
+.nav a.on { color: var(--ink); border-bottom-color: var(--ink); }
+.nav a .k { border: 0; padding: 0; color: var(--faint); }
+.nav a .n { font: 600 10.5px var(--mono); color: var(--danger); }
+.top .find { width: 300px; margin-left: auto; }
+.status { display: flex; align-items: center; gap: 18px; padding: 0 16px; border-top: 1px solid var(--line-strong); background: var(--surface); font-size: 12px; color: var(--muted); white-space: nowrap; }
+.status .sep { width: 1px; height: 12px; background: var(--line-strong); }
+.status .right { margin-left: auto; display: flex; gap: 14px; align-items: center; }
+.themebtn { font-size: 12px; color: var(--muted); }
+.themebtn:hover { color: var(--ink); }
+
+.ico { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--line); border: 3px solid var(--bg); border-radius: 6px; }

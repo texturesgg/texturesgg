@@ -21,9 +21,10 @@ crates/
   hsd-render/    wgpu renderer for HSD models
   tgg-mod/       Code-mod packages for tgg-melee: manifests, catalogs, installs
 
+  tgg-account/   Signing in to textures.gg, for the app and the command line
   tgg-cli/       The `tgg` command line: build, publish and install code mods
-  tgg-ui/        The desktop app's theme and components, on gpui-ce
-  tgg-editor/    The desktop app
+  tgg-app/       What the desktop app does, with no UI
+  tgg-studio/    The desktop app, on Rune
 ```
 
 The first eight are libraries; all but tgg-mod are published on crates.io.
@@ -39,13 +40,13 @@ Each has a README that says what it owns and what it leaves to the others.
 ## Development
 
 `flake.nix` pins the toolchain; with Nix and direnv, entering the directory
-loads it. Without them, a stable Rust toolchain and the libraries gpui-ce needs
+loads it. Without them, a stable Rust toolchain and the libraries Rune and wgpu need
 (see `.github/workflows/ci.yml` for the Debian package names) are enough.
 
 ```bash
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-cargo run --release -p tgg-editor
+cargo run --release -p tgg-studio
 ```
 
 No game files are in this repository, and none are needed to build or to run
@@ -53,8 +54,8 @@ the tests above. A few tests and the renderer's pixel regression read a clean
 Melee NTSC 1.02 disc image that you supply:
 
 ```bash
-TGG_MELEE_ISO=melee.iso cargo test -p melee-dat -p tgg-editor \
-  --features melee-dat/melee-iso,tgg-editor/melee-iso
+TGG_MELEE_ISO=melee.iso cargo test -p melee-dat -p tgg-studio \
+  --features melee-dat/melee-iso,tgg-studio/melee-iso
 TGG_MELEE_ISO=melee.iso cargo run --release -p hsd-render -- regression --software
 ```
 
@@ -74,7 +75,7 @@ TGG_MELEE_ISO=melee.iso cargo run --release -p hsd-render -- regression --softwa
 
 GPL-3.0-or-later. See [`LICENSE`](LICENSE). The bundled fonts are under the SIL
 Open Font License; their license files sit beside them in
-`crates/tgg-ui/assets/fonts/`.
+`crates/tgg-studio/assets/fonts/`.
 
 Parts of this work build on others': `gx-texture` follows Dolphin's texture
 decoder and adapts its tile walk from libWiiSharp (see its README), and the

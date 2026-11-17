@@ -1,0 +1,10 @@
+[
+  {"t": 1.6, "type": "tap", "key": "melee/fighter/Fox"},
+  {"t": 5.0, "type": "tap", "key": "sidebar/place/mods"},
+  {"t": 8.0, "type": "tap", "key": "mods/install-port"},
+  {"t": 14.0, "type": "tap", "key": "mods/set/competitive/install"},
+  {"t": 16.2, "type": "tap", "key": "mods/review/confirm"},
+  {"t": 20.0, "type": "tap", "key": "mods/tab/all"},
+  {"t": 21.5, "type": "tap", "key": "mods/catalog/tgg.direct-connect"},
+  {"t": 25.0, "type": "tap", "key": "mods/details/close"}
+]

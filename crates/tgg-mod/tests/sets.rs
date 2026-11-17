@@ -2,7 +2,7 @@
 //! textures.gg sets, launching one through the profile path, `latest`
 //! online and offline, and the mods that decide a set's queue.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use tgg_mod::sets::{self, Class, Group, INSTALLED, MySet, SetPlan, Want};
 use tgg_mod::{Error, FakeNet, Local, ModId, PortInstall, Set, SetMod, WithdrawMode, no_progress};
@@ -88,7 +88,8 @@ fn publish_set(net: &FakeNet, name: &str, mods: &[(&str, &str)], builds_on: &[&s
     });
 }
 
-fn listing(dir: &Path) -> Vec<String> {
+#[cfg(unix)]
+fn listing(dir: &std::path::Path) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(dir)
         .map(|entries| {
             entries

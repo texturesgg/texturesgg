@@ -206,13 +206,14 @@ impl FakeNet {
         state.revision += 1;
     }
 
-    /// List the mod `id` as native code (a library the game loads), as the
-    /// catalog lists a C mod. Its package stays the same.
+    /// List the mod `id` as native code (a library the game loads) built for
+    /// this system, as the catalog lists a C mod. Its package stays the same.
     pub fn set_native(&self, id: &str) {
+        let target = ports::target().unwrap_or("x86_64-linux-gnu");
         let mut state = self.state();
         for entry in &mut state.catalog {
             if entry.manifest.id.as_str() == id {
-                entry.manifest.target = Some("x86_64-linux-gnu".into());
+                entry.manifest.target = Some(target.into());
             }
         }
         state.revision += 1;
@@ -370,6 +371,12 @@ impl FakeNet {
             .iter()
             .find(|set| set.name == name)
             .cloned()
+    }
+
+    /// Answer `url` with `body`: for front ends that read more of the site
+    /// than the registry, such as a profile and its packs.
+    pub fn serve(&self, url: &str, body: impl Into<Vec<u8>>) {
+        self.state().files.insert(url.to_owned(), body.into());
     }
 
     /// Publish tgg-melee `version` for this system with the layout
@@ -669,8 +676,12 @@ pub(crate) fn png(width: u32, height: u32, rgb: [u8; 3]) -> Vec<u8> {
     out
 }
 
-/// The fake port's game: it runs for a while and ends.
+/// The fake port's game: it writes its environment beside itself
+/// (`<executable>.env`, renamed into place so a reader never sees it half
+/// written), so a test can see what it was started with, then runs for a
+/// while and ends.
 const FAKE_GAME: &str = "#!/bin/sh\n\
+env > \"$0.env.part\" && mv \"$0.env.part\" \"$0.env\"\n\
 i=0\n\
 while [ \"$i\" -lt \"${TGG_FAKE_GAME_SECONDS:-30}\" ]; do sleep 1; i=$((i + 1)); done\n";
 
@@ -766,7 +777,13 @@ impl Net for FakeNet {
             {
                 return Err(NetError::NotFound { url: url.into() });
             }
-            let Some(body) = state.files.get(path).cloned() else {
+            // Served with its query (a page of results), else without it.
+            let Some(body) = state
+                .files
+                .get(url)
+                .or_else(|| state.files.get(path))
+                .cloned()
+            else {
                 return Err(NetError::NotFound { url: url.into() });
             };
             // A package download marked as a first install counts as one.

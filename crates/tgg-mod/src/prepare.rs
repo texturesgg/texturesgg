@@ -402,6 +402,20 @@ pub fn launch_profile(
     replay: Option<&Path>,
     log: Option<&Path>,
 ) -> Result<Running, Error> {
+    launch_profile_with_env(port, iso, prepared, replay, &[], log)
+}
+
+/// [`launch_profile`], with `extra` added to the game's environment: how a
+/// front end starts a set's game in a search or a room
+/// (`TGG_DIRECT_CONNECT`).
+pub fn launch_profile_with_env(
+    port: &PortInstall,
+    iso: &Path,
+    prepared: &Prepared,
+    replay: Option<&Path>,
+    extra: &[(String, std::ffi::OsString)],
+    log: Option<&Path>,
+) -> Result<Running, Error> {
     if !profile_games(&prepared.data).is_empty() {
         return Err(Error::GameRunning);
     }
@@ -413,6 +427,7 @@ pub fn launch_profile(
             replay.as_os_str().to_owned(),
         ));
     }
+    env.extend(extra.iter().cloned());
     let mut running = ports::spawn(
         port,
         iso,

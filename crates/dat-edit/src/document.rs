@@ -511,6 +511,13 @@ impl TextureDocument {
         self.history.saved = self.history.current();
     }
 
+    /// Record that the file as opened isn't saved anywhere (a draft kept
+    /// from an earlier session): it's modified until marked saved, and no
+    /// undo reaches a saved state.
+    pub fn mark_unsaved(&mut self) {
+        self.history.saved = u64::MAX;
+    }
+
     pub fn can_undo(&self) -> bool {
         !self.history.undo.is_empty()
     }
@@ -1158,6 +1165,18 @@ mod tests {
             &[0, 0, 255, 255]
         );
         assert!(document.is_modified() && !document.can_redo());
+    }
+
+    #[test]
+    fn an_unsaved_opening_stays_modified_until_saved() {
+        let mut document = document();
+        document.mark_unsaved();
+        assert!(document.is_modified());
+        paint(&mut document, 1);
+        document.undo();
+        assert!(document.is_modified());
+        document.mark_saved();
+        assert!(!document.is_modified());
     }
 
     #[test]

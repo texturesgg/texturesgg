@@ -1,0 +1,104 @@
+/* Gallery tokens (site/docs/DESIGN_SYSTEM.md), plus the few desktop
+   additions these mocks lean on: glass, glow, and spring easing. */
+
+@font-face { font-family: "Schibsted Grotesk"; font-weight: 400; src: url(fonts/SchibstedGrotesk-400.ttf); }
+@font-face { font-family: "Schibsted Grotesk"; font-weight: 500; src: url(fonts/SchibstedGrotesk-500.ttf); }
+@font-face { font-family: "Schibsted Grotesk"; font-weight: 600; src: url(fonts/SchibstedGrotesk-600.ttf); }
+@font-face { font-family: "Schibsted Grotesk"; font-weight: 700; src: url(fonts/SchibstedGrotesk-700.ttf); }
+@font-face { font-family: "Schibsted Grotesk"; font-weight: 800; src: url(fonts/SchibstedGrotesk-800.ttf); }
+@font-face { font-family: "DM Mono"; font-weight: 400; src: url(fonts/DMMono-Regular.ttf); }
+@font-face { font-family: "DM Mono"; font-weight: 500; src: url(fonts/DMMono-Medium.ttf); }
+
+:root {
+  --bg: #111110;
+  --surface: #1b1b19;
+  --raise: #262522;
+  --text: #f2efe8;
+  --muted: #a8a39a;
+  --faint: #6f6b63;
+  --line: #2f2e2a;
+  --line-strong: #3a3934;
+  --accent: #f5c84b;
+  --accent-text: #f5c84b;
+  --on-accent: #111110;
+  --danger: #f07167;
+  --success: #7bd88f;
+  --scrim: rgba(0, 0, 0, 0.6);
+
+  /* desktop additions */
+  --glass: rgba(24, 23, 21, 0.62);
+  --glass-strong: rgba(30, 29, 26, 0.82);
+  --glass-line: rgba(255, 248, 230, 0.07);
+  --glass-hi: rgba(255, 248, 230, 0.05);
+  --glow: rgba(245, 200, 75, 0.16);
+  --shadow-pop: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --shadow-float: 0 18px 48px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.25);
+
+  --s-xxs: 4px; --s-xs: 8px; --s-sm: 12px; --s-md: 16px;
+  --s-lg: 24px; --s-xl: 32px; --s-xxl: 48px; --s-xxxl: 64px;
+  --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 20px; --r-pill: 999px;
+
+  --sans: "Schibsted Grotesk", system-ui, sans-serif;
+  --mono: "DM Mono", ui-monospace, monospace;
+
+  --fast: 120ms;
+  --normal: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+body {
+  font: 400 13px/1.45 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+input { font: inherit; color: inherit; }
+.mono { font-family: var(--mono); font-feature-settings: "zero"; }
+.muted { color: var(--muted); }
+.faint { color: var(--faint); }
+
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: blur(28px) saturate(1.25);
+  backdrop-filter: blur(28px) saturate(1.25);
+  border: 1px solid var(--glass-line);
+  box-shadow: inset 0 1px 0 var(--glass-hi), var(--shadow-float);
+}
+
+.btn {
+  height: 32px; padding: 0 14px; border-radius: var(--r-pill);
+  display: inline-flex; align-items: center; gap: 8px;
+  font-weight: 600; font-size: 13px; white-space: nowrap;
+  transition: background var(--fast) var(--ease), transform var(--fast) var(--ease);
+}
+.btn:active { transform: scale(0.97); }
+.btn.primary { background: var(--accent); color: var(--on-accent); }
+.btn.primary:hover { background: #ffd65e; }
+.btn.ghost { background: rgba(255, 248, 230, 0.06); }
+.btn.ghost:hover { background: rgba(255, 248, 230, 0.11); }
+.btn.sm { height: 26px; padding: 0 10px; font-size: 12px; }
+.btn svg { width: 15px; height: 15px; }
+
+.chip {
+  height: 26px; padding: 0 11px; border-radius: var(--r-pill);
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 500; color: var(--muted);
+  background: rgba(255, 248, 230, 0.05); border: 1px solid transparent;
+  transition: all var(--fast) var(--ease);
+}
+.chip:hover { color: var(--text); background: rgba(255, 248, 230, 0.09); }
+.chip.on { color: var(--text); border-color: var(--accent-text); background: rgba(245, 200, 75, 0.1); }
+
+.kbd {
+  font: 500 11px var(--mono); color: var(--muted);
+  padding: 1px 6px; border-radius: 5px; border: 1px solid var(--line-strong);
+}
+
+.ico { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; }
+}

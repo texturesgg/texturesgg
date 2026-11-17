@@ -23,6 +23,7 @@ impl Gpu {
             power_preference: wgpu::PowerPreference::HighPerformance,
             force_fallback_adapter: software,
             compatible_surface: None,
+            ..Default::default()
         }))
         .map_err(GpuError::from)?;
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
@@ -49,6 +50,19 @@ pub struct RgbaImage {
 ///
 /// Alpha is forced to 255, matching an `alphaMode: "opaque"` canvas.
 pub fn capture(gpu: &Gpu, renderer: &HsdRenderer) -> Result<RgbaImage> {
+    capture_with(gpu, renderer, false)
+}
+
+/// [`capture`] with nothing behind the model: the target is cleared to
+/// transparent and the alpha the render leaves is kept, so a host can draw
+/// the picture over its own background. Where nothing drew, alpha is 0.
+pub fn capture_clear(gpu: &Gpu, renderer: &HsdRenderer) -> Result<RgbaImage> {
+    capture_with(gpu, renderer, true)
+}
+
+/// Render one frame offscreen, cleared to the renderer's background or to
+/// nothing, and read it back.
+fn capture_with(gpu: &Gpu, renderer: &HsdRenderer, clear: bool) -> Result<RgbaImage> {
     let Gpu { device, queue, .. } = gpu;
     let (width, height) = renderer.size();
     let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
@@ -104,11 +118,20 @@ pub fn capture(gpu: &Gpu, renderer: &HsdRenderer) -> Result<RgbaImage> {
         .recv()
         .map_err(|_| GpuError::ReadbackLost)?
         .map_err(GpuError::from)?;
-    let mapped = slice.get_mapped_range();
+    let mapped = slice
+        .get_mapped_range()
+        .map_err(|_| GpuError::ReadbackLost)?;
     let mut pixels = Vec::with_capacity(width as usize * height as usize * 4);
     for row in mapped.chunks_exact(bytes_per_row as usize) {
         for pixel in row[..width as usize * 4].as_chunks::<4>().0 {
-            pixels.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 255]);
+            // What the renderer clears to is nothing, when the caller wants
+            // the model alone: its materials write no alpha of their own.
+            let alpha = if clear && pixel[..3] == crate::renderer::BACKGROUND_RGB {
+                0
+            } else {
+                255
+            };
+            pixels.extend_from_slice(&[pixel[0], pixel[1], pixel[2], alpha]);
         }
     }
     drop(mapped);
