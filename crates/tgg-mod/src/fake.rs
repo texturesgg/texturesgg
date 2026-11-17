@@ -206,13 +206,14 @@ impl FakeNet {
         state.revision += 1;
     }
 
-    /// List the mod `id` as native code (a library the game loads), as the
-    /// catalog lists a C mod. Its package stays the same.
+    /// List the mod `id` as native code (a library the game loads) built for
+    /// this system, as the catalog lists a C mod. Its package stays the same.
     pub fn set_native(&self, id: &str) {
+        let target = ports::target().unwrap_or("x86_64-linux-gnu");
         let mut state = self.state();
         for entry in &mut state.catalog {
             if entry.manifest.id.as_str() == id {
-                entry.manifest.target = Some("x86_64-linux-gnu".into());
+                entry.manifest.target = Some(target.into());
             }
         }
         state.revision += 1;
@@ -372,14 +373,14 @@ impl FakeNet {
             .cloned()
     }
 
-    /// Publish tgg-melee `version` for this system with the layout
-    /// [`FakeNet::LAYOUT`], and make it the newest release.
     /// Answer `url` with `body`: for front ends that read more of the site
     /// than the registry, such as a profile and its packs.
     pub fn serve(&self, url: &str, body: impl Into<Vec<u8>>) {
         self.state().files.insert(url.to_owned(), body.into());
     }
 
+    /// Publish tgg-melee `version` for this system with the layout
+    /// [`FakeNet::LAYOUT`], and make it the newest release.
     pub fn publish_port(&self, version: &str) {
         let target = ports::target().unwrap_or("x86_64-linux-gnu");
         let top = format!("tgg-melee-{version}-{target}");

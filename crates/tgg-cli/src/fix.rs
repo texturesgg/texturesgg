@@ -640,6 +640,12 @@ fn report(
 mod tests {
     use super::*;
 
+    /// The mod's folder as `run` passes it, absolute: on Windows `/mod`
+    /// alone has no drive, and the compiler's paths gain one.
+    fn root() -> PathBuf {
+        std::path::absolute("/mod").expect("an absolute path")
+    }
+
     /// GCC's own words from a build against a sync that renamed a function,
     /// a field and an enum constant (C locale)
     const OUTPUT: &str = "\
@@ -661,7 +667,7 @@ mod tests {
             ("Fighter".into(), "x1968_jumpsUsed".into()),
             "jumps_used".into(),
         );
-        let (edits, left) = find_edits(OUTPUT, &renames, Path::new("/mod"));
+        let (edits, left) = find_edits(OUTPUT, &renames, &root());
         let got: Vec<_> = edits
             .iter()
             .map(|e| (e.line, e.old.as_str(), e.new.as_str()))
@@ -689,7 +695,7 @@ mod tests {
         let output = "/mod/src/mod.c:6:1: error: unknown type name 'tgg_event_state_loaded_fn'; \
                       did you mean 'tgg_event_save_loaded_fn'?\n\
                       /mod/src/mod.c:6:1: error: expression in static assertion is not an integer\n";
-        let (edits, left) = find_edits(output, &renames, Path::new("/mod"));
+        let (edits, left) = find_edits(output, &renames, &root());
         let got: Vec<_> = edits
             .iter()
             .map(|e| (e.line, e.old.as_str(), e.new.as_str()))
