@@ -277,9 +277,17 @@ fn prepare(app: &mut App, how: How, source: Source) {
     });
 }
 
-/// Where the game writes what it says: Play reads it for a room's code.
+/// Where the game writes what it says: Play reads it for who it found.
 pub fn game_log(app: &App) -> std::path::PathBuf {
     app.data.ports.with_file_name("game.log")
+}
+
+/// Where the game writes the room report, beside its log: the room, its
+/// players and its state, one JSON line each time it changes. Its own file,
+/// in the app's data folder, emptied before each run that makes or joins a
+/// room.
+pub fn room_report(app: &App) -> std::path::PathBuf {
+    app.data.ports.with_file_name("room.jsonl")
 }
 
 /// The game started: watch it until it ends.
@@ -360,7 +368,7 @@ pub fn done(app: &mut App, done: Done) -> bool {
                 disc,
                 &app.data.mods,
                 std::iter::empty::<&str>(),
-                &how.env(),
+                &how.env(&room_report(app)),
                 Some(&log),
             );
             started(app, how, tgg_mod::sets::INSTALLED_NAME.to_owned(), running);
@@ -382,7 +390,7 @@ pub fn done(app: &mut App, done: Done) -> bool {
                         disc,
                         &prepared,
                         None,
-                        &how.env(),
+                        &how.env(&room_report(app)),
                         Some(&log),
                     );
                     started(app, how, name, running);

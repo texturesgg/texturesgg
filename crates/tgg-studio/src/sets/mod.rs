@@ -19,6 +19,7 @@ mod tests;
 
 use std::collections::HashMap;
 use std::ffi::OsString;
+use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -99,17 +100,37 @@ pub enum How {
 }
 
 impl How {
-    /// What the game starts with in its environment (direct-connect's
-    /// `TGG_DIRECT_CONNECT`).
-    pub fn env(&self) -> Vec<(String, OsString)> {
+    /// What the game starts with in its environment: direct-connect's
+    /// `TGG_DIRECT_CONNECT`, and for a room its `TGG_DIRECT_CONNECT_REPORT`,
+    /// which is `report` emptied for this run (the game appends its lines
+    /// and never deletes it). A run without a room gets no report.
+    pub fn env(&self, report: &Path) -> Vec<(String, OsString)> {
         let connect = match self {
             How::Offline => return Vec::new(),
             How::Search | How::Queue { .. } => "search".to_owned(),
             How::Host => "room".to_owned(),
             How::Join(code) => format!("room:{}", code.trim()),
         };
-        vec![("TGG_DIRECT_CONNECT".to_owned(), connect.into())]
+        let mut env = vec![("TGG_DIRECT_CONNECT".to_owned(), connect.into())];
+        if matches!(self, How::Host | How::Join(_)) && emptied(report) {
+            env.push((
+                "TGG_DIRECT_CONNECT_REPORT".to_owned(),
+                report.as_os_str().to_owned(),
+            ));
+        }
+        env
     }
+}
+
+/// `path` made an empty file, for a game about to start. False: it couldn't
+/// be made, and the game goes without it.
+fn emptied(path: &Path) -> bool {
+    if let Some(folder) = path.parent()
+        && std::fs::create_dir_all(folder).is_err()
+    {
+        return false;
+    }
+    std::fs::File::create(path).is_ok()
 }
 
 /// A game being got ready.

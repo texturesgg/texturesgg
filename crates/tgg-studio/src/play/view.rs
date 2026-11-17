@@ -5,7 +5,7 @@
 //! over the page.
 
 use super::actions;
-use super::{Queue, QueueMod, gameplay, matching, searching};
+use super::{Queue, QueueMod, Room, State, gameplay, matching, searching};
 use crate::jobs::renders::RenderKey;
 use crate::mods::Disc;
 use crate::nav::Place;
@@ -80,6 +80,15 @@ fn needs_setup(app: &App) -> Option<String> {
 
 fn quiet(words: impl Into<String>, p: &Palette) -> El {
     label(words.into()).font(text::BODY).color(p.muted).wrap()
+}
+
+/// A line under what the sheet is doing, smaller and dimmer than `quiet`:
+/// what happens next.
+fn faint(words: &str, p: &Palette) -> El {
+    label(words.to_owned())
+        .font(text::SMALL)
+        .color(p.faint)
+        .wrap()
 }
 
 /// What the set says it plays without, above the card: each its own slim
@@ -632,24 +641,28 @@ pub fn menu(app: &App, p: &Palette) -> Option<El> {
     Some(select_menu("play/set", items, actions::close_menu, p))
 }
 
-/// The friend sheet: host a room and read its code out, or join one by
-/// typing its code.
+/// The friend sheet: the room as the game reports it, and Join by code.
+/// Hosting shows the invite link above the code, who's in and how full it
+/// is; the sign-in, getting-mods, playing and ended states come from the
+/// same report.
 pub fn friend(app: &App, p: &Palette) -> Option<El> {
     if !app.play.friend || app.nav.place != Place::Play {
         return None;
     }
     let busy = app.sets.busy() || app.mods.playing.is_some();
-    // While hosting, this column holds the link to share (invite by link is
-    // paused on the platform) above the code the game reports.
-    let host: El = match &app.sets.session {
-        Some(session) if matches!(session.how, How::Host) => match &app.play.log.room {
-            Some(code) => code_block(code, p),
-            None => quiet("Making a room…", p),
-        },
+    let room: El = match &app.sets.session {
+        Some(session) => room_state(&app.play.room, &session.how, p).key("play/friend/room"),
         _ if busy => button_off("Host a room", p),
-        _ => button("Host a room", ButtonKind::Secondary, p)
-            .key("play/friend/host")
-            .on_press(actions::host),
+        _ => col()
+            .gap(space::XS)
+            .child(
+                row().child(
+                    button("Host a room", ButtonKind::Secondary, p)
+                        .key("play/friend/host")
+                        .on_press(actions::host),
+                ),
+            )
+            .child(faint("You get a code and a link to share.", p)),
     };
     let empty = app.play.join.text.trim().is_empty();
     let join = row()
@@ -673,8 +686,7 @@ pub fn friend(app: &App, p: &Palette) -> Option<El> {
         .px(space::LG)
         .pb(space::SM)
         .gap(space::MD)
-        .child(host)
-        .child(quiet("Tell them the code. They type it in Join.", p))
+        .child(room)
         .child(section("Join a room", p))
         .child(join);
     Some(dialog(
@@ -683,7 +695,7 @@ pub fn friend(app: &App, p: &Palette) -> Option<El> {
         DialogWidth::Narrow,
         Dialog {
             title: "Play with a friend".to_owned(),
-            line: "Two players. You both play with your set's mods.".to_owned(),
+            line: "Rooms take 2 to 4 players.".to_owned(),
             body: Some(body),
             buttons: vec![
                 button("Done", ButtonKind::Secondary, p)
@@ -694,6 +706,168 @@ pub fn friend(app: &App, p: &Palette) -> Option<El> {
         actions::close_friend,
         p,
     ))
+}
+
+/// The room, as the report's state has it: signing in, waiting with the
+/// link and code out, getting the host's mods, playing, or ended and why.
+fn room_state(report: &Room, how: &How, p: &Palette) -> El {
+    let joining = matches!(how, How::Join(_));
+    let mut body = col().gap(space::SM);
+    match report.state {
+        State::None => {
+            let words = if joining {
+                "Joining the room"
+            } else {
+                "Making the room"
+            };
+            body = body
+                .child(quiet(words, p))
+                .child(faint("This takes a few seconds.", p));
+        }
+        State::Starting => {
+            body = body
+                .child(quiet("Signing you in", p))
+                .child(faint("This takes a few seconds.", p));
+        }
+        State::SigningIn => body = body.children(sign_in(report, p)),
+        State::Waiting => {
+            body = body
+                .children(shared(report, p))
+                .children(players(report, p))
+                .child(quiet("Your friends join with the code or the link.", p));
+        }
+        State::GettingMods => {
+            let whose = match report.host.as_str() {
+                "" => "the host's mods".to_owned(),
+                host => format!("{host}'s mods"),
+            };
+            body = body
+                .child(quiet(format!("Getting {whose}"), p))
+                .child(faint("The game restarts with them and joins again.", p));
+        }
+        State::Playing => {
+            body = body.children(players(report, p)).child(quiet(
+                "The host started the game, so nobody else can join.",
+                p,
+            ));
+        }
+        State::Ended => {
+            body = body.child(quiet(
+                match report.why.as_str() {
+                    "" => "The room ended.",
+                    why => why,
+                },
+                p,
+            ));
+        }
+    }
+    body
+}
+
+/// What's shareable: the invite link with Copy, and the code large with its
+/// own Copy under it.
+fn shared(report: &Room, p: &Palette) -> Vec<El> {
+    let mut parts = Vec::new();
+    if !report.link.is_empty() {
+        parts.push(
+            col()
+                .gap(space::XXS)
+                .child(section("Invite link", p))
+                .child(
+                    row()
+                        .gap(space::SM)
+                        .items_center()
+                        .child(
+                            label(report.link.clone())
+                                .key("play/friend/link")
+                                .font(text::MONO_TEXT)
+                                .color(p.muted)
+                                .truncate()
+                                .grow(1.0)
+                                .min_w(0.0),
+                        )
+                        .child(
+                            button_small("Copy", ButtonKind::Secondary, p)
+                                .key("play/friend/copy-link")
+                                .on_press_tx(actions::copy_link),
+                        ),
+                ),
+        );
+    }
+    if !report.code.is_empty() {
+        parts.push(code_block(&report.code, p));
+    }
+    parts
+}
+
+/// Who's in the room, the host first, and how full it is.
+fn players(report: &Room, p: &Palette) -> Option<El> {
+    (!report.players.is_empty()).then(|| {
+        row()
+            .key("play/friend/players")
+            .gap(space::SM)
+            .items_center()
+            .child(
+                label(report.players.join(", "))
+                    .font(text::BODY)
+                    .color(p.ink)
+                    .wrap()
+                    .grow(1.0)
+                    .min_w(0.0),
+            )
+            .child(
+                label(report.count())
+                    .font(text::SMALL)
+                    .color(p.muted)
+                    .truncate(),
+            )
+    })
+}
+
+/// Nobody's signed in: the code to confirm, and the page to confirm it on.
+fn sign_in(report: &Room, p: &Palette) -> Vec<El> {
+    let mut parts = vec![quiet("Confirm the code on textures.gg to sign in.", p)];
+    if !report.signin.code.is_empty() {
+        parts.push(
+            row()
+                .gap(space::SM)
+                .items_center()
+                .px(space::SM)
+                .py(space::XS)
+                .fill(p.surface)
+                .border(size::LINE, p.line)
+                .radius(radius::CONTROL + 1.0)
+                .child(
+                    label(report.signin.code.clone())
+                        .key("play/friend/signin/code")
+                        .font(text::MONO_CODE)
+                        .color(p.ink)
+                        .truncate()
+                        .grow(1.0)
+                        .min_w(0.0),
+                )
+                .child(
+                    button_small("Copy", ButtonKind::Secondary, p)
+                        .key("play/friend/signin/copy")
+                        .on_press_tx(actions::copy_sign_in_code),
+                ),
+        );
+    }
+    if !report.signin.url.is_empty() {
+        parts.push(
+            button("Open textures.gg", ButtonKind::Primary, p)
+                .key("play/friend/signin/open")
+                .on_press_tx(actions::open_sign_in),
+        );
+        parts.push(
+            label(report.signin.url.clone())
+                .key("play/friend/signin/url")
+                .font(text::MONO_SMALL)
+                .color(p.muted)
+                .truncate(),
+        );
+    }
+    parts
 }
 
 /// A room's code, large, with Copy.
@@ -708,6 +882,7 @@ fn code_block(code: &str, p: &Palette) -> El {
         .radius(radius::CONTROL + 1.0)
         .child(
             label(code.to_owned())
+                .key("play/friend/code-shown")
                 .font(text::MONO_CODE)
                 .color(p.ink)
                 .truncate()

@@ -1,8 +1,9 @@
-//! Links from textures.gg's Install buttons: `textures-gg://mods/<id>`
-//! opens Mods on that mod, `textures-gg://sets/<name>` adds that set and
-//! opens it. A link waits until there's something to open it on: a game
-//! chosen (first run picks it) and textures.gg's catalog for the tgg-melee
-//! in use.
+//! Links from textures.gg: `textures-gg://mods/<id>` opens Mods on that
+//! mod, `textures-gg://sets/<name>` adds that set and opens it, and
+//! `textures-gg://join/<code>` opens Play and joins that room with the
+//! active set. A link waits until there's something to open it on: a game
+//! chosen (first run picks it), and for a mod or a set, textures.gg's
+//! catalog for the tgg-melee in use.
 //!
 //! macOS hands links to the running app (`on_open_url`). Windows and Linux
 //! start the app with the link as an argument; a copy already running is
@@ -25,6 +26,9 @@ pub const SCHEME: &str = "textures-gg";
 pub enum Link {
     Mod(ModId),
     Set(String),
+    /// Join the room with this code, as direct-connect writes them: letters
+    /// in upper case.
+    Join(String),
 }
 
 /// The link `text` is, if it's one of textures.gg's. Browsers may add a
@@ -40,8 +44,28 @@ pub fn parse(text: &str) -> Option<Link> {
     match kind.to_ascii_lowercase().as_str() {
         "mods" => name.parse().ok().map(Link::Mod),
         "sets" if is_set_name(name) => Some(Link::Set(name.to_owned())),
+        "join" => room_code(name).map(Link::Join),
         _ => None,
     }
+}
+
+/// A room's code, as a link spells it: the letters direct-connect makes
+/// codes from (no I, L or O, which a keyboard's font confuses), in upper
+/// case. Codes are four letters today; a longer one is taken as it comes.
+fn room_code(name: &str) -> Option<String> {
+    let letters = name.chars().count();
+    if !(4..=16).contains(&letters) {
+        return None;
+    }
+    let mut code = String::with_capacity(name.len());
+    for letter in name.chars() {
+        let letter = letter.to_ascii_uppercase();
+        if !letter.is_ascii_uppercase() || matches!(letter, 'I' | 'L' | 'O') {
+            return None;
+        }
+        code.push(letter);
+    }
+    Some(code)
 }
 
 /// A set's name as the registry writes them: lowercase letters, digits and
@@ -70,9 +94,14 @@ pub fn open(app: &mut App, text: &str) {
         app.tell("That link isn't one the app knows.", true);
         return;
     };
+    let place = match &link {
+        // A room is played from Play, where the sheet shows it.
+        Link::Join(_) => Place::Play,
+        Link::Mod(_) | Link::Set(_) => Place::Mods,
+    };
     app.link = Some(link);
     if app.game.is_some() {
-        crate::nav::actions::go(app, Place::Mods);
+        crate::nav::actions::go(app, place);
     }
     apply(app);
 }
@@ -86,6 +115,11 @@ pub fn opened_with(app: &mut App, text: &str, _: &mut rune::Tx) {
 pub fn apply(app: &mut App) -> bool {
     if app.link.is_none() || app.game.is_none() {
         return false;
+    }
+    // A join starts a room, not an install: it needs tgg-melee, the disc
+    // and the sets, not the catalog.
+    if matches!(app.link, Some(Link::Join(_))) {
+        return join(app);
     }
     if app.nav.place != Place::Mods {
         // First run was showing when it came.
@@ -109,6 +143,8 @@ pub fn apply(app: &mut App) -> bool {
         return false;
     };
     match link {
+        // Every join came off above.
+        Link::Join(_) => {}
         Link::Mod(id) => {
             if app.mods.newest(&id).is_some() || app.mods.local.get(&id).is_some() {
                 crate::mods::actions::show_mod(app, &id);
@@ -132,6 +168,27 @@ pub fn apply(app: &mut App) -> bool {
             }
         }
     }
+    true
+}
+
+/// Join the room a link names, with the active set, once tgg-melee, the
+/// disc and the sets are all there. True: what shows changed.
+fn join(app: &mut App) -> bool {
+    if app.nav.place != Place::Play {
+        crate::nav::actions::go(app, Place::Play);
+        return true;
+    }
+    if app.mods.port().is_none() || !matches!(app.mods.disc, crate::mods::Disc::Found(_)) {
+        return false;
+    }
+    // Without a set read there's nothing to start the game from yet.
+    if app.sets.active().is_none() {
+        return false;
+    }
+    let Some(Link::Join(code)) = app.link.take() else {
+        return false;
+    };
+    crate::play::actions::join_link(app, &code);
     true
 }
 
@@ -223,6 +280,20 @@ mod tests {
             parse("textures-gg://sets/competitive"),
             Some(Link::Set("competitive".into()))
         );
+        // A room's code: case doesn't matter, and it comes out as the game
+        // writes it.
+        assert_eq!(
+            parse("textures-gg://join/KFXD"),
+            Some(Link::Join("KFXD".into()))
+        );
+        assert_eq!(
+            parse("textures-gg://join/kfxd/"),
+            Some(Link::Join("KFXD".into()))
+        );
+        assert_eq!(
+            parse("textures-gg://JOIN/Kfxd?from=site"),
+            Some(Link::Join("KFXD".into()))
+        );
         for not in [
             "https://textures.gg/games/melee/mods/tgg.ucf",
             "textures-gg://mods/",
@@ -230,6 +301,14 @@ mod tests {
             "textures-gg://sets/Competitive Rules",
             "textures-gg://packs/fox",
             "textures-gg:mods/tgg.ucf",
+            // Codes leave out the letters a keyboard's font confuses, and
+            // are letters only.
+            "textures-gg://join/",
+            "textures-gg://join/KFX",
+            "textures-gg://join/AICO",
+            "textures-gg://join/KFXD-7K2Q",
+            "textures-gg://join/KFX1",
+            "textures-gg://join/KFXDDDDDDDDDDDDDDDDDD",
         ] {
             assert_eq!(parse(not), None, "{not}");
         }
