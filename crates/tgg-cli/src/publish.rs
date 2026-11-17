@@ -172,7 +172,7 @@ mod tests {
     }
 
     const MANIFEST: &str =
-        r#"{"api":"tgg-melee/0","id":"me.check","name":"Check","version":"1.0.0"}"#;
+        r#"{"api":"tgg-melee/1","id":"me.check","name":"Check","version":"1.0.0"}"#;
 
     #[test]
     fn a_mod_that_doesnt_build_isnt_published() {

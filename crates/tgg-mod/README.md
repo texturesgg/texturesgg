@@ -2,7 +2,7 @@
 
 Mod packages for tgg-melee, the Melee port with a mod loader built in. This crate is
 the Rust implementation of its package format (`package-format.md` in the game's docs,
-which the SDK carries), manifest API `tgg-melee/0`.
+which the SDK carries), manifest API `tgg-melee/1`.
 
 A package is a zip holding `manifest.json`, the mod's shared library, and the folders it
 ships: `files/` (disc files it replaces or adds), `assets/` (new files the game serves at

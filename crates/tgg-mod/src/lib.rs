@@ -137,7 +137,7 @@ pub use withdraw::{WithdrawAction, WithdrawNotice, apply_withdrawn};
 use std::path::PathBuf;
 
 /// The manifest API this crate's packages target.
-pub const API: &str = "tgg-melee/0";
+pub const API: &str = "tgg-melee/1";
 
 /// The folder the game loads mods from, by the game's own rule:
 /// `$TGG_MODS_DIR`, else `mods` in [`game_data_dir`].

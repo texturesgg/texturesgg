@@ -50,20 +50,17 @@ impl Folders {
 }
 
 /// Pack a built mod's folder, as the SDK's `tgg_add_mod` writes it: its
-/// manifest, its library (the manifest's entry, else `mod.so` or `mod.dll`)
+/// manifest, its library (`mod.so` or `mod.dll`)
 /// and its folders. A folder without a library is a mod of files only.
 pub fn pack_folder(dir: &Path) -> Result<Package> {
     let mut manifest = read_manifest(dir)?;
     manifest.sim_writes = read_sim_writes(dir);
-    let library = match &manifest.entry {
-        Some(entry) => Some(read(&dir.join(entry))?),
-        None => [manifest::DEFAULT_ENTRY, manifest::WINDOWS_ENTRY]
-            .iter()
-            .map(|name| dir.join(name))
-            .find(|path| path.is_file())
-            .map(|path| read(&path))
-            .transpose()?,
-    };
+    let library = [manifest::DEFAULT_ENTRY, manifest::WINDOWS_ENTRY]
+        .iter()
+        .map(|name| dir.join(name))
+        .find(|path| path.is_file())
+        .map(|path| read(&path))
+        .transpose()?;
     Folders::read(dir)?.pack(manifest, library)
 }
 
@@ -192,22 +189,48 @@ pub fn build(dir: &Path, options: &Options) -> Result<Built> {
     let root = std::path::absolute(dir)?;
     let build = root.join(BUILD);
     let binary = build.join("tgg");
-    configure(&root, &manifest, &sources, &sdk, options)?;
-    run(
-        Command::new("cmake").arg("--build").arg(&binary),
-        "the build",
-    )?;
+    let name = manifest::default_entry(Some(&sdk.target));
+    let library = binary.join("mods").join(manifest.id.as_str()).join(name);
+    // Built for the oldest API minor it compiles for, so it loads on every game from that
+    // one on; one that uses the experimental parts is built for the SDK's own.
+    let mut bytes = None;
+    let lowest = if manifest.experimental {
+        sdk_minor(&sdk)
+    } else {
+        0
+    };
+    for minor in lowest..sdk_minor(&sdk) {
+        configure(&root, &manifest, &sources, &sdk, options, Some(minor))?;
+        let built = Command::new("cmake")
+            .arg("--build")
+            .arg(&binary)
+            .output()
+            .is_ok_and(|out| out.status.success());
+        if !built {
+            continue;
+        }
+        let lowered = read(&library)?;
+        if !decls::read(&lowered)?.experimental {
+            bytes = Some(lowered);
+        }
+        break;
+    }
+    let bytes = match bytes {
+        Some(bytes) => bytes,
+        None => {
+            configure(&root, &manifest, &sources, &sdk, options, None)?;
+            run(
+                Command::new("cmake").arg("--build").arg(&binary),
+                "the build",
+            )?;
+            read(&library)?
+        }
+    };
 
     let commands = binary.join("compile_commands.json");
     if commands.is_file() {
         std::fs::copy(&commands, build.join("compile_commands.json"))?;
     }
-    let name = manifest
-        .entry
-        .clone()
-        .unwrap_or_else(|| manifest::default_entry(Some(&sdk.target)).to_owned());
-    let library = binary.join("mods").join(manifest.id.as_str()).join(name);
-    let bytes = read(&library)?;
     report_tier(&manifest, &library);
     let mut manifest = manifest;
     manifest.sim_writes = library.parent().map(read_sim_writes).unwrap_or_default();
@@ -239,12 +262,19 @@ pub fn compile(dir: &Path, options: &Options) -> Result<Option<Compiled>> {
     let sdk = resolve_sdk(options.sdk)?;
     let root = std::path::absolute(dir)?;
     let binary = root.join(BUILD).join("tgg");
-    configure(&root, &manifest, &sources, &sdk, options)?;
+    configure(&root, &manifest, &sources, &sdk, options, None)?;
+    // Past a source that fails, so one pass sees every diagnostic
+    let keep_going: &[&str] = match crate::toolchain::generator()? {
+        Some("Ninja") => &["-k", "0"],
+        _ => &["-k"],
+    };
     let out = Command::new("cmake")
         .arg("--build")
         .arg(&binary)
         // Every source compiled again, so every diagnostic is said again
         .arg("--clean-first")
+        .arg("--")
+        .args(keep_going)
         .env("LC_ALL", "C")
         .output()
         .map_err(|error| {
@@ -266,6 +296,7 @@ fn configure(
     sources: &[PathBuf],
     sdk: &Sdk,
     options: &Options,
+    target_minor: Option<u32>,
 ) -> Result<()> {
     let build = root.join(BUILD);
     let project = build.join("tgg-project");
@@ -296,6 +327,11 @@ fn configure(
             "-DTGG_MOD_DEBUG={}",
             if options.debug { "ON" } else { "OFF" }
         ));
+    // An SDK older than 1.0 doesn't know it, so it's only named when it's set
+    match target_minor {
+        Some(minor) => configure.arg(format!("-DTGG_API_TARGET_MINOR={minor}")),
+        None => configure.arg("-UTGG_API_TARGET_MINOR"),
+    };
     if let Some(generator) = generator {
         configure.args(["-G", generator]);
     }
@@ -319,6 +355,34 @@ fn configure(
     }
     run(configure.arg("--log-level=WARNING"), "cmake")?;
     Ok(())
+}
+
+/// The minor of the SDK's mod API (`1.3`: 3)
+fn sdk_minor(sdk: &Sdk) -> u32 {
+    sdk.api_version
+        .split_once('.')
+        .and_then(|(_, minor)| minor.parse().ok())
+        .unwrap_or(0)
+}
+
+/// Whether a library built for API `built` loads on a game with API `sdk`: the same major,
+/// and a minor no newer
+fn fits_api(built: &str, sdk: &str) -> bool {
+    let parse = |v: &str| -> Option<(u32, u32)> {
+        let (major, minor) = v.split_once('.')?;
+        Some((major.parse().ok()?, minor.parse().ok()?))
+    };
+    matches!((parse(built), parse(sdk)), (Some(b), Some(s)) if b.0 == s.0 && b.1 <= s.1)
+}
+
+#[cfg(test)]
+#[test]
+fn a_library_fits_a_game_of_its_major_and_any_later_minor() {
+    assert!(fits_api("1.0", "1.0"));
+    assert!(fits_api("1.0", "1.3"));
+    assert!(!fits_api("1.4", "1.3"));
+    assert!(!fits_api("0.10", "1.0"));
+    assert!(!fits_api("2.0", "1.9"));
 }
 
 /// The toolchain file an SDK ships when mods need one on its system.
@@ -450,7 +514,10 @@ fn check_library(library: &[u8], sdk: &Sdk, symbols: &Symbols) -> Result<Hooks> 
             .as_deref()
             .is_none_or(|abi| abi == sdk.game_abi)
             && declared.target.as_deref() == Some(sdk.target.as_str())
-            && declared.api_version.as_deref() == Some(sdk.api_version.as_str()),
+            && declared
+                .api_version
+                .as_deref()
+                .is_some_and(|built| fits_api(built, &sdk.api_version)),
         "the library declares game layout {}, target {} and mod API {}, but the SDK is {}, {} and {}",
         declared.game_abi.as_deref().unwrap_or("none"),
         declared.target.as_deref().unwrap_or("none"),

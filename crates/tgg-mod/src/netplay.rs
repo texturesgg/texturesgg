@@ -100,7 +100,7 @@ pub fn classify(manifest: &Manifest) -> Netplay {
     }
     // A script's class is its list's: packing records display, and a
     // gameplay script counts as code does
-    if manifest.script || manifest.entry.is_some() || manifest.game_abi.is_some() {
+    if manifest.script || manifest.has_library() || manifest.game_abi.is_some() {
         return Netplay::Code;
     }
     let counting = manifest.files.iter().filter(|file| !is_free(&file.path));
@@ -155,7 +155,7 @@ mod tests {
             "HUD".into(),
             semver::Version::new(1, 0, 0),
         );
-        manifest.entry = Some("mod.so".into());
+        manifest.target = Some("x86_64-linux-gnu".into());
         manifest.events = vec!["hud_draw".into()];
         assert_eq!(classify(&manifest), Netplay::Code);
         manifest.class = Some(ModClass::Display);
@@ -178,7 +178,7 @@ mod tests {
             "Save states".into(),
             semver::Version::new(1, 0, 0),
         );
-        manifest.entry = Some("mod.so".into());
+        manifest.target = Some("x86_64-linux-gnu".into());
         manifest.events = vec!["pad_read".into()];
         manifest.hooks.replaces = vec!["ftCo_Damage".into()];
         assert_eq!(classify(&manifest), Netplay::Code);

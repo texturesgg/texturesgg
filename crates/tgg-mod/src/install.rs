@@ -389,7 +389,7 @@ mod tests {
             id.into(),
             semver::Version::new(1, 0, 0),
         );
-        manifest.entry = Some("mod.so".into());
+        manifest.target = Some("x86_64-linux-gnu".into());
         manifest
     }
 

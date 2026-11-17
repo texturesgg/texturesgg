@@ -14,9 +14,7 @@
 
 use crate::decls::{self, DeclError};
 use crate::files::{self, FileError, Files};
-use crate::manifest::{
-    self, DEFAULT_ENTRY, Manifest, ManifestError, ModClass, Tier, WINDOWS_ENTRY,
-};
+use crate::manifest::{DEFAULT_ENTRY, Manifest, ManifestError, ModClass, Tier, WINDOWS_ENTRY};
 use sha2::{Digest, Sha256};
 use std::io::{Cursor, Read, Write};
 
@@ -226,10 +224,6 @@ impl Package {
         match &library {
             Some(library) => {
                 let declared = decls::read(library)?;
-                if manifest.entry.is_none() {
-                    manifest.entry =
-                        Some(manifest::default_entry(declared.target.as_deref()).to_owned());
-                }
                 let built = tier_of(&declared);
                 if let Some(pinned) = manifest.tier
                     && pinned != built
@@ -245,6 +239,7 @@ impl Package {
                 manifest.target = Some(declared.target.ok_or(PackageError::NoTarget)?);
                 manifest.api_version =
                     Some(declared.api_version.ok_or(PackageError::NoApiVersion)?);
+                manifest.experimental = declared.experimental;
                 manifest.state = (declared.state > 0).then_some(declared.state);
                 manifest.hooks = declared.hooks;
                 manifest.events = declared.events;
@@ -253,15 +248,11 @@ impl Package {
             }
             None if files.is_empty() && assets.is_empty() => return Err(PackageError::Empty),
             None => {
-                if manifest.entry.is_some() {
-                    return Err(PackageError::MissingFile(
-                        manifest.library_name().to_owned(),
-                    ));
-                }
                 manifest.tier = None;
                 manifest.game_abi = None;
                 manifest.target = None;
                 manifest.api_version = None;
+                manifest.experimental = false;
                 manifest.state = None;
                 manifest.hooks = Default::default();
                 manifest.events = Vec::new();
@@ -318,8 +309,8 @@ impl Package {
             _ if listing.gameplay() => None,
             _ => Some(ModClass::Display),
         };
-        manifest.entry = None;
         manifest.tier = Some(Tier::Stable);
+        manifest.experimental = false;
         manifest.game_abi = None;
         manifest.target = None;
         manifest.api_version = Some(listing.needs.clone());
@@ -349,15 +340,13 @@ impl Package {
         let mut archive = zip::ZipArchive::new(Cursor::new(bytes))?;
         let manifest =
             Manifest::parse(&read_entry(&mut archive, "manifest.json", MANIFEST_LIMIT)?)?;
-        // With no entry named, a package still has a library if it holds
-        // one of the default names.
-        let default = [DEFAULT_ENTRY, WINDOWS_ENTRY]
+        // A package's library is mod.so or mod.dll
+        let library = match [DEFAULT_ENTRY, WINDOWS_ENTRY]
             .into_iter()
-            .find(|name| archive.index_for_name(name).is_some());
-        let library = match (&manifest.entry, default) {
-            (Some(entry), _) => Some(read_entry(&mut archive, entry, LIBRARY_LIMIT)?),
-            (None, Some(name)) => Some(read_entry(&mut archive, name, LIBRARY_LIMIT)?),
-            (None, None) => None,
+            .find(|name| archive.index_for_name(name).is_some())
+        {
+            Some(name) => Some(read_entry(&mut archive, name, LIBRARY_LIMIT)?),
+            None => None,
         };
         if manifest.script {
             return Self::script_from_zip(manifest, library, archive);
@@ -378,6 +367,7 @@ impl Package {
                     || declared.game_abi != manifest.game_abi
                     || declared.target != manifest.target
                     || declared.api_version != manifest.api_version
+                    || declared.experimental != manifest.experimental
                     || (declared.state > 0).then_some(declared.state) != manifest.state
                     || declared.hooks != manifest.hooks
                     || declared.events != manifest.events
@@ -393,6 +383,7 @@ impl Package {
                     || manifest.game_abi.is_some()
                     || manifest.target.is_some()
                     || manifest.api_version.is_some()
+                    || manifest.experimental
                     || manifest.state.is_some()
                     || !manifest.hooks.is_empty()
                     || !manifest.events.is_empty()
@@ -738,7 +729,7 @@ mod tests {
         assert_eq!(Package::from_zip(&package.to_zip()).expect("open"), package);
 
         let only = Package::pack(manifest(), None, files, assets, Files::new()).expect("pack");
-        assert_eq!(only.manifest.entry, None);
+        assert!(!only.manifest.has_library());
         assert_eq!(only.manifest.game_abi, None);
         assert_eq!(Package::from_zip(&only.to_zip()).expect("open"), only);
         assert!(matches!(

@@ -46,6 +46,9 @@ const KIND_SETTING: u32 = 12;
 const KIND_INIT: u32 = 13;
 /// The mod API `major.minor` the library was built against.
 const KIND_API_VERSION: u32 = 14;
+/// Built with `TGG_EXPERIMENTAL`: the library may use the API's experimental
+/// parts, so it loads only on its own minor.
+const KIND_EXPERIMENTAL: u32 = 15;
 
 /// The game functions a mod hooks, each list sorted and without repeats.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -98,6 +101,9 @@ pub struct Declarations {
     /// What it takes from other mods, as `provider-id/export-name`, sorted.
     /// The game loads it only after every provider.
     pub imports: Vec<String>,
+    /// Built with `TGG_EXPERIMENTAL`: it loads only on the API minor it was
+    /// built for.
+    pub experimental: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -191,6 +197,7 @@ pub fn read(library: &[u8]) -> Result<Declarations, DeclError> {
             KIND_SETTING if !symbol.is_empty() => declarations.settings.push(symbol),
             KIND_INIT if declarations.init => return Err(DeclError::TwoInits),
             KIND_INIT => declarations.init = true,
+            KIND_EXPERIMENTAL => declarations.experimental = true,
             KIND_TARGET => match &declarations.target {
                 Some(known) if *known != symbol => {
                     return Err(DeclError::TwoTargets(known.clone(), symbol));
@@ -300,12 +307,24 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_library_built_with_the_experimental_parts_says_so() {
+        assert!(
+            !read(&library(&built_with_sdk()))
+                .expect("read")
+                .experimental
+        );
+        let mut records = built_with_sdk();
+        records.push(record(KIND_EXPERIMENTAL, "experimental"));
+        assert!(read(&library(&records)).expect("read").experimental);
+    }
+
+    #[test]
     fn a_record_kind_the_game_doesnt_have_is_refused_as_the_loader_refuses_it() {
         let mut records = built_with_sdk();
-        records.push(record(15, "menu"));
+        records.push(record(16, "menu"));
         assert!(matches!(
             read(&library(&records)),
-            Err(DeclError::UnknownKind(3, 15))
+            Err(DeclError::UnknownKind(3, 16))
         ));
         // Content is `<kind>:<id>`, and settings have keys.
         let mut records = built_with_sdk();

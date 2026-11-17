@@ -224,7 +224,7 @@ mod tests {
     use super::*;
 
     const SDK: &str = r#"{
-        "api": "tgg-melee/0", "api_version": "0.1", "name": "tgg-melee", "version": "0.1.0",
+        "api": "tgg-melee/1", "api_version": "0.1", "name": "tgg-melee", "version": "0.1.0",
         "game_abi": "6a0e926ca3e90452",
         "compiler": "GNU", "compiler_version": "15.3.0", "processor": "x86_64",
         "target": "x86_64-linux-gnu",

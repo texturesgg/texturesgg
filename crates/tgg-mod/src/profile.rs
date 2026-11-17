@@ -877,9 +877,7 @@ pub fn resolve_profile(
                 version: entry.manifest.version.clone(),
                 // Only native code asks: scripts run in the game's sandbox
                 // and files carry no code
-                needs_trust: entry.manifest.entry.is_some()
-                    && !entry.manifest.script
-                    && !trust.allows(&publisher),
+                needs_trust: entry.manifest.has_library() && !trust.allows(&publisher),
                 publisher,
                 cached: crate::cache::is_cached(&packages, &entry.package),
                 size: entry.package.size,
