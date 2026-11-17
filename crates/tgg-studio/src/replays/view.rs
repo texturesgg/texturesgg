@@ -99,12 +99,15 @@ pub fn view(app: &App, p: &Palette) -> El {
 
 /// The top bar's end on Replays: the search.
 pub fn top_bar(app: &App, p: &Palette) -> Vec<El> {
-    vec![search_box(
-        search_field(&app.replays.search, "Search players, fighters, stages", p)
-            .key("replays/search")
-            .on_edit(|app: &mut App| &mut app.replays.search),
-        p,
-    )]
+    vec![
+        search_box(
+            search_field(&app.replays.search, "Search players, fighters, stages", p)
+                .key("replays/search")
+                .on_edit(|app: &mut App| &mut app.replays.search),
+            p,
+        )
+        .w(size::SEARCH),
+    ]
 }
 
 /// Which folder's replays show.

@@ -62,11 +62,15 @@ pub struct Mods {
     pub disc: Disc,
     /// The game, while it runs.
     pub playing: Option<Playing>,
-    /// The set the page shows on the right; the active one until a card is
-    /// pressed.
+    /// The set the page shows on the right; the active one until another is
+    /// picked.
     pub chosen_set: Option<String>,
     /// Which of the mods across the page's list show.
     pub filter: Filter,
+    /// The order the list shows them in.
+    pub sort: Sort,
+    /// The menu open on the page, if any.
+    pub menu: Option<Menu>,
     /// The New set sheet, while it's open.
     pub new_set: Option<NewSet>,
     /// The Rename sheet's name, while it's open.
@@ -146,6 +150,41 @@ impl NewSet {
     }
 }
 
+/// The order the page lists mods in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Sort {
+    /// Most installed first.
+    #[default]
+    Popular,
+    /// Newest release first.
+    Newest,
+    Name,
+}
+
+impl Sort {
+    /// Every order, as its menu lists them.
+    pub const ALL: [Sort; 3] = [Sort::Popular, Sort::Newest, Sort::Name];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Sort::Popular => "Most installed",
+            Sort::Newest => "Newest",
+            Sort::Name => "Name",
+        }
+    }
+}
+
+/// A menu the Mods page opens.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Menu {
+    /// Which set the panel shows, and New set.
+    Sets,
+    /// What else can be done to the set showing.
+    More,
+    /// The list's order.
+    Sort,
+}
+
 /// Which of the mods the page lists.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Filter {
@@ -212,6 +251,8 @@ impl Default for Mods {
             playing: None,
             chosen_set: None,
             filter: Filter::default(),
+            sort: Sort::default(),
+            menu: None,
             new_set: None,
             rename: None,
             building_on: false,
@@ -255,9 +296,11 @@ impl Mods {
         newest
     }
 
-    /// The mods offered that the search matches, and the filter shows.
+    /// The mods offered that the search matches, and the filter shows, in
+    /// the order picked.
     pub fn found(&self) -> Vec<&CatalogEntry> {
-        self.offered()
+        let mut found: Vec<&CatalogEntry> = self
+            .offered()
             .into_iter()
             .filter(|entry| {
                 let manifest = &entry.manifest;
@@ -268,7 +311,36 @@ impl Mods {
                 )
             })
             .filter(|entry| self.filter.shows(self.tags(&entry.manifest.id)))
-            .collect()
+            .collect();
+        self.order(&mut found, |entry| &entry.manifest.id);
+        found
+    }
+
+    /// How many mods textures.gg lists, built for this tgg-melee or not.
+    pub fn total(&self) -> usize {
+        let offered = self.offered();
+        let unbuilt = self
+            .listings
+            .keys()
+            .filter(|id| !offered.iter().any(|entry| entry.manifest.id == **id))
+            .count();
+        offered.len() + unbuilt
+    }
+
+    /// Puts `items` in the order picked. The sort is stable, so ties keep
+    /// the order they came in (official first, then by name).
+    fn order<T>(&self, items: &mut [T], id: impl Fn(&T) -> &ModId) {
+        let listed = |item: &T| self.listings.get(id(item));
+        match self.sort {
+            Sort::Popular => items.sort_by_key(|item| {
+                std::cmp::Reverse(listed(item).map_or(0, |summary| summary.installs))
+            }),
+            Sort::Newest => items.sort_by(|a, b| {
+                let when = |item| listed(item).map_or("", |summary| summary.updated_at.as_str());
+                when(b).cmp(when(a))
+            }),
+            Sort::Name => items.sort_by_key(|item| self.name_of(id(item)).to_lowercase()),
+        }
     }
 
     /// The tags the registry gives the mod `id`: its release's, else its
@@ -288,7 +360,7 @@ impl Mods {
     }
 
     /// The mods the registry lists that aren't built for this tgg-melee yet,
-    /// by name, that the search matches.
+    /// that the search matches, in the order picked.
     pub fn found_unbuilt(&self) -> Vec<&ModSummary> {
         let offered = self.offered();
         let mut unbuilt: Vec<&ModSummary> = self
@@ -300,7 +372,9 @@ impl Mods {
             })
             .filter(|summary| self.filter.shows(&summary.tags))
             .collect();
+        // Official first, then by name, under the order picked.
         unbuilt.sort_by_key(|summary| (!summary.publisher.official, summary.name.to_lowercase()));
+        self.order(&mut unbuilt, |summary| &summary.id);
         unbuilt
     }
 

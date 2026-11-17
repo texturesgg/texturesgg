@@ -1,65 +1,66 @@
-//! The Mods page: the player's sets as cards across the top with New set,
-//! then every mod textures.gg offers with the filters over it, and the set
-//! showing as a panel at the right that stays while the list scrolls.
-//! Pressing a mod's row shows its details where the panel was, and Add puts
-//! the mod in the set showing (or in the mods folder, for Installed mods).
+//! The Mods page: every mod textures.gg offers, with the search, the order
+//! and the filters over it, and the set showing as a panel at the right
+//! that stays while the list scrolls. Pressing a mod's row shows its
+//! details where the panel was; Add puts the mod in the set showing (or in
+//! the mods folder, for Installed mods), and Added takes it back out.
 
-use super::{Filter, Mods, Registry, actions, current_set, mod_count, size_text};
+use super::{Menu, Mods, Registry, Sort, actions, count_text, current_set, size_text};
+use crate::nav::Place;
 use crate::state::App;
-use crate::ui::tokens::{Palette, radius, size, space, text};
+use crate::ui::tokens::{Palette, size, space, text};
 use crate::ui::{
-    ButtonKind, Icon, Tone, badge, button, button_off, callout, chip, icon, icon_tile, list_row,
-    progress, search_box, search_field, skeleton, spacer, text_action,
+    ButtonKind, Icon, button, button_done, button_off, callout, chip, icon, icon_tile, list_row,
+    progress, search_box, search_field, select, select_item, select_menu, select_rule, skeleton,
+    text_action,
 };
 use rune::{El, ScrollSpec, col, row, text as label};
-use std::collections::BTreeSet;
-use tgg_mod::sets::{Group, Line, MySet};
+use tgg_mod::sets::Group;
 use tgg_mod::{CatalogEntry, ModId, ModSummary};
 
-/// A set card's width.
-const SET_CARD: f32 = 152.0;
-/// A set card's height: its name, its one line, and who made it.
-const SET_CARD_HEIGHT: f32 = 128.0;
+/// A mod's icon in the list.
+const MOD_ICON: f32 = 40.0;
+/// Add and Added, one width, so the column of them lines up.
+const ADD_WIDTH: f32 = 92.0;
+/// The order's select: narrower than a select's usual, beside the search.
+const SORT_WIDTH: f32 = 168.0;
 /// Placeholder rows while textures.gg first answers.
 const PLACEHOLDERS: usize = 5;
 
 pub fn view(app: &App, p: &Palette) -> El {
     let mods = &app.mods;
-    let notices: Vec<El> = notices(app, p);
-    let left = col().grow(2.0).min_w(0.0).min_h(0.0).child(
-        col()
-            .key("mods/scroll")
-            .grow(1.0)
-            .min_h(0.0)
-            .scroll(ScrollSpec {
-                stick_bottom: false,
-            })
-            .child(
-                col()
-                    .pb(space::XL)
-                    .gap(space::SM)
-                    .children(notices)
-                    .children(first_run(mods, p))
-                    .child(section("Sets", p))
-                    .child(cards(app, p))
-                    .child(
-                        col()
-                            .pt(space::MD)
-                            .gap(space::XXS)
-                            .child(section("All mods", p))
-                            .child(filters(mods, p))
-                            .child(all(app, p)),
-                    ),
-            ),
-    );
-    // A mod's details take the panel's place while they show, wide enough
-    // for two columns; narrow, they slide in over the page instead.
+    // Wide, the set shows as a panel at the right, and a mod's details take
+    // its place while they show. Narrow, the set is a bar over the list,
+    // and the details slide in over the page instead.
     let wide = app.window_width <= 0.0 || app.side_by_side();
-    let side = if wide && mods.selected.is_some() {
-        super::details::column(app, p)
-    } else {
-        super::panel::view(app, p)
-    };
+    let left = col()
+        .grow(2.0)
+        .min_w(0.0)
+        .min_h(0.0)
+        .gap(space::SM)
+        .children(notices(app, p))
+        .children(first_run(mods, p))
+        .children((!wide).then(|| super::panel::bar(app, p)))
+        .child(browse(app, p))
+        .child(
+            // Out past the search's edges by a row's inset, so a row's
+            // words line up with the search and only its wash reaches out.
+            col()
+                .key("mods/scroll")
+                .mx(-space::SM)
+                .grow(1.0)
+                .min_h(0.0)
+                .scroll(ScrollSpec {
+                    stick_bottom: false,
+                })
+                .child(col().pb(space::XL).child(all(app, p))),
+        );
+    let side = wide.then(|| {
+        if mods.selected.is_some() {
+            super::details::column(app, p)
+        } else {
+            super::panel::view(app, p)
+        }
+    });
     row()
         .px(space::PAGE)
         .pt(space::XS)
@@ -68,24 +69,56 @@ pub fn view(app: &App, p: &Palette) -> El {
         .grow(1.0)
         .min_h(0.0)
         .child(left)
-        .child(side)
+        .children(side)
 }
 
-/// The top bar's end on Mods: the search, and Start a mod once there's a
-/// tgg-melee to make one for.
+/// The top bar's end on Mods: Start a mod, once there's a tgg-melee to make
+/// one for.
 pub fn top_bar(app: &App, p: &Palette) -> Vec<El> {
+    app.mods
+        .port()
+        .map(|_| {
+            button("Start a mod", ButtonKind::Secondary, p)
+                .key("mods/new-mod")
+                .on_press(crate::newmod::actions::open)
+        })
+        .into_iter()
+        .collect()
+}
+
+/// Over the list: the search as wide as it, the order beside it, and the
+/// filters under them.
+fn browse(app: &App, p: &Palette) -> El {
+    let mods = &app.mods;
+    let placeholder = match mods.total() {
+        0 => "Search mods".to_owned(),
+        1 => "Search 1 mod".to_owned(),
+        total => format!("Search {total} mods"),
+    };
     let search = search_box(
-        search_field(&app.mods.search, "Search mods", p)
+        search_field(&mods.search, &placeholder, p)
             .key("mods/search")
             .on_edit(|app: &mut App| &mut app.mods.search),
         p,
-    );
-    let start = app.mods.port().is_some().then(|| {
-        button("Start a mod", ButtonKind::Secondary, p)
-            .key("mods/new-mod")
-            .on_press(crate::newmod::actions::open)
-    });
-    std::iter::once(search).chain(start).collect()
+    )
+    .border(size::LINE, p.line)
+    .grow(1.0)
+    .min_w(0.0);
+    let sort = select(mods.sort.label(), mods.menu == Some(Menu::Sort), p)
+        .key("mods/sort")
+        .min_w(SORT_WIDTH)
+        .label(format!("Sort by {}", mods.sort.label().to_lowercase()))
+        .on_press(|app: &mut App| actions::toggle_menu(app, Menu::Sort));
+    col()
+        .gap(space::SM)
+        .child(
+            row()
+                .gap(space::XS)
+                .items_center()
+                .child(search)
+                .child(sort),
+        )
+        .child(filters(mods, p))
 }
 
 /// A section's label, over what it heads.
@@ -196,192 +229,18 @@ fn working(work: &super::Work, p: &Palette) -> El {
     .key("mods/work")
 }
 
-/// The player's sets, Installed mods among them once it has any, then New
-/// set.
-fn cards(app: &App, p: &Palette) -> El {
-    let shown = current_set(app).map(|set| set.key.clone());
-    let cards = app
-        .sets
-        .list
-        .iter()
-        .filter(|set| !set.is_installed() || !set.lines.is_empty())
-        .map(|set| card(app, set, shown.as_deref() == Some(set.key.as_str()), p));
-    row()
-        .flex_wrap()
-        .gap(space::SM)
-        .children(cards)
-        .child(new_tile(p))
-}
-
-/// A set: its name, one line of what it is, who made it, how many mods, and
-/// Using while it's the active one.
-fn card(app: &App, set: &MySet, chosen: bool, p: &Palette) -> El {
-    let key = set.key.clone();
-    col()
-        .key(format!("mods/set-card/{}", set.key))
-        .w(SET_CARD)
-        .min_h(SET_CARD_HEIGHT)
-        .padding(space::SM)
-        .gap(space::XXS)
-        .fill(p.surface)
-        .border(size::LINE, if chosen { p.line_strong } else { p.line })
-        .radius(radius::CARD)
-        .hover(p.hover)
-        .cursor(rune::Cursor::Pointer)
-        .role("button")
-        .focusable(true)
-        .label(set.name.clone())
-        .on_press(move |app: &mut App| actions::choose_set(app, &key))
-        .child(
-            label(set.name.clone())
-                .font(text::STRONG)
-                .color(p.ink)
-                .truncate(),
-        )
-        .child(
-            label(what(app, set))
-                .font(text::SMALL)
-                .color(p.muted)
-                .wrap(),
-        )
-        .child(spacer())
-        .child(
-            row()
-                .gap(space::XS)
-                .items_end()
-                .child(
-                    col()
-                        .grow(1.0)
-                        .min_w(0.0)
-                        .gap(space::TIGHT)
-                        .child(
-                            label(if set.locked {
-                                "By textures.gg"
-                            } else {
-                                "Yours"
-                            })
-                            .font(text::SMALL)
-                            .color(p.faint)
-                            .truncate(),
-                        )
-                        .child(
-                            label(mod_count(count_of(app, set)))
-                                .font(text::MONO_SMALL)
-                                .color(p.faint),
-                        ),
-                )
-                .children((app.sets.active == set.key).then(|| badge("Using", Tone::Mine, p))),
-        )
-}
-
-/// New set, at the end of the cards.
-fn new_tile(p: &Palette) -> El {
-    col()
-        .key("mods/new-set")
-        .w(SET_CARD)
-        .min_h(SET_CARD_HEIGHT)
-        .center()
-        .gap(space::XXS)
-        .border(size::LINE, p.line_strong)
-        .radius(radius::CARD)
-        .hover(p.fill)
-        .cursor(rune::Cursor::Pointer)
-        .role("button")
-        .focusable(true)
-        .label("New set")
-        .on_press(actions::open_new_set)
-        .child(icon(Icon::Plus, p.muted))
-        .child(label("New set").font(text::SMALL).color(p.muted))
-}
-
-/// One line saying what the set is: a textures.gg set's description, or
-/// what a set of the player's builds on and adds.
-fn what(app: &App, set: &MySet) -> String {
-    if set.is_installed() {
-        return "Your mods folder.".to_owned();
-    }
-    if set.locked {
-        let Some(link) = set.builds_on().next() else {
-            return "Kept up to date by textures.gg.".to_owned();
-        };
-        let described = app
-            .mods
-            .sets
-            .iter()
-            .find(|published| published.name == link)
-            .map(|published| published.description.trim().to_owned())
-            .unwrap_or_default();
-        if described.is_empty() {
-            "Kept up to date by textures.gg.".to_owned()
-        } else {
-            described
-        }
-    } else {
-        let on: Vec<String> = set
-            .builds_on()
-            .map(|link| {
-                app.mods
-                    .sets
-                    .iter()
-                    .find(|published| published.name == link)
-                    .map_or_else(|| link.to_owned(), |published| published.title.clone())
-            })
-            .collect();
-        let added = set
-            .lines
-            .iter()
-            .filter(|line| matches!(line, Line::Mod(m) if !m.left_out))
-            .count();
-        match (on.is_empty(), added) {
-            (true, _) => "Its own mods.".to_owned(),
-            (false, 0) => on.join(" and "),
-            (false, added) => format!("{} + {}", on.join(" and "), mod_count(added)),
-        }
-    }
-}
-
-/// How many mods the set lists: each set it builds on's, minus the ones it
-/// leaves out, plus its own.
-fn count_of(app: &App, set: &MySet) -> usize {
-    if set.is_installed() {
-        return set
-            .lines
-            .iter()
-            .filter(|line| matches!(line, Line::Mod(m) if !m.left_out))
-            .count();
-    }
-    let mut ids: BTreeSet<ModId> = BTreeSet::new();
-    for link in set.builds_on() {
-        if let Some(published) = app
-            .mods
-            .sets
-            .iter()
-            .find(|published| published.name == link)
-        {
-            ids.extend(published.mods.iter().map(|m| m.id.clone()));
-        }
-    }
-    for line in &set.lines {
-        if let Line::Mod(m) = line {
-            if m.left_out {
-                ids.remove(&m.id);
-            } else {
-                ids.insert(m.id.clone());
-            }
-        }
-    }
-    ids.len()
-}
-
 /// The filter chips: All, Rules, Training, Online modes, On screen.
 fn filters(mods: &Mods, p: &Palette) -> El {
-    row().gap(space::SNUG).children(Filter::ALL.map(|filter| {
-        chip(filter.label(), mods.filter == filter, p)
-            .key(format!("mods/filter/{}", filter.label()))
-            .role("radio")
-            .checked(mods.filter == filter)
-            .on_press(move |app: &mut App| actions::set_filter(app, filter))
-    }))
+    row()
+        .gap(space::SNUG)
+        .flex_wrap()
+        .children(super::Filter::ALL.map(|filter| {
+            chip(filter.label(), mods.filter == filter, p)
+                .key(format!("mods/filter/{}", filter.label()))
+                .role("radio")
+                .checked(mods.filter == filter)
+                .on_press(move |app: &mut App| actions::set_filter(app, filter))
+        }))
 }
 
 /// Every mod textures.gg has built for the game, newest release of each.
@@ -399,6 +258,7 @@ fn all(app: &App, p: &Palette) -> El {
             .key("mods/all/empty")
             .font(text::BODY)
             .color(p.muted)
+            .py(space::SM)
     });
     let rows = found.into_iter().map(|entry| mod_row(app, entry, p));
     // What waits for a build, after what installs.
@@ -407,7 +267,7 @@ fn all(app: &App, p: &Palette) -> El {
             .key("mods/all/unbuilt")
             .pt(space::SM)
             .gap(space::XXS)
-            .child(section("Not built for this version yet", p))
+            .child(section("Not built for this version yet", p).px(space::SM))
             .child(
                 col().children(
                     unbuilt
@@ -418,8 +278,12 @@ fn all(app: &App, p: &Palette) -> El {
     });
     col()
         .gap(space::SM)
-        .children(note(mods, p).filter(|_| mods.port().is_none()))
-        .children(empty)
+        .children(
+            note(mods, p)
+                .filter(|_| mods.port().is_none())
+                .map(|note| note.px(space::SM)),
+        )
+        .children(empty.map(|empty| empty.px(space::SM)))
         .child(
             col().children(
                 rows.chain(
@@ -459,78 +323,122 @@ fn note(mods: &Mods, p: &Palette) -> Option<El> {
 fn placeholder_rows(p: &Palette) -> impl Iterator<Item = El> + '_ {
     (0..PLACEHOLDERS).map(move |_| {
         col()
-            .py(space::SM)
+            .padding(space::SM)
             .gap(space::XS)
             .child(skeleton(0.3, p))
             .child(skeleton(0.6, p))
     })
 }
 
-/// A mod textures.gg offers: its icon, name, whether it has to match in
-/// netplay, one line of what it does, and Add, or In it while the set
-/// showing has it.
+/// A mod's name, and who publishes it unless that's textures.gg itself.
+fn name_line(app: &App, id: &ModId, name: &str, p: &Palette) -> El {
+    let by = app
+        .mods
+        .listings
+        .get(id)
+        .filter(|summary| !summary.publisher.official)
+        .map(|summary| {
+            label(format!("by {}", summary.publisher.name))
+                .font(text::SMALL)
+                .color(p.faint)
+                .truncate()
+                .min_w(0.0)
+        });
+    row()
+        .gap(space::XS)
+        .items_center()
+        .child(
+            label(name.to_owned())
+                .font(text::STRONG)
+                .color(p.ink)
+                .truncate()
+                .min_w(0.0),
+        )
+        .children(by)
+}
+
+/// How many times a mod's been installed, faint, with the download glyph.
+fn installs(app: &App, id: &ModId, p: &Palette) -> Option<El> {
+    let count = app.mods.listings.get(id)?.installs;
+    (count > 0).then(|| {
+        row()
+            .gap(space::XXS)
+            .items_center()
+            .label(format!("Installed {count} times"))
+            .help(format!("Installed {count} times"))
+            .child(icon(Icon::Download, p.faint))
+            .child(
+                label(count_text(count))
+                    .font(text::MONO_SMALL)
+                    .color(p.faint),
+            )
+    })
+}
+
+/// A mod textures.gg offers: its icon, name, one line of what it does, how
+/// often it's installed, and Add, or Added while the set showing has it.
 fn mod_row(app: &App, entry: &CatalogEntry, p: &Palette) -> El {
     let manifest = &entry.manifest;
     let id = manifest.id.clone();
     let key = format!("mods/catalog/{id}");
     let shown = id.clone();
-    let chosen = shows(app, &id);
     let running = current_set(app).is_some_and(|set| app.sets.running(&set.key));
-    let end: Option<El> = if chosen {
-        Some(badge("In it", Tone::Mine, p))
-    } else if running {
-        Some(button_off("Add", p).key(format!("{key}/add")))
-    } else if app.mods.port().is_none() || app.mods.work.is_some() {
-        None
-    } else {
-        let add = id.clone();
-        Some(
-            button("Add", ButtonKind::Secondary, p)
-                .key(format!("{key}/add"))
-                .on_press(move |app: &mut App| actions::add(app, &add)),
-        )
+    let end: Option<El> = match in_set(app, &id) {
+        Some(true) if !running => {
+            let gone = id.clone();
+            Some(
+                button_done("Added", p)
+                    .key(format!("{key}/remove"))
+                    .w(ADD_WIDTH)
+                    .label(format!("Take {} out of the set", manifest.name))
+                    .on_press(move |app: &mut App| actions::take_away(app, &gone)),
+            )
+        }
+        Some(_) => Some(
+            row()
+                .key(format!("{key}/added"))
+                .w(ADD_WIDTH)
+                .gap(space::XXS)
+                .items_center()
+                .justify_center()
+                .child(icon(Icon::Check, p.faint))
+                .child(label("Added").font(text::STRONG).color(p.faint)),
+        ),
+        None if running => Some(button_off("Add", p).key(format!("{key}/add")).w(ADD_WIDTH)),
+        None if app.mods.port().is_none() || app.mods.work.is_some() => None,
+        None => {
+            let add = id.clone();
+            Some(
+                button("Add", ButtonKind::Secondary, p)
+                    .key(format!("{key}/add"))
+                    .w(ADD_WIDTH)
+                    .on_press(move |app: &mut App| actions::add(app, &add)),
+            )
+        }
     };
-    let mut line = list_row(p)
+    list_row(p)
         .key(key)
         .label(manifest.name.clone())
         .cursor(rune::Cursor::Pointer)
         .role("button")
         .focusable(true)
         .on_press(move |app: &mut App| actions::select(app, &shown))
-        .child(icon_tile(app.mods.icon(&id), size::THUMBNAIL, p))
+        .child(icon_tile(app.mods.icon(&id), MOD_ICON, p))
         .child(
             col()
                 .gap(space::TIGHT)
                 .grow(1.0)
                 .min_w(0.0)
-                .child(
-                    row()
-                        .gap(space::XS)
-                        .items_center()
-                        .child(
-                            label(manifest.name.clone())
-                                .font(text::STRONG)
-                                .color(p.ink)
-                                .truncate(),
-                        )
-                        .children(
-                            entry
-                                .netplay
-                                .counts()
-                                .then(|| badge("Has to match in netplay", Tone::Mine, p)),
-                        ),
-                )
+                .child(name_line(app, &id, &manifest.name, p))
                 .children(manifest.description.as_ref().map(|line| {
                     label(line.clone())
                         .font(text::SMALL)
                         .color(p.muted)
                         .truncate()
                 })),
-        );
-    if let Some(end) = end {
-        line = line.child(end);
-    }
-    line
+        )
+        .children(installs(app, &id, p))
+        .children(end)
 }
 
 /// A mod the registry lists that isn't built for this tgg-melee yet.
@@ -544,18 +452,13 @@ fn unbuilt_row(app: &App, summary: &ModSummary, p: &Palette) -> El {
         .role("button")
         .focusable(true)
         .on_press(move |app: &mut App| actions::select(app, &shown))
-        .child(icon_tile(app.mods.icon(id), size::THUMBNAIL, p))
+        .child(icon_tile(app.mods.icon(id), MOD_ICON, p))
         .child(
             col()
                 .gap(space::TIGHT)
                 .grow(1.0)
                 .min_w(0.0)
-                .child(
-                    label(summary.name.clone())
-                        .font(text::STRONG)
-                        .color(p.ink)
-                        .truncate(),
-                )
+                .child(name_line(app, id, &summary.name, p))
                 .children(summary.description.as_ref().map(|line| {
                     label(line.clone())
                         .font(text::SMALL)
@@ -563,21 +466,110 @@ fn unbuilt_row(app: &App, summary: &ModSummary, p: &Palette) -> El {
                         .truncate()
                 })),
         )
-        .child(badge("Not built for this version yet", Tone::Plain, p))
+        .children(installs(app, id, p))
 }
 
-/// Whether the set showing has the mod: installed and on, for Installed
-/// mods; loading from its plan, for the rest.
-fn shows(app: &App, id: &ModId) -> bool {
-    let Some(set) = current_set(app) else {
-        return false;
-    };
+/// Whether the set showing has the mod, and if so whether it can be taken
+/// out from here: installed and on, for Installed mods; loading from its
+/// plan, for the rest, where only a mod of its own or of a set it builds on
+/// can be taken out of one of the player's.
+fn in_set(app: &App, id: &ModId) -> Option<bool> {
+    let set = current_set(app)?;
     if set.is_installed() {
-        return app.mods.local.get(id).is_some_and(|m| m.enabled);
+        return app
+            .mods
+            .local
+            .get(id)
+            .is_some_and(|m| m.enabled)
+            .then_some(true);
     }
-    app.sets.plan(&set.key).is_some_and(|plan| {
-        plan.mods
-            .iter()
-            .any(|m| m.id == *id && m.skipped.is_none() && m.group != Group::LeftOut)
-    })
+    let plan = app.sets.plan(&set.key)?;
+    let m = plan
+        .mods
+        .iter()
+        .find(|m| m.id == *id && m.skipped.is_none() && m.group != Group::LeftOut)?;
+    Some(!set.locked && matches!(m.group, Group::Added | Group::FromSet { .. }))
+}
+
+/// The page's open menu: which set shows, what else to do to it, or the
+/// list's order.
+pub fn menu(app: &App, p: &Palette) -> Option<El> {
+    if app.nav.place != Place::Mods {
+        return None;
+    }
+    let (anchor, items) = match app.mods.menu? {
+        Menu::Sets => ("mods/set/pick", sets_menu(app, p)),
+        Menu::More => ("mods/set/more", more_menu(p)),
+        Menu::Sort => ("mods/sort", sort_menu(app, p)),
+    };
+    Some(select_menu(anchor, items, actions::close_menu, p))
+}
+
+/// The player's sets, choosing one shows it; then New set.
+fn sets_menu(app: &App, p: &Palette) -> Vec<El> {
+    let shown = current_set(app).map(|set| set.key.clone());
+    let mut items: Vec<El> = app
+        .sets
+        .list
+        .iter()
+        .filter(|set| !set.is_installed() || !set.lines.is_empty())
+        .map(|set| {
+            let key = set.key.clone();
+            select_item(&set.name, shown.as_deref() == Some(set.key.as_str()), p)
+                .key(format!("mods/set/pick/{}", set.key))
+                .on_press(move |app: &mut App| {
+                    actions::close_menu(app);
+                    actions::choose_set(app, &key);
+                })
+        })
+        .collect();
+    items.push(select_rule(p));
+    items.push(
+        select_item("New set", false, p)
+            .key("mods/new-set")
+            .on_press(|app: &mut App| {
+                actions::close_menu(app);
+                actions::open_new_set(app);
+            }),
+    );
+    items
+}
+
+/// What else can be done to a set of the player's.
+fn more_menu(p: &Palette) -> Vec<El> {
+    vec![
+        select_item("Rename", false, p)
+            .key("mods/set/rename")
+            .on_press(|app: &mut App| {
+                actions::close_menu(app);
+                actions::open_rename(app);
+            }),
+        select_item("Build on another set", false, p)
+            .key("mods/set/build-on")
+            .on_press(|app: &mut App| {
+                actions::close_menu(app);
+                actions::open_build_on(app);
+            }),
+        select_rule(p),
+        select_item("Delete set", false, p)
+            .key("mods/set/delete")
+            .on_press(|app: &mut App| {
+                actions::close_menu(app);
+                if let Some(key) = current_set(app).map(|set| set.key.clone()) {
+                    actions::delete_set(app, &key);
+                }
+            }),
+    ]
+}
+
+/// The orders the list can show in.
+fn sort_menu(app: &App, p: &Palette) -> Vec<El> {
+    Sort::ALL
+        .into_iter()
+        .map(|sort| {
+            select_item(sort.label(), app.mods.sort == sort, p)
+                .key(format!("mods/sort/{}", sort.label()))
+                .on_press(move |app: &mut App| actions::set_sort(app, sort))
+        })
+        .collect()
 }

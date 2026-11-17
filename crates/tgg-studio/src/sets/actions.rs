@@ -25,12 +25,15 @@ pub fn read(app: &mut App) {
 /// Work out `key`'s plan (what loads, what's skipped and why, its gameplay
 /// mods), off the window's thread. It asks textures.gg, so it's for when a
 /// set is shown or chosen, not every frame. Installed mods' plan is its
-/// counted mods resolved like a profile, for its queue.
+/// counted mods resolved like a profile, for its queue. The plan it had
+/// stays until the new one's ready, so what shows it doesn't blink out.
 pub fn plan(app: &mut App, key: &str) {
     let Some(set) = app.sets.get(key).cloned() else {
         return;
     };
-    app.sets.plans.insert(key.to_owned(), Planned::Working);
+    if !matches!(app.sets.plans.get(key), Some(Planned::Ready(_))) {
+        app.sets.plans.insert(key.to_owned(), Planned::Working);
+    }
     let (net, data, mods) = (
         app.mods.net.clone(),
         app.data.tgg.clone(),

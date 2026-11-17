@@ -73,6 +73,27 @@ pub fn button_off(label: &str, p: &Palette) -> El {
         .child(text(label).font(type_::STRONG).color(p.faint))
 }
 
+/// A button for something already done that pressing undoes ("Added"):
+/// quiet beside the buttons still to press, a yellow check and its words,
+/// washed only under the pointer.
+pub fn button_done(label: &str, p: &Palette) -> El {
+    row()
+        .h(size::CONTROL)
+        .px(space::MD - space::TIGHT)
+        .gap(space::XXS)
+        .items_center()
+        .justify_center()
+        .radius(radius::PILL)
+        .hover(p.hover)
+        .press(p.hover)
+        .cursor(rune::Cursor::Pointer)
+        .role("button")
+        .label(label)
+        .focusable(true)
+        .child(icon(Icon::Check, p.accent_text))
+        .child(text(label).font(type_::STRONG).color(p.muted))
+}
+
 /// An icon button's side, in points.
 pub const ICON_BUTTON: f32 = size::CONTROL - space::TIGHT;
 
@@ -273,10 +294,11 @@ pub fn search_field(edit: &rune::TextEdit, placeholder: &str, p: &Palette) -> El
         .label(placeholder)
 }
 
-/// The pill a [`search_field`] sits in, its glyph first.
+/// The pill a [`search_field`] sits in, its glyph first. The caller sizes
+/// it: `size::SEARCH` wide in the top bar, as wide as the list it searches
+/// on a page.
 pub fn search_box(field: El, p: &Palette) -> El {
     row()
-        .w(size::SEARCH)
         .h(size::CONTROL)
         .pl(space::SM)
         .items_center()
