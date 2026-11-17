@@ -191,6 +191,24 @@ pub fn refresh_mapping(net: &dyn Net, data: &Path) -> Result<SlippiMapping, Erro
     Ok(mapping)
 }
 
+fn sets_path(data: &Path) -> PathBuf {
+    tgg_dir(data).join(CACHE).join("sets.json")
+}
+
+/// The last list of textures.gg's sets seen, if any.
+pub fn cached_sets(data: &Path) -> Option<Vec<crate::registry::Set>> {
+    let bytes = std::fs::read(sets_path(data)).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// textures.gg's sets ([`crate::sets()`]), kept as the last list seen.
+pub fn refresh_sets(net: &dyn Net, data: &Path) -> Result<Vec<crate::registry::Set>, Error> {
+    let sets = crate::registry::sets(net)?;
+    let json = serde_json::to_string_pretty(&sets).expect("sets serialize") + "\n";
+    write_atomic(&sets_path(data), json.as_bytes())?;
+    Ok(sets)
+}
+
 /// Remove each cached package that neither the lock in `mods` nor a
 /// profile folder names and that hasn't been used for `older_than`. The
 /// paths removed.

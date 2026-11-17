@@ -38,6 +38,13 @@ pub struct Set {
     /// Bumped whenever the list or a range changes.
     pub version: u32,
     pub mods: Vec<SetMod>,
+    /// Who made it; absent reads as textures.gg (every set before players
+    /// could make them).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<Publisher>,
+    /// The sets it builds on, by link name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub builds_on: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -51,6 +58,17 @@ impl Set {
     /// The range the set takes `id` in, if it lists it.
     pub fn range(&self, id: &ModId) -> Option<&Range> {
         self.mods.iter().find(|m| &m.id == id).map(|m| &m.range)
+    }
+
+    /// Whether textures.gg made it.
+    pub fn official(&self) -> bool {
+        self.owner.as_ref().is_none_or(|owner| owner.official)
+    }
+
+    /// Whether another set can build on it: it lists only mods, and (for
+    /// now) textures.gg made it.
+    pub fn can_build_on(&self) -> bool {
+        self.builds_on.is_empty() && self.official()
     }
 }
 

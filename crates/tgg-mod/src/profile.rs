@@ -677,6 +677,11 @@ pub struct ProfileMod {
     /// Whether it changes how the game plays (the catalog's
     /// `changes_game`).
     pub changes_game: bool,
+    /// The class its package gives it ([`crate::netplay::classify`] of the
+    /// catalog's manifest, with the registry's display stamp).
+    pub netplay: crate::netplay::Netplay,
+    /// The mods it depends on.
+    pub depends: Vec<ModId>,
 }
 
 /// Whether a profile plays with the player's own installs.
@@ -884,6 +889,8 @@ pub fn resolve_profile(
                 package: entry.package.clone(),
                 settings: settings.clone(),
                 changes_game: entry.changes_game,
+                netplay: crate::netplay::classify(&entry.manifest),
+                depends: entry.manifest.depends.keys().cloned().collect(),
             }
         })
         .collect();

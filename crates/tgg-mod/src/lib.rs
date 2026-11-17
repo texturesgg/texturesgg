@@ -44,6 +44,8 @@
 //!   mods a replay or a netplay host needs: reading them ([`slp`] for
 //!   replays), resolving, preparing and launching them; and the package
 //!   cache.
+//! - [`sets`]: the player's sets, named lists of mods and textures.gg
+//!   sets they build on, run through the profile path.
 //! - [`skins`]: the skins tgg.skins loads (`skins.json`), and whether a
 //!   costume changes only looks.
 //! - [`scaffold`]: starting a new mod from an SDK example, a release's SDK,
@@ -72,6 +74,7 @@ pub mod profile;
 pub mod registry;
 pub mod scaffold;
 pub mod sdk;
+pub mod sets;
 pub mod skins;
 pub mod slp;
 pub mod symbols;

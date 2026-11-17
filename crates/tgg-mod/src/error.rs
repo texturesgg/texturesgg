@@ -111,6 +111,26 @@ pub enum Error {
     /// The game couldn't check a costume.
     #[error("tgg-melee couldn't check the costume: {0}")]
     CheckCostume(String),
+    #[error("you have no set {0}")]
+    NoMySet(String),
+    #[error("you already have a set called {0}")]
+    SetExists(String),
+    #[error("{0}")]
+    BadSetName(String),
+    #[error("{path} isn't a set tgg can read: {why}")]
+    BadSet { path: PathBuf, why: String },
+    /// The built-in set is the player's mods folder.
+    #[error("Installed mods is your mods folder. Change it with tgg mod, or save it as a new set")]
+    InstalledSet,
+    /// A set got from textures.gg follows the published one.
+    #[error("{0} is by textures.gg and follows it. Make your own set that builds on it")]
+    SetLocked(String),
+    #[error("{0} builds on other sets, so it can't be built on. Build on the same sets instead")]
+    CantBuildOn(String),
+    #[error("a set can build on 4 sets at most")]
+    TooManySets,
+    #[error("textures.gg has no set {0}")]
+    NoSuchSet(String),
     #[error("{path}: {source}")]
     Io {
         path: PathBuf,
