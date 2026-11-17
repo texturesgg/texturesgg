@@ -2,6 +2,10 @@
 //! hsd-render draws in a pass of its own, with its own depth buffer, into a
 //! texture the slot's size; this draws that texture over the slot, clipped
 //! to it, so the slot's clip and painter order hold.
+//!
+//! A cut-out target (Play's fighter) is drawn at twice the slot's size: the
+//! copy averages each 2×2 block, making what hsd-render clears to see-through
+//! first, so the model's edges blend smoothly into whatever is under it.
 
 use rune::render::EffectSite;
 use std::collections::HashMap;
@@ -15,14 +19,17 @@ pub struct Copy {
     sampler: wgpu::Sampler,
     shader: wgpu::ShaderModule,
     pipeline_layout: wgpu::PipelineLayout,
-    /// One pipeline per pass format and color encoding.
-    pipelines: HashMap<(wgpu::TextureFormat, bool), wgpu::RenderPipeline>,
+    /// One pipeline per pass format, color encoding, and whether it cuts out.
+    pipelines: HashMap<(wgpu::TextureFormat, bool, bool), wgpu::RenderPipeline>,
 }
 
 /// A texture the model is drawn into, and its binding for the copy.
 pub struct Target {
     pub view: wgpu::TextureView,
     pub size: (u32, u32),
+    /// What hsd-render clears to is left out, and the target is drawn at
+    /// twice the slot's size.
+    pub cutout: bool,
     bind: wgpu::BindGroup,
 }
 
@@ -60,7 +67,7 @@ impl Copy {
             }),
             shader: device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("stage copy"),
-                source: wgpu::ShaderSource::Wgsl(SHADER.into()),
+                source: wgpu::ShaderSource::Wgsl(shader_source().into()),
             }),
             layout,
             pipeline_layout,
@@ -69,7 +76,12 @@ impl Copy {
     }
 
     /// A texture `size` device pixels to draw the model into.
-    pub fn target(&self, device: &wgpu::Device, (width, height): (u32, u32)) -> Target {
+    pub fn target(
+        &self,
+        device: &wgpu::Device,
+        (width, height): (u32, u32),
+        cutout: bool,
+    ) -> Target {
         let view = device
             .create_texture(&wgpu::TextureDescriptor {
                 label: Some("stage target"),
@@ -104,6 +116,7 @@ impl Copy {
         Target {
             view,
             size: (width, height),
+            cutout,
             bind,
         }
     }
@@ -127,7 +140,7 @@ impl Copy {
         if w < 1.0 || h < 1.0 || x1 <= x0 || y1 <= y0 {
             return;
         }
-        let pipeline = self.pipeline(device, site.format, site.srgb_blend);
+        let pipeline = self.pipeline(device, site.format, site.srgb_blend, target.cutout);
         pass.set_viewport(x, y, w, h, 0.0, 1.0);
         pass.set_scissor_rect(
             x0 as u32,
@@ -148,37 +161,56 @@ impl Copy {
         device: &wgpu::Device,
         format: wgpu::TextureFormat,
         srgb: bool,
+        cutout: bool,
     ) -> &wgpu::RenderPipeline {
         let (shader, layout) = (&self.shader, &self.pipeline_layout);
-        self.pipelines.entry((format, srgb)).or_insert_with(|| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("stage copy"),
-                layout: Some(layout),
-                vertex: wgpu::VertexState {
-                    module: shader,
-                    entry_point: Some("vs"),
-                    buffers: &[],
-                    compilation_options: Default::default(),
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: shader,
-                    // An sRGB-encoded frame takes the bytes as they are; a linear one decodes them.
-                    entry_point: Some(if srgb { "fs_encoded" } else { "fs_linear" }),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: Default::default(),
-                }),
-                primitive: Default::default(),
-                depth_stencil: None,
-                multisample: Default::default(),
-                multiview_mask: None,
-                cache: None,
+        self.pipelines
+            .entry((format, srgb, cutout))
+            .or_insert_with(|| {
+                // An sRGB-encoded frame takes the bytes as they are; a linear one decodes them.
+                let entry = match (cutout, srgb) {
+                    (false, true) => "fs_encoded",
+                    (false, false) => "fs_linear",
+                    (true, true) => "fs_cut_encoded",
+                    (true, false) => "fs_cut_linear",
+                };
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("stage copy"),
+                    layout: Some(layout),
+                    vertex: wgpu::VertexState {
+                        module: shader,
+                        entry_point: Some("vs"),
+                        buffers: &[],
+                        compilation_options: Default::default(),
+                    },
+                    fragment: Some(wgpu::FragmentState {
+                        module: shader,
+                        entry_point: Some(entry),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format,
+                            // A cut-out model's color comes premultiplied.
+                            blend: cutout.then_some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                        compilation_options: Default::default(),
+                    }),
+                    primitive: Default::default(),
+                    depth_stencil: None,
+                    multisample: Default::default(),
+                    multiview_mask: None,
+                    cache: None,
+                })
             })
-        })
     }
+}
+
+/// The copy's shader, knowing the color hsd-render clears to.
+fn shader_source() -> String {
+    let [r, g, b] = hsd_render::renderer::BACKGROUND_RGB;
+    SHADER.replace(
+        "CLEARED",
+        &format!("vec3<f32>({r}.0, {g}.0, {b}.0) / 255.0"),
+    )
 }
 
 const SHADER: &str = r#"
@@ -200,5 +232,31 @@ fn decode(c: vec3<f32>) -> vec3<f32> {
 }
 @fragment fn fs_linear(o: Out) -> @location(0) vec4<f32> {
     return vec4<f32>(decode(textureSample(image, smp, o.uv).rgb), 1.0);
+}
+// The 2x2 texels under this pixel, averaged, the cleared color left out:
+// premultiplied, still as the bytes hold it.
+fn cut(o: Out) -> vec4<f32> {
+    let dims = vec2<i32>(textureDimensions(image));
+    let base = vec2<i32>(floor(o.uv * vec2<f32>(dims) - vec2<f32>(0.5)));
+    var sum = vec4<f32>(0.0);
+    for (var dy = 0; dy < 2; dy++) {
+        for (var dx = 0; dx < 2; dx++) {
+            let at = clamp(base + vec2<i32>(dx, dy), vec2<i32>(0), dims - vec2<i32>(1));
+            let c = textureLoad(image, at, 0).rgb;
+            let a = select(1.0, 0.0, all(abs(c - CLEARED) < vec3<f32>(0.5 / 255.0)));
+            sum += vec4<f32>(c * a, a);
+        }
+    }
+    return sum / 4.0;
+}
+@fragment fn fs_cut_encoded(o: Out) -> @location(0) vec4<f32> {
+    return cut(o);
+}
+@fragment fn fs_cut_linear(o: Out) -> @location(0) vec4<f32> {
+    let c = cut(o);
+    if c.a <= 0.0 {
+        return vec4<f32>(0.0);
+    }
+    return vec4<f32>(decode(c.rgb / c.a) * c.a, c.a);
 }
 "#;

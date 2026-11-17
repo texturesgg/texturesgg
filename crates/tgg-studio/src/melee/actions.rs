@@ -19,10 +19,12 @@ use tgg_app::install::SlotState;
 /// slots hold and their pictures are read in the background.
 pub fn open_game(app: &mut App, references: References) {
     stage::clear(app);
+    app.play.fighter = None;
     app.melee = Melee::of(references.game());
     app.renders.clear();
     app.game = Some(references);
     refresh(app);
+    crate::play::actions::stand(app);
     // The first look for tgg-melee's disc ran before there was a game (a
     // first run picks it); this one may be it.
     if matches!(

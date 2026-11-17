@@ -20,17 +20,17 @@ use crate::ui::{
 };
 use rune::{Color, El, LoopSpec, ScrollSpec, col, el, row, text as label};
 
-/// The fighter's picture, a side: in a wide place, and in a narrow one.
-const HERO: (f32, f32) = (280.0, 200.0);
-/// How far down its picture a fighter's feet are, as a fraction of its side
-/// (renders frame the idle pose the same way for every fighter): where the
-/// spotlight's pool is.
+/// The fighter's side: in a wide place, and in a narrow one.
+const HERO: (f32, f32) = (300.0, 220.0);
+/// How far down its square a fighter's feet are, as a fraction of its side
+/// (the renderer frames every fighter's idle the same way): where the pool
+/// of light is.
 const FEET: f32 = 0.8;
-/// The spotlight's room beside the words, in fighter sides.
-const STAGE: f32 = 1.5;
-/// The spotlight's pool on the floor, in fighter sides across and down: a
-/// flat ellipse, bright at its heart, with two faint rings around it.
-const POOL: (f32, f32) = (0.62, 0.11);
+/// The fighter's room beside the words, in fighter sides.
+const STAGE: f32 = 1.4;
+/// The pool of light on the floor, in fighter sides across and down: a flat
+/// ellipse, bright at its heart, with two faint rings around it.
+const POOL: (f32, f32) = (0.6, 0.1);
 const POOL_STOPS: [(f32, f32); 9] = [
     (0.0, 0.42),
     (0.35, 0.16),
@@ -42,12 +42,13 @@ const POOL_STOPS: [(f32, f32); 9] = [
     (0.92, 0.12),
     (0.95, 0.0),
 ];
-/// The beam falling on the fighter from the hero's top: how wide and long it
-/// reaches, in the stage's width and height, and its brightness by distance.
-const BEAM: (f32, f32) = (0.42, 1.05);
-const BEAM_STOPS: [(f32, f32); 3] = [(0.0, 0.16), (0.55, 0.05), (1.0, 0.0)];
-/// The warm haze over the hero's end, behind everything.
-const HAZE_STOPS: [(f32, f32); 2] = [(0.0, 0.07), (1.0, 0.0)];
+/// The warm glow behind the fighter: where its heart is, as a fraction of
+/// the room down, and its brightness out to the room's edges, where it's
+/// gone.
+const GLOW_AT: f32 = 0.55;
+const GLOW_STOPS: [(f32, f32); 3] = [(0.0, 0.13), (0.5, 0.04), (1.0, 0.0)];
+/// The widest the line explaining Find a match runs.
+const EXPLAINER: f32 = 440.0;
 /// The live dot: its side, and its slow pulse.
 const LIVE_DOT: f32 = 7.0;
 const LIVE_PULSE: LoopSpec = LoopSpec::opacity(1.8, 0.0, 0.3, 1.0);
@@ -110,6 +111,20 @@ fn stops<const N: usize>(color: Color, alphas: [(f32, f32); N]) -> [(f32, Color)
     alphas.map(|(at, alpha)| (at, color.alpha(alpha)))
 }
 
+/// A card's heading: its name, and a line under it saying what it's for.
+fn tile_head(name: &str, line: &str, p: &Palette) -> El {
+    col()
+        .gap(space::TIGHT)
+        .mb(space::XS)
+        .child(label(name.to_owned()).font(text::TITLE).color(p.ink))
+        .child(
+            label(line.to_owned())
+                .font(text::SMALL)
+                .color(p.muted)
+                .wrap(),
+        )
+}
+
 /// The top bar's end on Play: how many are searching, once the queues are
 /// read. (The brief asked for "N playing now"; the platform keeps no playing
 /// count anywhere, so this is what there is.)
@@ -160,63 +175,108 @@ fn notices(app: &App, p: &Palette) -> Vec<El> {
         .collect()
 }
 
-/// The hero: the set, how it's searched, and the three ways to play, beside
-/// the fighter in the spotlight.
+/// The hero, on the page itself so its words line up with the title: the
+/// set, its queue, the three ways to play and what Find a match does,
+/// beside the fighter standing in a pool of light.
 fn hero(app: &App, p: &Palette) -> El {
     let side = if wide(app) { HERO.0 } else { HERO.1 };
-    let (stage_w, stage_h) = (side * STAGE, side + space::XL);
+    let words = col()
+        .grow(1.0)
+        .min_w(0.0)
+        .gap(space::LG)
+        .children(status(app, p))
+        .child(row().w_full().child(picker(app, p)))
+        .child(
+            col()
+                .gap(space::SM)
+                .mt(space::XS)
+                .child(buttons(app, p))
+                .children(match &app.sets.launching {
+                    Some(launching) => Some(launching_line(launching, p)),
+                    None => explainer(app, p),
+                }),
+        );
     row()
         .key("play/card")
         .w_full()
-        .fill(p.sunk)
-        .border(size::LINE, p.line)
-        .radius(radius::CARD)
-        .clip_rounded(radius::CARD)
-        .radial_gradient(
-            [1.0, 0.5],
-            [stage_w * 1.4, stage_h * 1.2],
-            stops(p.accent, HAZE_STOPS),
-        )
-        .child(
-            col()
-                .grow(1.0)
-                .min_w(0.0)
-                .padding(space::XL)
-                .gap(space::LG)
-                .justify_center()
-                .children(status(app, p))
-                .child(row().w_full().child(picker(app, p)))
-                .child(
-                    col()
-                        .gap(space::SM)
-                        .mt(space::XS)
-                        .child(buttons(app, p))
-                        .children(app.sets.launching.as_ref().map(|l| launching_line(l, p))),
-                ),
-        )
-        .child(spotlight(app, side, (stage_w, stage_h), p))
+        .items_center()
+        .gap(space::LG)
+        .child(words)
+        .child(spotlight(app, side, p))
 }
 
-/// The fighter in the spotlight: a beam from the hero's top, the pool and
-/// its rings on the floor, the fighter standing in it.
-fn spotlight(app: &App, side: f32, (w, h): (f32, f32), p: &Palette) -> El {
-    let feet = space::XL + side * FEET;
+/// The fighter in a pool of light, with a warm glow behind: in 3D, idling,
+/// and turned by a drag; its picture when its model couldn't be read.
+fn spotlight(app: &App, side: f32, p: &Palette) -> El {
+    let (w, h) = (side * STAGE, side);
+    let feet = side * FEET;
     let pool = (side * POOL.0, side * POOL.1);
+    let fighter = match &app.play.fighter {
+        Some(fighter) => rune::effect(crate::stage::FIGHTER)
+            .key("play/fighter/model")
+            .size(side, side)
+            .cursor(if fighter.gesture.is_some() {
+                rune::Cursor::Grabbing
+            } else {
+                rune::Cursor::Grab
+            })
+            .on_drag(actions::spin),
+        None => picture(app, side),
+    };
     col()
         .key("play/fighter")
         .w(w)
         .h(h)
         .child(el().absolute(0.0, 0.0).w(w).h(h).radial_gradient(
-            [0.5, 0.0],
-            [w * BEAM.0, h * BEAM.1],
-            stops(p.accent, BEAM_STOPS),
+            [0.5, GLOW_AT],
+            [w / 2.0, h / 2.0],
+            stops(p.accent, GLOW_STOPS),
         ))
         .child(
             el().absolute(w / 2.0 - pool.0, feet - pool.1)
                 .size(pool.0 * 2.0, pool.1 * 2.0)
                 .radial_gradient([0.5, 0.5], [pool.0, pool.1], stops(p.accent, POOL_STOPS)),
         )
-        .child(picture(app, side).absolute((w - side) / 2.0, space::XL))
+        .child(fighter.absolute((w - side) / 2.0, 0.0))
+}
+
+/// Under the buttons, what Find a match does with this set: which players
+/// it pairs the player with, by the gameplay mods they run.
+fn explainer(app: &App, p: &Palette) -> Option<El> {
+    let plan = app.sets.plan(&app.sets.active)?;
+    let mods = gameplay(plan);
+    let queues = actions::queues_of(app);
+    let queue =
+        queues.and_then(|queues| matching(queues, &mods).and_then(|index| queues.get(index)));
+    let words = match queue {
+        Some(queue) if queue.standing() => format!(
+            "Find a match pairs you with anyone in {}, the always-open queue for these mods.",
+            queue.label
+        ),
+        _ if mods.is_empty() => {
+            "Find a match pairs you with players who run no gameplay mods.".to_owned()
+        }
+        _ => {
+            let mut words = format!(
+                "Find a match pairs you only with players running these exact gameplay mods ({}).",
+                mod_names(app, &mods)
+            );
+            let alone = queue.is_none_or(|queue| queue.searching == 0);
+            let standing = queues.is_some_and(|queues| queues.iter().any(Queue::standing));
+            if alone && standing {
+                words.push_str(" An always-open queue below finds a game sooner.");
+            }
+            words
+        }
+    };
+    Some(
+        label(words)
+            .key("play/explainer")
+            .font(text::SMALL)
+            .color(p.muted)
+            .wrap()
+            .max_w(EXPLAINER),
+    )
 }
 
 /// The active set, as the card's heading and the button opening the
@@ -410,14 +470,10 @@ fn status(app: &App, p: &Palette) -> Option<El> {
     let queue = matching(queues, &gameplay(plan)).and_then(|index| queues.get(index));
     let words = match queue {
         Some(queue) if queue.standing() => {
-            format!(
-                "Searches in {} · {}",
-                queue.label,
-                searching(queue.searching)
-            )
+            format!("{} queue · {}", queue.label, searching(queue.searching))
         }
-        Some(queue) => format!("Has its own queue · {}", searching(queue.searching)),
-        None => "Has its own queue · nobody searching yet".to_owned(),
+        Some(queue) => format!("Its own queue · {}", searching(queue.searching)),
+        None => "Its own queue · nobody searching yet".to_owned(),
     };
     let live = queue.is_some_and(|queue| queue.searching > 0);
     let dot = el()
@@ -497,6 +553,11 @@ fn below(app: &App, p: &Palette) -> El {
         .key("play/queues")
         .min_w(0.0)
         .gap(space::XS)
+        .child(tile_head(
+            "Other queues",
+            "Join one to play its mods for that match. Your set stays as it is.",
+            p,
+        ))
         .children(queues(app, p));
     let matches = matches(app, p);
     if wide(app) {
@@ -647,7 +708,7 @@ fn matches(app: &App, p: &Palette) -> Option<El> {
         tile(p)
             .key("play/matches")
             .gap(space::XS)
-            .child(section("Your last matches", p))
+            .child(tile_head("Your last matches", "Press one to watch it.", p))
             .children(
                 items
                     .into_iter()

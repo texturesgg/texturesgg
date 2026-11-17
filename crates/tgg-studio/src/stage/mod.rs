@@ -19,6 +19,8 @@ use std::rc::Rc;
 
 /// The viewport's effect slot.
 pub const VIEWPORT: u32 = 1;
+/// Play's fighter's effect slot.
+pub const FIGHTER: u32 = 2;
 
 pub struct Stage {
     pub shown: Option<Shown>,

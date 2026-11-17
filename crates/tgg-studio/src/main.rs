@@ -1153,6 +1153,7 @@ fn play_matches(app: &mut App) {
         keys.push(RenderKey::Fighter(hero));
         app.renders.request_fighter(&iso, hero);
     }
+    crate::play::actions::stand(app);
     // The shot is taken at once: wait for the worker, so every picture is in.
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     while !keys.iter().all(|key| app.renders.drawn(*key)) && std::time::Instant::now() < deadline {

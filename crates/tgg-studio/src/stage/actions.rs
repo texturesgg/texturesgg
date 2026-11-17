@@ -25,6 +25,22 @@ const RUNE_LINE_POINTS: f32 = 40.0;
 /// already showing keeps the camera and the move; anything else starts
 /// from the front, idling. Returns why not, in the player's words.
 pub fn show(app: &mut App, slot: MeleeSlot) -> Result<(), String> {
+    let mut shown = load(app, slot)?;
+    let previous = app.stage.shown.take().filter(|shown| {
+        shown.slot.character().is_some() && shown.slot.character() == slot.character()
+    });
+    if let Some(previous) = previous {
+        shown.orbit = previous.orbit;
+        shown.playing = previous.playing;
+    }
+    app.stage.shown = Some(shown);
+    Ok(())
+}
+
+/// What `slot` of the player's game holds, ready to show: from the front,
+/// idling, a number of its own among the models shown. Why not, in the
+/// player's words.
+pub fn load(app: &mut App, slot: MeleeSlot) -> Result<Shown, String> {
     let Some(references) = &app.game else {
         return Err("There's no game open.".into());
     };
@@ -34,34 +50,24 @@ pub fn show(app: &mut App, slot: MeleeSlot) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     let loaded = tgg_app::load_model(&slot.file_name(), &bytes, Some(references))
         .map_err(|error| error.to_string())?;
-    let (model, shared, store) = (loaded.model, loaded.shared, loaded.store);
-    let previous = app.stage.shown.take().filter(|shown| {
-        shown.slot.character().is_some() && shown.slot.character() == slot.character()
-    });
-    let (orbit, playing) = match &previous {
-        Some(previous) => (previous.orbit, previous.playing),
-        None => (CameraView::Front.orbit(), true),
-    };
     app.stage.shown_count += 1;
-    let generation = app.stage.shown_count;
-    app.stage.shown = Some(Shown {
+    Ok(Shown {
         slot,
-        model,
-        orbit,
+        model: loaded.model,
+        orbit: CameraView::Front.orbit(),
         gesture: None,
         pick: None,
-        playing,
-        shared,
-        generation,
+        playing: true,
+        shared: loaded.shared,
+        generation: app.stage.shown_count,
         posed: true,
         restart: true,
-        store,
+        store: loaded.store,
         edited: Default::default(),
         pending: Vec::new(),
         highlight: Vec::new(),
         highlight_changed: false,
-    });
-    Ok(())
+    })
 }
 
 /// Take the model off the stage.
