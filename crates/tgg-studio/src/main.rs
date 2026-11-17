@@ -11,6 +11,7 @@
 //! ```
 
 mod editor;
+mod first_run;
 mod jobs;
 mod keys;
 mod library;
@@ -24,13 +25,13 @@ mod preferences;
 mod profile;
 mod replays;
 mod report;
+mod sets;
 mod shell;
 mod signin;
 mod slippi;
 mod stage;
 mod state;
 mod ui;
-mod welcome;
 mod window;
 
 #[cfg(test)]
@@ -38,31 +39,97 @@ mod flows;
 #[cfg(all(test, feature = "melee-iso"))]
 mod iso_flows;
 
+use first_run::{FirstRun, Stage};
 use rune::AppSpec;
 use state::{App, Data, Start};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tgg_app::settings;
-use welcome::Welcome;
 
 /// A screen, as a named edit of the app at launch, for `--snap --scene`.
 type Scene = (&'static str, fn(&mut App));
 
 const SCENES: &[Scene] = &[
-    ("welcome", |app| {
+    // First run: the disc, the game, the mods to start with, and signing in.
+    ("first-run-no-disc", |app| {
+        first_run_scene(app);
         app.game = None;
-        app.welcome.games = tgg_app::discover_games();
+        app.mods.disc = mods::Disc::Missing;
     }),
-    ("stages", |app| skins(app).melee.tab = melee::Tab::Stages),
-    ("skins", |app| {
-        skins(app);
+    ("first-run-ready", |app| {
+        first_run_scene(app);
+        scene_disc(app);
     }),
-    ("fox", |app| {
-        if let Some(fox) = melee_dat::Character::from_code("Fx") {
-            melee::actions::open_fighter(skins(app), fox);
+    ("first-run-downloading", |app| {
+        first_run_scene(app);
+        scene_disc(app);
+        if let Some(first) = app.first_run.as_mut() {
+            first.stage = Stage::Downloading;
+        }
+        let progress = tgg_mod::Progress {
+            step: 0,
+            steps: 1,
+            label: "Downloading tgg-melee 0.5.0".into(),
+            bytes: 12_400_000,
+            total: Some(48_000_000),
+        };
+        app.mods.work = Some(mods::Work {
+            doing: "Installing tgg-melee 0.5.0".into(),
+            progress: std::sync::Arc::new(std::sync::Mutex::new(Some(progress))),
+            cancel: std::sync::Arc::default(),
+            target: None,
+        });
+    }),
+    ("first-run-done", |app| {
+        first_run_scene(app);
+        scene_disc(app);
+        if let Some(first) = app.first_run.as_mut() {
+            first.stage = Stage::Done;
+        }
+        app.signin.who = Some(tgg_account::SignedIn {
+            account: tgg_account::Account {
+                handle: "ciao".into(),
+                display_name: None,
+                id: None,
+            },
+            verified: true,
+        });
+    }),
+    ("first-run-none-picked", |app| {
+        first_run_scene(app);
+        scene_disc(app);
+        if let Some(first) = app.first_run.as_mut() {
+            first.picks = first_run::Picks {
+                competitive: false,
+                practice: false,
+                replays: false,
+            };
         }
     }),
-    ("fox-shine", |app| show_shared(app, "Fx", "Shine")),
-    ("fox-laser", |app| show_shared(app, "Fx", "Laser")),
+    // Skins as it opens: textures.gg's skins, with their previews (live, for
+    // a look).
+    ("skins", |app| skins_on(app, melee::Tab::Browse)),
+    ("skins-using", |app| skins_on(app, melee::Tab::Using)),
+    ("skins-made", |app| skins_on(app, melee::Tab::Made)),
+    // A skin's sheet: the first of the player's made for a costume.
+    ("skins-sheet", |app| {
+        skins_on(app, melee::Tab::Using);
+        let id = app
+            .library
+            .skins()
+            .iter()
+            .rev()
+            .find(|skin| matches!(skin.slot, Some(melee_dat::MeleeSlot::Costume { .. })))
+            .map(|skin| skin.id);
+        if let Some(id) = id {
+            melee::actions::open_skin(app, id);
+        }
+    }),
+    // Make a skin's picker, over the page.
+    ("skins-make", |app| {
+        skins_on(app, melee::Tab::Using);
+        melee::actions::make(app);
+    }),
     ("fox-edit", |app| {
         if let Some(fox) = melee_dat::Character::from_code("Fx") {
             melee::actions::open_fighter(skins(app), fox);
@@ -129,28 +196,10 @@ const SCENES: &[Scene] = &[
             }
         }
     }),
-    ("fox-moves", |app| {
-        if let Some(fox) = melee_dat::Character::from_code("Fx") {
-            melee::actions::open_fighter(skins(app), fox);
-            melee::actions::toggle_pane(app, melee::Pane::Moves);
-        }
-    }),
-    ("final-destination", |app| {
-        if let Some(stage) = app
-            .melee
-            .stages
-            .iter()
-            .copied()
-            .find(|stage| stage.name() == "Final Destination")
-        {
-            melee::actions::open_stage(skins(app), stage);
-        }
-    }),
-    ("library", melee::actions::show_mine),
-    // Review over Library: Fox's green costume, offered as a skin, and a
-    // file that isn't one.
-    ("library-review", |app| {
-        melee::actions::show_mine(app);
+    // The review before a file the player picked joins their skins: Fox's
+    // green costume, offered as a skin, and a file that isn't one.
+    ("skins-review", |app| {
+        skins_on(app, melee::Tab::Using);
         let (Some(fox), Some(references)) = (melee_dat::Character::from_code("Fx"), &app.game)
         else {
             return;
@@ -185,22 +234,81 @@ const SCENES: &[Scene] = &[
         editor::colors::apply(app);
         editor::actions::leave(app, &mut rune::Tx::default());
     }),
-    // Mods against a fake textures.gg, in a folder of its own: nothing
-    // installed; tgg-melee and Competitive installed, a mod turned off and
-    // one with an update; the review before installing Replays; and an
-    // install under way.
-    ("mods", |app| mods_scene(app, false)),
-    // Play before tgg-melee is installed.
+    // Mods against a fake textures.gg, in a folder of its own: Competitive
+    // and Replays added from it, Competitive Using and shown.
+    ("mods", |app| {
+        let net = mods_scene(app, true);
+        add_scene_set(app, &*net, "competitive");
+        add_scene_set(app, &*net, "replays");
+        show_scene_sets(app, &*net, "competitive", "competitive");
+    }),
+    // Play before tgg-melee is installed: one line saying what to set up.
     ("play-new", |app| {
         mods_scene(app, false);
         app.nav.place = nav::Place::Play;
+        app.play.opened = true;
+    }),
+    // Play: Friday night over Competitive, the queue its mods make, a
+    // player's queue open right now, and three last matches.
+    ("play", |app| {
+        play_scene(app);
+        play_queues(app, false);
+    }),
+    // A set with a queue of its own: nobody in the standing one is its
+    // queue, so the list keeps Competitive under "Always open".
+    ("play-own-queue", |app| {
+        play_scene(app);
+        play_queues(app, true);
+    }),
+    // Searching in Competitive, seven seconds in.
+    ("play-searching", |app| {
+        play_scene(app);
+        play_queues(app, false);
+        searching_scene(app);
+    }),
+    // A set's game being got ready: what's being done, how far along, Cancel.
+    ("play-launching", |app| {
+        play_scene(app);
+        play_queues(app, false);
+        launching_scene(app);
+    }),
+    // Hosting a room: its code, large, with Copy.
+    ("play-friend-host", |app| {
+        play_scene(app);
+        play_queues(app, false);
+        hosting_scene(app);
+    }),
+    // Joining one: a code typed.
+    ("play-friend-join", |app| {
+        play_scene(app);
+        play_queues(app, false);
+        app.play.friend = true;
+        app.play.join.text = "FOXD-7K2Q".into();
+    }),
+    // What the set says it plays without, above the card.
+    ("play-notices", |app| {
+        play_scene(app);
+        play_queues(app, false);
+        notices_scene(app);
+    }),
+    // The set picker's menu.
+    ("play-set-menu", |app| {
+        play_scene(app);
+        play_queues(app, false);
+        app.play.menu = true;
+    }),
+    // Native code from a publisher the player hasn't trusted, before a game.
+    ("play-trust", |app| {
+        play_scene(app);
+        play_queues(app, false);
+        trust_scene(app);
     }),
     // A toast after an install, offering Undo.
     ("toast", |app| {
-        skins(app);
+        skins_on(app, melee::Tab::Using);
         if let Ok(slot) = "PlFxOr.dat".parse() {
             app.tell_undoable(
-                "Installed DARK GOKU FOX HALO into Fox · Orange in Slippi.",
+                "Wrote DARK GOKU FOX HALO into Fox · Orange in your Melee disc.",
                 slot,
             );
         }
@@ -214,73 +322,47 @@ const SCENES: &[Scene] = &[
             );
         }
     }),
-    ("mods-installed", |app| mods_scene(app, true)),
-    // Updating Competitive to a version without Quick start, Online rules
-    // newer.
-    ("mods-update-review", |app| {
-        mods_scene(app, true);
-        if let Some(set) = app
-            .mods
-            .sets
-            .iter_mut()
-            .find(|set| set.name == "competitive")
-        {
-            set.version += 1;
-            set.mods.retain(|m| m.id.as_str() != "tgg.quick-start");
-        }
-        mods::actions::read_disk(app);
-        mods::actions::review_set(app, "competitive");
+    // Friday night: Competitive plus Replays, one mod added, one left out,
+    // and one textures.gg withdrew.
+    ("mods-own-set", |app| {
+        let net = mods_scene(app, true);
+        add_scene_set(app, &*net, "competitive");
+        add_scene_set(app, &*net, "replays");
+        make_scene_set(
+            app,
+            &*net,
+            "Friday night",
+            &["competitive"],
+            &["tgg.replay-recorder"],
+            &["tgg.quick-start"],
+        );
+        net.withdraw(
+            "tgg.skip-results",
+            "0.1.0",
+            "crashes on Windows",
+            tgg_mod::WithdrawMode::Off,
+        );
+        show_scene_sets(app, &*net, "friday-night", "friday-night");
     }),
-    // tgg-melee's versions: the one installed, and a newer one offered.
-    ("mods-versions", |app| {
-        mods_scene(app, true);
-        let newer = app.mods.releases.first().cloned().map(|mut release| {
-            release.version = "0.6.0".into();
-            release
-        });
-        app.mods.releases.splice(0..0, newer);
-        mods::actions::show_versions(app, true);
+    // Installed mods shown: the mods folder, each mod's switch.
+    ("mods-installed-set", |app| {
+        let net = mods_scene(app, true);
+        show_scene_sets(app, &*net, "installed", "installed");
     }),
-    // Online rules updating on its own, its progress in its row.
-    ("mods-updating-one", |app| {
-        mods_scene(app, true);
-        mods::actions::show_tab(app, mods::Tab::Installed);
-        let progress = tgg_mod::Progress {
-            step: 0,
-            steps: 1,
-            label: "Downloading Online rules".into(),
-            bytes: 1,
-            total: Some(2),
-        };
-        app.mods.work = Some(mods::Work {
-            doing: "Updating Online rules".into(),
-            progress: std::sync::Arc::new(std::sync::Mutex::new(Some(progress))),
-            cancel: std::sync::Arc::default(),
-            target: "tgg.online-rules".parse().ok(),
-        });
+    // Rules picked: only the mods that change how a match plays.
+    ("mods-filter", |app| {
+        let net = mods_scene(app, true);
+        add_scene_set(app, &*net, "competitive");
+        show_scene_sets(app, &*net, "competitive", "competitive");
+        mods::actions::set_filter(app, mods::Filter::Rules);
     }),
-    // Before textures.gg first answers: placeholders where the collections go.
-    ("mods-loading", |app| {
-        mods_scene(app, true);
-        app.mods.sets.clear();
-        app.mods.catalog = None;
-        app.mods.registry = mods::Registry::Asking;
-    }),
-    ("mods-installed-tab", |app| {
-        mods_scene(app, true);
-        mods::actions::show_tab(app, mods::Tab::Installed);
-    }),
-    ("mods-all", |app| {
-        mods_scene(app, true);
-        mods::actions::show_tab(app, mods::Tab::All);
-    }),
-    // Direct connect's details beside every mod.
+    // Direct connect's details where the set panel was.
     ("mods-details", |app| {
-        mods_scene(app, true);
-        mods::actions::show_tab(app, mods::Tab::All);
+        let net = mods_scene(app, true);
+        add_scene_set(app, &*net, "competitive");
+        show_scene_sets(app, &*net, "competitive", "competitive");
         if let Ok(id) = "tgg.direct-connect".parse::<tgg_mod::ModId>() {
             // Its page fetched here, not on a job, so it's there for the picture.
-            let net = app.mods.net.clone();
             if let Ok(details) = tgg_mod::mod_details(&*net, &id) {
                 for shot in &details.screenshots {
                     scene_image(app, &*net, &shot.url);
@@ -290,25 +372,48 @@ const SCENES: &[Scene] = &[
             mods::actions::select(app, &id);
         }
     }),
-    ("mods-review", |app| {
+    // New set: Online play isn't on textures.gg yet, and the sheet says so.
+    ("mods-new-set", |app| {
         mods_scene(app, true);
-        mods::actions::review_set(app, "replays");
+        mods::actions::open_new_set(app);
     }),
-    ("mods-installing", |app| {
-        mods_scene(app, false);
-        // The work alone, with nothing downloading: the picture is of the bar.
-        let progress = tgg_mod::Progress {
-            step: 0,
-            steps: 1,
-            label: "Downloading tgg-melee 0.5.0".into(),
-            bytes: 4,
-            total: Some(10),
-        };
-        app.mods.work = Some(mods::Work {
-            doing: "Installing tgg-melee 0.5.0".into(),
-            progress: std::sync::Arc::new(std::sync::Mutex::new(Some(progress))),
-            cancel: std::sync::Arc::default(),
-            target: None,
+    // Start a mod: A rule, named.
+    ("mods-start-a-mod", |app| {
+        mods_scene(app, true);
+        new_mod_scene(app);
+    }),
+    // The mod made, where it is and how to run it.
+    ("mods-start-a-mod-created", |app| {
+        mods_scene(app, true);
+        new_mod_scene(app);
+        app.new_mod.stage = newmod::Stage::Created(tgg_mod::CreatedMod {
+            dir: app.new_mod.folder(),
+            id: "neutral-spawns".parse().expect("an id"),
+            example: newmod::Kind::Rule.template().into(),
+            sdk_version: "0.1.0".into(),
+            repository: tgg_mod::Repository::Committed,
+        });
+    }),
+    // Friday night's game running: the page shows it read-only.
+    ("mods-running", |app| {
+        let net = mods_scene(app, true);
+        add_scene_set(app, &*net, "competitive");
+        make_scene_set(
+            app,
+            &*net,
+            "Friday night",
+            &["competitive"],
+            &["tgg.replay-recorder"],
+            &[],
+        );
+        show_scene_sets(app, &*net, "friday-night", "friday-night");
+        app.mods.playing = Some(mods::Playing {
+            stop: std::sync::Arc::default(),
+        });
+        app.sets.session = Some(crate::sets::Session {
+            how: crate::sets::How::Offline,
+            name: "Friday night".into(),
+            started: std::time::Instant::now(),
         });
     }),
     // The launch video's start: a player new to mods, against the live
@@ -324,31 +429,6 @@ const SCENES: &[Scene] = &[
         if let Some(references) = &app.game {
             app.mods.disc = mods::Disc::Found(references.game().path().to_owned());
         }
-    }),
-    // New mod over Mods, filled in, CMake missing (the SDK and tools as
-    // given here, not looked for).
-    ("new-mod", |app| {
-        mods_scene(app, true);
-        new_mod_scene(app);
-        app.new_mod.name.text = "Neutral spawns".into();
-    }),
-    // New mod for the player's own tgg-melee: its real SDK and tools.
-    ("new-mod-here", |app| {
-        mods::actions::read_disk(app);
-        newmod::actions::open(app);
-    }),
-    // A mod just started.
-    ("new-mod-created", |app| {
-        mods_scene(app, true);
-        new_mod_scene(app);
-        app.new_mod.name.text = "Neutral spawns".into();
-        app.new_mod.stage = newmod::Stage::Created(newmod::library::CreatedMod {
-            dir: app.new_mod.folder(),
-            id: "neutral-spawns".parse().expect("an id"),
-            example: newmod::TEMPLATE.into(),
-            sdk_version: "0.1.0".into(),
-            repository: newmod::library::Repository::Committed,
-        });
     }),
     ("settings", preferences::actions::open),
     ("settings-menu", |app| {
@@ -375,22 +455,18 @@ const SCENES: &[Scene] = &[
         });
     }),
     // You, signed in as ciao, with what's been made on this computer.
-    // $TGG_SCENE_HANDLE names whose profile textures.gg is asked for (for a
-    // look; the default has none).
     ("profile", |app| {
-        let handle = std::env::var("TGG_SCENE_HANDLE").unwrap_or_else(|_| "ciao".into());
         app.signin.who = Some(tgg_account::SignedIn {
             account: tgg_account::Account {
-                display_name: Some(handle.clone()),
-                handle,
+                display_name: Some("ciao".into()),
+                handle: "ciao".into(),
                 id: None,
             },
             verified: true,
         });
-        // Read before the picture is taken.
         app.jobs.inline = true;
         nav::actions::go(app, nav::Place::Profile);
-        jobs::poll_now(app);
+        poll_inline(app);
         app.jobs.inline = false;
     }),
     // The player's own replays, read and resolved against the live
@@ -398,14 +474,14 @@ const SCENES: &[Scene] = &[
     ("replays", |app| {
         app.jobs.inline = true;
         nav::actions::go(app, nav::Place::Replays);
-        jobs::poll_now(app);
+        poll_inline(app);
         app.jobs.inline = false;
     }),
     // The same, its first two-player replay chosen, with its stats.
     ("replay-details", |app| {
         app.jobs.inline = true;
         nav::actions::go(app, nav::Place::Replays);
-        jobs::poll_now(app);
+        poll_inline(app);
         let first = app
             .replays
             .items
@@ -418,14 +494,33 @@ const SCENES: &[Scene] = &[
             .map(|item| item.path.clone());
         if let Some(path) = first {
             replays::actions::select(app, &path);
-            jobs::poll_now(app);
+            poll_inline(app);
+        }
+        app.jobs.inline = false;
+    }),
+    // What a replay says before it plays when one of its mods was withdrawn
+    // (the notices are fixed here, for the picture).
+    ("replays-withdrawn", |app| {
+        app.jobs.inline = true;
+        nav::actions::go(app, nav::Place::Replays);
+        poll_inline(app);
+        let found = app.replays.items.iter().find_map(|item| {
+            let plan = item.plan.clone()?;
+            matches!(plan.game, tgg_mod::GameNeed::Installed(_))
+                .then_some((item.path.clone(), plan))
+        });
+        if let Some((path, plan)) = found {
+            app.replays.selected = Some(path.clone());
+            app.replays.review = Some(replays::Review {
+                path,
+                plan,
+                remember: false,
+                notices: vec!["Playing without Turbo: withdrawn (crashes on Windows)".to_owned()],
+            });
         }
         app.jobs.inline = false;
     }),
     ("no-sidebar", |app| app.nav.sidebar = false),
-    ("paper", |app| {
-        app.settings.set_appearance(settings::Appearance::Paper)
-    }),
 ];
 
 fn main() {
@@ -457,6 +552,12 @@ fn main() {
         let app = rune::App::new(spec)
             .window_options(rune::WindowOptions {
                 position,
+                // See-through where the sidebar is glass (`ui::tokens::GLASS`):
+                // the sidebar fills its part with smoke, everything else fills
+                // its own part solid. Where the GPU can't present a
+                // see-through window, Rune makes it opaque and the smoke sits
+                // on black, close to the solid sidebar.
+                transparent: ui::tokens::GLASS,
                 ..Default::default()
             })
             // Coming back to the window: a sign-in or sign-out made with `tgg` shows.
@@ -464,12 +565,8 @@ fn main() {
             // textures-gg:// links, on macOS.
             .on_open_url(links::opened_with)
             .init(move || {
-                let mut app = App::new(
-                    start(iso.as_deref()),
-                    settings::load(),
-                    Data::of_player(),
-                    true,
-                );
+                let data = Data::of_player();
+                let mut app = App::new(start(iso.as_deref(), &data), settings::load(), data, true);
                 open_files(&mut app);
                 if let Some(link) = links::in_arguments(rune::extra_args()) {
                     links::open(&mut app, link);
@@ -488,35 +585,61 @@ fn main() {
     tgg_app::external::remove_temporary_directory();
 }
 
-/// The app as a plain launch finds it, for Rune's tooling.
+/// The app as a plain launch finds it, for Rune's tooling. Scenes show the
+/// app as set up when a game is found: they aren't the player's first run.
 fn launch() -> App {
-    App::new(start(None), settings::load(), Data::of_player(), true)
+    let data = Data::of_player();
+    let start = match start(None, &data) {
+        Start::FirstRun {
+            game: Some(game), ..
+        } => Start::Game(game),
+        other => other,
+    };
+    App::new(start, settings::load(), data, true)
 }
 
 /// The game given, else the one chosen before, else the one Slippi Launcher
-/// plays or one in Dolphin's folders, remembered so the next launch opens
-/// it directly. Welcome lists the games found otherwise, or says why a
-/// given one won't do. A snapshot remembers nothing: it's not the player
-/// choosing.
-fn start(iso: Option<&Path>) -> Start {
+/// plays or one in Dolphin's folders, remembered so the next launch opens it
+/// directly. With none of those, a game found in the player's folders is
+/// theirs without a press. First run shows until there is one and tgg-melee
+/// is installed; a given or remembered game it can't use says why.
+fn start(iso: Option<&Path>, data: &Data) -> Start {
+    let installed = tgg_mod::installed_ports(&data.ports)
+        .is_ok_and(|ports| ports.iter().any(|port| port.current));
     let found = tgg_app::find_game(iso).map(|found| found.map(|(game, _)| game));
-    let problem = match found {
+    let (game, problem) = match found {
         Ok(Some(game)) => {
             if !snapshot() {
                 tgg_app::remember_game(&game);
             }
             match tgg_app::game_references(game) {
-                Ok(references) => return Start::Game(references),
-                Err(error) => error.to_string(),
+                Ok(references) => (Some(references), String::new()),
+                Err(error) => (None, error.to_string()),
             }
         }
-        Ok(None) => String::new(),
-        Err(error) => error.to_string(),
+        Ok(None) => (None, String::new()),
+        Err(error) => (None, error.to_string()),
     };
-    Start::Welcome(Welcome {
-        games: tgg_app::discover_games(),
+    // Nothing given or saved: the first Melee in the player's folders.
+    let game = game.or_else(|| {
+        if iso.is_some() {
+            return None;
+        }
+        let choice = tgg_app::discover_games().into_iter().next()?;
+        let game = tgg_app::Game::open(&choice.path).ok()?;
+        if !snapshot() {
+            tgg_app::remember_game(&game);
+        }
+        tgg_app::game_references(game).ok()
+    });
+    if installed && let Some(game) = game {
+        return Start::Game(game);
+    }
+    let state = FirstRun {
         problem: (!problem.is_empty()).then_some(problem),
-    })
+        ..FirstRun::default()
+    };
+    Start::FirstRun { game, state }
 }
 
 /// `--iso PATH`, if given. Rune reads its own flags (`--snap`, `--scene`)
@@ -531,23 +654,30 @@ fn iso_argument() -> Option<PathBuf> {
     None
 }
 
-/// For scenes: open the fighter `code` names and play the move that shows
-/// its shared model `name`.
-fn show_shared(app: &mut App, code: &str, name: &str) {
-    let Some(character) = melee_dat::Character::from_code(code) else {
-        return;
-    };
-    melee::actions::open_fighter(skins(app), character);
-    if let Some(model) = melee_dat::SharedModel::of(character).find(|model| model.name() == name) {
-        stage::actions::play_action(app, model.action());
+/// For scenes: jobs run inline, and a result can start the next one (the
+/// replays read, then they're planned), so hand results over until none is
+/// left for the picture to wait on.
+fn poll_inline(app: &mut App) {
+    for _ in 0..4 {
+        jobs::poll_now(app);
     }
 }
 
-/// For scenes: New mod open, the SDK's examples and the tools found given
-/// rather than looked for: GCC and git installed, CMake not.
+/// For scenes: Skins on `tab`, the site's listing and pictures read inline
+/// when it's Browse (live, for a look).
+fn skins_on(app: &mut App, tab: melee::Tab) {
+    app.jobs.inline = true;
+    nav::actions::go(app, nav::Place::Skins);
+    melee::actions::show_tab(app, tab);
+    poll_inline(app);
+    app.jobs.inline = false;
+}
+
+/// For scenes: Start a mod open, its SDK and the tools found given rather
+/// than fetched: GCC and git installed, CMake not.
 fn new_mod_scene(app: &mut App) {
     let json = format!(
-        r#"{{"api": "{}", "api_version": "0.1", "name": "tgg-melee", "version": "0.1.0",
+        r#"{{"api": "{}", "api_version": "1.0", "name": "tgg-melee", "version": "0.1.0",
             "game_abi": "0123456789abcdef", "compiler": "GNU", "compiler_version": "15.3.0",
             "processor": "x86_64", "target": "x86_64-linux-gnu", "include_dirs": [],
             "glibc": "2.34", "symbols": "symbols.txt"}}"#,
@@ -555,16 +685,10 @@ fn new_mod_scene(app: &mut App) {
     );
     let sdk = tgg_mod::Sdk::parse(json.as_bytes(), std::path::Path::new("/sdk"))
         .expect("the scene's SDK reads");
-    let examples = vec![
-        newmod::TEMPLATE.into(),
-        "damage-log".into(),
-        "lcancel-trainer".into(),
-    ];
     app.new_mod = newmod::NewMod {
         open: true,
         parent: PathBuf::from("/home/player/mods"),
-        example: newmod::TEMPLATE.into(),
-        sdk: Some(Ok((sdk, examples))),
+        sdk: Some(Ok(sdk)),
         tools: Some(newmod::library::Tools {
             cc: Some(PathBuf::from("/usr/bin/gcc")),
             cmake: None,
@@ -573,13 +697,51 @@ fn new_mod_scene(app: &mut App) {
         }),
         ..newmod::NewMod::default()
     };
+    app.new_mod.name.text = "Neutral spawns".into();
+}
+
+/// For scenes: first run over a fake textures.gg, its releases and sets
+/// filled in place so nothing arrives mid-snapshot.
+fn first_run_scene(app: &mut App) -> &mut App {
+    let folder = std::env::temp_dir().join("tgg-studio-scene-first-run");
+    let _ = std::fs::remove_dir_all(&folder);
+    app.data.mods = folder.join("mods");
+    app.data.ports = folder.join("tgg-data").join("tgg").join("ports");
+    app.data.tgg = folder.join("tgg-data");
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let mut releases = tgg_mod::port_releases(&*net).unwrap_or_default();
+    if let Some(release) = releases.first_mut() {
+        // A size a player knows, as the real one is.
+        release.files.game.size = 48_000_000;
+    }
+    let mut sets = tgg_mod::sets(&*net).unwrap_or_default();
+    // The fake has Competitive and Replays; Practice is textures.gg's third.
+    if let Some(mut practice) = sets.iter().find(|set| set.name == "competitive").cloned() {
+        practice.name = "practice".into();
+        practice.title = "Practice".into();
+        practice.description = "Drills, trainers, save states and a practice stage.".into();
+        sets.push(practice);
+    }
+    app.mods.net = net;
+    app.mods.releases = releases;
+    app.mods.sets = sets;
+    app.mods.registry = mods::Registry::Answered;
+    app.mods.disc = mods::Disc::Missing;
+    app.first_run = Some(FirstRun::default());
+    app
+}
+
+/// For scenes: the disc found, without needing one on this computer.
+fn scene_disc(app: &mut App) {
+    app.mods.disc = mods::Disc::Found(PathBuf::from("/scene/melee.iso"));
 }
 
 /// For scenes: Mods against a fake textures.gg, its mods and ports in a
 /// scratch folder, filled in place so nothing arrives mid-snapshot. With
-/// `installed`, tgg-melee and Competitive are installed, Quick start turned
-/// off, and textures.gg has a newer Online rules.
-fn mods_scene(app: &mut App, installed: bool) {
+/// `installed`, tgg-melee is installed, Competitive's mods are in the mods
+/// folder with Quick start turned off, and textures.gg has a newer Online
+/// rules.
+fn mods_scene(app: &mut App, installed: bool) -> std::sync::Arc<tgg_mod::FakeNet> {
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
     let folder = std::env::temp_dir().join("tgg-studio-scene-mods");
@@ -587,6 +749,9 @@ fn mods_scene(app: &mut App, installed: bool) {
     app.data.mods = folder.join("mods");
     app.data.ports = folder.join("tgg-data").join("tgg").join("ports");
     app.data.tgg = folder.join("tgg-data");
+    app.data.skins = folder.join("skins.json");
+    app.data.library = folder.join("library");
+    app.data.history = folder.join("games");
     let net = Arc::new(tgg_mod::FakeNet::new());
     let releases = tgg_mod::port_releases(&*net).unwrap_or_default();
     let never = AtomicBool::new(false);
@@ -599,16 +764,17 @@ fn mods_scene(app: &mut App, installed: bool) {
             &never,
         );
     }
-    let port = tgg_mod::installed_ports(&app.data.ports)
-        .ok()
-        .and_then(|ports| ports.into_iter().find(|port| port.current));
+    let ports = tgg_mod::installed_ports(&app.data.ports).unwrap_or_default();
+    let port = ports.iter().find(|port| port.current).cloned();
     let sets = tgg_mod::sets(&*net).unwrap_or_default();
     let catalog = port
         .as_ref()
         .and_then(|port| tgg_mod::catalog(&*net, &port.port()).ok());
-    if let (Some(catalog), Some(competitive)) =
-        (&catalog, sets.iter().find(|set| set.name == "competitive"))
-    {
+    if let (true, Some(catalog), Some(competitive)) = (
+        installed,
+        &catalog,
+        sets.iter().find(|set| set.name == "competitive"),
+    ) {
         let plan = tgg_mod::plan_set(competitive, catalog, &tgg_mod::Local::empty());
         let _ = tgg_mod::apply_cached(
             &*net,
@@ -621,7 +787,6 @@ fn mods_scene(app: &mut App, installed: bool) {
         if let Ok(id) = "tgg.quick-start".parse() {
             let _ = tgg_mod::set_enabled(&app.data.mods, &id, false);
         }
-        net.publish_mod("tgg.online-rules", "Online rules", "0.1.1", &[]);
     }
     // As the app fetches: before tgg-melee is installed, its newest release's catalog.
     let layout = port.as_ref().map(tgg_mod::PortInstall::port).or_else(|| {
@@ -639,15 +804,403 @@ fn mods_scene(app: &mut App, installed: bool) {
             app.mods.listings.insert(summary.id.clone(), summary);
         }
     }
-    app.mods.net = net;
+    app.mods.net = net.clone();
     app.mods.releases = releases;
+    app.mods.ports = ports;
+    let layout = port.as_ref().map(tgg_mod::PortInstall::port);
+    app.mods.local =
+        tgg_mod::local(&app.data.mods, layout.as_ref()).unwrap_or_else(|_| tgg_mod::Local::empty());
+    app.mods.skins = tgg_mod::skins(&app.data.skins).unwrap_or_default();
     app.mods.sets = sets;
     app.mods.catalog = catalog;
     app.mods.registry = mods::Registry::Answered;
     app.mods.disc = app.game.as_ref().map_or(mods::Disc::Missing, |references| {
         mods::Disc::Found(references.game().path().to_owned())
     });
-    nav::actions::go(app, nav::Place::Mods);
+    app.nav.place = nav::Place::Mods;
+    net
+}
+
+/// For scenes: add the textures.gg set `link` to the player's sets as it
+/// is, locked.
+fn add_scene_set(app: &mut App, net: &dyn tgg_mod::Net, link: &str) {
+    let _ = tgg_mod::sets::get(net, &app.data.tgg, link);
+}
+
+/// For scenes: a set of the player's named `name`, building on `links`,
+/// with `add`'s mods added and `left_out`'s left out.
+fn make_scene_set(
+    app: &mut App,
+    net: &dyn tgg_mod::Net,
+    name: &str,
+    links: &[&str],
+    add: &[&str],
+    left_out: &[&str],
+) {
+    let (data, local) = (app.data.tgg.clone(), app.mods.local.clone());
+    let Ok(mut set) = tgg_mod::sets::new(&data, name) else {
+        return;
+    };
+    for link in links {
+        match tgg_mod::sets::build_on(net, &data, &local, &set.key, link) {
+            Ok(built) => set = built,
+            Err(_) => return,
+        }
+    }
+    for id in add {
+        if let Ok(id) = id.parse() {
+            set.add(id, tgg_mod::sets::Want::Latest);
+        }
+    }
+    for id in left_out {
+        if let Ok(id) = id.parse() {
+            set.leave_out(&id, true);
+        }
+    }
+    let _ = tgg_mod::sets::save(&data, &set);
+}
+
+/// For scenes: the sets as the scene's folder has them, `active` the one
+/// Play starts and `chosen` the one the page shows, their plans worked out
+/// here so nothing arrives mid-snapshot.
+fn show_scene_sets(app: &mut App, net: &dyn tgg_mod::Net, active: &str, chosen: &str) {
+    use std::sync::Arc;
+    let _ = tgg_mod::sets::activate(&app.data.tgg, active);
+    app.sets.list = tgg_mod::sets::list(&app.data.tgg, &app.mods.local).unwrap_or_default();
+    app.sets.active = active.to_owned();
+    app.mods.chosen_set = Some(chosen.to_owned());
+    for key in [active, chosen] {
+        let Some(set) = app.sets.get(key).cloned() else {
+            continue;
+        };
+        if set.is_installed() {
+            continue;
+        }
+        if let Ok(plan) = tgg_mod::sets::plan(net, &app.data.tgg, &app.data.mods, &set, false) {
+            app.sets
+                .plans
+                .insert(key.to_owned(), crate::sets::Planned::Ready(Arc::new(plan)));
+        }
+    }
+}
+
+/// For scenes: Play with tgg-melee and Competitive installed, Friday night
+/// building on Competitive, a signed-in player and three last matches.
+/// FakeNet has no queue endpoint, and a scene runs no frames, so the jobs
+/// Mods starts are run here and their answers taken before the scene sets
+/// what the shot shows.
+fn play_scene(app: &mut App) {
+    use tgg_mod::sets;
+    app.jobs.inline = true;
+    mods_scene(app, true);
+    let net = app.mods.net.clone();
+    let (data, mods) = (app.data.tgg.clone(), app.data.mods.clone());
+    let local = app.mods.local.clone();
+    if let Err(error) = sets::get(&*net, &data, "competitive") {
+        tgg_app::log(&format!("scene: adding Competitive: {error}"));
+    }
+    if let Ok(mut friday) = sets::new(&data, "Friday night") {
+        match sets::build_on(&*net, &data, &local, &friday.key, "competitive") {
+            Ok(built) => friday = built,
+            Err(error) => tgg_app::log(&format!("scene: Friday night on Competitive: {error}")),
+        }
+        for id in ["tgg.quick-start", "tgg.skip-results", "tgg.legal-stages"] {
+            if let Ok(id) = id.parse() {
+                friday.add(id, sets::Want::Latest);
+            }
+        }
+        if let Err(error) = sets::save(&data, &friday) {
+            tgg_app::log(&format!("scene: saving Friday night: {error}"));
+        }
+    }
+    let list = sets::list(&data, &local).unwrap_or_default();
+    let mut plans = std::collections::HashMap::new();
+    for set in &list {
+        if set.is_installed() {
+            continue;
+        }
+        match sets::plan(&*net, &data, &mods, set, false) {
+            Ok(mut plan) => {
+                // The fake's packages are data, which only the player sees;
+                // Competitive's mods decide the queue, so make them count.
+                for mod_ in &mut plan.plan.mods {
+                    mod_.netplay = tgg_mod::Netplay::Code;
+                }
+                plans.insert(set.key.clone(), crate::sets::Planned::Ready(Arc::new(plan)));
+            }
+            Err(error) => tgg_app::log(&format!("scene: planning {}: {error}", set.name)),
+        }
+    }
+    // What Mods started, now; then the scene's own state, last, so nothing
+    // arriving later (there are no later frames) undoes it.
+    app.play.opened = true;
+    for _ in 0..8 {
+        jobs::poll_now(app);
+    }
+    app.jobs.inline = false;
+    app.sets.list = list;
+    app.sets.active = "friday-night".to_owned();
+    app.sets.plans = plans;
+    app.sets.launching = None;
+    app.sets.session = None;
+    app.signin.who = Some(signed_in("ciao"));
+    play_matches(app);
+    app.nav.place = nav::Place::Play;
+}
+
+/// For scenes: the queues the meeting point would list. With `own`, the
+/// set's queue is one a player made, so Competitive stays in the list.
+fn play_queues(app: &mut App, own: bool) {
+    let Some(friday) = app.sets.plan("friday-night").map(crate::play::gameplay) else {
+        return;
+    };
+    let competitive = app
+        .sets
+        .plan("competitive")
+        .map(crate::play::gameplay)
+        .unwrap_or_default();
+    let queues = if own {
+        vec![
+            play_queue("player", "Friday night", 2, friday),
+            play_queue("standing", "Competitive", 14, competitive),
+            play_queue(
+                "player",
+                "First to 3",
+                4,
+                queue_mods(&[
+                    "tgg.quick-start",
+                    "tgg.skip-results",
+                    "tgg.legal-stages",
+                    "tgg.netplay",
+                ]),
+            ),
+        ]
+    } else {
+        vec![
+            play_queue("standing", "Competitive", 14, friday),
+            play_queue("player", "Turbo", 1, queue_mods(&["tgg.netplay"])),
+        ]
+    };
+    app.play.queues = Some(Ok(queues));
+}
+
+fn play_queue(
+    kind: &str,
+    label: &str,
+    searching: u32,
+    mods: Vec<tgg_mod::sets::QueueMod>,
+) -> crate::play::Queue {
+    crate::play::Queue {
+        kind: kind.to_owned(),
+        label: label.to_owned(),
+        searching,
+        mods,
+        set: None,
+    }
+}
+
+fn queue_mods(ids: &[&str]) -> Vec<tgg_mod::sets::QueueMod> {
+    ids.iter()
+        .filter_map(|id| {
+            Some(tgg_mod::sets::QueueMod {
+                id: id.parse().ok()?,
+                version: "1.0.0".parse().ok()?,
+            })
+        })
+        .collect()
+}
+
+/// For scenes: the player's three last matches, and pictures of the
+/// fighters in them and of the one the card shows.
+fn play_matches(app: &mut App) {
+    use crate::jobs::renders::RenderKey;
+    use tgg_mod::{ReplayInfo, ReplayPlayer};
+    let me = ReplayPlayer {
+        port: 0,
+        name: Some("ciao".into()),
+        code: None,
+        character: Some(2),
+        costume: Some(2),
+    };
+    let others = [
+        ("waffle", 20u8, 0u8, 31u16, false),
+        ("santi", 15, 1, 28, true),
+        ("porkchop", 0, 3, 32, false),
+    ];
+    let mut items = Vec::new();
+    let mut slots = Vec::new();
+    for (index, (name, character, costume, stage, lost)) in others.into_iter().enumerate() {
+        if let Some(slot) = tgg_app::replays::character(character)
+            .and_then(|character| crate::replays::actions::costume_slot(app, character, costume))
+        {
+            slots.push(slot);
+        }
+        items.push(crate::replays::Item {
+            path: PathBuf::from(format!("/home/player/replays/Game_{index}.slp")),
+            source: "tgg-melee".to_owned(),
+            info: Some(ReplayInfo {
+                started: None,
+                frames: Some(60 * 110),
+                stage: Some(stage),
+                slippi: None,
+                played_on: Some("tgg-melee".to_owned()),
+                players: vec![
+                    me.clone(),
+                    ReplayPlayer {
+                        port: 1,
+                        name: Some(name.to_owned()),
+                        code: None,
+                        character: Some(character),
+                        costume: Some(costume),
+                    },
+                ],
+                winner: Some(if lost { 1 } else { 0 }),
+            }),
+            profile: Err("a scene's replay".to_owned()),
+            plan: None,
+            status: crate::replays::Status::Unknown,
+        });
+    }
+    app.replays.items = items;
+    app.replays.scanned = true;
+    app.replays.planned = true;
+    app.replays.folders = vec![(
+        "tgg-melee".to_owned(),
+        PathBuf::from("/home/player/replays"),
+    )];
+    let Some(iso) = app
+        .game
+        .as_ref()
+        .map(|references| references.game().path().to_owned())
+    else {
+        return;
+    };
+    let mut keys = Vec::new();
+    // The player's own tile in each row: Fox, in the costume of the latest.
+    if let Some(me) = melee_dat::Character::from_code("Fx")
+        .and_then(|fox| crate::replays::actions::costume_slot(app, fox, 2))
+    {
+        slots.push(me);
+    }
+    for slot in slots {
+        keys.push(RenderKey::Slot(slot));
+        app.renders.request(&iso, slot);
+    }
+    // The card's fighter: the one the latest match was played in.
+    let hero = melee_dat::Character::from_code("Fx")
+        .and_then(|fox| crate::replays::actions::costume_slot(app, fox, 2));
+    app.play.hero = hero;
+    if let Some(hero) = hero {
+        keys.push(RenderKey::Fighter(hero));
+        app.renders.request_fighter(&iso, hero);
+    }
+    // The shot is taken at once: wait for the worker, so every picture is in.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    while !keys.iter().all(|key| app.renders.drawn(*key)) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+/// For scenes: searching in Competitive, seven seconds in.
+fn searching_scene(app: &mut App) {
+    app.sets.session = Some(crate::sets::Session {
+        how: crate::sets::How::Search,
+        name: "Friday night".to_owned(),
+        started: std::time::Instant::now() - std::time::Duration::from_secs(7),
+    });
+    app.mods.playing = Some(crate::mods::Playing {
+        stop: Arc::default(),
+    });
+}
+
+/// For scenes: getting Friday night's mods ready, a third of the way.
+fn launching_scene(app: &mut App) {
+    let progress = tgg_mod::Progress {
+        step: 0,
+        steps: 2,
+        label: "Downloading Legal stages".into(),
+        bytes: 3,
+        total: Some(10),
+    };
+    app.sets.launching = Some(crate::sets::Launching {
+        doing: "Getting Friday night's mods".into(),
+        progress: Arc::new(std::sync::Mutex::new(Some(progress))),
+        cancel: Arc::default(),
+    });
+}
+
+/// For scenes: hosting a room, its code out.
+fn hosting_scene(app: &mut App) {
+    app.sets.session = Some(crate::sets::Session {
+        how: crate::sets::How::Host,
+        name: "Friday night".to_owned(),
+        started: std::time::Instant::now() - std::time::Duration::from_secs(12),
+    });
+    app.mods.playing = Some(crate::mods::Playing {
+        stop: Arc::default(),
+    });
+    app.play.friend = true;
+    // What the game writes when it makes the room; Play reads the log each
+    // second while a game runs, so the code has to be there.
+    let log = crate::sets::actions::game_log(app);
+    if let Some(folder) = log.parent() {
+        let _ = std::fs::create_dir_all(folder);
+    }
+    let _ = std::fs::write(&log, "tgg.direct-connect: meet: in room FOXD-7K2Q\n");
+    app.play.log.room = Some("FOXD-7K2Q".into());
+}
+
+/// For scenes: Friday night's game waits on the player's yes to native code
+/// from a publisher other than textures.gg.
+fn trust_scene(app: &mut App) {
+    let Some(set) = app.sets.get("friday-night").cloned() else {
+        return;
+    };
+    let Some(crate::sets::Planned::Ready(plan)) = app.sets.plans.get("friday-night").cloned()
+    else {
+        return;
+    };
+    app.sets.trust = Some(crate::sets::Trust {
+        how: crate::sets::How::Search,
+        source: crate::sets::Source::Set { set, plan },
+        publishers: vec![(
+            "u-fizzi".into(),
+            "Fizzi".into(),
+            vec!["Rollback".into(), "Frame data".into()],
+        )],
+        remember: false,
+    });
+}
+
+/// For scenes: what the set plays without, above the card.
+fn notices_scene(app: &mut App) {
+    let Some(crate::sets::Planned::Ready(plan)) = app.sets.plans.get_mut("friday-night") else {
+        return;
+    };
+    let plan = std::sync::Arc::make_mut(plan);
+    plan.notices
+        .push("Competitive changed: added Prevent wobbling".to_owned());
+    if let Ok(id) = "tgg.turbo".parse() {
+        plan.mods.push(tgg_mod::sets::SetMod {
+            id,
+            group: tgg_mod::sets::Group::Added,
+            version: None,
+            class: None,
+            skipped: Some("withdrawn (crashes on Windows)".to_owned()),
+        });
+    }
+}
+
+/// The account a scene is signed in as.
+fn signed_in(handle: &str) -> tgg_account::SignedIn {
+    tgg_account::SignedIn {
+        account: tgg_account::Account {
+            handle: handle.to_owned(),
+            display_name: None,
+            id: None,
+        },
+        verified: true,
+    }
 }
 
 /// Whether this run is a snapshot (`--snap`), for Rune's tooling.

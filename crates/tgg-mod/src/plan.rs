@@ -89,7 +89,7 @@ impl fmt::Display for Problem {
             }
             Problem::Conflict { id, conflict } => write!(
                 f,
-                "{id} and {} both replace {}; only one of them loads",
+                "{id} and {} both replace {}, so only one of them loads",
                 conflict.with, conflict.replaces
             ),
             Problem::Unmet { id, missing } => {
@@ -544,9 +544,12 @@ fn record(lock: &mut Lock, step: &Step, sha256: Option<String>) {
         sha256: None,
         sets: Vec::new(),
         direct: false,
+        withdrawn: None,
     });
     entry.version = step.manifest.version.clone();
     entry.sha256 = sha256;
+    // Another package replaces the one tgg turned off.
+    entry.withdrawn = None;
     for set in &step.sets {
         if !entry.sets.contains(set) {
             entry.sets.push(set.clone());

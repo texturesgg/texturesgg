@@ -2,11 +2,11 @@
 
 use crate::state::App;
 use rune::{FileDialogOptions, Tx};
-use tgg_app::settings::Appearance;
 
 /// Show the dialog: the apps that open PNGs as they are now, and the image
 /// editor's field showing when the one kept is none of them.
 pub fn open(app: &mut App) {
+    crate::mods::actions::read_disk(app);
     let kept = app.settings.external_editor.clone();
     let apps = tgg_app::image_apps::image_apps();
     let preferences = &mut app.preferences;
@@ -68,12 +68,6 @@ pub fn report_problem(app: &mut App) {
     crate::report::actions::open(app, false);
 }
 
-/// Draw in `appearance`'s palette, and remember it.
-pub fn set_appearance(app: &mut App, appearance: Appearance) {
-    app.preferences.menu = None;
-    app.change_settings(move |settings| settings.set_appearance(appearance));
-}
-
 /// Check for a newer version at launch, or not.
 pub fn set_update_check(app: &mut App, on: bool) {
     app.change_settings(move |settings| settings.check_for_updates = Some(on));
@@ -92,13 +86,10 @@ pub fn choose_game(app: &mut App, tx: &mut Tx) {
     }
     .filter("GameCube disc image", &["iso", "gcm"]);
     tx.open_file(options, |app: &mut App, answer, _| match answer {
-        Ok(Some(path)) => {
-            crate::welcome::actions::use_game_at(app, &path);
-            match app.welcome.problem.take() {
-                Some(problem) => app.tell(problem, true),
-                None => app.tell("Changed games.", false),
-            }
-        }
+        Ok(Some(path)) => match crate::first_run::actions::use_game_at(app, &path) {
+            Ok(()) => app.tell("Changed games.", false),
+            Err(problem) => app.tell(problem, true),
+        },
         Ok(None) => {}
         Err(error) => app.tell(format!("The file dialog couldn't open: {error}"), true),
     });

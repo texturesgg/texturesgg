@@ -141,7 +141,7 @@ impl Player<'_> {
     fn port(&self) -> Result<&Port> {
         self.port
             .as_ref()
-            .ok_or_else(|| anyhow!("tgg-melee isn't installed; run tgg port install"))
+            .ok_or_else(|| anyhow!("tgg-melee isn't installed. Run tgg port install"))
     }
 
     fn local(&self) -> Result<Local> {
@@ -156,6 +156,7 @@ impl Player<'_> {
             .collect::<Result<Vec<_>>>()?;
         let port = self.port()?;
         let catalog = tgg_mod::catalog(self.net, port)?;
+        self.withdrawn(&catalog)?;
         let local = self.local()?;
         let plan = match set {
             Some(name) => {
@@ -164,7 +165,7 @@ impl Player<'_> {
                     .iter()
                     .find(|set| set.name == name || set.title.eq_ignore_ascii_case(name))
                     .ok_or_else(|| {
-                        anyhow!("textures.gg has no set {name}; tgg mod sets lists them")
+                        anyhow!("textures.gg has no set {name}. tgg mod sets lists the sets")
                     })?;
                 self.out.line(format_args!(
                     "{} (set version {}) for tgg-melee {}:",
@@ -188,6 +189,8 @@ impl Player<'_> {
         }
         let sets = tgg_mod::sets(self.net)?;
         let catalog = tgg_mod::catalog(self.net, port)?;
+        self.withdrawn(&catalog)?;
+        let local = self.local()?;
         let plan = match set {
             Some(name) => tgg_mod::plan_set_update(name, &sets, &catalog, &local)?,
             None => tgg_mod::plan_updates(&sets, &catalog, &local),
@@ -205,6 +208,15 @@ impl Player<'_> {
         self.carry_out(&plan, "Update")?;
         if set.is_none() {
             self.port_update();
+        }
+        Ok(())
+    }
+
+    /// Act on the catalog's withdrawn releases in the mods folder, saying
+    /// what changed.
+    fn withdrawn(&self, catalog: &tgg_mod::Catalog) -> Result<()> {
+        for notice in tgg_mod::apply_withdrawn(&self.mods, catalog)? {
+            self.out.line(notice);
         }
         Ok(())
     }
@@ -494,7 +506,7 @@ impl Player<'_> {
                 for name in m.sets() {
                     if let Some(set) = before.set(name) {
                         self.out.line(format_args!(
-                            "The set {} is incomplete without it; {} puts it back",
+                            "The set {} is incomplete without it. {} puts it back",
                             set.set.title,
                             crate::ui::cmd(format!("tgg mod install --set {}", set.set.name))
                         ));
@@ -817,7 +829,7 @@ mod tests {
         assert_eq!(
             player.out.take(),
             "Removed tgg.replay-recorder\n\
-             The set Replays is incomplete without it; tgg mod install --set replays puts it back\n"
+             The set Replays is incomplete without it. tgg mod install --set replays puts it back\n"
         );
         player.remove(Some("replays"), &[]).expect("remove the set");
         assert_eq!(
@@ -864,7 +876,7 @@ mod tests {
         ] {
             assert_eq!(
                 error.to_string(),
-                "can't reach textures.gg; what's installed still works"
+                "can't reach textures.gg. What's installed still works"
             );
         }
     }
@@ -895,7 +907,7 @@ mod tests {
         let error = player.install(Some("replays"), &[]).unwrap_err();
         assert_eq!(
             error.to_string(),
-            "tgg-melee isn't installed; run tgg port install"
+            "tgg-melee isn't installed. Run tgg port install"
         );
         player.list(false).expect("list without a game");
     }

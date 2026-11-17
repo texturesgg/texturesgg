@@ -1,20 +1,17 @@
-//! The New mod dialog: its name, id, folder and example in a form, a line
-//! on the tools that build mods; once it's made, where it is and the
-//! commands that build and run it.
+//! The Start a mod sheet: what the player wants to make and what it's
+//! called, then, once it's made, where it is, the command that runs it, and
+//! how to open it and read the guide.
 
-use super::library::{CreatedMod, Repository, Tools};
-use super::{Fetching, NewMod, Stage, actions, id_from};
+use super::actions;
+use super::library::Tools;
+use super::{CreatedMod, Kind, NewMod, Stage};
 use crate::state::App;
 use crate::ui::tokens::{Palette, radius, size, space, text};
 use crate::ui::{
-    ButtonKind, Dialog, DialogWidth, TEXT_ACTION_INSET, button, button_off, callout, dialog,
-    progress, rule, select, select_item, select_menu, setting_row, setting_row_with, spacer,
+    ButtonKind, Dialog, DialogWidth, button, button_off, callout, dialog, progress, spacer,
     text_action, text_field,
 };
 use rune::{El, col, row, text as label};
-
-/// The form's fields and select, at their widest.
-const FIELD: f32 = 300.0;
 
 pub fn view(app: &App, p: &Palette) -> Option<El> {
     let new_mod = &app.new_mod;
@@ -36,51 +33,86 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
 }
 
 fn form_parts(new_mod: &NewMod, p: &Palette) -> Dialog {
-    let rows = [
-        name(new_mod, p),
-        id(new_mod, p),
-        folder(new_mod, p),
-        example(new_mod, p),
-    ];
-    let mut body = col().children(rows.into_iter().enumerate().flat_map(|(index, row)| {
-        let line = (index > 0).then(|| rule(p));
-        line.into_iter().chain([row])
-    }));
-    let notes: Vec<El> = tools_note(new_mod.tools.as_ref(), p)
-        .into_iter()
-        .chain(match &new_mod.stage {
-            Stage::Failed(why) => Some(
-                callout(
-                    label(format!("Couldn't start it: {why}"))
-                        .font(text::SMALL)
-                        .color(p.danger)
-                        .wrap(),
-                    None,
-                    p,
-                )
-                .key("newmod/failed"),
-            ),
-            _ => None,
-        })
-        .collect();
-    if !notes.is_empty() {
-        body = body.child(
+    let mut body = col()
+        .key("newmod/body")
+        .px(space::LG)
+        .pt(space::XS)
+        .pb(space::SM)
+        .gap(space::SM)
+        .child(
             col()
-                .px(space::LG)
-                .pt(space::XS)
-                .pb(space::SM)
+                .key("newmod/kinds")
+                .equal_columns(2)
                 .gap(space::XS)
-                .children(notes),
+                .children(Kind::ALL.map(|kind| kind_tile(new_mod.kind == kind, kind, p))),
+        )
+        .child(
+            col()
+                .gap(space::XS)
+                .child(label("Name").font(text::LABEL).color(p.faint))
+                .child(
+                    text_field(&new_mod.name, "Neutral spawns", p)
+                        .key("newmod/name")
+                        .w_full()
+                        .on_edit(|app: &mut App| &mut app.new_mod.name),
+                ),
         );
+    match &new_mod.sdk {
+        // The first time, the SDK downloads (a few megabytes).
+        None => {
+            body = body.child(
+                col()
+                    .key("newmod/sdk/fetching")
+                    .gap(space::XS)
+                    .child(
+                        label("Getting tgg-melee's SDK…")
+                            .font(text::SMALL)
+                            .color(p.muted),
+                    )
+                    .child(progress(
+                        new_mod
+                            .fetching
+                            .as_ref()
+                            .map_or(0.0, super::Fetching::fraction),
+                        p,
+                    )),
+            );
+        }
+        Some(Err(why)) => {
+            body = body.child(callout(
+                label(format!("Couldn't get the SDK: {why}"))
+                    .key("newmod/sdk/failed")
+                    .font(text::SMALL)
+                    .color(p.danger)
+                    .wrap(),
+                None,
+                p,
+            ));
+        }
+        Some(Ok(_)) => {}
     }
-    let create = match (&new_mod.stage, actions::can_create(new_mod)) {
+    if let Some(note) = native_note(new_mod, p) {
+        body = body.child(note);
+    }
+    if let Stage::Failed(why) = &new_mod.stage {
+        body = body.child(callout(
+            label(format!("Couldn't start it: {why}"))
+                .key("newmod/failed")
+                .font(text::SMALL)
+                .color(p.danger)
+                .wrap(),
+            None,
+            p,
+        ));
+    }
+    let create = match (&new_mod.stage, new_mod.ready()) {
         (Stage::Creating, _) => button_off("Starting…", p),
-        (_, true) => button("Start it", ButtonKind::Primary, p).on_press(actions::create),
-        (_, false) => button_off("Start it", p),
+        (_, true) => button("Create", ButtonKind::Primary, p).on_press(actions::create),
+        (_, false) => button_off("Create", p),
     };
     Dialog {
-        title: "New mod".into(),
-        line: "A code mod of your own, from tgg-melee's SDK, in a folder on this computer.".into(),
+        title: "Start a mod".into(),
+        line: "What do you want to make?".into(),
         body: Some(body),
         buttons: vec![
             button("Cancel", ButtonKind::Secondary, p)
@@ -92,258 +124,113 @@ fn form_parts(new_mod: &NewMod, p: &Palette) -> Dialog {
     }
 }
 
-fn name(new_mod: &NewMod, p: &Palette) -> El {
-    setting_row(
-        "Name",
-        "What players see it called.",
-        text_field(&new_mod.name, "Neutral spawns", p)
-            .key("newmod/name")
-            .w(FIELD)
-            .on_edit(|app: &mut App| &mut app.new_mod.name),
-        p,
-    )
-    .key("newmod/name/row")
-}
-
-fn id(new_mod: &NewMod, p: &Palette) -> El {
-    let typed = !new_mod.id.text.trim().is_empty();
-    let line = if typed && new_mod.mod_id().is_none() {
-        label("1 to 64 of a–z, 0–9, '.', '-' and '_'.")
-            .key("newmod/id/invalid")
-            .font(text::SMALL)
-            .color(p.danger)
-            .wrap()
-    } else {
-        label("Its address on textures.gg, for good.")
-            .font(text::SMALL)
-            .color(p.muted)
-            .wrap()
-    };
-    let suggested = id_from(&new_mod.name.text);
-    let placeholder = if suggested.is_empty() {
-        "neutral-spawns"
-    } else {
-        &suggested
-    };
-    let field = text_field(&new_mod.id, placeholder, p)
-        .key("newmod/id")
-        .w(FIELD)
-        .on_edit(|app: &mut App| &mut app.new_mod.id);
-    setting_row_with("Id", line, field, p).key("newmod/id/row")
-}
-
-fn folder(new_mod: &NewMod, p: &Palette) -> El {
-    let path = col()
-        .w(FIELD)
-        .items_end()
+/// One of the five things to make: its name, its line, and off-white while
+/// it's chosen.
+fn kind_tile(chosen: bool, kind: Kind, p: &Palette) -> El {
+    col()
+        .key(format!("newmod/kind/{}", kind.label()))
+        .padding(space::SM)
         .gap(space::TIGHT)
+        .fill(if chosen { p.selected } else { p.surface })
+        .border(size::LINE, if chosen { p.accent } else { p.line })
+        .radius(radius::CARD)
+        .hover(p.hover)
+        .cursor(rune::Cursor::Pointer)
+        .role("radio")
+        .checked(chosen)
+        .focusable(true)
+        .label(kind.label())
+        .on_press(move |app: &mut App| actions::pick_kind(app, kind))
         .child(
-            label(new_mod.folder().display().to_string())
-                .key("newmod/folder")
-                .font(text::MONO_SMALL)
+            label(kind.label())
+                .font(text::STRONG)
                 .color(p.ink)
-                .truncate()
-                .min_w(0.0),
+                .truncate(),
         )
-        .child(
-            row().mr(-TEXT_ACTION_INSET).child(
-                text_action("Choose…", false, p)
-                    .key("newmod/choose-folder")
-                    .on_press_tx(actions::choose_folder),
-            ),
-        );
-    setting_row(
-        "Folder",
-        "Its own folder, named by its id. It has to be new or empty.",
-        path,
-        p,
-    )
-    .key("newmod/folder/row")
+        .child(label(kind.line()).font(text::SMALL).color(p.muted).wrap())
 }
 
-fn example(new_mod: &NewMod, p: &Palette) -> El {
-    let control = match &new_mod.sdk {
-        // The first time, the SDK downloads (a few megabytes).
-        None => col()
-            .key("newmod/sdk/fetching")
-            .w(FIELD)
-            .gap(space::XS)
-            .child(
-                label("Getting tgg-melee's SDK…")
-                    .font(text::SMALL)
-                    .color(p.muted),
-            )
-            .child(progress(
-                new_mod.fetching.as_ref().map_or(0.0, Fetching::fraction),
-                p,
-            )),
-        Some(Err(why)) => label(format!("Couldn't get the SDK: {why}"))
-            .key("newmod/sdk/failed")
-            .font(text::SMALL)
-            .color(p.danger)
-            .wrap()
-            .w(FIELD),
-        Some(Ok(_)) => select(&new_mod.example, new_mod.menu, p)
-            .key("newmod/example")
-            .label("Start from")
-            .w(FIELD)
-            .on_press(actions::toggle_menu),
-    };
-    setting_row(
-        "Start from",
-        "The SDK's template, or one of its examples to learn from.",
-        control,
-        p,
-    )
-    .key("newmod/example/row")
-}
-
-/// Which of the tools mods need are missing, if any: a C compiler and
-/// CMake to build, git to publish. A quiet line when they're all there.
-fn tools_note(tools: Option<&Tools>, p: &Palette) -> Option<El> {
-    let tools = tools?;
-    let build: Vec<&str> = [
-        ("a C compiler (GCC)", tools.cc.is_none()),
-        ("CMake", tools.cmake.is_none()),
-    ]
-    .into_iter()
-    .filter(|(_, missing)| *missing)
-    .map(|(name, _)| name)
-    .collect();
-    let mut words = Vec::new();
-    if !build.is_empty() {
-        words.push(format!("Building it needs {}.", and_list(&build)));
+/// Native C builds with CMake; nothing else mentions it.
+fn native_note(new_mod: &NewMod, p: &Palette) -> Option<El> {
+    if new_mod.kind != Kind::Native {
+        return None;
     }
-    if tools.git.is_none() {
-        words.push("Publishing it needs git.".to_owned());
-    }
-    if words.is_empty() {
-        return Some(
-            label("GCC, CMake and git are installed, so it's ready to build.")
-                .key("newmod/tools")
-                .font(text::SMALL)
-                .color(p.muted),
-        );
-    }
-    let missing = build.len() + usize::from(tools.git.is_none());
-    let them = if missing == 1 { "it" } else { "them" };
-    words.push(format!(
-        "The mod starts without {them}; `tgg doctor` says how to get {them}."
-    ));
+    let missing = new_mod
+        .tools
+        .as_ref()
+        .is_some_and(|tools: &Tools| tools.cmake.is_none());
     Some(
-        callout(
-            label(words.join(" "))
-                .font(text::SMALL)
-                .color(p.muted)
-                .wrap(),
-            None,
-            p,
-        )
-        .key("newmod/tools"),
+        label(if missing {
+            "Native C builds with CMake, which isn't installed. tgg doctor says how to get it."
+        } else {
+            "Native C builds with CMake, one build for each platform."
+        })
+        .key("newmod/cmake")
+        .font(text::SMALL)
+        .color(if missing { p.danger } else { p.muted })
+        .wrap(),
     )
 }
 
-/// "a", "a and b", "a, b and c".
-fn and_list(items: &[&str]) -> String {
-    match items {
-        [] => String::new(),
-        [one] => (*one).to_owned(),
-        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
-    }
-}
-
+/// After it's made: where it is, the command that runs it, and what to do
+/// with it.
 fn created_parts(new_mod: &NewMod, created: &CreatedMod, p: &Palette) -> Dialog {
-    let repository = match &created.repository {
-        Repository::Committed => Some("A git repository holds it, its first commit made."),
-        Repository::AlreadyThere => Some("It's in the git repository that was already there."),
-        Repository::NoIdentity => Some(
-            "A git repository holds it; tell git your name and email to commit (git config --global user.name, user.email).",
-        ),
-        Repository::NoGit => Some("git isn't installed, so it has no repository yet."),
-        Repository::Failed(_) => Some("Its git repository couldn't be started."),
+    let script = actions::is_script(created);
+    let line = if script {
+        format!("It's in {} and it already runs.", created.dir.display())
+    } else {
+        format!("It's in {}.", created.dir.display())
     };
-    let commands = col()
-        .key("newmod/commands")
+    let command = row()
+        .key("newmod/dev")
         .px(space::SM)
         .py(space::XS)
+        .gap(space::XS)
+        .items_center()
         .fill(p.sunk)
         .border(size::LINE, p.line)
         .radius(radius::CONTROL)
         .child(
-            label(actions::commands(created))
+            label(actions::dev_command(created))
                 .font(text::MONO_SMALL)
                 .color(p.ink)
-                .wrap(),
-        );
-    let body = col()
-        .px(space::LG)
-        .py(space::MD)
-        .gap(space::SM)
-        .child(
-            label(format!(
-                "Made from the SDK's {} in {}.",
-                created.example,
-                created.dir.display()
-            ))
-            .key("newmod/created")
-            .font(text::BODY)
-            .color(p.ink)
-            .wrap(),
-        )
-        .children(repository.map(|words| {
-            label(words)
-                .key("newmod/repository")
-                .font(text::SMALL)
-                .color(p.muted)
                 .wrap()
-        }))
-        .child(
-            label("To build it and run it in the game, from its folder:")
-                .font(text::SMALL)
-                .color(p.muted),
+                .grow(1.0)
+                .min_w(0.0),
         )
-        .child(commands);
-    let name = match new_mod.name.text.trim() {
-        "" => new_mod.id_text(),
-        name => name.to_owned(),
+        .child(
+            text_action("Copy", false, p)
+                .key("newmod/copy")
+                .on_press_tx(actions::copy_dev),
+        );
+    let note = if script {
+        "Starts the game with your mod. It reloads when you save."
+    } else {
+        "Builds it, then starts the game with your mod. It rebuilds when you save."
     };
+    let body = col()
+        .key("newmod/created")
+        .px(space::LG)
+        .pt(space::XS)
+        .pb(space::SM)
+        .gap(space::SM)
+        .child(command)
+        .child(label(note).font(text::SMALL).color(p.muted).wrap());
     Dialog {
-        title: format!("{name} is started"),
-        line: "Edit it in your own editor; the tgg command builds it and runs it.".into(),
+        title: format!("{} is ready", new_mod.title()),
+        line,
         body: Some(body),
         buttons: vec![
-            button("Copy commands", ButtonKind::Secondary, p)
-                .key("newmod/copy")
-                .on_press_tx(actions::copy_commands),
-            button("Open folder", ButtonKind::Secondary, p)
-                .key("newmod/open-folder")
-                .on_press_tx(actions::open_folder),
-            button("Guide", ButtonKind::Secondary, p)
+            button("Open in your editor", ButtonKind::Primary, p)
+                .key("newmod/open")
+                .on_press_tx(actions::open_in_editor),
+            button("Read the guide", ButtonKind::Secondary, p)
                 .key("newmod/guide")
                 .on_press_tx(actions::open_guide),
             spacer(),
-            button("Done", ButtonKind::Primary, p)
+            button("Done", ButtonKind::Secondary, p)
                 .key("newmod/done")
                 .on_press(actions::close),
         ],
     }
-}
-
-/// The examples' menu, at the window's root over the dialog.
-pub fn menu(app: &App, p: &Palette) -> Option<El> {
-    let new_mod = &app.new_mod;
-    if !new_mod.open || !new_mod.menu {
-        return None;
-    }
-    let examples = new_mod.examples()?;
-    let items = examples
-        .iter()
-        .map(|example| {
-            let owned = example.clone();
-            select_item(example, *example == new_mod.example, p)
-                .key(format!("newmod/example/{example}"))
-                .on_press(move |app: &mut App| actions::pick_example(app, &owned))
-        })
-        .collect();
-    Some(select_menu("newmod/example", items, actions::close_menu, p))
 }

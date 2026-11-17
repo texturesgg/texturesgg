@@ -16,7 +16,6 @@ use melee_dat::{MeleeModel, MeleeReferenceStore, MeleeSlot, SharedModel};
 use rune::{Live, LiveText};
 use std::collections::BTreeMap;
 use std::rc::Rc;
-use tgg_app::moves::MoveRow;
 
 /// The viewport's effect slot.
 pub const VIEWPORT: u32 = 1;
@@ -67,10 +66,6 @@ pub struct Shown {
     /// on, as a fraction of the plate across and down.
     pub pick: Option<[f32; 2]>,
     pub playing: bool,
-    /// The move playing, if one was chosen; the idle otherwise.
-    pub animation: Option<usize>,
-    /// Its fighter's moves; empty for a stage.
-    pub moves: Vec<MoveRow>,
     /// The models its fighter's costumes share, with their files: what its
     /// moves spawn on it (the shine, the blaster and its lasers).
     pub shared: Vec<(SharedModel, Rc<Vec<u8>>)>,
@@ -96,44 +91,9 @@ pub struct Shown {
 }
 
 impl Shown {
-    /// The playing move's name, else "Idle" for a fighter; nothing for a
-    /// stage.
+    /// What the timeline names beside its play button: the idle a fighter
+    /// shows, nothing for a stage.
     pub fn move_label(&self) -> Option<String> {
-        if self.moves.is_empty() {
-            return None;
-        }
-        let Some(animation) = self.animation else {
-            return Some("Idle".into());
-        };
-        self.moves.iter().find_map(|row| match row {
-            MoveRow::Move {
-                animation: playing,
-                title,
-                ..
-            } if *playing == animation => Some(title.clone()),
-            _ => None,
-        })
-    }
-}
-
-impl Shown {
-    /// The animation for `action` (`SpecialLwLoop`), when its fighter has one.
-    pub fn animation_for(&self, action: &str) -> Option<usize> {
-        let playback = self.model.fighter()?;
-        playback
-            .animations()
-            .iter()
-            .find(|animation| animation.action.as_deref() == Some(action))
-            .map(|animation| animation.index)
-    }
-
-    /// The action playing (`SpecialLwLoop`), if a move is.
-    pub fn action(&self) -> Option<&str> {
-        let playback = self.model.fighter()?;
-        playback
-            .animations()
-            .get(self.animation?)?
-            .action
-            .as_deref()
+        self.model.fighter().map(|_| "Idle".to_owned())
     }
 }

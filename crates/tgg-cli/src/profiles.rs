@@ -20,7 +20,7 @@ pub enum ProfileCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Fetch what a replay or profile needs and build its mods folder.
+    /// Download what a replay or profile needs and set up its mods folder.
     Prepare {
         /// A replay (.slp) or a profile (.json).
         source: PathBuf,
@@ -28,8 +28,8 @@ pub enum ProfileCommand {
         /// for a program to read.
         #[arg(long)]
         machine: bool,
-        /// Fetch this publisher's mods (repeatable).
-        #[arg(long = "trust", value_name = "PUBLISHER")]
+        /// Download native mods from this publisher account id (repeatable).
+        #[arg(long = "trust", value_name = "PUBLISHER_ID")]
         trust: Vec<String>,
         /// Remember each --trust answer for next time.
         #[arg(long)]
@@ -53,7 +53,21 @@ impl Ctx<'_> {
     }
 }
 
-fn http(api: &str) -> tgg_mod::HttpNet {
+/// Before the game starts with the mods folder `mods`: act on what
+/// textures.gg withdrew, saying what changed. A failure to check says so and
+/// doesn't stop the game.
+pub(crate) fn check_withdrawn(net: &dyn Net, data: &Path, mods: &Path, port: &tgg_mod::Port) {
+    match tgg_mod::withdraw::check_withdrawn(net, data, mods, port) {
+        Ok(notices) => {
+            for notice in notices {
+                println!("{notice}");
+            }
+        }
+        Err(error) => eprintln!("Couldn't check for withdrawn mods: {error}"),
+    }
+}
+
+pub(crate) fn http(api: &str) -> tgg_mod::HttpNet {
     let releases = std::env::var("TGG_RELEASES")
         .ok()
         .filter(|value| !value.is_empty())
@@ -143,14 +157,14 @@ pub fn describe(source: &Path, plan: &ProfilePlan, offline: Option<&str>) -> Vec
     });
     lines.push(crate::ui::heading(what));
     if let Some(offline) = offline {
-        lines.push(format!("{offline}; showing what tgg saw last"));
+        lines.push(format!("{offline}. Showing what tgg saw last"));
     }
     lines.push(match &plan.game {
         GameNeed::Installed(install) if install.current => {
             format!("Game: tgg-melee {}", crate::ui::ver(&install.version))
         }
         GameNeed::Installed(install) => format!(
-            "Game: tgg-melee {} (installed; runs for this session)",
+            "Game: tgg-melee {} (installed, runs for this session)",
             crate::ui::ver(&install.version)
         ),
         GameNeed::Available { version, size: s } => format!(
@@ -159,7 +173,7 @@ pub fn describe(source: &Path, plan: &ProfilePlan, offline: Option<&str>) -> Vec
             s.map(|s| format!(", {}", size(s))).unwrap_or_default()
         ),
         GameNeed::Unavailable { version } => {
-            format!("Game: needs tgg-melee {version}, which tgg can't get")
+            format!("Game: needs tgg-melee {version}, which isn't available")
         }
     });
     if !plan.mods.is_empty() {
@@ -184,7 +198,7 @@ pub fn describe(source: &Path, plan: &ProfilePlan, offline: Option<&str>) -> Vec
         ));
     }
     if !plan.missing.is_empty() {
-        lines.push("Can't be had:".into());
+        lines.push("Not available:".into());
         for missing in &plan.missing {
             lines.push(format!("  {missing}"));
         }
@@ -215,28 +229,41 @@ pub fn prepare_machine(
     let profile = load(source, tgg_mod::cached_mapping(&ctx.data).as_ref())?;
     let (mut plan, _) = plan(ctx, &profile)?;
     emit(plan_json(&plan));
+    // A withdrawn release is never fetched: the game says why instead of
+    // playing without it.
+    if let Some(withdrawn) = plan
+        .missing
+        .iter()
+        .find(|m| matches!(m, tgg_mod::Missing::Withdrawn { .. }))
+    {
+        emit(json!({"event": "error", "message": withdrawn.to_string()}));
+        return Ok(());
+    }
+    // `trusted` names publisher account ids (a name for a publisher the
+    // registry gives no id).
     if remember {
-        for publisher in trusted {
-            tgg_mod::remember_trust(&ctx.data, publisher, true)?;
+        for publisher in plan.untrusted() {
+            let key = publisher.id.as_ref().unwrap_or(&publisher.name);
+            if trusted.contains(key) {
+                tgg_mod::remember_trust(&ctx.data, publisher, true)?;
+            }
         }
     }
-    for m in &mut plan.mods {
-        if trusted.contains(&m.publisher.name) {
-            m.needs_trust = false;
-        }
-    }
+    plan.trust_for_session(trusted);
     let untrusted = plan.untrusted();
     if !untrusted.is_empty() {
+        // Each publisher of native code still needing the player's yes: its
+        // id (what --trust takes back), name and mods.
         let publishers: Vec<Value> = untrusted
             .iter()
-            .map(|name| {
-                let mods: Vec<&str> = plan
-                    .mods
-                    .iter()
-                    .filter(|m| m.needs_trust && m.publisher.name == *name)
-                    .map(|m| m.id.as_str())
-                    .collect();
-                json!({"name": name, "mods": mods})
+            .map(|publisher| {
+                let mods: Vec<&str> = plan.needing(publisher).map(|m| m.id.as_str()).collect();
+                json!({
+                    "id": publisher.id.as_ref().unwrap_or(&publisher.name),
+                    "name": publisher.name,
+                    "native": true,
+                    "mods": mods,
+                })
             })
             .collect();
         emit(json!({"event": "needs-trust", "publishers": publishers}));
@@ -294,7 +321,7 @@ pub fn prepare_machine(
     Ok(())
 }
 
-fn ctx<'a>(net: &'a dyn Net, cancel: &'a AtomicBool) -> Result<Ctx<'a>> {
+pub(crate) fn ctx<'a>(net: &'a dyn Net, cancel: &'a AtomicBool) -> Result<Ctx<'a>> {
     Ok(Ctx {
         net,
         data: crate::paths::data()?,
@@ -360,51 +387,59 @@ fn prepare_here(ctx: &Ctx, source: &Path, yes: bool) -> Result<Option<Prepared>>
     let ask = !yes && crate::ui::interactive();
     if plan.missing.iter().any(|m| !m.is_minor()) && !yes {
         if !ask {
-            bail!("it may not play back as it was played; --yes plays it anyway");
+            bail!("it may not play back as it was played. --yes plays it anyway");
         }
         if !crate::ui::confirm("Play it anyway?")? {
             bail!("not played");
         }
     }
-    for publisher in plan
-        .untrusted()
-        .into_iter()
-        .map(str::to_owned)
-        .collect::<Vec<_>>()
-    {
-        let names: Vec<&str> = plan
-            .mods
-            .iter()
-            .filter(|m| m.needs_trust && m.publisher.name == publisher)
-            .map(|m| m.name.as_str())
-            .collect();
+    ask_trust(ctx, &mut plan, yes)?;
+    if plan.fit == Fit::AsInstalled {
+        return Ok(None);
+    }
+    with_progress(|progress| {
+        tgg_mod::prepare_profile(ctx.net, &plan, &ctx.data, progress, ctx.cancel)
+    })
+    .map(Some)
+}
+
+/// Ask in a terminal (or take `yes`) for each publisher of native code
+/// `plan` needs the player's yes for, remembering the answers given there.
+pub(crate) fn ask_trust(ctx: &Ctx, plan: &mut ProfilePlan, yes: bool) -> Result<()> {
+    let ask = !yes && crate::ui::interactive();
+    let untrusted: Vec<tgg_mod::Publisher> = plan.untrusted().into_iter().cloned().collect();
+    for publisher in untrusted {
+        let name = &publisher.name;
+        let names: Vec<&str> = plan.needing(&publisher).map(|m| m.name.as_str()).collect();
+        let names = names.join(", ");
         let allow = if yes {
             true
         } else if ask {
-            let answer = crate::ui::confirm(format!(
-                "This used {} by {publisher}. Get it for playback?",
-                names.join(", ")
-            ))?;
+            println!(
+                "{names} runs native code on your computer. It's published by {name}, not textures.gg."
+            );
+            let answer = crate::ui::confirm(format!("Download and run code by {name}?"))?;
             tgg_mod::remember_trust(&ctx.data, &publisher, answer)?;
             answer
         } else {
             bail!(
-                "{} by {publisher} needs your yes; run it in a terminal, or pass --yes",
-                names.join(", ")
+                "{names} runs native code by {name} and needs your OK. Run it in a terminal, or pass --yes"
             );
         };
         if !allow {
-            bail!("not fetching {publisher}'s mods");
+            bail!("not downloading code by {name}");
         }
-        for m in &mut plan.mods {
-            if m.publisher.name == publisher {
-                m.needs_trust = false;
-            }
-        }
+        let key = publisher.id.clone().unwrap_or_else(|| name.clone());
+        plan.trust_for_session(&[key]);
     }
-    if plan.fit == Fit::AsInstalled {
-        return Ok(None);
-    }
+    Ok(())
+}
+
+/// Run `prepare` with a progress bar (or a line per step without a
+/// terminal).
+pub(crate) fn with_progress(
+    prepare: impl FnOnce(tgg_mod::OnProgress) -> Result<Prepared, Error>,
+) -> Result<Prepared> {
     let bar = crate::ui::bar("", 0);
     let shown = std::sync::Mutex::new(String::new());
     let progress = |progress: tgg_mod::Progress| match &bar {
@@ -421,11 +456,11 @@ fn prepare_here(ctx: &Ctx, source: &Path, yes: bool) -> Result<Option<Prepared>>
             }
         }
     };
-    let prepared = tgg_mod::prepare_profile(ctx.net, &plan, &ctx.data, &progress, ctx.cancel);
+    let prepared = prepare(&progress);
     if let Some(bar) = &bar {
         bar.finish_and_clear();
     }
-    Ok(Some(prepared?))
+    Ok(prepared?)
 }
 
 /// `tgg replay` and `tgg port run --profile`: prepare `source` and play it,
@@ -463,7 +498,8 @@ pub fn play(
             let current = tgg_mod::ports::installed_ports(&ports)?
                 .into_iter()
                 .find(|install| install.current)
-                .ok_or_else(|| anyhow!("tgg-melee isn't installed; run tgg port install"))?;
+                .ok_or_else(|| anyhow!("tgg-melee isn't installed. Run tgg port install"))?;
+            check_withdrawn(ctx.net, &ctx.data, &ctx.mods, &current.port());
             let running = tgg_mod::ports::launch_with_env(
                 &current,
                 &iso,
@@ -497,7 +533,7 @@ fn wait(
     finish(status, signals, executable, log)
 }
 
-fn finish(
+pub(crate) fn finish(
     status: std::io::Result<std::process::ExitStatus>,
     signals: &crate::signals::Signals,
     executable: &Path,
@@ -626,15 +662,46 @@ mod tests {
     }
 
     #[test]
+    fn machine_lines_stop_at_a_withdrawn_release_and_say_why() {
+        let setup = setup();
+        setup.net.withdraw(
+            "tgg.neutral-spawns",
+            "0.1.0",
+            "it spawns everyone off stage",
+            tgg_mod::WithdrawMode::Off,
+        );
+        let replay = setup.slippi_replay();
+        let lines = std::sync::Mutex::new(Vec::new());
+        let emit = |value: Value| lines.lock().expect("lock").push(value);
+        prepare_machine(&setup.ctx(), &replay, &[], false, &emit).expect("prepare");
+        let lines = lines.into_inner().expect("lines");
+        assert_eq!(
+            lines.last(),
+            Some(&json!({"event": "error", "message":
+                "textures.gg withdrew tgg.neutral-spawns 0.1.0: it spawns everyone off stage"}))
+        );
+        // Nothing was downloaded.
+        assert!(
+            !setup
+                .net
+                .requests()
+                .iter()
+                .any(|url| url.contains("/packages/"))
+        );
+    }
+
+    #[test]
     fn machine_lines_stop_for_trust_until_it_is_given() {
         let setup = setup();
         setup.net.set_publisher(
             "tgg.neutral-spawns",
             Publisher {
+                id: Some("acct-someone".into()),
                 name: "someone".into(),
                 official: false,
             },
         );
+        setup.net.set_native("tgg.neutral-spawns");
         let replay = setup.slippi_replay();
         let run = |trusted: &[String], remember: bool| {
             let lines = std::sync::Mutex::new(Vec::new());
@@ -647,12 +714,63 @@ mod tests {
         assert_eq!(
             lines[1],
             json!({"event": "needs-trust",
-                   "publishers": [{"name": "someone", "mods": ["tgg.neutral-spawns"]}]})
+                   "publishers": [{"id": "acct-someone", "name": "someone", "native": true,
+                                   "mods": ["tgg.neutral-spawns"]}]})
         );
+        // The name isn't the account: it asks again.
         let lines = run(&["someone".to_owned()], true);
+        assert_eq!(lines.last().expect("line")["event"], "needs-trust");
+        let lines = run(&["acct-someone".to_owned()], true);
         assert_eq!(lines.last().expect("line")["event"], "done");
         // Remembered: no question next time.
         let lines = run(&[], false);
         assert_eq!(lines[0]["mods"][0]["needs_trust"], false);
+    }
+
+    /// A replay's gameplay script comes without asking, whoever published
+    /// it: the game's sandbox is what keeps scripts off the machine.
+    #[test]
+    fn a_replay_fetches_a_gameplay_script_without_asking() {
+        let setup = setup();
+        let listing = tgg_mod::ScriptListing {
+            class: "gameplay".into(),
+            needs: "0.9".into(),
+            uses: vec!["change player_spawn".into()],
+            sim_writes: vec!["event player_spawn".into()],
+            files: vec!["sim.luau".into()],
+            ..Default::default()
+        };
+        let manifest = tgg_mod::Manifest::new(
+            "tgg.neutral-spawns".parse().expect("id"),
+            "Neutral spawns".into(),
+            "0.1.0".parse().expect("version"),
+        );
+        let scripts = [("sim.luau".to_owned(), b"-- spawns".to_vec())].into();
+        let script = tgg_mod::Package::pack_script(
+            manifest,
+            scripts,
+            Default::default(),
+            Default::default(),
+            &listing,
+        )
+        .expect("pack");
+        setup.net.publish(&script);
+        setup.net.set_publisher(
+            "tgg.neutral-spawns",
+            Publisher {
+                id: Some("acct-someone".into()),
+                name: "someone".into(),
+                official: false,
+            },
+        );
+        let lines = std::sync::Mutex::new(Vec::new());
+        let emit = |value: Value| lines.lock().expect("lock").push(value);
+        prepare_machine(&setup.ctx(), &setup.slippi_replay(), &[], false, &emit).expect("prepare");
+        let lines = lines.into_inner().expect("lines");
+        assert_eq!(lines[0]["mods"][0]["needs_trust"], false);
+        let done = lines.last().expect("done");
+        assert_eq!(done["event"], "done");
+        let folder = PathBuf::from(done["folder"].as_str().expect("folder"));
+        assert!(folder.join("tgg.neutral-spawns/scripts/sim.luau").is_file());
     }
 }

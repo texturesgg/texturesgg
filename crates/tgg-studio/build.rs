@@ -12,8 +12,8 @@ fn main() {
         .set_icon("../../dist/windows/icon.ico")
         .set("ProductName", "textures.gg")
         .set("FileDescription", "textures.gg")
-        .set("CompanyName", "SaavyLab LLC")
-        .set("LegalCopyright", "© 2026 SaavyLab LLC");
+        .set("CompanyName", "Saavylab LLC")
+        .set("LegalCopyright", "© 2026 Saavylab LLC");
     resource
         .compile()
         .expect("the Windows resources (icon, version) compile");

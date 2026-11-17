@@ -128,7 +128,7 @@ jobs:
     defaults:
       run:
         shell: bash
-    # Unsigned until SaavyLab's Windows signing is set up; then WINDOWS_SIGN
+    # Unsigned until Saavylab's Windows signing is set up; then WINDOWS_SIGN
     # (see scripts/package-windows.sh) signs the app and the installer.
     steps:
       - uses: actions/checkout@v7

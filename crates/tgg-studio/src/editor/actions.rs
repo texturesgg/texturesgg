@@ -242,7 +242,10 @@ pub fn save(app: &mut App, install_it: bool, then: Option<Pending>, _: &mut Tx) 
         // An edit of a skin is that skin, edited; of the game's own costume,
         // the slot, edited.
         let (name, from) = match SlotState::of(slot, &before, &app.library) {
-            SlotState::Skin(skin) => (edited_name(&skin.name), Some(skin.id)),
+            SlotState::Skin(skin) => (
+                edited_name(&crate::library::view::name(&skin)),
+                Some(skin.id),
+            ),
             _ => (edited_name(&slot_label(Some(slot))), None),
         };
         let mut candidate = app
@@ -272,11 +275,13 @@ pub fn save(app: &mut App, install_it: bool, then: Option<Pending>, _: &mut Tx) 
             }
             super::draft::keep(app);
             let text = if install_it {
-                format!("Saved {name} to your library and installed it.")
+                format!("Saved {name} and wrote it into your Melee disc.")
             } else {
-                format!("Saved {name} to your library.")
+                format!("Saved {name} to your skins.")
             };
             app.tell(text, false);
+            app.melee.tab = crate::melee::Tab::Made;
+            crate::library::actions::request_renders(app);
             if install_it {
                 crate::library::actions::refresh_after_install(app, slot);
             }
@@ -333,29 +338,12 @@ pub fn answer_cancel(app: &mut App) {
 }
 
 /// Do what waited: close the document (the stage shows the slot from the
-/// game again, edits gone), then leave, close, or go.
+/// game again, edits gone), then leave or go.
 fn go_on(app: &mut App, then: Pending) {
     close(app);
     match then {
         Pending::Leave => {}
         Pending::Go(place) => nav::go(app, place),
-        Pending::Edit(slot) => open_slot(app, slot),
-    }
-}
-
-/// Edit `slot`, a recent edit: through the prompt when edits are unsaved.
-pub fn edit_recent(app: &mut App, slot: melee_dat::MeleeSlot, tx: &mut Tx) {
-    if app
-        .editor
-        .as_ref()
-        .is_some_and(|document| document.slot == slot)
-    {
-        return;
-    }
-    if app.editor.is_some() {
-        leave_for(app, Pending::Edit(slot), tx);
-    } else {
-        open_slot(app, slot);
     }
 }
 
@@ -363,10 +351,6 @@ pub fn edit_recent(app: &mut App, slot: melee_dat::MeleeSlot, tx: &mut Tx) {
 /// it for editing.
 pub fn open_slot(app: &mut App, slot: melee_dat::MeleeSlot) {
     nav::go(app, Place::Skins);
-    app.melee.tab = match slot {
-        melee_dat::MeleeSlot::Stage(_) => crate::melee::Tab::Stages,
-        _ => crate::melee::Tab::Fighters,
-    };
     match slot {
         melee_dat::MeleeSlot::Stage(stage) => crate::melee::actions::open_stage(app, stage),
         slot => {
@@ -395,11 +379,9 @@ fn close(app: &mut App) {
     super::external::forget(&mut document);
     // Closed, its edits are saved or discarded: the draft goes.
     super::draft::keep(app);
-    if app.stage.shown.is_some()
-        && let Err(problem) = stage::show(app, document.slot)
-    {
-        app.tell(problem, true);
-    }
+    // Back to the skins: the stage lets go of the slot it showed.
+    app.melee.subject = None;
+    stage::clear(app);
 }
 
 /// Where a place change goes while a document is open: through the prompt.

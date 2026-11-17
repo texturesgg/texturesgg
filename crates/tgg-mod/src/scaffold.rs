@@ -175,6 +175,9 @@ pub fn new_mod(sdk: &Sdk, new: &NewMod) -> Result<CreatedMod, Error> {
             }
         }
     }
+    if SCRIPT_TEMPLATES.contains(&example) {
+        name_script_template(dir, &created, &new.name)?;
+    }
     let repository = start_repository(dir, &format!("Start {} from the SDK's {example}", new.id));
     Ok(CreatedMod {
         dir: dir.clone(),
@@ -183,6 +186,29 @@ pub fn new_mod(sdk: &Sdk, new: &NewMod) -> Result<CreatedMod, Error> {
         sdk_version: sdk.version.clone(),
         repository,
     })
+}
+
+/// A script template's own files call it "My mod": its README's heading and
+/// the text its scripts show take the mod's name. A file that was already
+/// there is left alone, and a name that isn't plain text in a Luau string
+/// stays out of the scripts.
+fn name_script_template(dir: &Path, created: &[PathBuf], name: &str) -> Result<(), Error> {
+    const PLACEHOLDER: &str = "My mod";
+    let plain = !name.contains(['"', '\\', '\n', '\r']);
+    for file in created {
+        let in_scripts =
+            file.starts_with("scripts") && file.extension().is_some_and(|e| e == "luau");
+        if !(file == Path::new("README.md") || (in_scripts && plain)) {
+            continue;
+        }
+        let path = dir.join(file);
+        if let Ok(text) = std::fs::read_to_string(&path)
+            && text.contains(PLACEHOLDER)
+        {
+            write(&path, text.replace(PLACEHOLDER, name))?;
+        }
+    }
+    Ok(())
 }
 
 /// The build tools a mod needs, where they are on `PATH`.
@@ -297,9 +323,13 @@ fn start_repository(dir: &Path, message: &str) -> Repository {
 const SDK_DOCS_LINE: &str =
     "- The docs came with the SDK: `$(tgg sdk path)/docs`. Start with `writing-mods.md`.";
 
+/// The script template's README line that says where the docs are.
+const SCRIPT_DOCS_LINE: &str =
+    "- The docs came with the SDK: `$(tgg sdk path)/docs`. Start with `scripts.md`.";
+
 fn docs_line(url: &dyn Fn(&str) -> String) -> String {
     format!(
-        "- The docs: {}. Start with [writing mods]({}); `tgg docs` opens them, and\n  the SDK has a copy in `$(tgg sdk path)/docs`.",
+        "- The docs: {}. Start with [writing mods]({}). `tgg docs` opens them, and\n  the SDK has a copy in `$(tgg sdk path)/docs`.",
         url("README"),
         url("writing-mods")
     )
@@ -321,6 +351,15 @@ fn link_docs(dir: &Path, version: &str) -> Result<(), Error> {
     let url = |page: &str| docs_url(version, page);
     let edits = [
         ("README.md", SDK_DOCS_LINE.to_owned(), docs_line(&url)),
+        (
+            "README.md",
+            SCRIPT_DOCS_LINE.to_owned(),
+            format!(
+                "- The docs: {}. Start with [scripts]({}). `tgg docs` opens them, and\n  the SDK has a copy in `$(tgg sdk path)/docs`.",
+                url("README"),
+                url("scripts")
+            ),
+        ),
         (
             "src/mod.c",
             " * swap what's below for your own code. The docs are in your SDK: run\n * `tgg sdk path` and open docs/writing-mods.md there.".to_owned(),
@@ -424,4 +463,39 @@ fn merge_lines(from: &Path, into: &Path) -> Result<(), Error> {
         theirs.push('\n');
     }
     write(into, theirs)
+}
+
+/// The examples script mods start from: a rule, a HUD, a menu screen and a mode that plays
+/// online.
+pub const SCRIPT_TEMPLATES: &[&str] = &[
+    "script-rule",
+    "script-hud",
+    "script-screen",
+    "script-first-to-3",
+];
+
+/// Whether the mod in `dir` is a script mod: its manifest says `"script": true`.
+pub fn is_script(dir: &Path) -> bool {
+    std::fs::read(dir.join("manifest.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .is_some_and(|manifest| manifest["script"] == serde_json::Value::Bool(true))
+}
+
+/// Where a script mod's editor finds the API's types: `build/tgg.luau`, which
+/// the template's `.luaurc` names as `@tgg`.
+pub const SCRIPT_TYPES: &str = "build/tgg.luau";
+
+/// Copy the SDK's script API types to the mod's [`SCRIPT_TYPES`], for its
+/// editor. An SDK without them (from before scripts) writes nothing.
+pub fn write_script_types(sdk: &Sdk, dir: &Path) -> Result<bool, Error> {
+    let from = sdk.root.join("luau").join("tgg.luau");
+    if !from.is_file() {
+        return Ok(false);
+    }
+    let to = dir.join(SCRIPT_TYPES);
+    let build = dir.join(BUILD);
+    std::fs::create_dir_all(&build).map_err(Error::io(&build))?;
+    std::fs::copy(&from, &to).map_err(Error::io(&to))?;
+    Ok(true)
 }

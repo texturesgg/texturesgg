@@ -1,6 +1,7 @@
-//! Slippi: the other game the app serves. Skins go into the player's ISO,
-//! and Play opens it in Slippi's netplay Dolphin, as Slippi Launcher
-//! installed it. `actions` finds and starts it; the sidebar draws Play.
+//! Slippi: the Dolphin Slippi Launcher installs. Skins go into the player's
+//! ISO, and Settings says where Slippi's ISO is; the app no longer starts
+//! Slippi's Dolphin itself. `actions` finds it, for what Settings says about
+//! it.
 
 pub mod actions;
 
@@ -11,6 +12,4 @@ pub struct Slippi {
     /// Slippi's netplay Dolphin, once found; `None` when Slippi Launcher
     /// hasn't installed it (or before it's looked for).
     pub dolphin: Option<PathBuf>,
-    /// Dolphin, started from here, still running.
-    pub running: bool,
 }

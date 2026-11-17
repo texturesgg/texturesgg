@@ -26,7 +26,10 @@ const CHANGELOG_BLOCKS: usize = 4;
 /// Whether the pane shows: on Mods, while a mod is chosen.
 pub fn shown(app: &App) -> bool {
     // Side by side, the details are a column of the page instead.
-    app.nav.place == crate::nav::Place::Mods && app.mods.selected.is_some() && !app.side_by_side()
+    app.nav.place == crate::nav::Place::Mods
+        && app.mods.selected.is_some()
+        && app.window_width > 0.0
+        && !app.side_by_side()
 }
 
 /// The pane at the window's right, the whole window tall as the sidebar is
@@ -38,7 +41,7 @@ pub fn shown(app: &App) -> bool {
 pub fn view(app: &App, p: &Palette) -> El {
     let shown = shown(app);
     let head = title_bar(row())
-        .h(size::TITLE_ROW)
+        .h(size::TOP_BAR)
         .pl(space::MD)
         .pr(space::XS)
         .gap(space::XS)
@@ -198,6 +201,11 @@ fn facts(app: &App, id: &tgg_mod::ModId, p: &Palette) -> Vec<El> {
     let mut facts = Vec::new();
     if let Some(manifest) = manifest {
         facts.push(fact("Version", manifest.version.to_string(), p));
+        facts.push(fact(
+            "Kind",
+            if manifest.script { "Script" } else { "Native" }.to_owned(),
+            p,
+        ));
     } else if let Some(summary) = listed {
         facts.push(fact(
             "Version",
@@ -247,7 +255,7 @@ fn facts(app: &App, id: &tgg_mod::ModId, p: &Palette) -> Vec<El> {
     }
     let sets = mods.sets_with(id);
     if !sets.is_empty() {
-        facts.push(fact("In collections", sets.join(", "), p));
+        facts.push(fact("In sets", sets.join(", "), p));
     }
     if let Some(license) = manifest
         .and_then(|manifest| manifest.license.clone())
@@ -474,6 +482,7 @@ fn actions_for(app: &App, p: &Palette) -> El {
         Some(m) => {
             let on = m.enabled;
             let (toggled, removed) = (id.clone(), id.clone());
+            let updated = id.clone();
             row()
                 .gap(space::XS)
                 .items_center()
@@ -487,11 +496,11 @@ fn actions_for(app: &App, p: &Palette) -> El {
                         .font(text::STRONG)
                         .color(p.ink),
                 )
-                .children(
-                    m.update.as_ref().map(|version| {
-                        super::view::update_mod(mods, &id, version, "mods/details", p)
-                    }),
-                )
+                .children(m.update.as_ref().map(|version| {
+                    text_action(&format!("Update to {version}"), false, p)
+                        .key("mods/details/update")
+                        .on_press(move |app: &mut App| actions::review_mod_update(app, &updated))
+                }))
                 .child(spacer())
                 .child(
                     text_action("Remove", true, p)
@@ -513,9 +522,9 @@ fn actions_for(app: &App, p: &Palette) -> El {
                 .wrap()
         }
         None => row().children(mods.work.is_none().then(|| {
-            button("Install", ButtonKind::Primary, p)
+            button("Add", ButtonKind::Primary, p)
                 .key("mods/details/install")
-                .on_press(move |app: &mut App| actions::review_mod(app, &id))
+                .on_press(move |app: &mut App| actions::add(app, &id))
         })),
     }
 }
@@ -532,8 +541,11 @@ fn fact(name: &str, value: String, p: &Palette) -> El {
 /// the chosen mod's, else a line saying to choose one. It scrolls on its
 /// own, so the list beside it can be long.
 pub fn column(app: &App, p: &Palette) -> El {
-    let body = body(app, p).unwrap_or_else(|| {
-        crate::ui::split_empty("Choose a mod to see its details.", p).key("mods/details/empty")
-    });
-    crate::ui::split_details(body, p).key("mods/details/column")
+    let close = row().px(space::MD).pt(space::SM).child(spacer()).child(
+        text_action("Close", false, p)
+            .key("mods/details/column/close")
+            .on_press(actions::close_details),
+    );
+    let body = body(app, p);
+    crate::ui::split_details(col().child(close).children(body), p).key("mods/details/column")
 }

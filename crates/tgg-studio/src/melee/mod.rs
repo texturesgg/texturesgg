@@ -1,33 +1,98 @@
-//! Melee: what's in the player's game. The roster of its fighters and
-//! stages as plates, each saying whether the player has changed it, from
-//! what every slot holds (read in the background). Opening one shows it on
-//! the stage, with its costumes, the files they share and its moves in the
-//! pane column beside it. `actions` changes it; `view` draws the roster and
-//! `subject` the one opened.
+//! Skins: textures.gg's skins and the player's own, a plate each with its
+//! picture; a skin's sheet says where it goes and turns it on in tgg-melee
+//! or writes it into their Melee disc. "Make a skin" opens the game's
+//! fighters and stages to pick one, then the editor; saving keeps the skin
+//! among the player's own. `actions` changes it; `view` draws the page,
+//! `sheet` the skin and the picker, and `subject` the breadcrumb while a
+//! slot is open.
 
 pub mod actions;
+pub mod sheet;
 pub mod subject;
 pub mod view;
 
 use melee_dat::{Character, MeleeSlot, Stage};
+use rune::TextEdit;
 use std::collections::{HashMap, HashSet};
 use tgg_app::Game;
 use tgg_app::costumes::{Fighter, roster};
+use tgg_app::ids::SkinId;
 use tgg_app::install::SlotState;
 
-/// Skins' tabs: the roster's two halves, then the player's own skins.
+/// Skins' tabs: what the site has, what's on, and what the player made.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Tab {
     #[default]
+    Browse,
+    /// The skins tgg-melee plays now.
+    Using,
+    /// The skins saved from the editor.
+    Made,
+}
+
+/// What a skin changes: the kinds the chips filter by.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
     Fighters,
     Stages,
-    /// The skins they have (the library).
-    Mine,
+    Effects,
+    Hud,
+    Menus,
+}
+
+impl Kind {
+    /// Every kind, in the order the chips show: the game's fighters and
+    /// stages first, then what it puts on screen.
+    pub const ALL: [Kind; 5] = [
+        Kind::Fighters,
+        Kind::Stages,
+        Kind::Effects,
+        Kind::Hud,
+        Kind::Menus,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Kind::Fighters => "Fighters",
+            Kind::Stages => "Stages",
+            Kind::Effects => "Effects",
+            Kind::Hud => "HUD",
+            Kind::Menus => "Menus",
+        }
+    }
+}
+
+/// The two halves of the game's roster, for Make a skin's picker.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Roster {
+    #[default]
+    Fighters,
+    Stages,
+}
+
+/// What's open over the page: a skin's sheet, or the picker Make a skin
+/// opens.
+#[derive(Clone, Debug)]
+pub enum Sheet {
+    /// One of the player's skins.
+    Skin(SkinId),
+    /// One of textures.gg's.
+    Site(crate::library::site::Pack),
 }
 
 #[derive(Default)]
 pub struct Melee {
     pub tab: Tab,
+    /// Only skins of this kind show; all when none.
+    pub kind: Option<Kind>,
+    /// What the player looks for by name.
+    pub search: TextEdit,
+    /// The skin's sheet, or Make a skin's picker.
+    pub sheet: Option<Sheet>,
+    /// The picker shows.
+    pub making: bool,
+    /// Which half of the roster the picker lists.
+    pub picker: Roster,
     /// The game's fighters, in roster order.
     pub fighters: Vec<Fighter>,
     /// The game's stages, in file order.
@@ -36,47 +101,19 @@ pub struct Melee {
     pub states: Option<HashMap<MeleeSlot, SlotState>>,
     /// The slots with an install to undo, as last read.
     pub undoable: HashSet<MeleeSlot>,
-    /// The fighter or stage opened onto the stage, if one is.
+    /// The fighter or stage whose slot the editor has open, for its plate.
     pub subject: Option<Subject>,
     /// The costume last chosen for each fighter, to open it on again.
     pub chosen: HashMap<Character, MeleeSlot>,
-    pub panes: Panes,
     /// Why the last fighter or stage couldn't open, in the player's words.
     pub problem: Option<String>,
 }
 
-/// What's opened onto the stage.
+/// What's open on the stage.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Subject {
     Fighter(Character),
     Stage(Stage),
-}
-
-/// Which of the subject's panes are folded to their headers. Moves starts
-/// folded: the list is long, and the stage matters more.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Panes {
-    pub costumes: bool,
-    pub shared: bool,
-    pub moves: bool,
-}
-
-impl Default for Panes {
-    fn default() -> Self {
-        Self {
-            costumes: false,
-            shared: false,
-            moves: true,
-        }
-    }
-}
-
-/// A pane of the subject's.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Pane {
-    Costumes,
-    Shared,
-    Moves,
 }
 
 impl Melee {
@@ -117,18 +154,6 @@ impl Melee {
             .first()
             .map(|costume| costume.slot(fighter))
     }
-}
-
-impl Melee {
-    /// The fighter opened, when it's a fighter.
-    pub fn fighter(&self) -> Option<&Fighter> {
-        let Some(Subject::Fighter(character)) = self.subject else {
-            return None;
-        };
-        self.fighters
-            .iter()
-            .find(|fighter| fighter.character == character)
-    }
 
     /// The slot a fighter opens on: its costume last chosen, else its first.
     pub fn opening_slot(&self, fighter: &Fighter) -> Option<MeleeSlot> {
@@ -139,18 +164,8 @@ impl Melee {
     }
 }
 
-impl Panes {
-    pub fn folded(&self, pane: Pane) -> bool {
-        match pane {
-            Pane::Costumes => self.costumes,
-            Pane::Shared => self.shared,
-            Pane::Moves => self.moves,
-        }
-    }
-}
-
 impl Subject {
-    /// The name the title row gives it.
+    /// The name the breadcrumb gives it.
     pub fn name(self) -> &'static str {
         match self {
             Subject::Fighter(character) => character.name(),
@@ -158,7 +173,8 @@ impl Subject {
         }
     }
 
-    /// The name a roster plate and the stage share, so one flies into the other.
+    /// The name a plate keeps while the editor is open, so it flies between
+    /// the picker and the stage.
     pub fn plate_id(self) -> String {
         match self {
             Subject::Fighter(character) => format!("melee/plate/{}", character.name()),

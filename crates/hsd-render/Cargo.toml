@@ -30,7 +30,7 @@ gc-iso = { version = "0.2.0", path = "../gc-iso", optional = true }
 melee-dat = { version = "0.2.0", path = "../melee-dat", optional = true }
 png = { version = "0.18", optional = true }
 thiserror = "2"
-# Matches Rune's wgpu on the editor-next spike (tgg-editor still pins 29).
+# The wgpu Rune draws with: tgg-studio's viewport shares Rune's device.
 wgpu = "30.0.1"
 serde_json = { version = "1", optional = true }
 sha2 = { version = "0.10", optional = true }

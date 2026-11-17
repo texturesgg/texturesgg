@@ -22,7 +22,7 @@ use crate::package::Package;
 use crate::port::Port;
 use crate::ports::{self, PortInstall, PortRelease, Running};
 use crate::profile::SlippiMapping;
-use crate::profile::{BUILTINS, GameNeed, Profile, ProfilePlan, Settings};
+use crate::profile::{GameNeed, Profile, ProfilePlan, Settings};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
@@ -57,8 +57,8 @@ pub struct Prepared {
 
 impl Prepared {
     /// The environment the game starts with: its mods folder, its settings
-    /// file, its counted settings for this run (until the port reads
-    /// `TGG_SETTINGS`), and each built-in module that is off.
+    /// file, and its counted settings for this run (until the port reads
+    /// `TGG_SETTINGS`).
     pub fn env(&self) -> Vec<(String, OsString)> {
         let mut env = vec![
             (
@@ -73,11 +73,6 @@ impl Prepared {
         let set = set_variable(&self.profile);
         if !set.is_empty() {
             env.push(("TGG_SET".to_owned(), set.into()));
-        }
-        for (id, variable) in BUILTINS {
-            if self.profile.game.settings.get(*id) == Some(&false) {
-                env.push(((*variable).to_owned(), "0".into()));
-            }
         }
         env
     }
@@ -134,6 +129,21 @@ pub fn plan_profile(
     mods: &Path,
     profile: &Profile,
 ) -> Result<(ProfilePlan, Option<String>), Error> {
+    plan_profile_with(net, data, mods, profile, &|_, _| profile.clone())
+}
+
+/// [`plan_profile`], resolving the profile `choose` gives once it is known
+/// whether textures.gg can be reached (`true` when it can't), and the
+/// catalog it resolves against. `game` is the
+/// profile whose game picks the catalog.
+pub(crate) fn plan_profile_with(
+    net: &dyn Net,
+    data: &Path,
+    mods: &Path,
+    game: &Profile,
+    choose: &dyn Fn(bool, &Catalog) -> Profile,
+) -> Result<(ProfilePlan, Option<String>), Error> {
+    let profile = game;
     let mut offline: Option<String> = None;
     let mapping = match cache::refresh_mapping(net, data) {
         Ok(mapping) => mapping,
@@ -185,8 +195,9 @@ pub fn plan_profile(
         .find(|install| install.current);
     let local = crate::local::local(mods, current.as_ref().map(PortInstall::port).as_ref())?;
     let trust = crate::trust::trust(data)?;
+    let profile = choose(offline.is_some(), &catalog);
     let plan =
-        crate::profile::resolve_profile(profile, &catalog, &mapping, &ports_dir, &local, &trust);
+        crate::profile::resolve_profile(&profile, &catalog, &mapping, &ports_dir, &local, &trust);
     Ok((plan, offline))
 }
 
@@ -391,6 +402,20 @@ pub fn launch_profile(
     replay: Option<&Path>,
     log: Option<&Path>,
 ) -> Result<Running, Error> {
+    launch_profile_with_env(port, iso, prepared, replay, &[], log)
+}
+
+/// [`launch_profile`], with `extra` added to the game's environment: how a
+/// front end starts a set's game in a search or a room
+/// (`TGG_DIRECT_CONNECT`).
+pub fn launch_profile_with_env(
+    port: &PortInstall,
+    iso: &Path,
+    prepared: &Prepared,
+    replay: Option<&Path>,
+    extra: &[(String, std::ffi::OsString)],
+    log: Option<&Path>,
+) -> Result<Running, Error> {
     if !profile_games(&prepared.data).is_empty() {
         return Err(Error::GameRunning);
     }
@@ -402,6 +427,7 @@ pub fn launch_profile(
             replay.as_os_str().to_owned(),
         ));
     }
+    env.extend(extra.iter().cloned());
     let mut running = ports::spawn(
         port,
         iso,

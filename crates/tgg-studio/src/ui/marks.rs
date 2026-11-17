@@ -1,28 +1,17 @@
 //! Small marks: glyphs, the status dot and line, and color swatches.
 
+use super::icons::{Icon, icon};
 use super::tokens::{Palette, radius, size, space, text as type_};
 use rune::{Color, El, el, row, text};
 
 /// The sidebar toggle's glyph: a window with its sidebar drawn in.
 pub fn sidebar_glyph(p: &Palette) -> El {
-    el().size(16.0, 13.0)
-        .radius(2.5)
-        .border(1.5, p.muted)
-        .child(el().size(1.5, 13.0).fill(p.muted).absolute(5.0, 0.0))
+    icon(Icon::Sidebar, p.muted)
 }
 
 /// The close glyph: two strokes crossed.
 pub fn close_glyph(p: &Palette) -> El {
-    let stroke = |turn: f32| {
-        el().size(13.0, 1.5)
-            .radius(0.75)
-            .fill(p.muted)
-            .rotate(turn)
-            .absolute(0.5, 5.75)
-    };
-    el().size(14.0, 13.0)
-        .child(stroke(45.0))
-        .child(stroke(-45.0))
+    icon(Icon::Close, p.muted)
 }
 
 /// The play glyph: a triangle pointing on, 10 × 11 points.
@@ -101,39 +90,40 @@ pub enum Tone {
     Danger,
 }
 
-/// A badge: a word or two in a thin outline ("Installed", "Update 0.2.0").
+/// A badge: a word or two on a small pill ("Using", "In it", "Update").
+/// Yellow for what's the player's.
 pub fn badge(words: impl Into<String>, tone: Tone, p: &Palette) -> El {
-    let (ink, edge, fill) = match tone {
-        Tone::Plain => (p.muted, p.line_strong, Color::TRANSPARENT),
-        Tone::Mine => (p.accent_text, p.accent_text, p.selected),
-        Tone::News => (p.ink, p.line_strong, p.raise),
-        Tone::Danger => (p.danger, p.danger, Color::TRANSPARENT),
+    const HEIGHT: f32 = 20.0;
+    let (ink, fill) = match tone {
+        Tone::Plain => (p.muted, p.fill),
+        Tone::Mine => (p.accent_text, p.selected),
+        Tone::News => (p.ink, p.fill),
+        Tone::Danger => (p.danger, p.danger.alpha(0.12)),
     };
-    text(words.into())
-        .font(type_::LABEL)
-        .color(ink)
-        .px(space::SNUG)
-        .py(1.0)
-        .radius(radius::CONTROL)
+    row()
+        .h(HEIGHT)
+        .px(space::XS)
+        .items_center()
+        .radius(radius::PILL)
         .fill(fill)
-        .border(size::LINE, edge)
+        .child(text(words.into()).font(type_::SMALL).color(ink))
 }
 
-/// How far along long work is: a thin track filled in gold to `fraction`.
+/// How far along long work is: a track filled in off-white to `fraction`.
 pub fn progress(fraction: f32, p: &Palette) -> El {
-    const BAR: f32 = 3.0;
+    const BAR: f32 = 4.0;
     let fraction = fraction.clamp(0.0, 1.0);
     row()
         .h(BAR)
         .w_full()
         .radius(BAR / 2.0)
-        .fill(p.line_strong)
+        .fill(p.fill)
         .clip_rounded(BAR / 2.0)
         .child(
             el().w_frac(fraction)
                 .min_w(0.0)
                 .h(BAR)
-                .fill(p.accent)
+                .fill(p.ink)
                 .motion(super::tokens::motion::DEFAULT),
         )
 }
@@ -145,44 +135,30 @@ pub fn skeleton(fraction: f32, p: &Palette) -> El {
     el().w_frac(fraction.clamp(0.0, 1.0))
         .h(LINE)
         .radius(LINE / 2.0)
-        .fill(p.raise)
+        .fill(p.fill)
 }
 
 /// A mod's icon, `side` points square: the picture once it's arrived, a
 /// quiet tile until then (or when it has none).
 pub fn icon_tile(pixels: Option<&rune::Pixels>, side: f32, p: &Palette) -> El {
+    let corner = (side / 4.0).round();
     let tile = el()
         .size(side, side)
-        .radius(radius::CONTROL)
-        .clip_rounded(radius::CONTROL)
-        .fill(p.raise)
-        .border(size::LINE, p.line);
+        .radius(corner)
+        .clip_rounded(corner)
+        .fill(p.fill);
     match pixels {
         Some(pixels) => tile.pixels_fit(pixels, rune::SurfaceFit::Fill),
         None => tile,
     }
 }
 
-/// The settings glyph: three slider tracks, each with its knob.
+/// The settings glyph: a gear.
 pub fn settings_glyph(p: &Palette) -> El {
-    let track = |knob: f32| {
-        el().w(14.0).h(1.5).fill(p.muted).radius(0.75).child(
-            el().size(4.0, 4.0)
-                .radius(2.0)
-                .fill(p.muted)
-                .absolute(knob, -1.25),
-        )
-    };
-    rune::col()
-        .size(14.0, 13.0)
-        .gap(4.0)
-        .justify_center()
-        .child(track(2.0))
-        .child(track(8.0))
-        .child(track(4.0))
+    icon(Icon::Gear, p.faint)
 }
 
-/// An account's mark: its first letter on a gold-washed square (no pills).
+/// An account's mark: its first letter on a round yellow face.
 pub fn avatar(name: &str, p: &Palette) -> El {
     let initial: String = name
         .chars()
@@ -190,9 +166,8 @@ pub fn avatar(name: &str, p: &Palette) -> El {
         .map(|first| first.to_uppercase().collect())
         .unwrap_or_default();
     el().size(size::AVATAR, size::AVATAR)
-        .radius(radius::CONTROL)
-        .fill(p.selected)
-        .border(size::LINE, p.accent_text)
+        .radius(size::AVATAR / 2.0)
+        .fill(p.accent)
         .center()
-        .child(text(initial).font(type_::LABEL).color(p.accent_text))
+        .child(text(initial).font(type_::LABEL).color(p.on_ink))
 }

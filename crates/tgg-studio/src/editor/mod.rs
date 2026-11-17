@@ -46,12 +46,10 @@ pub struct Document {
 /// What waits on the unsaved-changes prompt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Pending {
-    /// Back to the fighter on the stage.
+    /// Back to the skins.
     Leave,
     /// Go to another place.
     Go(Place),
-    /// Open another of the game's slots for editing: a recent edit.
-    Edit(melee_dat::MeleeSlot),
 }
 
 impl Document {

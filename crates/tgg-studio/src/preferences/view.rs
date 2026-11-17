@@ -1,16 +1,19 @@
-//! The Settings dialog: a row per setting, its name and what it does on
-//! the left, its control on the right, and help at the end.
+//! Settings: the player's Melee disc and Slippi ISO, tgg-melee's version and
+//! updates, the image editor textures open in, the app's own update check,
+//! and reporting a problem, in a dialog over the window. Rows sit without
+//! rules between them. Each change is kept as it's made, in `editor.json`;
+//! the image editor's command when the dialog closes. `actions` changes it;
+//! `view` draws the dialog.
 
 use super::{Menu, actions};
 use crate::mods::Disc;
 use crate::state::App;
 use crate::ui::tokens::{Palette, space};
 use crate::ui::{
-    ButtonKind, Dialog, DialogWidth, TEXT_ACTION_INSET, button, dialog, rule, select, select_item,
+    ButtonKind, Dialog, DialogWidth, TEXT_ACTION_INSET, button, dialog, select, select_item,
     select_menu, select_rule, spacer, switch, text_action, text_field,
 };
 use rune::{El, col, row};
-use tgg_app::settings::Appearance;
 
 /// The image editor's choices and field, at their widest.
 const CHOICES: f32 = 300.0;
@@ -19,18 +22,14 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
     if !app.preferences.open {
         return None;
     }
-    let rows = [
-        image_editor(app, p),
-        appearance(app, p),
-        updates(app, p),
-        game(app, p),
+    let body = col().children([
         disc(app, p),
-        help(p),
-    ];
-    let body = col().children(rows.into_iter().enumerate().flat_map(|(index, row)| {
-        let line = (index > 0).then(|| rule(p));
-        line.into_iter().chain([row])
-    }));
+        slippi(app, p),
+        tgg_melee(app, p),
+        image_editor(app, p),
+        updates(app, p),
+        report(p),
+    ]);
     let parts = Dialog {
         title: "Settings".into(),
         line: "Kept as you change them.".into(),
@@ -55,6 +54,65 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
 /// A setting: its name and a line saying what it does, then its control.
 fn setting(key: &str, name: &str, line: impl Into<String>, control: El, p: &Palette) -> El {
     crate::ui::setting_row(name, line, control, p).key(key.to_owned())
+}
+
+/// tgg-melee's disc: the game it plays, as the game shipped.
+fn disc(app: &App, p: &Palette) -> El {
+    let line = match &app.mods.disc {
+        Disc::Found(_) => "The game tgg-melee plays, as it shipped.",
+        Disc::Missing => "tgg-melee needs a Melee NTSC 1.02 disc, and none was found.",
+        Disc::Unknown | Disc::Looking => "Looking for your disc…",
+    };
+    setting(
+        "settings/disc",
+        "Your Melee disc",
+        line,
+        text_action("Choose another…", false, p)
+            .key("settings/choose-disc")
+            .on_press_tx(crate::mods::actions::choose_disc),
+        p,
+    )
+}
+
+/// Slippi's ISO: where "Also in Slippi" writes a skin, and choosing another.
+fn slippi(app: &App, p: &Palette) -> El {
+    let line = if app.game.is_some() {
+        "Also in Slippi writes a skin into this disc, so Slippi plays it too."
+    } else {
+        "Also in Slippi writes a skin into this disc."
+    };
+    setting(
+        "settings/game",
+        "Slippi ISO",
+        line,
+        text_action("Choose another…", false, p)
+            .key("settings/choose-game")
+            .on_press_tx(actions::choose_game),
+        p,
+    )
+}
+
+/// tgg-melee's version, its versions, and asking for updates.
+fn tgg_melee(app: &App, p: &Palette) -> El {
+    let line = match app.mods.port() {
+        Some(port) => format!("You have tgg-melee {}.", port.version),
+        None => "tgg-melee isn't installed yet.".to_owned(),
+    };
+    let control = row()
+        .mr(-TEXT_ACTION_INSET)
+        .gap(space::XXS)
+        .items_center()
+        .child(
+            text_action("Versions…", false, p)
+                .key("settings/versions")
+                .on_press(|app: &mut App| crate::mods::actions::show_versions(app, true)),
+        )
+        .child(
+            text_action("Check for updates", false, p)
+                .key("settings/fetch")
+                .on_press(crate::mods::actions::fetch),
+        );
+    setting("settings/tgg-melee", "tgg-melee", line, control, p)
 }
 
 /// The image editor: the system's default, an app on this computer that
@@ -116,34 +174,6 @@ fn editor_value(app: &App) -> String {
     }
 }
 
-fn appearance(app: &App, p: &Palette) -> El {
-    let open = app.preferences.menu == Some(Menu::Appearance);
-    let value = appearance_name(app.settings.appearance());
-    setting(
-        "settings/appearance/row",
-        "Appearance",
-        "How the app looks.",
-        select(value, open, p)
-            .key("settings/appearance")
-            .label("Appearance")
-            .on_press(|app: &mut App| actions::toggle_menu(app, Menu::Appearance)),
-        p,
-    )
-}
-
-/// The palettes, by the name they show.
-const APPEARANCES: [(Appearance, &str); 2] = [
-    (Appearance::Gallery, "Gallery (dark)"),
-    (Appearance::Paper, "Paper (light)"),
-];
-
-fn appearance_name(appearance: Appearance) -> &'static str {
-    APPEARANCES
-        .iter()
-        .find(|(known, _)| *known == appearance)
-        .map_or("Gallery (dark)", |(_, name)| name)
-}
-
 /// The open select's menu, at the window's root over Settings.
 pub fn menu(app: &App, p: &Palette) -> Option<El> {
     if !app.preferences.open {
@@ -181,36 +211,19 @@ pub fn menu(app: &App, p: &Palette) -> Option<El> {
                 p,
             ))
         }
-        Menu::Appearance => {
-            let now = app.settings.appearance();
-            let items = APPEARANCES
-                .iter()
-                .map(|(appearance, name)| {
-                    let appearance = *appearance;
-                    select_item(name, now == appearance, p)
-                        .key(format!(
-                            "settings/appearance/{}",
-                            name.split(' ').next().unwrap_or(name).to_lowercase()
-                        ))
-                        .on_press(move |app: &mut App| actions::set_appearance(app, appearance))
-                })
-                .collect();
-            Some(select_menu(
-                "settings/appearance",
-                items,
-                actions::close_menu,
-                p,
-            ))
-        }
     }
 }
 
+/// The app's own updates: ask textures.gg at launch, or not.
 fn updates(app: &App, p: &Palette) -> El {
     let on = app.settings.check_for_updates.unwrap_or(true);
     setting(
         "settings/updates",
         "Check for updates",
-        "Once at launch, the app asks textures.gg whether a newer version is out. Nothing downloads on its own.",
+        format!(
+            "Once at launch, the app asks textures.gg whether a newer version is out. You have {}.",
+            env!("CARGO_PKG_VERSION")
+        ),
         switch("settings/updates/switch", on, p)
             .label("Check for updates")
             .on_press(move |app: &mut App| actions::set_update_check(app, !on)),
@@ -218,91 +231,15 @@ fn updates(app: &App, p: &Palette) -> El {
     )
 }
 
-/// Slippi's ISO: the game skins install into and Slippi's Play opens, and
-/// choosing another. Without Slippi's Dolphin, where to get it.
-fn game(app: &App, p: &Palette) -> El {
-    let path = app.game.as_ref().map(|references| references.game().path());
-    let file = file_name(path);
-    let line = if app.slippi.dolphin.is_some() {
-        format!("Skins install into {file}, and Play beside Slippi opens it in Slippi's Dolphin.")
-    } else {
-        format!(
-            "Skins install into {file}. Play beside Slippi shows once Slippi Launcher is installed (slippi.gg)."
-        )
-    };
-    // The file's name says which; its whole path is a hover away.
+/// Sending what went wrong to textures.gg.
+fn report(p: &Palette) -> El {
     setting(
-        "settings/game",
-        "Slippi ISO",
-        line,
-        text_action("Choose another…", false, p)
-            .key("settings/choose-game")
-            .on_press_tx(actions::choose_game),
+        "settings/report",
+        "Report a problem",
+        "Sends the app's log to textures.gg, and nothing else.",
+        button("Report a problem", ButtonKind::Secondary, p)
+            .key("settings/report/open")
+            .on_press(actions::report_problem),
         p,
     )
-    .help(
-        path.map(|path| path.display().to_string())
-            .unwrap_or_default(),
-    )
-}
-
-/// tgg-melee's disc, which may be the Slippi ISO, and choosing another.
-fn disc(app: &App, p: &Palette) -> El {
-    let found = match &app.mods.disc {
-        Disc::Found(path) => Some(path.as_path()),
-        _ => None,
-    };
-    let same =
-        found.is_some() && found == app.game.as_ref().map(|references| references.game().path());
-    let line = match &app.mods.disc {
-        Disc::Found(_) if same => {
-            "tgg-melee plays your Slippi ISO too, as the game shipped. Skins you put in the ISO stay in Slippi.".to_owned()
-        }
-        Disc::Found(_) => format!(
-            "tgg-melee plays {}, as the game shipped.",
-            file_name(found)
-        ),
-        Disc::Missing => {
-            "tgg-melee needs a Melee NTSC 1.02 disc, and none was found.".to_owned()
-        }
-        Disc::Unknown | Disc::Looking => "Looking for your disc…".to_owned(),
-    };
-    setting(
-        "settings/disc",
-        "tgg-melee disc",
-        line,
-        text_action("Choose another…", false, p)
-            .key("settings/choose-disc")
-            .on_press_tx(crate::mods::actions::choose_disc),
-        p,
-    )
-    .help(
-        found
-            .map(|path| path.display().to_string())
-            .unwrap_or_default(),
-    )
-}
-
-/// A path's file name, or nothing.
-fn file_name(path: Option<&std::path::Path>) -> String {
-    path.and_then(|path| path.file_name())
-        .map_or_else(String::new, |name| name.to_string_lossy().into_owned())
-}
-
-/// Help: reporting a problem, the community, and what's running.
-fn help(p: &Palette) -> El {
-    let actions = row()
-        .gap(space::XS)
-        .items_center()
-        .child(
-            button("Report a problem", ButtonKind::Secondary, p)
-                .key("settings/report")
-                .on_press(actions::report_problem),
-        )
-        .child(
-            text_action("Discord", false, p)
-                .key("settings/discord")
-                .on_press_tx(crate::report::actions::discord),
-        );
-    setting("settings/help", "Help", tgg_app::log::version(), actions, p)
 }

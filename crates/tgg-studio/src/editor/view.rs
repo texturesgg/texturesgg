@@ -103,21 +103,21 @@ pub fn actions(document: &Document, p: &Palette) -> El {
         .child(
             button("Done", ButtonKind::Secondary, p)
                 .key("editor/done")
-                .help(hint("Back to the fighter", Command::Back))
+                .help(hint("Back to Skins", Command::Back))
                 .on_press_tx(actions::leave),
         )
         .child(
             button("Save", ButtonKind::Secondary, p)
                 .key("editor/save")
                 .opacity(if saved { 0.5 } else { 1.0 })
-                .help(hint("Keep it in your library", Command::Save))
+                .help(hint("Keep it in your skins", Command::Save))
                 .on_press_tx(|app: &mut App, tx| actions::save(app, false, None, tx)),
         )
         .child(
-            button("Save and install", ButtonKind::Primary, p)
+            button("Save and put in Slippi", ButtonKind::Primary, p)
                 .key("editor/install")
                 .help(hint(
-                    "Keep it in your library and install it into its slot of your Slippi ISO",
+                    "Keep it in your skins and write it into your Melee disc",
                     Command::SaveAndInstall,
                 ))
                 .on_press_tx(|app: &mut App, tx| actions::save(app, true, None, tx)),
@@ -246,9 +246,7 @@ pub fn prompt(app: &App, p: &Palette) -> Option<El> {
     let place = tgg_app::costumes::slot_label(Some(document.slot));
     let parts = Dialog {
         title: "Save your changes?".into(),
-        line: format!(
-            "Your edits to {place} go to your library as a skin. Without saving, they're lost."
-        ),
+        line: format!("Your edits to {place} go to your skins. Without saving, they're lost."),
         body: None,
         buttons: vec![
             button("Cancel", ButtonKind::Secondary, p)

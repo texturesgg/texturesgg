@@ -1,5 +1,6 @@
-//! Flows only a real fighter shows: moves, and the shared models they draw.
-//! They read a clean Melee NTSC 1.02 disc image named by `TGG_MELEE_ISO`:
+//! Flows only a real fighter shows: the shared models it holds, and the
+//! camera kept across its costumes. They read a clean Melee NTSC 1.02 disc
+//! image named by `TGG_MELEE_ISO`:
 //!
 //! ```text
 //! TGG_MELEE_ISO=melee.iso cargo test -p tgg-studio --features melee-iso
@@ -38,15 +39,8 @@ fn settle(rt: &mut Runtime<App>) {
     }
 }
 
-fn tap(rt: &mut Runtime<App>, key: &str) {
-    let (x, y) = rt.find(key).unwrap_or_else(|| panic!("{key} is on screen"));
-    rt.pointer_down(x, y);
-    rt.pointer_up(x, y);
-    rt.frame(1.0 / 60.0);
-}
-
 #[test]
-fn foxs_shine_row_plays_the_move_that_shows_it() {
+fn fox_opens_with_the_models_his_moves_draw() {
     let (mut rt, _data) = runtime();
     let fox = Character::from_code("Fx").expect("Fox");
     rt.update(|app, _| melee::open_fighter(app, fox));
@@ -56,35 +50,18 @@ fn foxs_shine_row_plays_the_move_that_shows_it() {
         !shown.shared.is_empty(),
         "a stock Fox plays with his shared models"
     );
-    assert!(!shown.moves.is_empty());
-    tap(&mut rt, "melee/shared/Shine");
-    let shine = melee_dat::SharedModel::of(fox)
-        .find(|model| model.name() == "Shine")
-        .expect("Fox has a Shine");
-    let shown = rt.state.stage.shown.as_ref().expect("still on the stage");
-    assert_eq!(shown.action(), Some(shine.action()));
-    assert!(
-        shown.playing && shown.restart,
-        "the move starts over, and so does what it spawns"
-    );
 }
 
 #[test]
-fn a_new_costume_keeps_the_move_and_the_camera() {
+fn a_new_costume_keeps_the_camera() {
     let (mut rt, _data) = runtime();
     let fox = Character::from_code("Fx").expect("Fox");
     rt.update(|app, _| melee::open_fighter(app, fox));
-    let laser = melee_dat::SharedModel::of(fox)
-        .find(|model| model.name() == "Laser")
-        .expect("Fox has a Laser");
-    rt.update(|app, _| {
-        crate::stage::actions::play_action(app, laser.action());
-        app.stage.shown.as_mut().expect("on the stage").orbit.yaw = 1.0;
-    });
+    rt.update(|app, _| app.stage.shown.as_mut().expect("on the stage").orbit.yaw = 1.0);
     settle(&mut rt);
-    tap(&mut rt, "melee/costume/PlFxOr.dat");
+    let orange: melee_dat::MeleeSlot = "PlFxOr.dat".parse().expect("a slot");
+    rt.update(|app, _| melee::choose_costume(app, orange));
     let shown = rt.state.stage.shown.as_ref().expect("still on the stage");
     assert_eq!(shown.slot.file_name(), "PlFxOr.dat");
-    assert_eq!(shown.action(), Some(laser.action()));
     assert!((shown.orbit.yaw - 1.0).abs() < 1e-9);
 }

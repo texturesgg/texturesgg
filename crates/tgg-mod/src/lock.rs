@@ -36,6 +36,8 @@
 //!   the installed `sets` that list it, and `direct` when the player
 //!   installed it on its own. A mod with no sets and not direct stays
 //!   installed until the player removes it.
+//!   `withdrawn`, when present, is why tgg turned the mod off: the registry
+//!   withdrew its release ([`crate::withdraw`]).
 //!
 //! A mod's folder, not the lock, says whether it is installed and whether it
 //! is on (`<id>` or `.<id>`). A mod in the folder without an entry was put
@@ -88,6 +90,12 @@ pub struct LockEntry {
     /// Installed on its own.
     #[serde(default)]
     pub direct: bool,
+    /// Why tgg turned it off: the registry withdrew its release. Set only
+    /// while tgg's turning off stands, so tgg turns it back on when the
+    /// release is restored, and never turns it off again after the player
+    /// turned it back on themselves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub withdrawn: Option<String>,
 }
 
 impl Default for Lock {

@@ -3,8 +3,8 @@
 //! through its neutral special. Whatever plays the move, the Moves pane or a
 //! Shared pane row, they appear.
 //!
-//! tgg-editor's, but for one thing: a rebuilt renderer gets new spawns,
-//! where tgg-editor clears the old ones' renderer ids.
+//! A rebuilt renderer gets new spawns; the old ones' renderer ids name
+//! nothing in it.
 
 use dat_parser::hsd::draw::HsdEvaluatedDrawWork;
 use dat_parser::hsd::scene::HsdScene;

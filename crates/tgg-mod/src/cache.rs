@@ -37,15 +37,19 @@ pub fn packages_dir(data: &Path) -> PathBuf {
     tgg_dir(data).join(PACKAGES)
 }
 
-/// Write `bytes` to `path` in one step, making its folder.
+/// Write `bytes` to `path` in one step, making its folder. Each write
+/// stages under a name of its own (the process and a count), so two threads
+/// writing the same file at once each land whole, the last one winning.
 pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), Error> {
+    static WRITES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let folder = path.parent().expect("a file has a folder");
     std::fs::create_dir_all(folder).map_err(Error::io(folder))?;
     let name = path
         .file_name()
         .expect("a file has a name")
         .to_string_lossy();
-    let staging = folder.join(format!(".{name}.{}.new", std::process::id()));
+    let write = WRITES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let staging = folder.join(format!(".{name}.{}.{write}.new", std::process::id()));
     std::fs::write(&staging, bytes).map_err(Error::io(&staging))?;
     std::fs::rename(&staging, path).map_err(Error::io(path))
 }
@@ -191,6 +195,24 @@ pub fn refresh_mapping(net: &dyn Net, data: &Path) -> Result<SlippiMapping, Erro
     Ok(mapping)
 }
 
+fn sets_path(data: &Path) -> PathBuf {
+    tgg_dir(data).join(CACHE).join("sets.json")
+}
+
+/// The last list of textures.gg's sets seen, if any.
+pub fn cached_sets(data: &Path) -> Option<Vec<crate::registry::Set>> {
+    let bytes = std::fs::read(sets_path(data)).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// textures.gg's sets ([`crate::sets()`]), kept as the last list seen.
+pub fn refresh_sets(net: &dyn Net, data: &Path) -> Result<Vec<crate::registry::Set>, Error> {
+    let sets = crate::registry::sets(net)?;
+    let json = serde_json::to_string_pretty(&sets).expect("sets serialize") + "\n";
+    write_atomic(&sets_path(data), json.as_bytes())?;
+    Ok(sets)
+}
+
 /// Remove each cached package that neither the lock in `mods` nor a
 /// profile folder names and that hasn't been used for `older_than`. The
 /// paths removed.
@@ -240,6 +262,31 @@ pub fn prune_packages(
 mod tests {
     use super::*;
     use crate::FakeNet;
+
+    /// A front end plans two sets at once (one shown, one played): both
+    /// refresh the same cached file from their own threads.
+    #[test]
+    fn two_threads_writing_one_file_both_land() {
+        let data = tempfile::tempdir().expect("temp dir");
+        let path = data.path().join("tgg").join("cache").join("sets.json");
+        let writers: Vec<_> = (0..4u8)
+            .map(|n| {
+                let path = path.clone();
+                std::thread::spawn(move || (0..200).try_for_each(|_| write_atomic(&path, &[n; 64])))
+            })
+            .collect();
+        for writer in writers {
+            writer
+                .join()
+                .expect("the writer ran")
+                .expect("every write landed");
+        }
+        let kept = std::fs::read(&path).expect("the file is there");
+        assert!(
+            kept.len() == 64 && kept.iter().all(|byte| *byte == kept[0]),
+            "whole"
+        );
+    }
 
     #[test]
     fn a_cached_package_is_used_and_a_damaged_one_fetched_again() {
@@ -306,6 +353,7 @@ mod tests {
                 sha256: Some(locked.clone()),
                 sets: Vec::new(),
                 direct: true,
+                withdrawn: None,
             },
         );
         std::fs::create_dir_all(&mods).expect("mkdir");

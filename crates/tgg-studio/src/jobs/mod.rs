@@ -35,10 +35,14 @@ pub enum Done {
     Replays(Box<crate::replays::Done>),
     /// New mod: the SDK's examples and the tools found, or the mod made.
     NewMod(Box<crate::newmod::actions::Done>),
-    /// Slippi's Dolphin, started from here, closed.
-    SlippiEnded,
-    /// You: a profile read from textures.gg, a pack downloaded.
-    Profile(Box<crate::profile::Done>),
+    /// Sets: read, a plan worked out, a game got ready.
+    Sets(Box<crate::sets::Done>),
+    /// First run: the picked sets were made.
+    FirstRun(Box<crate::first_run::Done>),
+    /// Play: the queues the meeting point lists.
+    Play(Box<crate::play::Done>),
+    /// Skins: textures.gg's listing, or a skin downloaded from it.
+    Skins(Box<crate::library::site::Done>),
     /// What the game makes of skins in tgg-melee's slots (`library::port`).
     Verdicts(Vec<(tgg_app::ids::SkinId, MeleeSlot, Option<tgg_mod::Verdict>)>),
     /// The toast with this id has shown long enough.
@@ -163,6 +167,11 @@ fn states_of(game: &tgg_app::Game, library: &Library) -> HashMap<MeleeSlot, Slot
 /// Once the window runs: keep its waker, and start reading the game.
 pub fn setup(app: &mut crate::state::App, waker: Waker) {
     app.jobs.set_waker(waker);
+    // Before there is a game: the disc found on its own, textures.gg's
+    // offers for what's installed.
+    if app.first_run.is_some() {
+        crate::first_run::actions::opened(app);
+    }
     crate::melee::actions::refresh(app);
     // Edits a closed window or a crash left unsaved.
     crate::editor::draft::offer(app);
@@ -203,6 +212,9 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
     changed |= crate::editor::external::check(app, tx);
     // A sign-in under way asks the site whether it's confirmed, when due.
     crate::signin::actions::tick(app);
+    // Play opens its queues and replays, and keeps its clock and the running
+    // game's log read while it shows.
+    crate::play::actions::tick(app, tx);
     if let Some(picked) = app.stage.picked.take() {
         crate::editor::actions::select_picked(app, &picked, tx);
         changed = true;
@@ -217,12 +229,14 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
                 undoable,
             } => crate::melee::actions::states_read(app, &iso, states, undoable),
             Done::Mods(done) => crate::mods::actions::done(app, *done),
-            Done::Profile(done) => crate::profile::actions::done(app, *done),
+            Done::Skins(done) => crate::library::site::done(app, *done),
             Done::ReportSent(result) => crate::report::actions::sent(app, result),
             Done::SignIn(done) => crate::signin::actions::done(app, *done, tx),
             Done::Replays(done) => crate::replays::actions::done(app, *done),
             Done::NewMod(done) => crate::newmod::actions::done(app, *done),
-            Done::SlippiEnded => crate::slippi::actions::ended(app),
+            Done::Sets(done) => crate::sets::actions::done(app, *done),
+            Done::FirstRun(done) => crate::first_run::actions::done(app, *done),
+            Done::Play(done) => crate::play::actions::done(app, *done),
             Done::NoticeExpired(id) => app.notice_expired(id),
             Done::Verdicts(verdicts) => crate::library::port::answered(app, verdicts),
             Done::Update(newer) => {
@@ -231,6 +245,9 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
             }
         };
     }
+    // First run adopts a disc found on its own, and moves on once the game
+    // has installed.
+    changed |= crate::first_run::actions::poll(app);
     // A link from textures.gg opens once what it needs has arrived.
     changed |= crate::links::apply(app);
     changed

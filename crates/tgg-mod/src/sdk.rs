@@ -78,13 +78,13 @@ pub enum SdkError {
     Io(PathBuf, std::io::Error),
     #[error("{0} is not a game SDK: {1}")]
     Json(PathBuf, serde_json::Error),
-    #[error("the SDK targets {0}; this tool builds {api} mods", api = crate::API)]
+    #[error("the SDK targets {0}, but this tool builds {api} mods", api = crate::API)]
     Api(String),
     #[error("the SDK's {0} {1:?} must be a relative path inside the SDK")]
     Path(&'static str, String),
     #[error("the SDK's game layout {0:?} is not 16 hex digits")]
     GameAbi(String),
-    #[error("the SDK's option {0:?} names a file; files go in force_includes")]
+    #[error("the SDK's option {0:?} names a file. Files go in force_includes")]
     Option(String),
     #[error("the SDK's library {0:?} is not a plain library name")]
     Library(String),
@@ -93,6 +93,15 @@ pub enum SdkError {
 }
 
 impl Sdk {
+    /// The SDK's `tgg-script`, which checks and lists script mods; `None`
+    /// for an SDK from before scripts.
+    pub fn script_tool(&self) -> Option<PathBuf> {
+        ["tgg-script", "tgg-script.exe"]
+            .into_iter()
+            .map(|name| self.root.join("tools").join(name))
+            .find(|path| path.is_file())
+    }
+
     /// Read the SDK at `path`: its folder, or its `tgg-game-sdk.json`.
     pub fn open(path: &Path) -> Result<Self, SdkError> {
         let file = if path.is_dir() {
@@ -215,7 +224,7 @@ mod tests {
     use super::*;
 
     const SDK: &str = r#"{
-        "api": "tgg-melee/0", "api_version": "0.1", "name": "tgg-melee", "version": "0.1.0",
+        "api": "tgg-melee/1", "api_version": "0.1", "name": "tgg-melee", "version": "0.1.0",
         "game_abi": "6a0e926ca3e90452",
         "compiler": "GNU", "compiler_version": "15.3.0", "processor": "x86_64",
         "target": "x86_64-linux-gnu",

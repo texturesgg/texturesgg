@@ -28,7 +28,7 @@ pub fn run(page: Option<&str>) -> Result<()> {
             && page
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_'),
-        "{page:?} isn't a docs page; pages are named like writing-mods or hooks"
+        "{page:?} isn't a docs page. Pages are named like writing-mods or hooks"
     );
     let installed = match crate::ports::current_version()? {
         Some(_) => Some(crate::ports::resolve(None)?),

@@ -33,7 +33,7 @@ pub struct Dev<'a> {
 pub fn dev(dev: Dev) -> Result<()> {
     ensure!(
         !(dev.watch && dev.gdb),
-        "--watch restarts the game on each change, which gdb can't follow; use one"
+        "--watch restarts the game on each change, which gdb can't follow. Use one"
     );
     let (installed, sdk) = match dev.game {
         // A local build carries its debug info and its SDK in the build folder
@@ -44,14 +44,14 @@ pub fn dev(dev: Dev) -> Result<()> {
             };
             ensure!(
                 installed.executable().is_file(),
-                "{} has no {}: --game wants the port's build folder",
+                "{} has no {}. --game needs the port's build folder",
                 folder.display(),
                 crate::ports::EXECUTABLE
             );
             let sdk = folder.join("tgg-melee-sdk");
             ensure!(
                 sdk.join("tgg-game-sdk.json").is_file(),
-                "{} has no tgg-melee-sdk folder: build the port first",
+                "{} has no tgg-melee-sdk folder. Build the port first",
                 folder.display()
             );
             (installed, sdk)
@@ -61,7 +61,7 @@ pub fn dev(dev: Dev) -> Result<()> {
             if dev.gdb {
                 ensure!(
                     installed.has_debug_info(),
-                    "gdb needs the game's debug info: tgg port install {} --debug",
+                    "gdb needs the game's debug info. Run tgg port install {} --debug",
                     installed.version
                 );
             }
@@ -71,6 +71,9 @@ pub fn dev(dev: Dev) -> Result<()> {
     };
     crate::ports::check_runtime(&installed)?;
     let iso = crate::config::iso_or_ask()?;
+    if tgg_mod::is_script(dev.dir) {
+        return script_dev(&dev, &installed, &iso, &sdk);
+    }
     let options = Options {
         sdk: Some(&sdk),
         cc: dev.cc,
@@ -91,11 +94,11 @@ pub fn dev(dev: Dev) -> Result<()> {
     let signals = crate::signals::handle()?;
 
     let result = if dev.gdb {
-        run_gdb(&installed, &iso, dev.args)
+        run_gdb(&installed, &iso, dev.args, &[])
     } else if dev.watch {
         watch(&dev, &installed, &iso, &id, &options, &signals, &link)
     } else {
-        let mut game = Game::start(&installed, &iso, dev.args, &id)?;
+        let mut game = Game::start(&installed, &iso, dev.args, &id, &[])?;
         game.wait()
     };
     if dev.keep {
@@ -117,6 +120,109 @@ fn build_dev(dir: &Path, options: &Options) -> Result<ModId> {
     Ok(id)
 }
 
+/// The parts of a script mod's folder the game reads.
+const SCRIPT_PARTS: &[&str] = &["manifest.json", "scripts", "assets", "files"];
+
+/// A script mod: nothing to build. The mods folder's `<id>` is a link to the
+/// mod's own folder (on Windows a copy kept in step with it), and the game
+/// runs with `TGG_SCRIPT_DEV=<id>`, so it reloads a script on the frame after
+/// it's saved.
+fn script_dev(dev: &Dev, installed: &Installed, iso: &Path, sdk: &Path) -> Result<()> {
+    let id = build::read_manifest(dev.dir)?.id;
+    let sdk = tgg_mod::Sdk::open(sdk).with_context(|| sdk.display().to_string())?;
+    tgg_mod::write_script_types(&sdk, dev.dir)?;
+    let mods = ModsDir::game();
+    let target = if cfg!(windows) {
+        let staged = dev.dir.join(build::BUILD).join("dev").join(id.as_str());
+        if staged.exists() {
+            std::fs::remove_dir_all(&staged).with_context(|| staged.display().to_string())?;
+        }
+        sync_script(dev.dir, &staged)?;
+        staged
+    } else {
+        std::path::absolute(dev.dir)?
+    };
+    let link = Link::make(&mods, &id, &target)?;
+    warn_about(&mods, &id)?;
+    let signals = crate::signals::handle()?;
+    let env = [("TGG_SCRIPT_DEV", id.as_str())];
+    let result = if dev.gdb {
+        run_gdb(installed, iso, dev.args, &env)
+    } else {
+        let mut game = Game::start(installed, iso, dev.args, &id, &env)?;
+        eprintln!("Save a script and the game runs it on the next frame. Ctrl-C to stop.");
+        let mut seen = snapshot(dev.dir);
+        while game.running() && !signals.stopping() {
+            std::thread::sleep(Duration::from_millis(100));
+            if cfg!(windows) {
+                let now = snapshot(dev.dir);
+                if now != seen {
+                    seen = now;
+                    if let Err(error) = sync_script(dev.dir, &link.link) {
+                        eprintln!("{}", red(&format!("{error:#}")));
+                    }
+                }
+            }
+        }
+        if game.running() {
+            std::thread::sleep(Duration::from_millis(500));
+            game.stop();
+            Ok(())
+        } else {
+            game.wait()
+        }
+    };
+    if dev.keep {
+        link.keep();
+    } else {
+        link.restore()?;
+    }
+    result
+}
+
+/// Bring `to` in step with the script mod in `from`: its [`SCRIPT_PARTS`],
+/// each changed file written beside and renamed over the old one, so the
+/// game never reads half a file, and files no longer in `from` removed.
+fn sync_script(from: &Path, to: &Path) -> Result<()> {
+    std::fs::create_dir_all(to).with_context(|| to.display().to_string())?;
+    for part in SCRIPT_PARTS {
+        sync_path(&from.join(part), &to.join(part))?;
+    }
+    Ok(())
+}
+
+fn sync_path(from: &Path, to: &Path) -> Result<()> {
+    let context = || to.display().to_string();
+    let Ok(meta) = std::fs::metadata(from) else {
+        if to.is_dir() {
+            std::fs::remove_dir_all(to).with_context(context)?;
+        } else if to.exists() {
+            std::fs::remove_file(to).with_context(context)?;
+        }
+        return Ok(());
+    };
+    if meta.is_dir() {
+        std::fs::create_dir_all(to).with_context(context)?;
+        for entry in std::fs::read_dir(from).with_context(|| from.display().to_string())? {
+            let name = entry?.file_name();
+            sync_path(&from.join(&name), &to.join(&name))?;
+        }
+        for entry in std::fs::read_dir(to).with_context(context)? {
+            let name = entry?.file_name();
+            if !from.join(&name).exists() {
+                sync_path(&from.join(&name), &to.join(&name))?;
+            }
+        }
+    } else if std::fs::read(from).ok() != std::fs::read(to).ok() {
+        let mut new = to.as_os_str().to_owned();
+        new.push(".~new");
+        let new = PathBuf::from(new);
+        std::fs::copy(from, &new).with_context(|| new.display().to_string())?;
+        std::fs::rename(&new, to).with_context(context)?;
+    }
+    Ok(())
+}
+
 /// Say before the game starts what would stop the mod from loading beside
 /// the other installed mods.
 fn warn_about(mods: &ModsDir, id: &ModId) -> Result<()> {
@@ -128,7 +234,7 @@ fn warn_about(mods: &ModsDir, id: &ModId) -> Result<()> {
         eprintln!(
             "{}",
             red(&format!(
-                "{id} replaces {}, and so does {}; the one that loads later is refused",
+                "{id} replaces {}, and so does {}, so the one that loads later is refused",
                 conflict.replaces, conflict.with
             ))
         );
@@ -184,7 +290,7 @@ impl Link {
         } else if std::fs::symlink_metadata(&link).is_ok() {
             ensure!(
                 !aside.exists(),
-                "{} and {} both exist; keep the one you want as {}",
+                "{} and {} both exist. Keep the one you want as {}",
                 link.display(),
                 aside.display(),
                 link.display()
@@ -276,27 +382,33 @@ fn remove_dev(link: &Path) -> Result<()> {
 }
 
 /// A running game, its output passed through with this mod's refusals in
-/// red.
+/// red, and its sim budget in yellow once it's over half.
 struct Game {
     child: Child,
     readers: Vec<std::thread::JoinHandle<()>>,
 }
 
 impl Game {
-    fn start(installed: &Installed, iso: &Path, args: &[String], id: &ModId) -> Result<Self> {
+    fn start(
+        installed: &Installed,
+        iso: &Path,
+        args: &[String],
+        id: &ModId,
+        env: &[(&str, &str)],
+    ) -> Result<Self> {
         let mut child = Command::new(installed.executable())
             .arg(iso)
             .args(args)
+            .envs(env.iter().copied())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .with_context(|| format!("running {}", installed.executable().display()))?;
-        let refused = format!("mods: {id}: refused");
         let stdout = child.stdout.take().expect("piped");
         let stderr = child.stderr.take().expect("piped");
         let readers = vec![
-            pass_through(stdout, refused.clone(), false),
-            pass_through(stderr, refused, true),
+            pass_through(stdout, id.to_string(), false),
+            pass_through(stderr, id.to_string(), true),
         ];
         crate::signals::handle()?.set_game(Some(child.id()));
         Ok(Self { child, readers })
@@ -330,7 +442,7 @@ impl Game {
 
 fn pass_through(
     from: impl std::io::Read + Send + 'static,
-    refused: String,
+    id: String,
     to_stderr: bool,
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
@@ -341,10 +453,9 @@ fn pass_through(
         };
         for line in std::io::BufReader::new(from).lines() {
             let Ok(line) = line else { break };
-            let line = if color && line.contains(&refused) {
-                format!("\x1b[31m{line}\x1b[0m")
-            } else {
-                line
+            let line = match paint(&line, &id) {
+                Some(code) if color => format!("\x1b[{code}m{line}\x1b[0m"),
+                _ => line,
             };
             let _ = if to_stderr {
                 writeln!(std::io::stderr(), "{line}")
@@ -355,15 +466,30 @@ fn pass_through(
     })
 }
 
-fn run_gdb(installed: &Installed, iso: &Path, args: &[String]) -> Result<()> {
+/// The color a line of the game's output gets, if any: red for the mod's
+/// refusal, yellow for its sim budget line once it's over half.
+fn paint(line: &str, id: &str) -> Option<&'static str> {
+    if line.contains(&format!("mods: {id}: refused")) {
+        Some("31")
+    } else if line.starts_with(&format!("mods: {id}: sim.luau's busiest"))
+        && line.contains("over half")
+    {
+        Some("33")
+    } else {
+        None
+    }
+}
+
+fn run_gdb(installed: &Installed, iso: &Path, args: &[String], env: &[(&str, &str)]) -> Result<()> {
     let status = crate::signals::run(
         Command::new("gdb")
+            .envs(env.iter().copied())
             .args(["-ex", "set breakpoint pending on", "--args"])
             .arg(installed.executable())
             .arg(iso)
             .args(args),
     )
-    .context("running gdb; is it installed?")?;
+    .context("couldn't run gdb. Is it installed?")?;
     ensure!(status.success(), "gdb exited with {status}");
     Ok(())
 }
@@ -408,9 +534,9 @@ fn watch(
     link: &Link,
 ) -> Result<()> {
     let mut seen = snapshot(dev.dir);
-    let mut game = Some(Game::start(installed, iso, dev.args, id)?);
+    let mut game = Some(Game::start(installed, iso, dev.args, id, &[])?);
     eprintln!(
-        "Watching {} for changes; Ctrl-C ends the session",
+        "Watching {} for changes. Ctrl-C to stop.",
         dev.dir.display()
     );
     while !signals.stopping() {
@@ -420,7 +546,7 @@ fn watch(
         {
             running.finish();
             game = None;
-            eprintln!("The game ended; it starts again on the next change");
+            eprintln!("The game closed. It starts again on the next change.");
         }
         let now = snapshot(dev.dir);
         if now == seen {
@@ -433,7 +559,7 @@ fn watch(
                     running.stop();
                 }
                 link.refresh()?;
-                game = Some(Game::start(installed, iso, dev.args, id)?);
+                game = Some(Game::start(installed, iso, dev.args, id, &[])?);
             }
             Err(error) => eprintln!("{}", red(&format!("{error:#}"))),
         }
@@ -446,4 +572,26 @@ fn watch(
         running.stop();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::paint;
+
+    #[test]
+    fn paints_the_mods_refusal_and_its_budget_past_half() {
+        let id = "me.combo";
+        assert_eq!(
+            paint("mods: me.combo: refused, sim.luau:3: no", id),
+            Some("31")
+        );
+        let over = "mods: me.combo: sim.luau's busiest logic frame took 3001 of the 5000 \
+                    safepoints a frame has (60%). That's over half, and running out switches \
+                    it off until the match ends";
+        assert_eq!(paint(over, id), Some("33"));
+        let under = "mods: me.combo: sim.luau's busiest logic frame took 1200 of the 5000 \
+                     safepoints a frame has (24%)";
+        assert_eq!(paint(under, id), None);
+        assert_eq!(paint(&over.replace("me.combo", "other.mod"), id), None);
+    }
 }

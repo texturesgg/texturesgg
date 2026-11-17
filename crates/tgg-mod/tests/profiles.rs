@@ -199,14 +199,7 @@ fn a_profile_plays_as_installed_when_the_installs_match() {
     .expect("mods");
     assert_eq!(resolve(&net, &player, &profile).fit, Fit::AsInstalled);
 
-    // With a built-in module off, or a setting the player hasn't saved, it
-    // needs its own folder.
-    let mut unlocks_off = profile.clone();
-    unlocks_off
-        .game
-        .settings
-        .insert("tgg.unlocks".into(), false);
-    assert_eq!(resolve(&net, &player, &unlocks_off).fit, Fit::NeedsProfile);
+    // With a setting the player hasn't saved, it needs its own folder.
     let mut set = profile.clone();
     set.mods[0].settings.insert("starters".into(), json!(5));
     assert_eq!(resolve(&net, &player, &set).fit, Fit::NeedsProfile);
@@ -317,35 +310,53 @@ fn a_tgg_replay_without_a_profile_reads_its_mods() {
     let profile = tgg_mod::profile_from_slp(&replay, None).expect("profile");
     assert_eq!(profile.game.version, "0.1.0-rc.8");
     assert_eq!(profile.game.layout.as_deref(), Some("layout8"));
-    assert!(!profile.game.settings["tgg.unlocks"]);
     let ids: Vec<&str> = profile.mods.iter().map(|m| m.id.as_str()).collect();
     assert_eq!(ids, ["tgg.ucf", "tgg.legal-stages", "tgg.replay-player"]);
 }
 
 #[test]
-fn unofficial_mods_wait_for_the_players_yes() {
+fn unofficial_native_mods_wait_for_the_players_yes_by_account() {
     let net = FakeNet::new();
     let player = player();
     install_port(&net, &player);
-    net.set_publisher(
-        "tgg.legal-stages",
-        Publisher {
-            name: "someone".into(),
-            official: false,
-        },
-    );
+    let someone = Publisher {
+        id: Some("acct-someone".into()),
+        name: "someone".into(),
+        official: false,
+    };
+    net.set_publisher("tgg.legal-stages", someone.clone());
     let replay = player.file("game.slp", &tgg_replay(competitive_profile()));
     let profile = tgg_mod::profile_from_slp(&replay, None).expect("profile");
+    // Files alone carry no code: no question.
+    assert!(resolve(&net, &player, &profile).untrusted().is_empty());
+
+    net.set_native("tgg.legal-stages");
     let plan = resolve(&net, &player, &profile);
-    assert_eq!(plan.untrusted(), ["someone"]);
+    assert_eq!(plan.untrusted(), [&someone]);
     let result = tgg_mod::prepare_profile(&net, &plan, &player.data, &no_progress, &go());
     assert!(
         matches!(&result, Err(Error::NeedsTrust { publisher, .. }) if publisher == "someone"),
         "{result:?}"
     );
-    tgg_mod::remember_trust(&player.data, "someone", true).expect("remember");
-    let plan = resolve(&net, &player, &profile);
-    assert!(plan.untrusted().is_empty());
+    tgg_mod::remember_trust(&player.data, &someone, true).expect("remember");
+    assert!(resolve(&net, &player, &profile).untrusted().is_empty());
+    // A rename keeps the yes; the same name on another account doesn't get it.
+    net.set_publisher(
+        "tgg.legal-stages",
+        Publisher {
+            name: "renamed".into(),
+            ..someone.clone()
+        },
+    );
+    assert!(resolve(&net, &player, &profile).untrusted().is_empty());
+    net.set_publisher(
+        "tgg.legal-stages",
+        Publisher {
+            id: Some("acct-impostor".into()),
+            ..someone
+        },
+    );
+    assert_eq!(resolve(&net, &player, &profile).untrusted().len(), 1);
 }
 
 #[test]
@@ -448,4 +459,77 @@ fn finishing_clears_marks_a_lost_handle_left() {
     assert!(!tgg_mod::finish_profile(&player.data).expect("finish"));
     assert!(!folder.exists());
     assert!(!Path::new(&player.data.join("tgg/running.json")).exists());
+}
+
+#[test]
+fn a_withdrawn_release_isnt_fetched_and_an_installed_copy_turns_off_until_restored() {
+    let net = FakeNet::new();
+    let player = player();
+    let port = install_port(&net, &player);
+    // The player has legal-stages from the registry.
+    let set = tgg_mod::sets(&net)
+        .expect("sets")
+        .into_iter()
+        .find(|set| set.name == "competitive")
+        .expect("set");
+    let catalog = tgg_mod::catalog(&net, &port.port()).expect("catalog");
+    let plan = tgg_mod::plan_set(&set, &catalog, &player.local(Some(&port)));
+    tgg_mod::apply(&net, &plan, &player.mods, &no_progress, &go()).expect("install");
+    let stages = id("tgg.legal-stages");
+    assert!(player.mods.join("tgg.legal-stages").is_dir());
+
+    // The set installed 0.1.1; the replay names 0.1.0. Both are pulled.
+    for version in ["0.1.0", "0.1.1"] {
+        net.withdraw(
+            "tgg.legal-stages",
+            version,
+            "it crashes on stage select",
+            tgg_mod::WithdrawMode::Off,
+        );
+    }
+
+    // A replay or lobby naming it can't fetch it, and says why.
+    let replay = player.file("game.slp", &tgg_replay(competitive_profile()));
+    let profile = tgg_mod::profile_from_slp(&replay, None).expect("profile");
+    let plan = resolve(&net, &player, &profile);
+    assert!(plan.mods.iter().all(|m| m.id != stages));
+    assert_eq!(
+        plan.missing
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        ["textures.gg withdrew tgg.legal-stages 0.1.0: it crashes on stage select"]
+    );
+
+    // The installed copy turns off at the next launch, once.
+    let notices =
+        tgg_mod::withdraw::check_withdrawn(&net, &player.data, &player.mods, &port.port())
+            .expect("check");
+    assert_eq!(notices.len(), 1);
+    assert!(
+        notices[0]
+            .to_string()
+            .starts_with("Turned off tgg.legal-stages 0.1.1: it crashes on stage select.")
+    );
+    assert!(player.mods.join(".tgg.legal-stages").is_dir());
+    assert!(!player.mods.join("tgg.legal-stages").exists());
+    let again = tgg_mod::withdraw::check_withdrawn(&net, &player.data, &player.mods, &port.port())
+        .expect("again");
+    assert!(again.is_empty());
+
+    // Offline, the last catalog seen still counts; restored, it comes back on.
+    net.restore("tgg.legal-stages", "0.1.0");
+    net.restore("tgg.legal-stages", "0.1.1");
+    net.set_offline(true);
+    tgg_mod::withdraw::check_withdrawn(&net, &player.data, &player.mods, &port.port())
+        .expect("offline");
+    assert!(player.mods.join(".tgg.legal-stages").is_dir());
+    net.set_offline(false);
+    let notices =
+        tgg_mod::withdraw::check_withdrawn(&net, &player.data, &player.mods, &port.port())
+            .expect("restored");
+    assert_eq!(notices[0].action, tgg_mod::WithdrawAction::TurnedOn);
+    assert!(player.mods.join("tgg.legal-stages").is_dir());
+    let plan = resolve(&net, &player, &profile);
+    assert!(plan.missing.is_empty(), "{:?}", plan.missing);
 }

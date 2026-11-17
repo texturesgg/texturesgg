@@ -2,7 +2,7 @@
 //! idle pose, off-screen, on a thread of its own with its own GPU device, so
 //! the window never waits. The worker fills each picture's `Pixels` itself,
 //! which redraws whatever shows it. Renders are kept on disk by the file's
-//! SHA-256, where tgg-editor keeps them too, so a costume draws once until
+//! SHA-256, where the app before it (tgg-editor) kept them too, so a costume draws once until
 //! its file changes.
 //!
 //! ```text
@@ -10,20 +10,20 @@
 //! ```
 
 use dat_parser::hsd::draw::HsdDrawEvaluationPolicy;
-use hsd_render::offscreen::{CAPTURE_FORMAT, Gpu, capture};
+use hsd_render::offscreen::{CAPTURE_FORMAT, Gpu, capture, capture_clear};
 use hsd_render::{CameraView, HsdRenderer, Orbit, PreparedGeometry, neutral_preview_lighting};
 use melee_dat::{MeleeModel, MeleeSlot};
 use rune::Pixels;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
+use std::sync::{Arc, Mutex, mpsc};
 use tgg_app::ids::SkinId;
 use tgg_app::{Game, References};
 
 /// Change when renders should be redrawn: the renderer, pose, or framing.
-/// tgg-editor's, so the two apps share their cache.
-const RENDER_VERSION: u32 = 3;
+/// tgg-editor's last, so a player's renders from it still count.
+const RENDER_VERSION: u32 = 4;
 /// Renders are square, this many pixels a side.
 pub const SIZE: u32 = 192;
 /// How far above a shared model it is drawn from, in radians.
@@ -40,17 +40,23 @@ type Error = Box<dyn std::error::Error>;
 pub enum RenderKey {
     /// What a slot of the game holds.
     Slot(MeleeSlot),
+    /// What a slot holds, drawn with nothing behind it (Play's fighter).
+    Fighter(MeleeSlot),
     /// A skin in the library.
     Skin(SkinId),
 }
 
 /// A picture to draw, with the game at `iso` for its references.
 struct Job {
+    /// What it's the picture of.
+    key: RenderKey,
     iso: PathBuf,
     /// The slot it fills, or was made for.
     slot: MeleeSlot,
     /// A skin's file; `None` reads the slot from the game.
     file: Option<PathBuf>,
+    /// Clear the background, so the picture sits on whatever is under it.
+    clear: bool,
     pixels: Pixels,
 }
 
@@ -59,6 +65,8 @@ struct Job {
 pub struct Renders {
     jobs: Option<mpsc::Sender<Job>>,
     pictures: HashMap<RenderKey, Pixels>,
+    /// The pictures the worker has drawn (or couldn't draw), shared with it.
+    drawn: Arc<Mutex<HashSet<RenderKey>>>,
 }
 
 impl Renders {
@@ -70,37 +78,56 @@ impl Renders {
     /// Ask for a picture of what `slot` of the game at `iso` holds, unless
     /// it's been asked for already. The worker starts on the first request.
     pub fn request(&mut self, iso: &Path, slot: MeleeSlot) {
-        self.ask(
-            RenderKey::Slot(slot),
-            Job {
-                iso: iso.to_owned(),
-                slot,
-                file: None,
-                pixels: Pixels::new(),
-            },
-        );
+        self.ask(Job {
+            key: RenderKey::Slot(slot),
+            iso: iso.to_owned(),
+            slot,
+            file: None,
+            clear: false,
+            pixels: Pixels::new(),
+        });
+    }
+
+    /// [`request`](Self::request) with nothing behind the model, for a
+    /// picture drawn over the page's own surface.
+    pub fn request_fighter(&mut self, iso: &Path, slot: MeleeSlot) {
+        self.ask(Job {
+            key: RenderKey::Fighter(slot),
+            iso: iso.to_owned(),
+            slot,
+            file: None,
+            clear: true,
+            pixels: Pixels::new(),
+        });
     }
 
     /// Ask for a picture of the skin `id`, its file at `file`, made for
     /// `slot`, drawn with the game at `iso`'s references.
     pub fn request_skin(&mut self, iso: &Path, id: SkinId, file: PathBuf, slot: MeleeSlot) {
-        self.ask(
-            RenderKey::Skin(id),
-            Job {
-                iso: iso.to_owned(),
-                slot,
-                file: Some(file),
-                pixels: Pixels::new(),
-            },
-        );
+        self.ask(Job {
+            key: RenderKey::Skin(id),
+            iso: iso.to_owned(),
+            slot,
+            file: Some(file),
+            clear: false,
+            pixels: Pixels::new(),
+        });
     }
 
-    fn ask(&mut self, key: RenderKey, job: Job) {
+    /// Whether the picture of `key` has been drawn (or its drawing failed).
+    /// Scenes wait on it, so their pictures are in before the shot.
+    pub fn drawn(&self, key: RenderKey) -> bool {
+        self.drawn.lock().is_ok_and(|drawn| drawn.contains(&key))
+    }
+
+    fn ask(&mut self, job: Job) {
+        let key = job.key;
         if self.pictures.contains_key(&key) {
             return;
         }
         self.pictures.insert(key, job.pixels.clone());
-        let jobs = self.jobs.get_or_insert_with(start);
+        let drawn = self.drawn.clone();
+        let jobs = self.jobs.get_or_insert_with(|| start(drawn));
         let _ = jobs.send(job);
     }
 
@@ -108,21 +135,27 @@ impl Renders {
     /// draws it again.
     pub fn forget(&mut self, key: RenderKey) {
         self.pictures.remove(&key);
+        if let Ok(mut drawn) = self.drawn.lock() {
+            drawn.remove(&key);
+        }
     }
 
     /// Forget every picture: after an install changed what slots hold, or
     /// when the game changes.
     pub fn clear(&mut self) {
         self.pictures.clear();
+        if let Ok(mut drawn) = self.drawn.lock() {
+            drawn.clear();
+        }
     }
 }
 
 /// Start the worker thread.
-fn start() -> mpsc::Sender<Job> {
+fn start(drawn: Arc<Mutex<HashSet<RenderKey>>>) -> mpsc::Sender<Job> {
     let (jobs, queue) = mpsc::channel();
     std::thread::Builder::new()
         .name("costume renders".into())
-        .spawn(move || work(&queue))
+        .spawn(move || work(&queue, &drawn))
         .expect("start the render thread");
     jobs
 }
@@ -136,7 +169,7 @@ struct OpenGame {
 
 /// Render jobs until the app goes away. The GPU device, the open game and
 /// its references live here, off the window's thread.
-fn work(queue: &mpsc::Receiver<Job>) {
+fn work(queue: &mpsc::Receiver<Job>, drawn: &Mutex<HashSet<RenderKey>>) {
     let mut gpu = None;
     let mut game: Option<OpenGame> = None;
     while let Ok(job) = queue.recv() {
@@ -146,6 +179,9 @@ fn work(queue: &mpsc::Receiver<Job>) {
                 "render of {} failed: {error}",
                 job.slot.file_name()
             )),
+        }
+        if let Ok(mut drawn) = drawn.lock() {
+            drawn.insert(job.key);
         }
     }
 }
@@ -196,7 +232,11 @@ fn render(job: &Job, gpu: &mut Option<Gpu>, game: &mut Option<OpenGame>) -> Resu
     if let Some(model) = shared {
         key.update(model.name());
     }
-    let cached = cache_folder().join(format!("{:x}-{RENDER_VERSION}-{SIZE}.png", key.finalize()));
+    let behind = if job.clear { "-clear" } else { "" };
+    let cached = cache_folder().join(format!(
+        "{:x}-{RENDER_VERSION}-{SIZE}{behind}.png",
+        key.finalize()
+    ));
     if let Ok(image) = image::open(&cached) {
         return Ok(image.to_rgba8().into_raw());
     }
@@ -239,7 +279,11 @@ fn render(job: &Job, gpu: &mut Option<Gpu>, game: &mut Option<OpenGame>) -> Resu
         (SIZE, SIZE),
         orbit,
     )?;
-    let rgba = capture(gpu, &renderer)?.pixels;
+    let rgba = if job.clear {
+        capture_clear(gpu, &renderer)?.pixels
+    } else {
+        capture(gpu, &renderer)?.pixels
+    };
     let _ = std::fs::create_dir_all(cache_folder());
     if let Some(image) = image::RgbaImage::from_raw(SIZE, SIZE, rgba.clone()) {
         let _ = image.save(&cached);

@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # rune.yml starts it on the pull request it opens, which can't start CI itself.
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -54,8 +56,7 @@ jobs:
         run: cargo test --locked --workspace
 
   # tgg-studio ships for macOS and Windows too: the app and the crates under
-  # it build, lint and pass their tests there. (tgg-editor, which tgg-studio
-  # replaces, is Linux only.)
+  # it build, lint and pass their tests there.
   rust-other:
     name: Rust (${{ matrix.name }})
     strategy:
@@ -77,7 +78,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Lint
-        run: cargo clippy --locked --workspace --exclude tgg-editor --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --locked --workspace --exclude tgg-editor --no-fail-fast
+        run: cargo test --locked --workspace --no-fail-fast

@@ -23,10 +23,10 @@ const RELEASE: &str = "release.json";
 
 #[derive(Subcommand)]
 pub enum PortCommand {
-    /// Download a release of tgg-melee and install it. The first one
-    /// installed becomes the one tgg uses.
+    /// Download and install a version of tgg-melee. The first one you install
+    /// is the one tgg uses.
     Install {
-        /// A version such as 0.1.0, or latest.
+        /// A version like 0.1.0, or latest.
         #[arg(default_value = "latest")]
         version: String,
         /// Also install its debug info, for gdb (tgg mod dev --gdb).
@@ -35,7 +35,7 @@ pub enum PortCommand {
     },
     /// List the installed versions.
     List,
-    /// Use this installed version by default; with none named, pick one.
+    /// Use this installed version by default. With none named, pick one.
     Use { version: Option<String> },
     /// Remove an installed version.
     Remove { version: String },
@@ -46,13 +46,13 @@ pub enum PortCommand {
         /// The installed version to run [default: the one in use]
         #[arg(long)]
         version: Option<String>,
-        /// Run with a profile (.json, or a replay's .slp) for this session:
-        /// its game version and its own mods, fetched as needed.
+        /// Run with a profile (.json, or a replay's .slp) for this session, with
+        /// its game version and mods, downloaded as needed.
         #[arg(long, conflicts_with = "version")]
         profile: Option<PathBuf>,
         /// Show the game's own output as it runs. Otherwise it goes to
-        /// game.log in tgg's data folder, and its end is shown if the game
-        /// fails.
+        /// game.log in tgg's data folder, and you see the end of it if the
+        /// game fails.
         #[arg(short, long)]
         verbose: bool,
         /// Arguments for the game.
@@ -116,7 +116,7 @@ pub fn resolve(version: Option<&str>) -> Result<Installed> {
     let version = match version {
         Some(version) => version.trim_start_matches('v').to_owned(),
         None => current_version()?
-            .ok_or_else(|| anyhow!("tgg-melee isn't installed; run tgg port install"))?,
+            .ok_or_else(|| anyhow!("tgg-melee isn't installed. Run tgg port install"))?,
     };
     match ports::installed_port(&crate::paths::ports()?, &version) {
         Ok(install) => Ok(Installed {
@@ -124,7 +124,7 @@ pub fn resolve(version: Option<&str>) -> Result<Installed> {
             folder: install.folder,
         }),
         Err(tgg_mod::Error::PortNotInstalled(_)) => {
-            bail!("tgg-melee {version} isn't installed; run tgg port install {version}")
+            bail!("tgg-melee {version} isn't installed. Run tgg port install {version}")
         }
         Err(error) => Err(error.into()),
     }
@@ -224,7 +224,7 @@ pub fn run(command: PortCommand, api: &str) -> Result<()> {
                         ))?);
                 if !switch {
                     println!(
-                        "tgg uses {}; {} to switch",
+                        "tgg uses {}. Run {} to switch",
                         crate::ui::ver(&from),
                         crate::ui::cmd(format!("tgg port use {}", installed.version))
                     );
@@ -257,7 +257,7 @@ pub fn run(command: PortCommand, api: &str) -> Result<()> {
             let current = current_version()?;
             let installed = installed()?;
             if installed.is_empty() {
-                println!("tgg-melee isn't installed; run tgg port install");
+                println!("tgg-melee isn't installed. Run tgg port install");
             }
             for port in installed {
                 let layout = port
@@ -321,31 +321,56 @@ pub fn run(command: PortCommand, api: &str) -> Result<()> {
                 }
                 return crate::profiles::play(api, &profile, None, false, verbose);
             }
-            let installed = resolve(version.as_deref())?;
-            check_runtime(&installed)?;
-            let iso = crate::config::iso_or_ask()?;
-            let install = ports::installed_port(&crate::paths::ports()?, &installed.version)?;
-            let log = crate::paths::state()?.join(GAME_LOG);
-            println!("Starting tgg-melee {}", installed.version);
-            let signals = crate::signals::handle()?;
-            let mut running = ports::launch_with_args(
-                &install,
-                &iso,
-                &tgg_mod::default_mods_dir(),
-                &args,
-                (!verbose).then_some(log.as_path()),
-            )?;
-            signals.set_game(Some(running.id()));
-            let status = running.wait();
-            signals.set_game(None);
-            let status =
-                status.with_context(|| format!("running {}", installed.executable().display()))?;
-            if !status.success() && !verbose && !signals.stopping() {
-                print_tail(&log);
+            let active = tgg_mod::sets::active(&crate::paths::data()?);
+            if active != tgg_mod::sets::INSTALLED {
+                if version.is_some() || !args.is_empty() {
+                    bail!(
+                        "your active set runs on the version in use, without extra arguments. To run your installed mods, switch with tgg set use installed"
+                    );
+                }
+                return crate::sets::run_set(api, &active, false, verbose);
             }
-            check_exit(status)
+            run_installed(api, version.as_deref(), &args, verbose)
         }
     }
+}
+
+/// Run `version` (else the one in use) with the player's own mods folder.
+pub fn run_installed(
+    api: &str,
+    version: Option<&str>,
+    args: &[String],
+    verbose: bool,
+) -> Result<()> {
+    let installed = resolve(version)?;
+    check_runtime(&installed)?;
+    let iso = crate::config::iso_or_ask()?;
+    let install = ports::installed_port(&crate::paths::ports()?, &installed.version)?;
+    let mods = tgg_mod::default_mods_dir();
+    crate::profiles::check_withdrawn(
+        &crate::profiles::http(api),
+        &crate::paths::data()?,
+        &mods,
+        &install.port(),
+    );
+    let log = crate::paths::state()?.join(GAME_LOG);
+    println!("Starting tgg-melee {}", installed.version);
+    let signals = crate::signals::handle()?;
+    let mut running = ports::launch_with_args(
+        &install,
+        &iso,
+        &mods,
+        args,
+        (!verbose).then_some(log.as_path()),
+    )?;
+    signals.set_game(Some(running.id()));
+    let status = running.wait();
+    signals.set_game(None);
+    let status = status.with_context(|| format!("running {}", installed.executable().display()))?;
+    if !status.success() && !verbose && !signals.stopping() {
+        print_tail(&log);
+    }
+    check_exit(status)
 }
 
 /// The game's output from the last `tgg port run`, in tgg's data folder.
@@ -417,7 +442,7 @@ pub fn check_exit(status: std::process::ExitStatus) -> Result<()> {
     }
     if cfg!(windows) && status.code() == Some(STATUS_DLL_NOT_FOUND) {
         bail!(
-            "tgg-melee couldn't start: a DLL it needs is missing. {VC_RUNTIME_FIX} installs the usual one"
+            "tgg-melee couldn't start because a DLL it needs is missing. {VC_RUNTIME_FIX} usually fixes it"
         );
     }
     bail!("tgg-melee exited with {status}")
@@ -453,7 +478,7 @@ fn pick_version() -> Result<Option<String>> {
     let mut installed = installed()?;
     installed.reverse();
     if installed.is_empty() {
-        bail!("tgg-melee isn't installed; run tgg port install");
+        bail!("tgg-melee isn't installed. Run tgg port install");
     }
     if !crate::ui::interactive() {
         let versions: Vec<&str> = installed.iter().map(|i| i.version.as_str()).collect();

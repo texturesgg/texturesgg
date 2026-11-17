@@ -180,15 +180,15 @@ mod tests {
             ("tgg-melee isn't installed", Some("tgg port install"))
         );
         assert_eq!(
-            split_fix("3.20; mods need 3.25 or later: sudo apt install cmake"),
+            split_fix("3.20, but mods need 3.25 or later: sudo apt install cmake"),
             (
-                "3.20; mods need 3.25 or later",
+                "3.20, but mods need 3.25 or later",
                 Some("sudo apt install cmake")
             )
         );
         assert_eq!(
-            split_fix("not found; only tgg mod dev --gdb needs it"),
-            ("not found; only tgg mod dev --gdb needs it", None)
+            split_fix("not found. Only tgg mod dev --gdb needs it"),
+            ("not found. Only tgg mod dev --gdb needs it", None)
         );
         assert_eq!(split_fix("Linux on x86-64"), ("Linux on x86-64", None));
     }

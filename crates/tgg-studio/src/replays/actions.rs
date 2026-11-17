@@ -5,6 +5,7 @@ use super::{Done, Item, MOST, Preparing, Read, Review, Status};
 use crate::jobs::Done as Job;
 use crate::mods::Disc;
 use crate::state::App;
+use rune::Tx;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -142,6 +143,7 @@ pub fn installs_changed(app: &mut App) {
         return;
     }
     app.replays.planned = false;
+    app.replays.checked.clear();
     if app.replays.refreshing {
         app.replays.plan_again = true;
     } else if showing(app) {
@@ -206,6 +208,72 @@ pub fn done(app: &mut App, done: Done) -> bool {
                 Err(error) => app.tell(format!("Couldn't get the replay's mods: {error}."), true),
             }
         }
+        Done::Checked { path, result } => {
+            app.replays.checking = None;
+            app.replays.checked.insert(path.clone());
+            let notices = match result {
+                Ok(notices) => notices
+                    .iter()
+                    .map(|notice| withdrawal_words(app, notice))
+                    .collect::<Vec<String>>(),
+                Err(error) => {
+                    // Never blocks watching: say it couldn't be checked.
+                    tgg_app::log(&format!("checking withdrawals for a replay: {error}"));
+                    Vec::new()
+                }
+            };
+            if notices.is_empty() {
+                if let Some(plan) = plan_for(app, &path) {
+                    play_checked(app, &path, plan);
+                }
+            } else if let Some(plan) = plan_for(app, &path) {
+                app.replays.review = Some(Review {
+                    path,
+                    plan,
+                    remember: false,
+                    notices,
+                });
+            }
+        }
+        Done::Opened { read, plan } => {
+            let Read {
+                path,
+                source,
+                info,
+                profile,
+            } = *read;
+            let status = match (&profile, &plan) {
+                (Err(why), _) => Status::Unreadable(why.clone()),
+                (Ok(_), Some(plan)) => status(plan),
+                (Ok(_), None) => Status::Unknown,
+            };
+            app.replays.items.insert(
+                0,
+                Item {
+                    path: path.clone(),
+                    source,
+                    info,
+                    profile,
+                    plan: plan.map(|plan| *plan),
+                    status,
+                },
+            );
+            if matches!(
+                app.replays.items.first().map(|item| &item.status),
+                Some(Status::Unknown | Status::Unreadable(_))
+            ) {
+                let why = app
+                    .replays
+                    .items
+                    .first()
+                    .and_then(|item| item.profile.as_ref().err().cloned())
+                    .unwrap_or_else(|| "what it needs isn't known".to_owned());
+                app.tell(format!("This replay can't play: {why}."), true);
+            } else {
+                request_renders(app);
+                play(app, &path);
+            }
+        }
     }
     true
 }
@@ -234,15 +302,15 @@ pub fn plan_for(app: &App, path: &Path) -> Option<ProfilePlan> {
     item.plan.clone()
 }
 
-/// Play the replay at `path`: as installed straight away when its mods
-/// match, else after its review.
+/// Play the replay at `path`: its mods' withdrawals are checked first, then
+/// it plays as installed when they match, else after its review.
 pub fn play(app: &mut App, path: &Path) {
     if app.mods.playing.is_some() || app.replays.preparing.is_some() {
         return;
     }
     let Disc::Found(_) = &app.mods.disc else {
         return app.tell(
-            "Watching a replay needs a Melee disc; choose one on the Mods page.",
+            "Watching a replay needs a Melee disc; choose one in Settings.",
             true,
         );
     };
@@ -252,6 +320,38 @@ pub fn play(app: &mut App, path: &Path) {
             true,
         );
     };
+    if app.replays.checked.contains(path) {
+        return play_checked(app, path, plan);
+    }
+    if app.replays.checking.as_deref() == Some(path) {
+        return;
+    }
+    // A replay that plays from the player's own mods folder is the one a
+    // withdrawal can change; one in a folder of its own has its own mods.
+    let GameNeed::Installed(install) = &plan.game else {
+        app.replays.checked.insert(path.to_owned());
+        return play_checked(app, path, plan);
+    };
+    app.replays.checking = Some(path.to_owned());
+    let port = install.port();
+    let (net, data, mods) = (
+        app.mods.net.clone(),
+        app.data.tgg.clone(),
+        app.data.mods.clone(),
+    );
+    let checked = path.to_owned();
+    app.jobs.spawn("replay withdrawals", move || {
+        let result = tgg_mod::withdraw::check_withdrawn(&*net, &data, &mods, &port)
+            .map_err(|error| error.to_string());
+        Job::Replays(Box::new(Done::Checked {
+            path: checked,
+            result,
+        }))
+    });
+}
+
+/// Play `path` with `plan`, its mods already checked.
+fn play_checked(app: &mut App, path: &Path, plan: ProfilePlan) {
     if plan.fit == Fit::AsInstalled
         && plan.missing.is_empty()
         && matches!(plan.game, GameNeed::Installed(_))
@@ -262,6 +362,72 @@ pub fn play(app: &mut App, path: &Path) {
         path: path.to_owned(),
         plan,
         remember: false,
+        notices: Vec::new(),
+    });
+}
+
+/// A withdrawal in the player's words. The mod is named as textures.gg
+/// names it.
+fn withdrawal_words(app: &App, notice: &tgg_mod::WithdrawNotice) -> String {
+    let name = crate::sets::actions::mod_name(app, &notice.id);
+    match notice.action {
+        tgg_mod::WithdrawAction::TurnedOff => {
+            format!("Playing without {name}: withdrawn ({})", notice.reason)
+        }
+        tgg_mod::WithdrawAction::Warned => {
+            format!("{name} was withdrawn ({}). It's still on.", notice.reason)
+        }
+        tgg_mod::WithdrawAction::TurnedOn => {
+            format!("{name} is back on. textures.gg restored it.")
+        }
+    }
+}
+
+/// Ask for a replay file with the system's dialog, then watch it as one the
+/// folders held would play.
+pub fn open_file(_: &mut App, tx: &mut Tx) {
+    let options = rune::FileDialogOptions {
+        title: "Open a replay".into(),
+        ..Default::default()
+    }
+    .filter("Slippi replay", &["slp"]);
+    tx.open_file(options, |app: &mut App, answer, _| match answer {
+        Ok(Some(path)) => open(app, path),
+        Ok(None) => {}
+        Err(error) => app.tell(format!("The file dialog couldn't open: {error}"), true),
+    });
+}
+
+/// Read the replay at `path` and plan it, then watch it.
+fn open(app: &mut App, path: PathBuf) {
+    if app.replays.items.iter().any(|item| item.path == path) {
+        return play(app, &path);
+    }
+    let (net, data, mods) = (
+        app.mods.net.clone(),
+        app.data.tgg.clone(),
+        app.data.mods.clone(),
+    );
+    let mapping = app.replays.mapping.clone();
+    let read = path.clone();
+    app.jobs.spawn("chosen replay", move || {
+        let info = tgg_mod::replay_info(&read).ok();
+        let profile =
+            tgg_mod::profile_from_slp(&read, mapping.as_ref()).map_err(|error| error.to_string());
+        let plan = profile
+            .as_ref()
+            .ok()
+            .and_then(|profile| tgg_mod::plan_profile(&*net, &data, &mods, profile).ok())
+            .map(|(plan, _)| Box::new(plan));
+        Job::Replays(Box::new(Done::Opened {
+            read: Box::new(Read {
+                path: read,
+                source: "Chosen".to_owned(),
+                info,
+                profile,
+            }),
+            plan,
+        }))
     });
 }
 
@@ -285,7 +451,7 @@ pub fn confirm(app: &mut App) {
     if review.remember {
         for publisher in review.plan.untrusted() {
             if let Err(error) = tgg_mod::remember_trust(&app.data.tgg, publisher, true) {
-                tgg_app::log(&format!("remembering trust in {publisher}: {error}"));
+                tgg_app::log(&format!("remembering trust in {}: {error}", publisher.name));
             }
         }
     }

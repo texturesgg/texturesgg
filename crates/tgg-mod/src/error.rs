@@ -13,7 +13,7 @@ pub enum Error {
     /// textures.gg (or the release mirror) can't be reached. What's
     /// installed still works.
     /// Why is its source.
-    #[error("can't reach textures.gg; what's installed still works")]
+    #[error("can't reach textures.gg. What's installed still works")]
     Offline(#[source] NetError),
     /// The registry has no catalog for this game's layout: no mod has been
     /// built for this tgg-melee yet.
@@ -23,18 +23,18 @@ pub enum Error {
     #[error("{0}")]
     Net(NetError),
     /// Another tgg (the app or the CLI) is changing the mods folder.
-    #[error("another tgg is changing your mods; try again when it's done")]
+    #[error("another tgg is changing your mods. Try again when it's done")]
     Busy,
     /// The game is running; the mods folder changes once it's closed.
-    #[error("the game is running; close it first")]
+    #[error("the game is running. Close it first")]
     GameRunning,
     #[error("cancelled")]
     Cancelled,
     /// A downloaded package isn't the one the plan named.
-    #[error("the download of {id} was damaged or changed (expected SHA-256 {expected}); try again")]
+    #[error("the download of {id} was damaged or changed (expected SHA-256 {expected}). Try again")]
     Checksum { id: ModId, expected: String },
     /// A downloaded port archive isn't the one its release names.
-    #[error("the download of {name} was damaged or changed; try again")]
+    #[error("the download of {name} was damaged or changed. Try again")]
     ReleaseChecksum { name: String },
     /// A downloaded package doesn't open.
     #[error("{id} from textures.gg isn't a valid package: {source}")]
@@ -47,7 +47,7 @@ pub enum Error {
     #[error("the package for {id} {version} holds something else")]
     PackageMismatch { id: ModId, version: semver::Version },
     /// The registry's answer isn't in the shape this tgg reads.
-    #[error("textures.gg sent something this version of tgg can't read ({0}); update tgg")]
+    #[error("textures.gg sent something this version of tgg can't read ({0}). Update tgg")]
     Registry(String),
     #[error("{0} isn't installed")]
     NotInstalled(ModId),
@@ -57,13 +57,13 @@ pub enum Error {
     #[error("the set {0} isn't installed")]
     SetNotInstalled(String),
     /// The lock file names a format newer than this tgg reads.
-    #[error("mods.lock.json is format {0}; this tgg reads format {fmt}; update tgg", fmt = crate::lock::FORMAT)]
+    #[error("mods.lock.json is format {0}, but this tgg reads format {fmt}. Update tgg", fmt = crate::lock::FORMAT)]
     LockFormat(u32),
     #[error("mods.lock.json is damaged: {0}")]
     LockDamaged(String),
     /// tgg-melee has no build for this system.
     #[error(
-        "tgg-melee is built for Linux on x86-64, Windows on x86-64 and macOS on Apple silicon; this is {0}"
+        "tgg-melee is built for Linux on x86-64, Windows on x86-64 and macOS on Apple silicon, and this is {0}"
     )]
     UnsupportedSystem(String),
     #[error("{0} has no tgg-melee releases")]
@@ -74,12 +74,12 @@ pub enum Error {
     NoBuild { version: String, system: String },
     #[error("{0}")]
     BadRelease(String),
-    #[error("tgg-melee {version} loads {api} mods; this tgg handles {ours} mods. Update tgg.", ours = crate::API)]
+    #[error("tgg-melee {version} loads {api} mods, but this tgg handles {ours} mods. Update tgg.", ours = crate::API)]
     ReleaseApi { version: String, api: String },
     #[error("tgg-melee {0} isn't installed")]
     PortNotInstalled(String),
     /// A profile file names a format newer than this tgg reads.
-    #[error("{path} is a profile of format {format}; this tgg reads format {ours}; update tgg", ours = crate::profile::FORMAT)]
+    #[error("{path} is a profile of format {format}, but this tgg reads format {ours}. Update tgg", ours = crate::profile::FORMAT)]
     ProfileFormat { path: PathBuf, format: u32 },
     /// A profile file isn't one.
     #[error("{path} isn't a mod profile: {why}")]
@@ -87,18 +87,20 @@ pub enum Error {
     /// A replay file can't be read.
     #[error("{path} isn't a replay tgg can read: {why}")]
     BadReplay { path: PathBuf, why: String },
-    /// A profile's mod needs the player's yes before it's fetched.
-    #[error("{name} by {publisher} needs your yes before it's fetched")]
+    /// A profile's native mod needs the player's yes before it's fetched.
+    #[error(
+        "{name} runs native code on your computer, published by {publisher}. It needs your yes first"
+    )]
     NeedsTrust { name: String, publisher: String },
     /// The game version a profile needs isn't one tgg can get.
     #[error("tgg-melee {0} can't be had for this system")]
     GameUnavailable(String),
     #[error("{path} isn't a tgg-melee SDK: {why}")]
     BadSdk { path: PathBuf, why: String },
-    #[error("the SDK has no example {example:?}; it has {have}")]
+    #[error("the SDK has no example {example:?}. It has {have}")]
     NoExample { example: String, have: String },
     #[error(
-        "{dir} already has {others}; a new mod starts in a new folder, or one with only dotfiles, a README, a license and a Nix flake"
+        "{dir} already has {others}. Start the mod in an empty folder (dotfiles, a README, a license and a Nix flake are fine)"
     )]
     FolderInUse { dir: PathBuf, others: String },
     /// A skin must replace a `.dat` or `.usd` file in the disc's root.
@@ -109,6 +111,26 @@ pub enum Error {
     /// The game couldn't check a costume.
     #[error("tgg-melee couldn't check the costume: {0}")]
     CheckCostume(String),
+    #[error("you have no set {0}")]
+    NoMySet(String),
+    #[error("you already have a set called {0}")]
+    SetExists(String),
+    #[error("{0}")]
+    BadSetName(String),
+    #[error("{path} isn't a set tgg can read: {why}")]
+    BadSet { path: PathBuf, why: String },
+    /// The built-in set is the player's mods folder.
+    #[error("Installed mods is your mods folder. Change it with tgg mod, or save it as a new set")]
+    InstalledSet,
+    /// A set got from textures.gg follows the published one.
+    #[error("{0} is by textures.gg and follows it. Make your own set that builds on it")]
+    SetLocked(String),
+    #[error("{0} builds on other sets, so it can't be built on. Build on the same sets instead")]
+    CantBuildOn(String),
+    #[error("a set can build on 4 sets at most")]
+    TooManySets,
+    #[error("textures.gg has no set {0}")]
+    NoSuchSet(String),
     #[error("{path}: {source}")]
     Io {
         path: PathBuf,

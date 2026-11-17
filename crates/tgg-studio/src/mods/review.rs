@@ -1,15 +1,13 @@
 //! Review: what an install or update will do, before it does it. What
 //! changes comes first: each new mod, and each update with the version it
-//! goes from and to; then the mods an update drops (removed with it unless
-//! the player keeps them); then what's already up to date; then what won't
-//! work, with why. It's modal: Escape or a click outside cancels.
+//! goes from and to; then what's already up to date; then what won't work,
+//! with why. It's modal: Escape or a click outside cancels. A script mod
+//! installs without it; a native one asks.
 
-use super::{Mods, Review, actions, size_text};
+use super::{Review, actions, size_text};
 use crate::state::App;
 use crate::ui::tokens::{Palette, space, text};
-use crate::ui::{
-    ButtonKind, Dialog, DialogWidth, Tone, badge, button, dialog, rule, spacer, switch,
-};
+use crate::ui::{ButtonKind, Dialog, DialogWidth, Tone, badge, button, dialog, rule, spacer};
 use rune::{El, ScrollSpec, col, row, text as label};
 use tgg_mod::{Action, Plan, Step};
 
@@ -32,9 +30,6 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
             changing.into_iter().map(|step| step_row(step, p)).collect(),
             p,
         ));
-    }
-    if !review.dropped.is_empty() {
-        sections.push(dropped(mods, review, p));
     }
     if !kept.is_empty() {
         let label = format!("Already up to date · {}", kept.len());
@@ -91,20 +86,12 @@ fn line(review: &Review) -> String {
         .iter()
         .filter(|step| matches!(step.action, Action::Update { .. }))
         .count();
-    let removed = if review.remove_dropped {
-        review.dropped.len()
-    } else {
-        0
-    };
     let mut parts = Vec::new();
     if new > 0 {
         parts.push(format!("{new} new"));
     }
     if updated > 0 {
         parts.push(format!("{updated} updated"));
-    }
-    if removed > 0 {
-        parts.push(format!("{removed} removed"));
     }
     if parts.is_empty() {
         return "Everything here is installed and up to date.".into();
@@ -189,62 +176,6 @@ fn step_row(step: &Step, p: &Palette) -> El {
         .child(change)
 }
 
-/// The mods an update drops, and whether they go with it.
-fn dropped(mods: &Mods, review: &Review, p: &Palette) -> El {
-    let remove = review.remove_dropped;
-    let rows = review.dropped.iter().map(|id| {
-        let installed = mods
-            .local
-            .get(id)
-            .map(|m| m.manifest.version.to_string())
-            .unwrap_or_default();
-        row()
-            .key(format!("mods/review/dropped/{id}"))
-            .px(space::LG)
-            .py(space::XS)
-            .gap(space::SM)
-            .items_center()
-            .child(
-                label(mods.name_of(id))
-                    .font(text::STRONG)
-                    .color(p.ink)
-                    .truncate()
-                    .grow(1.0)
-                    .min_w(0.0),
-            )
-            .child(label(installed).font(text::MONO_SMALL).color(p.faint))
-            .child(badge(
-                if remove { "Remove" } else { "Keep" },
-                if remove { Tone::Danger } else { Tone::Plain },
-                p,
-            ))
-    });
-    let choice = row()
-        .px(space::LG)
-        .py(space::XS)
-        .gap(space::XS)
-        .items_center()
-        .child(
-            switch("mods/review/remove-dropped", remove, p)
-                .label("Remove them")
-                .on_press(move |app: &mut App| actions::set_remove_dropped(app, !remove)),
-        )
-        .child(
-            label("Remove them with the update")
-                .font(text::SMALL)
-                .color(p.muted),
-        );
-    section(
-        Some(format!(
-            "No longer in the collection · {}",
-            review.dropped.len()
-        )),
-        rows.chain([choice]).collect(),
-        p,
-    )
-    .key("mods/review/dropped")
-}
-
 /// What won't work, each with why.
 fn problems<'a>(plan: &'a Plan, p: &'a Palette) -> impl Iterator<Item = El> + 'a {
     plan.problems()
@@ -272,8 +203,8 @@ fn buttons(review: &Review, p: &Palette) -> Vec<El> {
             .on_press(actions::cancel_review),
         spacer(),
     ];
-    // A plan that downloads nothing still records the collection it installs.
-    if !review.plan.steps.is_empty() || !review.dropped.is_empty() {
+    // A plan that downloads nothing still records the set it installs.
+    if !review.plan.steps.is_empty() {
         let words = if review.title.starts_with("Update") {
             "Update"
         } else {

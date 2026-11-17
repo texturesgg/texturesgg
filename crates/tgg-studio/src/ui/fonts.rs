@@ -4,7 +4,7 @@
 //! Schibsted Grotesk and DM Mono come from google/fonts under the SIL Open Font
 //! License 1.1 (no Reserved Font Name); each directory under `assets/fonts`
 //! carries its `OFL.txt`. Schibsted Grotesk ships as static instances of the
-//! upstream variable font at the weights the web uses, as tgg-ui's do.
+//! upstream variable font at the weights the web uses.
 
 /// Every face, for `AppSpec::fonts`.
 pub static FONTS: &[&[u8]] = &[

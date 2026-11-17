@@ -67,8 +67,8 @@ pub fn split_details(body: El, p: &Palette) -> El {
         .min_h(0.0)
         .fill(p.surface)
         .border(size::LINE, p.line)
-        .radius(radius::CONTROL)
-        .clip_rounded(radius::CONTROL)
+        .radius(radius::CARD)
+        .clip_rounded(radius::CARD)
         .child(
             col()
                 .grow(1.0)

@@ -1,7 +1,7 @@
 //! wgpu backend for prepared HSD geometry.
 //!
 //! The renderer borrows a caller-owned device and queue and encodes into a
-//! caller-provided target, so a host (an offscreen capture, a gpui surface)
+//! caller-provided target, so a host (an offscreen capture, an app's window)
 //! owns presentation. GX blends and writes raw 8-bit values, which the display
 //! interprets as sRGB: every color stays raw, so targets must be non-sRGB
 //! formats (no decode on sampling, no encode on output).
@@ -479,6 +479,10 @@ impl HsdRenderer {
     }
 
     /// Clear `target` and draw every visible packet in HSD pass order.
+    ///
+    /// Its materials write no alpha (the target is opaque), so a caller
+    /// that wants a clear background cuts it out at readback instead: see
+    /// `offscreen::capture_clear`.
     pub fn encode(&self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView) {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("HSD pass"),

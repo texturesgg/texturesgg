@@ -21,7 +21,7 @@ pub enum SdkCommand {
     },
     /// List the installed SDKs.
     List,
-    /// Print an SDK's folder, installing it if it's missing, as for
+    /// Print an SDK's folder, installing it if it's missing. Handy for
     /// `cmake -DTGG_SDK=$(tgg sdk path)`.
     Path {
         #[command(flatten)]
@@ -32,9 +32,9 @@ pub enum SdkCommand {
 /// Which game an SDK is for.
 #[derive(Args)]
 pub struct Which {
-    /// A release version, such as 0.1.0 [default: the game in use]
+    /// A release version, like 0.1.0 [default: the game in use]
     version: Option<String>,
-    /// A game executable: the SDK of the release it is.
+    /// A game executable, to use the SDK of its release.
     #[arg(long, conflicts_with = "version")]
     port: Option<PathBuf>,
 }
@@ -98,7 +98,7 @@ fn for_executable(executable: &Path) -> Result<PathBuf> {
     let port = Port::open(executable).with_context(|| executable.display().to_string())?;
     if semver::Version::parse(&port.version).is_err() {
         bail!(
-            "{} is a {} build, not a release; its SDK is the tgg-melee-sdk folder of its build",
+            "{} is a {} build, not a release. Its SDK is the tgg-melee-sdk folder in its build",
             executable.display(),
             port.version
         );

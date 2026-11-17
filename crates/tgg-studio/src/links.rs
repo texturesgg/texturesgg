@@ -1,13 +1,14 @@
 //! Links from textures.gg's Install buttons: `textures-gg://mods/<id>`
-//! opens Mods on that mod, `textures-gg://sets/<name>` on installing that
-//! set. A link waits until there's something to open it on: a game chosen
-//! (Welcome first) and textures.gg's catalog for the tgg-melee in use.
+//! opens Mods on that mod, `textures-gg://sets/<name>` adds that set and
+//! opens it. A link waits until there's something to open it on: a game
+//! chosen (first run picks it) and textures.gg's catalog for the tgg-melee
+//! in use.
 //!
 //! macOS hands links to the running app (`on_open_url`). Windows and Linux
 //! start the app with the link as an argument; a copy already running is
 //! sent it (see [`forward`] and [`listen`]) and the new one quits.
 
-use crate::mods::{Registry, Tab};
+use crate::mods::Registry;
 use crate::nav::Place;
 use crate::state::App;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -87,7 +88,7 @@ pub fn apply(app: &mut App) -> bool {
         return false;
     }
     if app.nav.place != Place::Mods {
-        // Welcome was showing when it came.
+        // First run was showing when it came.
         crate::nav::actions::go(app, Place::Mods);
     }
     match &app.mods.registry {
@@ -110,10 +111,7 @@ pub fn apply(app: &mut App) -> bool {
     match link {
         Link::Mod(id) => {
             if app.mods.newest(&id).is_some() || app.mods.local.get(&id).is_some() {
-                crate::mods::actions::show_tab(app, Tab::All);
-                if app.mods.selected.as_ref() != Some(&id) {
-                    crate::mods::actions::select(app, &id);
-                }
+                crate::mods::actions::show_mod(app, &id);
             } else if app
                 .mods
                 .catalog
@@ -127,11 +125,10 @@ pub fn apply(app: &mut App) -> bool {
             }
         }
         Link::Set(name) => {
-            crate::mods::actions::show_tab(app, Tab::Sets);
             if app.mods.sets.iter().any(|set| set.name == name) {
-                crate::mods::actions::review_set(app, &name);
+                crate::mods::actions::add_set(app, &name);
             } else {
-                app.tell(format!("textures.gg has no collection {name}."), true);
+                app.tell(format!("textures.gg has no set {name}."), true);
             }
         }
     }

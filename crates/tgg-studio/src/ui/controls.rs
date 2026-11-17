@@ -1,38 +1,62 @@
 //! What the player presses or drags: buttons, the sidebar's rows, tabs,
-//! text actions, chips, and the slider.
+//! text actions, chips, fields, and the slider.
 
+use super::icons::{Icon, icon};
 use super::tokens::{Palette, radius, size, space, text as type_};
 use rune::{El, col, el, row, text};
 
-/// What a button is for. A quiet kind joins when a screen needs it.
+/// What a button is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ButtonKind {
-    /// The one action a place is for: an ink fill.
+    /// The one action a place or sheet is for: off-white, dark words.
     Primary,
-    /// Any other action: outlined.
+    /// Any other action: a white wash.
     Secondary,
 }
 
-/// A button reading `label`.
-pub fn button(label: &str, kind: ButtonKind, p: &Palette) -> El {
-    let (fill, ink, border) = match kind {
-        ButtonKind::Primary => (p.ink, p.on_ink, p.ink),
-        ButtonKind::Secondary => (p.raise, p.ink, p.line_strong),
+/// A pill `height` tall reading `label`.
+fn pill(label: &str, kind: ButtonKind, height: f32, p: &Palette) -> El {
+    let (fill, ink) = match kind {
+        ButtonKind::Primary => (p.ink, p.on_ink),
+        ButtonKind::Secondary => (p.fill, p.ink),
+    };
+    let (inset, font) = if height >= size::CONTROL_MAIN {
+        (space::LG - space::XXS, type_::STRONG)
+    } else if height <= size::CONTROL_SMALL {
+        (space::SM, type_::LABEL)
+    } else {
+        (space::MD - space::TIGHT, type_::STRONG)
     };
     row()
-        .h(size::CONTROL)
-        .px(space::SM)
+        .h(height)
+        .px(inset)
+        .gap(space::XS)
         .items_center()
-        .radius(radius::CONTROL)
+        .justify_center()
+        .radius(radius::PILL)
         .fill(fill)
-        .border(size::LINE, border)
         .hover(p.hover)
         .press(p.hover)
         .cursor(rune::Cursor::Pointer)
         .role("button")
         .label(label)
         .focusable(true)
-        .child(text(label).font(type_::STRONG).color(ink))
+        .child(text(label).font(font).color(ink))
+}
+
+/// A button reading `label`, 30 points tall.
+pub fn button(label: &str, kind: ButtonKind, p: &Palette) -> El {
+    pill(label, kind, size::CONTROL, p)
+}
+
+/// A small button, 26 points tall: one in a row of a list.
+pub fn button_small(label: &str, kind: ButtonKind, p: &Palette) -> El {
+    pill(label, kind, size::CONTROL_SMALL, p)
+}
+
+/// A page's main action, 40 points tall.
+pub fn button_main(label: &str, kind: ButtonKind, p: &Palette) -> El {
+    pill(label, kind, size::CONTROL_MAIN, p)
 }
 
 /// A button that can't be pressed now (while other work runs): its shape
@@ -40,22 +64,22 @@ pub fn button(label: &str, kind: ButtonKind, p: &Palette) -> El {
 pub fn button_off(label: &str, p: &Palette) -> El {
     row()
         .h(size::CONTROL)
-        .px(space::SM)
+        .px(space::MD - space::TIGHT)
         .items_center()
-        .radius(radius::CONTROL)
-        .border(size::LINE, p.line)
+        .radius(radius::PILL)
+        .fill(p.hover)
         .role("button")
         .label(label)
         .child(text(label).font(type_::STRONG).color(p.faint))
 }
 
-/// A square button holding a glyph, as the title row's controls are.
+/// A square button holding a glyph, as the top bar's are.
 pub fn icon_button(glyph: El, label: &str, p: &Palette) -> El {
-    el().size(size::CONTROL, size::CONTROL)
+    el().size(size::CONTROL - space::TIGHT, size::CONTROL - space::TIGHT)
         .radius(radius::CONTROL)
         .center()
-        .hover(p.hover)
-        .press(p.hover)
+        .hover(p.current)
+        .press(p.current)
         .cursor(rune::Cursor::Pointer)
         .role("button")
         .label(label)
@@ -67,64 +91,55 @@ pub fn icon_button(glyph: El, label: &str, p: &Palette) -> El {
 /// A place row's words, in from its edge.
 pub const PLACE_INSET: f32 = 10.0;
 
-/// A row in the sidebar: a place, highlighted while it shows.
-pub fn place_row(label: &str, count: Option<usize>, current: bool, p: &Palette) -> El {
-    let mut row = row()
+/// A row in the sidebar: a place's glyph and name, filled while it shows.
+pub fn place_row(glyph: Option<El>, label: &str, current: bool, p: &Palette) -> El {
+    row()
         .h(size::ROW)
         .px(PLACE_INSET)
+        .gap(PLACE_INSET)
         .items_center()
         .radius(radius::CONTROL)
-        .hover(p.hover)
+        .fill(if current {
+            p.current
+        } else {
+            rune::Color::TRANSPARENT
+        })
+        .hover(p.current)
         .cursor(rune::Cursor::Pointer)
         .role("button")
         .label(label)
         .focusable(true)
+        .children(glyph)
         .child(
             text(label)
-                .font(type_::STRONG)
+                .font(type_::BODY)
                 .color(if current { p.ink } else { p.muted }),
         )
-        .child(el().grow(1.0));
-    if let Some(count) = count {
-        row = row.child(
-            text(count.to_string())
-                .font(type_::MONO_SMALL)
-                .color(p.faint),
-        );
-    }
-    row
 }
 
-/// A text tab: its label and count, underlined in ink while it's chosen.
+/// A tab: its words and count, bright while it's chosen.
 pub fn tab(label: &str, count: usize, chosen: bool, p: &Palette) -> El {
-    let ink = if chosen { p.ink } else { p.muted };
-    col()
+    let ink = if chosen { p.ink } else { p.faint };
+    row()
+        .h(size::TAB)
+        .gap(space::SNUG)
+        .items_center()
         .cursor(rune::Cursor::Pointer)
         .role("tab")
         .label(label)
+        .checked(chosen)
         .focusable(true)
-        .child(
-            row()
-                .h(size::TAB)
-                .gap(space::SNUG)
-                .items_center()
-                .child(text(label).font(type_::STRONG).color(ink))
-                .child(
-                    text(count.to_string())
-                        .font(type_::MONO_SMALL)
-                        .color(p.faint),
-                ),
-        )
-        .child(el().h(size::LINE_STRONG).w_full().fill(if chosen {
-            p.ink
-        } else {
-            rune::Color::TRANSPARENT
+        .child(text(label).font(type_::TITLE).color(ink))
+        .children((count > 0).then(|| {
+            text(count.to_string())
+                .font(type_::MONO_SMALL)
+                .color(p.faint)
         }))
 }
 
-/// A small text action under a card or beside a row ("Install", "Remove"):
-/// quiet until hovered. Its padding is `TEXT_ACTION_INSET`, which a row of
-/// them pulls back to line their words up with the text above.
+/// A small text action beside a row ("Remove", "Choose another"): quiet
+/// until hovered. Its padding is `TEXT_ACTION_INSET`, which a row of them
+/// pulls back to line their words up with the text above.
 pub fn text_action(label: &str, danger: bool, p: &Palette) -> El {
     text(label)
         .font(type_::LABEL)
@@ -142,27 +157,28 @@ pub fn text_action(label: &str, danger: bool, p: &Palette) -> El {
 /// A text action's padding either side of its words.
 pub const TEXT_ACTION_INSET: f32 = space::XXS;
 
-/// One choice of several, as a small outlined label: filled and edged in
-/// gold while it's the chosen one. The caller gives it its role
-/// (`radio`), key and press.
+/// A chip's height.
+const CHIP: f32 = 22.0;
+
+/// One choice of several, a small pill: off-white while it's the chosen
+/// one. The caller gives it its role (`radio`), key and press.
 pub fn chip(label: &str, chosen: bool, p: &Palette) -> El {
-    text(label)
-        .font(type_::LABEL)
-        .color(if chosen { p.ink } else { p.muted })
-        .px(space::XS)
-        .py(3.0)
-        .radius(radius::CONTROL)
-        .fill(if chosen {
-            p.selected
-        } else {
-            rune::Color::TRANSPARENT
-        })
-        .border(size::LINE, if chosen { p.accent_text } else { p.line })
-        .hover(p.hover)
+    row()
+        .h(CHIP)
+        .px(space::XS + 1.0)
+        .items_center()
+        .radius(radius::PILL)
+        .fill(if chosen { p.ink } else { p.fill })
+        .hover(if chosen { p.ink } else { p.current })
         .cursor(rune::Cursor::Pointer)
         .label(label)
         .checked(chosen)
         .focusable(true)
+        .child(
+            text(label)
+                .font(type_::SMALL)
+                .color(if chosen { p.on_ink } else { p.muted }),
+        )
 }
 
 /// A slider's track at `fraction` of the way along: a filled run, a knob,
@@ -186,12 +202,7 @@ pub fn slider(fraction: f32, p: &Palette) -> El {
                 .radius(1.5)
                 .fill(p.accent),
         )
-        .child(
-            el().size(KNOB, KNOB)
-                .radius(KNOB / 2.0)
-                .fill(p.ink)
-                .border(size::LINE, p.line_strong),
-        )
+        .child(el().size(KNOB, KNOB).radius(KNOB / 2.0).fill(p.ink))
         .child(
             el().grow(1.0)
                 .min_w(0.0)
@@ -201,25 +212,22 @@ pub fn slider(fraction: f32, p: &Palette) -> El {
         )
 }
 
-/// An on/off switch: a short track, gold while on, its knob gliding to the
-/// side it's on. Square-cornered like every control (no pills). The caller
-/// keys it (the knob's motion follows the key), labels it, and makes
-/// pressing it flip.
+/// An on/off switch: a pill track, yellow while on, its round knob on the
+/// side it's on. The caller keys it, labels it, and makes pressing it flip.
 pub fn switch(key: &str, on: bool, p: &Palette) -> El {
-    const TRACK: (f32, f32) = (30.0, 16.0);
-    const KNOB: f32 = 12.0;
+    const TRACK: (f32, f32) = (34.0, 20.0);
+    const KNOB: f32 = 14.0;
     const INSET: f32 = (TRACK.1 - KNOB) / 2.0;
     let knob = el()
         .key(format!("{key}/knob"))
         .size(KNOB, KNOB)
-        .radius(radius::CONTROL / 2.0)
+        .radius(KNOB / 2.0)
         .fill(if on { p.on_ink } else { p.muted })
-        .motion(super::tokens::motion::SNAPPY)
         .absolute(if on { TRACK.0 - KNOB - INSET } else { INSET }, INSET);
     el().key(key)
         .size(TRACK.0, TRACK.1)
-        .radius(radius::CONTROL - 1.0)
-        .fill(if on { p.accent } else { p.line_strong })
+        .radius(TRACK.1 / 2.0)
+        .fill(if on { p.accent } else { p.fill })
         .cursor(rune::Cursor::Pointer)
         .role("switch")
         .checked(on)
@@ -228,8 +236,8 @@ pub fn switch(key: &str, on: bool, p: &Palette) -> El {
 }
 
 /// A one-line text field showing `edit`, its `placeholder` in faint ink
-/// while it's empty: a search, a setting. The caller keys it and routes
-/// its edits back with `.on_edit`.
+/// while it's empty. The caller keys it and routes its edits back with
+/// `.on_edit`.
 pub fn text_field(edit: &rune::TextEdit, placeholder: &str, p: &Palette) -> El {
     rune::text_input(edit, type_::BODY)
         .single_line()
@@ -238,38 +246,58 @@ pub fn text_field(edit: &rune::TextEdit, placeholder: &str, p: &Palette) -> El {
         .color(p.ink)
         // Padded to a control's height around one line of body text.
         .px(space::SM)
-        .py(space::XXS + 1.0)
-        .radius(radius::CONTROL)
-        .fill(p.sunk)
+        .py(space::SNUG + 1.0)
+        .radius(radius::CONTROL + 1.0)
+        .fill(p.surface)
         .border(size::LINE, p.line_strong)
         .label(placeholder)
 }
 
-/// A search field: a text field whose placeholder says what it searches.
+/// A search, as the top bar holds it: a pill with the search glyph, its
+/// placeholder saying what it searches. The caller keys it (the key goes on
+/// the field) and routes its edits back with `.on_edit`.
 pub fn search_field(edit: &rune::TextEdit, placeholder: &str, p: &Palette) -> El {
-    text_field(edit, placeholder, p)
+    rune::text_input(edit, type_::BODY)
+        .single_line()
+        .placeholder(placeholder, p.faint)
+        .caret(p.ink, p.selected)
+        .color(p.ink)
+        .pl(space::XXS)
+        .pr(space::SM)
+        .py(space::SNUG)
+        .grow(1.0)
+        .min_w(0.0)
+        .label(placeholder)
 }
 
-/// A select: the value chosen and a chevron, outlined as a control. The
-/// caller keys it (its menu anchors to that key), labels it, and makes
-/// pressing it open `select_menu`.
+/// The pill a [`search_field`] sits in, its glyph first.
+pub fn search_box(field: El, p: &Palette) -> El {
+    row()
+        .w(size::SEARCH)
+        .h(size::CONTROL)
+        .pl(space::SM)
+        .items_center()
+        .radius(radius::PILL)
+        .fill(p.surface)
+        .child(icon(Icon::Search, p.faint))
+        .child(field)
+}
+
+/// A select: the value chosen and a chevron. The caller keys it (its menu
+/// anchors to that key), labels it, and makes pressing it open
+/// `select_menu`.
 pub fn select(value: &str, open: bool, p: &Palette) -> El {
-    let chevron = rune::canvas(rune::Shape::new().view_box(10.0, 10.0).stroke(
-        [[1.5, 3.5], [5.0, 7.0], [8.5, 3.5]],
-        1.5,
-        p.muted,
-    ))
-    .size(10.0, 10.0);
     row()
         .h(size::CONTROL)
         .min_w(SELECT_WIDTH)
-        .px(space::SM)
+        .pl(space::SM)
+        .pr(space::XS)
         .gap(space::XS)
         .items_center()
-        .radius(radius::CONTROL)
-        .fill(if open { p.hover } else { p.sunk })
-        .border(size::LINE, if open { p.accent_text } else { p.line_strong })
-        .hover(p.hover)
+        .radius(radius::CONTROL + 1.0)
+        .fill(if open { p.fill } else { p.surface })
+        .border(size::LINE, p.line_strong)
+        .hover(p.fill)
         .cursor(rune::Cursor::Pointer)
         .role("combobox")
         .checked(open)
@@ -282,14 +310,14 @@ pub fn select(value: &str, open: bool, p: &Palette) -> El {
                 .grow(1.0)
                 .min_w(0.0),
         )
-        .child(chevron)
+        .child(icon(Icon::Chevron, p.muted))
 }
 
 /// A select's narrowest.
 pub const SELECT_WIDTH: f32 = 200.0;
 
 /// A select's menu: `items` (each a `select_item`, or `select_rule`) in a
-/// raised list under the select keyed `anchor`, flipping above it when
+/// raised list under the element keyed `anchor`, flipping above it when
 /// there's no room, and scrolling when it's taller than the window allows.
 /// Attach it at the window's root, after the select, so it draws over what
 /// follows. It's modal: Escape or a click outside runs `dismiss`.
@@ -303,10 +331,10 @@ pub fn select_menu<S: 'static>(
     col()
         .key(format!("{anchor}/menu"))
         .min_w(SELECT_WIDTH)
-        .py(space::XXS)
+        .padding(space::SNUG)
         .fill(p.raise)
         .border(size::LINE, p.line_strong)
-        .radius(radius::CONTROL)
+        .radius(radius::CARD - space::XXS)
         .shadow(y / 2.0, blur / 2.0, p.shadow)
         .role("listbox")
         .modal(true, dismiss)
@@ -322,35 +350,30 @@ pub fn select_menu<S: 'static>(
         )
 }
 
-/// A choice in a select's menu: its words, with a gold mark while it's the
-/// one chosen. The caller keys it and makes pressing it choose.
+/// A choice in a select's menu: its words, with a check while it's the one
+/// chosen. The caller keys it and makes pressing it choose.
 pub fn select_item(label: &str, chosen: bool, p: &Palette) -> El {
-    let mark = el()
-        .size(size::DOT, size::DOT)
-        .radius(size::DOT / 2.0)
-        .fill(if chosen {
-            p.accent
-        } else {
-            rune::Color::TRANSPARENT
-        });
     row()
-        .h(size::ROW)
-        .px(space::SM)
+        .h(size::ROW + space::XXS)
+        .px(space::PAGE - space::LG + space::SNUG)
         .gap(space::XS)
         .items_center()
+        .radius(radius::CONTROL)
         .hover(p.hover)
         .cursor(rune::Cursor::Pointer)
         .role("option")
         .checked(chosen)
         .label(label)
         .focusable(true)
-        .child(mark)
         .child(
             text(label)
-                .font(type_::BODY)
+                .font(if chosen { type_::STRONG } else { type_::BODY })
                 .color(if chosen { p.ink } else { p.muted })
-                .truncate(),
+                .truncate()
+                .grow(1.0)
+                .min_w(0.0),
         )
+        .children(chosen.then(|| icon(Icon::Check, p.accent)))
 }
 
 /// A rule between groups of a select's choices.
