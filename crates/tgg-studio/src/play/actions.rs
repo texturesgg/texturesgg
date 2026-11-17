@@ -1,10 +1,11 @@
 //! What Play does: opening it (its queues, the replays its card reads),
 //! starting a set, the friend sheet, and reading what a running game says.
 //! `tick` runs before each frame while Play shows: it opens Play the first
-//! time, works out the card's fighter, and reads the game's log about once
-//! a second, asking for the next second's frame so the clock keeps up.
+//! time, works out the card's fighter, and reads the game's log and room
+//! report about once a second, asking for the next second's frame so the
+//! clock keeps up.
 
-use super::{Done, Listing, Log, Queue, read_log};
+use super::{Done, Listing, Log, Queue, Room, read_log, read_report};
 use crate::jobs::Done as Job;
 use crate::nav::Place;
 use crate::sets::How;
@@ -16,7 +17,7 @@ use tgg_mod::ReplayInfo;
 const QUEUES_URL: &str = "https://meet.textures.gg/v1/queues?limit=20";
 /// How much of its answer Play reads.
 const QUEUES_MOST: u64 = 256 * 1024;
-/// How often the running game's log is read.
+/// How often the running game's log and room report are read.
 const LOG_EVERY: Duration = Duration::from_millis(900);
 
 /// Play opened: read the queues once, and the replays its card shows.
@@ -68,16 +69,21 @@ pub fn tick(app: &mut App, tx: &mut rune::Tx) {
             let due = app.play.log_at.is_none_or(|at| at.elapsed() >= LOG_EVERY);
             if due {
                 app.play.log_at = Some(Instant::now());
-                let path = crate::sets::actions::game_log(app);
-                app.play.log = std::fs::read_to_string(path)
+                let log = crate::sets::actions::game_log(app);
+                app.play.log = std::fs::read_to_string(log)
                     .map(|text| read_log(&text))
                     .unwrap_or_default();
+                let report = crate::sets::actions::room_report(app);
+                app.play.room = std::fs::read_to_string(report)
+                    .map(|text| read_report(&text))
+                    .unwrap_or_default();
             }
-            // The clock's next second, and the code a host is waiting on.
+            // The clock's next second, and the room a host is waiting on.
             tx.wake_after(LOG_EVERY);
         }
-        None if app.play.log != Log::default() => {
+        None if app.play.log != Log::default() || app.play.room != Room::default() => {
             app.play.log = Log::default();
+            app.play.room = Room::default();
             app.play.log_at = None;
         }
         None => {}
@@ -108,28 +114,68 @@ pub fn close_friend(app: &mut App) {
     app.play.friend = false;
 }
 
-/// Host a room: the game makes it and reports its code, which the sheet
-/// reads out.
+/// Host a room: the game makes it and reports its code, link and players,
+/// which the sheet reads out.
 pub fn host(app: &mut App) {
+    begin_room(app);
     crate::sets::actions::launch(app, How::Host);
 }
 
-/// Join the room whose code was typed.
+/// Join the room whose code was typed. The sheet stays: it's where the
+/// game's way into the room shows.
 pub fn join(app: &mut App) {
     let code = app.play.join.text.trim().to_owned();
     if code.is_empty() {
         return;
     }
+    begin_room(app);
     crate::sets::actions::launch(app, How::Join(code));
-    if app.sets.launching.is_some() || app.mods.playing.is_some() {
-        app.play.friend = false;
-    }
+}
+
+/// Join the room a `textures-gg://join/<code>` link names, with the active
+/// set, showing the sheet as the game makes its way in.
+pub fn join_link(app: &mut App, code: &str) {
+    begin_room(app);
+    app.play.friend = true;
+    crate::sets::actions::launch(app, How::Join(code.to_owned()));
+}
+
+/// A room is about to start: its report is written afresh, so nothing the
+/// last game said shows.
+fn begin_room(app: &mut App) {
+    app.play.room = Room::default();
+    app.play.log_at = None;
 }
 
 /// Copy the room's code, for pasting to a friend.
 pub fn copy_code(app: &mut App, tx: &mut rune::Tx) {
-    if let Some(room) = &app.play.log.room {
-        tx.copy(room.clone());
+    if !app.play.room.code.is_empty() {
+        tx.copy(app.play.room.code.clone());
+    }
+}
+
+/// Copy the room's link, to send a friend.
+pub fn copy_link(app: &mut App, tx: &mut rune::Tx) {
+    if !app.play.room.link.is_empty() {
+        tx.copy(app.play.room.link.clone());
+    }
+}
+
+/// Copy the sign-in code the room waits on, to confirm on textures.gg.
+pub fn copy_sign_in_code(app: &mut App, tx: &mut rune::Tx) {
+    if !app.play.room.signin.code.is_empty() {
+        tx.copy(app.play.room.signin.code.clone());
+    }
+}
+
+/// Open the page the room's sign-in code is confirmed on.
+pub fn open_sign_in(app: &mut App, tx: &mut rune::Tx) {
+    let url = app.play.room.signin.url.clone();
+    if url.is_empty() {
+        return;
+    }
+    if let Err(error) = tx.open_url(&url) {
+        app.tell(format!("Couldn't open {url}: {error}"), true);
     }
 }
 

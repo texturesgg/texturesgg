@@ -272,18 +272,55 @@ const SCENES: &[Scene] = &[
         play_queues(app, false);
         launching_scene(app);
     }),
-    // Hosting a room: its code, large, with Copy.
+    // Hosting a room: the invite link with Copy above the code, and who's
+    // in so far.
     ("play-friend-host", |app| {
         play_scene(app);
         play_queues(app, false);
         hosting_scene(app);
+    }),
+    // A room filling up: the host and two friends, three of four.
+    ("play-friend-waiting", |app| {
+        play_scene(app);
+        play_queues(app, false);
+        room_scene(app, crate::sets::How::Host, WAITING_THREE);
+    }),
+    // The game signing in and reaching textures.gg.
+    ("play-friend-starting", |app| {
+        play_scene(app);
+        play_queues(app, false);
+        room_scene(app, crate::sets::How::Host, STARTING);
+    }),
+    // Nobody's signed in: the code to confirm and the page to do it on.
+    ("play-friend-signin", |app| {
+        play_scene(app);
+        play_queues(app, false);
+        room_scene(app, crate::sets::How::Host, SIGNING_IN);
+    }),
+    // A joiner getting the host's mods before it restarts into them.
+    ("play-friend-getting-mods", |app| {
+        play_scene(app);
+        play_queues(app, false);
+        room_scene(app, crate::sets::How::Join("KFXD".to_owned()), GETTING_MODS);
+    }),
+    // The host started: four of four.
+    ("play-friend-playing", |app| {
+        play_scene(app);
+        play_queues(app, false);
+        room_scene(app, crate::sets::How::Host, PLAYING);
+    }),
+    // The room ended, and the game's reason.
+    ("play-friend-ended", |app| {
+        play_scene(app);
+        play_queues(app, false);
+        room_scene(app, crate::sets::How::Host, ENDED);
     }),
     // Joining one: a code typed.
     ("play-friend-join", |app| {
         play_scene(app);
         play_queues(app, false);
         app.play.friend = true;
-        app.play.join.text = "FOXD-7K2Q".into();
+        app.play.join.text = "KFXD".into();
     }),
     // What the set says it plays without, above the card.
     ("play-notices", |app| {
@@ -1129,10 +1166,35 @@ fn launching_scene(app: &mut App) {
     });
 }
 
-/// For scenes: hosting a room, its code out.
-fn hosting_scene(app: &mut App) {
+/// A room's report, as the game writes it, for the sheet's scenes: one
+/// line, every field on it.
+const STARTING: &str = "{\"state\":\"starting\",\"code\":\"\",\"link\":\"\",\"host\":\"\",\
+                        \"players\":[],\"max\":4,\"signin\":{\"url\":\"\",\"code\":\"\"},\
+                        \"why\":\"\"}";
+const SIGNING_IN: &str = "{\"state\":\"signing-in\",\"code\":\"\",\"link\":\"\",\"host\":\"\",\
+                          \"players\":[],\"max\":4,\"signin\":{\"url\":\"https://textures.gg/device\",\
+                          \"code\":\"KWFD-QRNT\"},\"why\":\"\"}";
+const WAITING_ONE: &str = "{\"state\":\"waiting\",\"code\":\"KFXD\",\"link\":\"textures-gg://join/KFXD\",\
+                           \"host\":\"saavy\",\"players\":[\"saavy\"],\"max\":4,\
+                           \"signin\":{\"url\":\"\",\"code\":\"\"},\"why\":\"\"}";
+const WAITING_THREE: &str = "{\"state\":\"waiting\",\"code\":\"KFXD\",\"link\":\"textures-gg://join/KFXD\",\
+                             \"host\":\"saavy\",\"players\":[\"saavy\",\"bo\",\"wren\"],\"max\":4,\
+                             \"signin\":{\"url\":\"\",\"code\":\"\"},\"why\":\"\"}";
+const GETTING_MODS: &str = "{\"state\":\"getting-mods\",\"code\":\"KFXD\",\"link\":\"textures-gg://join/KFXD\",\
+                            \"host\":\"saavy\",\"players\":[\"saavy\",\"bo\"],\"max\":4,\
+                            \"signin\":{\"url\":\"\",\"code\":\"\"},\"why\":\"\"}";
+const PLAYING: &str = "{\"state\":\"playing\",\"code\":\"KFXD\",\"link\":\"textures-gg://join/KFXD\",\
+                       \"host\":\"saavy\",\"players\":[\"saavy\",\"bo\",\"wren\",\"tess\"],\"max\":4,\
+                       \"signin\":{\"url\":\"\",\"code\":\"\"},\"why\":\"\"}";
+const ENDED: &str = "{\"state\":\"ended\",\"code\":\"\",\"link\":\"\",\"host\":\"saavy\",\
+                     \"players\":[],\"max\":4,\"signin\":{\"url\":\"\",\"code\":\"\"},\
+                     \"why\":\"The host left, so the room closed.\"}";
+
+/// For scenes: a game started `how` and running, its room report saying
+/// `line`, and the friend sheet open over Play.
+fn room_scene(app: &mut App, how: crate::sets::How, line: &str) {
     app.sets.session = Some(crate::sets::Session {
-        how: crate::sets::How::Host,
+        how,
         name: "Friday night".to_owned(),
         started: std::time::Instant::now() - std::time::Duration::from_secs(12),
     });
@@ -1140,14 +1202,19 @@ fn hosting_scene(app: &mut App) {
         stop: Arc::default(),
     });
     app.play.friend = true;
-    // What the game writes when it makes the room; Play reads the log each
-    // second while a game runs, so the code has to be there.
-    let log = crate::sets::actions::game_log(app);
-    if let Some(folder) = log.parent() {
+    // What the game writes as the room changes; Play reads it each second
+    // while a game runs, so the line has to be there.
+    let report = crate::sets::actions::room_report(app);
+    if let Some(folder) = report.parent() {
         let _ = std::fs::create_dir_all(folder);
     }
-    let _ = std::fs::write(&log, "tgg.direct-connect: meet: in room FOXD-7K2Q\n");
-    app.play.log.room = Some("FOXD-7K2Q".into());
+    let _ = std::fs::write(&report, format!("{line}\n"));
+    app.play.room = crate::play::read_report(line);
+}
+
+/// For scenes: hosting a room, its link and code out.
+fn hosting_scene(app: &mut App) {
+    room_scene(app, crate::sets::How::Host, WAITING_ONE);
 }
 
 /// For scenes: Friday night's game waits on the player's yes to native code
