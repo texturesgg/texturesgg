@@ -1,8 +1,9 @@
-//! Play's page: notices above the card, the card (the active set, Find a
-//! match, Play with a friend, Play offline, the queue its set searches in,
-//! and the fighter the player last used), then the queues open right now
-//! and their last matches. The set picker's menu and the friend sheet sit
-//! over the page.
+//! Play's page: notices, then the hero, a dark panel with the active set in
+//! big type, the three ways to play, and the fighter the player last used
+//! standing in a warm spotlight beside them; under it the queues open right
+//! now and the player's last matches, each on a card. The light is drawn
+//! with gradients, so it's sharp at any size and needs nothing measured.
+//! The set picker's menu and the friend sheet sit over the page.
 
 use super::actions;
 use super::{Queue, QueueMod, Room, State, gameplay, matching, searching};
@@ -14,15 +15,48 @@ use crate::state::App;
 use crate::ui::tokens::{Palette, radius, size, space, text};
 use crate::ui::{
     ButtonKind, Dialog, DialogWidth, Icon, button, button_main, button_off, button_small, callout,
-    dialog, icon, list_row, panel, progress, section, select_item, select_menu, select_rule,
-    text_action, text_field,
+    dialog, icon, list_row, progress, section, select_item, select_menu, select_rule, text_action,
+    text_field,
 };
-use rune::{El, ScrollSpec, col, el, row, text as label};
+use rune::{Color, El, LoopSpec, ScrollSpec, col, el, row, text as label};
 
-/// The card's fighter picture, a side.
-const HERO: f32 = 200.0;
+/// The fighter's picture, a side: in a wide place, and in a narrow one.
+const HERO: (f32, f32) = (280.0, 200.0);
+/// How far down its picture a fighter's feet are, as a fraction of its side
+/// (renders frame the idle pose the same way for every fighter): where the
+/// spotlight's pool is.
+const FEET: f32 = 0.8;
+/// The spotlight's room beside the words, in fighter sides.
+const STAGE: f32 = 1.5;
+/// The spotlight's pool on the floor, in fighter sides across and down: a
+/// flat ellipse, bright at its heart, with two faint rings around it.
+const POOL: (f32, f32) = (0.62, 0.11);
+const POOL_STOPS: [(f32, f32); 9] = [
+    (0.0, 0.42),
+    (0.35, 0.16),
+    (0.62, 0.0),
+    (0.7, 0.0),
+    (0.72, 0.22),
+    (0.75, 0.0),
+    (0.9, 0.0),
+    (0.92, 0.12),
+    (0.95, 0.0),
+];
+/// The beam falling on the fighter from the hero's top: how wide and long it
+/// reaches, in the stage's width and height, and its brightness by distance.
+const BEAM: (f32, f32) = (0.42, 1.05);
+const BEAM_STOPS: [(f32, f32); 3] = [(0.0, 0.16), (0.55, 0.05), (1.0, 0.0)];
+/// The warm haze over the hero's end, behind everything.
+const HAZE_STOPS: [(f32, f32); 2] = [(0.0, 0.07), (1.0, 0.0)];
+/// The live dot: its side, and its slow pulse.
+const LIVE_DOT: f32 = 7.0;
+const LIVE_PULSE: LoopSpec = LoopSpec::opacity(1.8, 0.0, 0.3, 1.0);
+/// How faint the main button is while another game is got ready.
+const BUSY: f32 = 0.4;
 /// The width of the last matches, beside the queues.
-const MATCHES: f32 = 360.0;
+const MATCHES: f32 = 384.0;
+/// The won or lost mark at a match row's start.
+const RESULT_MARK: f32 = 3.0;
 /// How many of a queue's mods are named before "+ N more".
 const NAMED_MODS: usize = 3;
 /// A fighter's picture in a match row.
@@ -30,6 +64,7 @@ const FIGHTER: f32 = 40.0;
 
 pub fn view(app: &App, p: &Palette) -> El {
     let body = col()
+        .w_full()
         .px(space::PAGE)
         .pt(space::XS)
         .pb(space::XL)
@@ -38,7 +73,7 @@ pub fn view(app: &App, p: &Palette) -> El {
         Some(words) => body.child(quiet(words, p).key("play/setup")),
         None => body
             .children(notices(app, p))
-            .child(card(app, p))
+            .child(hero(app, p))
             .child(below(app, p)),
     };
     // The menu and the sheet are drawn by the shell, over everything.
@@ -52,6 +87,27 @@ pub fn view(app: &App, p: &Palette) -> El {
             })
             .child(body),
     )
+}
+
+/// Whether the place is wide enough for the big fighter and the cards side
+/// by side. Before the first layout, wide.
+fn wide(app: &App) -> bool {
+    app.window_width <= 0.0 || app.side_by_side()
+}
+
+/// A card on the page: the queues, the last matches.
+fn tile(p: &Palette) -> El {
+    col()
+        .fill(p.surface)
+        .border(size::LINE, p.line)
+        .radius(radius::CARD)
+        .padding(space::LG)
+}
+
+/// `alphas` as stops of `color`, for a gradient that fades to nothing in
+/// the same color (no gray fringe).
+fn stops<const N: usize>(color: Color, alphas: [(f32, f32); N]) -> [(f32, Color); N] {
+    alphas.map(|(at, alpha)| (at, color.alpha(alpha)))
 }
 
 /// The top bar's end on Play: how many are searching, once the queues are
@@ -104,28 +160,68 @@ fn notices(app: &App, p: &Palette) -> Vec<El> {
         .collect()
 }
 
-/// The card: the set, the three ways to play, the queue's line, and the
-/// fighter.
-fn card(app: &App, p: &Palette) -> El {
-    panel(p).key("play/card").gap(space::LG).child(
-        row()
-            .gap(space::LG)
-            .items_center()
-            .child(
-                col()
-                    .grow(1.0)
-                    .min_w(0.0)
-                    .gap(space::MD)
-                    .child(picker(app, p))
-                    .child(buttons(app, p))
-                    .children(line(app, p)),
-            )
-            .child(picture(app, p)),
-    )
+/// The hero: the set, how it's searched, and the three ways to play, beside
+/// the fighter in the spotlight.
+fn hero(app: &App, p: &Palette) -> El {
+    let side = if wide(app) { HERO.0 } else { HERO.1 };
+    let (stage_w, stage_h) = (side * STAGE, side + space::XL);
+    row()
+        .key("play/card")
+        .w_full()
+        .fill(p.sunk)
+        .border(size::LINE, p.line)
+        .radius(radius::CARD)
+        .clip_rounded(radius::CARD)
+        .radial_gradient(
+            [1.0, 0.5],
+            [stage_w * 1.4, stage_h * 1.2],
+            stops(p.accent, HAZE_STOPS),
+        )
+        .child(
+            col()
+                .grow(1.0)
+                .min_w(0.0)
+                .padding(space::XL)
+                .gap(space::LG)
+                .justify_center()
+                .children(status(app, p))
+                .child(row().w_full().child(picker(app, p)))
+                .child(
+                    col()
+                        .gap(space::SM)
+                        .mt(space::XS)
+                        .child(buttons(app, p))
+                        .children(app.sets.launching.as_ref().map(|l| launching_line(l, p))),
+                ),
+        )
+        .child(spotlight(app, side, (stage_w, stage_h), p))
 }
 
-/// The active set, as a button opening the picker: its name, and what it
-/// plays (the sets it builds on, then its own mods).
+/// The fighter in the spotlight: a beam from the hero's top, the pool and
+/// its rings on the floor, the fighter standing in it.
+fn spotlight(app: &App, side: f32, (w, h): (f32, f32), p: &Palette) -> El {
+    let feet = space::XL + side * FEET;
+    let pool = (side * POOL.0, side * POOL.1);
+    col()
+        .key("play/fighter")
+        .w(w)
+        .h(h)
+        .child(el().absolute(0.0, 0.0).w(w).h(h).radial_gradient(
+            [0.5, 0.0],
+            [w * BEAM.0, h * BEAM.1],
+            stops(p.accent, BEAM_STOPS),
+        ))
+        .child(
+            el().absolute(w / 2.0 - pool.0, feet - pool.1)
+                .size(pool.0 * 2.0, pool.1 * 2.0)
+                .radial_gradient([0.5, 0.5], [pool.0, pool.1], stops(p.accent, POOL_STOPS)),
+        )
+        .child(picture(app, side).absolute((w - side) / 2.0, space::XL))
+}
+
+/// The active set, as the card's heading and the button opening the
+/// picker: its name, and under it what it plays (the sets it builds on, then
+/// its own mods).
 fn picker(app: &App, p: &Palette) -> El {
     let set = app.sets.active();
     let name = set.map_or_else(
@@ -133,32 +229,41 @@ fn picker(app: &App, p: &Palette) -> El {
         |set| set.name.clone(),
     );
     let summary = set.map(|set| summary(app, set)).unwrap_or_default();
-    row()
+    col()
         .key("play/set")
-        .h(size::CONTROL)
-        .px(space::SM)
-        .gap(space::XS)
-        .items_center()
-        .self_start()
-        .radius(radius::CONTROL + 1.0)
-        .fill(p.surface)
-        .border(size::LINE, p.line_strong)
-        .hover(p.fill)
+        .min_w(0.0)
+        .gap(space::XXS)
+        .px(space::XS)
+        .py(space::XXS)
+        .ml(-space::XS)
+        .radius(radius::CONTROL)
+        .hover(p.hover)
         .cursor(rune::Cursor::Pointer)
         .role("combobox")
         .checked(app.play.menu)
         .focusable(true)
         .label(name.clone())
         .on_press(actions::toggle_menu)
-        .child(label(name).font(text::STRONG).color(p.ink))
+        .child(
+            row()
+                .gap(space::SM)
+                .items_center()
+                .child(
+                    label(name)
+                        .font(text::DISPLAY)
+                        .color(p.ink)
+                        .truncate()
+                        .min_w(0.0),
+                )
+                .child(icon(Icon::Chevron, p.muted)),
+        )
         .children((!summary.is_empty()).then(|| {
             label(summary)
-                .font(text::SMALL)
+                .font(text::BODY)
                 .color(p.muted)
                 .truncate()
                 .min_w(0.0)
         }))
-        .child(icon(Icon::Chevron, p.muted))
 }
 
 /// A set in a few words: the textures.gg sets it builds on, by the names
@@ -183,29 +288,32 @@ fn summary(app: &App, set: &tgg_mod::sets::MySet) -> String {
     parts.join(" + ")
 }
 
-/// Find a match, Play with a friend, Play offline; while a game runs, what
-/// it's doing instead of Find a match, with Cancel.
+/// Find a match, Play with a friend, Play offline, all one height; while a
+/// game runs, what it's doing instead of Find a match, with Cancel.
 fn buttons(app: &App, p: &Palette) -> El {
     let main = match &app.sets.session {
         Some(session) => live(app, session, p),
         None if app.mods.playing.is_some() => running(p),
-        None if app.sets.busy() => button_off("Find a match", p),
+        None if app.sets.busy() => button_main("Find a match", ButtonKind::Primary, p)
+            .disabled(true)
+            .opacity(BUSY),
         None => button_main("Find a match", ButtonKind::Primary, p)
             .key("play/find")
             .on_press(actions::find),
     };
+    // In a narrow window they wrap rather than run under the fighter.
     row()
-        .gap(space::SM)
+        .flex_wrap()
+        .gap(space::XS)
         .items_center()
-        .self_start()
         .child(main)
         .child(
-            button("Play with a friend", ButtonKind::Secondary, p)
+            button_main("Play with a friend", ButtonKind::Secondary, p)
                 .key("play/friend")
                 .on_press(actions::open_friend),
         )
         .child(
-            button("Play offline", ButtonKind::Secondary, p)
+            button_main("Play offline", ButtonKind::Secondary, p)
                 .key("play/offline")
                 .on_press(actions::play_offline),
         )
@@ -290,16 +398,17 @@ fn covered_queue(app: &App, queues: &[Queue]) -> Option<usize> {
     matching(queues, &gameplay(plan))
 }
 
-/// One line under the buttons: which queue the set searches in, and how
-/// many are there. While a game is got ready, what's being done and how far
-/// along, with Cancel.
-fn line(app: &App, p: &Palette) -> Option<El> {
-    if let Some(launching) = &app.sets.launching {
-        return Some(launching_line(launching, p));
+/// Over the set's name: which queue it searches in and how many are there,
+/// with a dot that breathes while anyone is. Nothing until the queues are
+/// read, or while a game is got ready (that shows under the buttons).
+fn status(app: &App, p: &Palette) -> Option<El> {
+    if app.sets.launching.is_some() {
+        return None;
     }
     let queues = actions::queues_of(app)?;
     let plan = app.sets.plan(&app.sets.active)?;
-    let words = match matching(queues, &gameplay(plan)).and_then(|index| queues.get(index)) {
+    let queue = matching(queues, &gameplay(plan)).and_then(|index| queues.get(index));
+    let words = match queue {
         Some(queue) if queue.standing() => {
             format!(
                 "Searches in {} · {}",
@@ -310,7 +419,19 @@ fn line(app: &App, p: &Palette) -> Option<El> {
         Some(queue) => format!("Has its own queue · {}", searching(queue.searching)),
         None => "Has its own queue · nobody searching yet".to_owned(),
     };
-    Some(label(words).font(text::SMALL).color(p.muted))
+    let live = queue.is_some_and(|queue| queue.searching > 0);
+    let dot = el()
+        .size(LIVE_DOT, LIVE_DOT)
+        .radius(LIVE_DOT / 2.0)
+        .fill(if live { p.success } else { p.faint });
+    Some(
+        row()
+            .key("play/status")
+            .gap(space::XS)
+            .items_center()
+            .child(if live { dot.looping(LIVE_PULSE) } else { dot })
+            .child(label(words).font(text::LABEL).color(p.muted)),
+    )
 }
 
 fn launching_line(launching: &Launching, p: &Palette) -> El {
@@ -357,30 +478,41 @@ fn fraction(launching: &Launching) -> f32 {
 
 /// The fighter the player had in their latest match, drawn with nothing
 /// behind it; Fox before there's a match.
-fn picture(app: &App, p: &Palette) -> El {
+fn picture(app: &App, side: f32) -> El {
     let slot = app.play.hero.or_else(|| actions::fox_slot(app));
-    let tile = el().size(HERO, HERO);
+    let tile = el().size(side, side);
     match slot.and_then(|slot| app.renders.get(RenderKey::Fighter(slot))) {
         Some(pixels) => tile.pixels_fit(pixels, rune::SurfaceFit::Fill),
-        None => tile.fill(p.fill),
+        None => tile,
     }
 }
 
-/// The queues open right now, under the card: the ones textures.gg keeps
-/// open, then the players' own, each with what it needs and how many are
-/// there. The queue the card already covers isn't listed again.
+/// Under the hero, each on a card: the queues open right now (the ones
+/// textures.gg keeps open, then the players' own, each with what it needs
+/// and how many are there; the one the hero covers isn't listed again) and
+/// the last matches. Side by side when the place is wide, else one over the
+/// other.
 fn below(app: &App, p: &Palette) -> El {
-    row()
-        .gap(space::XL)
-        .items_start()
-        .child(
-            col()
-                .grow(1.0)
-                .min_w(0.0)
-                .gap(space::XS)
-                .children(queues(app, p)),
-        )
-        .children(matches(app, p))
+    let queues = tile(p)
+        .key("play/queues")
+        .min_w(0.0)
+        .gap(space::XS)
+        .children(queues(app, p));
+    let matches = matches(app, p);
+    if wide(app) {
+        row()
+            .w_full()
+            .gap(space::LG)
+            .items_start()
+            .child(queues.grow(1.0))
+            .children(matches.map(|matches| matches.w(MATCHES)))
+    } else {
+        col()
+            .w_full()
+            .gap(space::LG)
+            .child(queues)
+            .children(matches)
+    }
 }
 
 fn queues(app: &App, p: &Palette) -> Vec<El> {
@@ -512,8 +644,8 @@ fn matches(app: &App, p: &Palette) -> Option<El> {
         return None;
     }
     Some(
-        col()
-            .w(MATCHES)
+        tile(p)
+            .key("play/matches")
             .gap(space::XS)
             .child(section("Your last matches", p))
             .children(
@@ -534,12 +666,25 @@ fn match_row(app: &App, item: &crate::replays::Item, index: usize, p: &Palette) 
         }));
     let detail = detail_of(app, info);
     let path = item.path.clone();
+    // Green for a win, red for a loss, nothing when the replay doesn't say
+    // which player was this one.
+    let won = actions::player_of(app, info).map(|me| info.winner == Some(me.port));
+    let mark = el()
+        .w(RESULT_MARK)
+        .h(FIGHTER)
+        .radius(RESULT_MARK / 2.0)
+        .fill(match won {
+            Some(true) => p.success,
+            Some(false) => p.danger,
+            None => p.line,
+        });
     list_row(p)
         .key(format!("play/match/{index}"))
         .cursor(rune::Cursor::Pointer)
         .role("button")
         .focusable(true)
         .on_press(move |app: &mut App| crate::replays::actions::play(app, &path))
+        .child(mark)
         .child(fighters)
         .child(
             col()

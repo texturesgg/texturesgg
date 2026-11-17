@@ -1,16 +1,16 @@
 //! The window's frame: the sidebar beside the content, and the top bar
 //! inside the content. First run takes the whole window until the player has
-//! a disc and tgg-melee. The sidebar hides completely; the button that brings
-//! it back is the first thing in the top bar, and the same button in the
-//! sidebar hides it. No borders between regions. Drawing only: what it shows
-//! comes from the app's state, and pressing calls `nav::actions`.
+//! a disc and tgg-melee. The sidebar hides completely; one button shows and
+//! hides it, at the same spot either way (`toggle_at`), with the sidebar
+//! sliding out from under it. No borders between regions. Drawing only: what
+//! it shows comes from the app's state, and pressing calls `nav::actions`.
 
 use crate::nav::{Place, actions as nav};
 use crate::state::{App, NoticeAction};
 use crate::ui::tokens::{Palette, elevation, motion, radius, size, space, text};
 use crate::ui::{
-    Icon, close_glyph, dot, icon, icon_button, place_row, sidebar_glyph, spacer, text_action,
-    title_bar,
+    ICON_BUTTON, Icon, close_glyph, dot, icon, icon_button, place_row, sidebar_glyph, spacer,
+    text_action, title_bar,
 };
 use crate::{
     editor, first_run, keys, library, melee, mods, newmod, play, preferences, profile, replays,
@@ -58,6 +58,11 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
                 .child(top_bar(app, &p))
                 .child(place(app, &p)),
         )
+        // Over both, so it stays put while the sidebar slides away under it.
+        .child({
+            let (x, y) = toggle_at();
+            toggle(app, &p).absolute(x, y)
+        })
         // A mod's details, the whole window tall at its right, as the sidebar is at its left.
         .child(mods::details::view(app, &p))
         .child(replays::details::view(app, &p))
@@ -79,6 +84,18 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         // Play's set picker's menu, over Settings, and its friend sheet.
         .children(play::view::menu(app, &p))
         .children(play::view::friend(app, &p))
+}
+
+/// Where the sidebar's button sits, from the window's top left: in the
+/// sidebar's head, clear of macOS's traffic lights, and in the same place
+/// over the content while the sidebar is hidden.
+fn toggle_at() -> (f32, f32) {
+    let x = if cfg!(target_os = "macos") {
+        TRAFFIC_LIGHTS
+    } else {
+        space::XS
+    };
+    (x, (size::TOP_BAR - ICON_BUTTON) / 2.0)
 }
 
 /// The button that shows or hides the sidebar.
@@ -104,9 +121,9 @@ fn glyph(place: Place) -> Icon {
     }
 }
 
-/// The app's name with the hide button, the four places, and the account
-/// row with the settings gear at the foot. Nothing else until friends exist.
-/// Hidden, it narrows to nothing.
+/// The app's name after the sidebar's button (drawn over the head by the
+/// shell), the four places, and the account row with the settings gear at the
+/// foot. Nothing else until friends exist. Hidden, it narrows to nothing.
 fn sidebar(app: &App, p: &Palette) -> El {
     let shown = app.nav.sidebar;
     let places = Place::ALL.into_iter().map(|place| {
@@ -116,11 +133,6 @@ fn sidebar(app: &App, p: &Palette) -> El {
             .key(place.key())
             .on_press_tx(move |app: &mut App, tx| editor::actions::go(app, place, tx))
     });
-    let head_inset = if cfg!(target_os = "macos") {
-        TRAFFIC_LIGHTS
-    } else {
-        space::XS
-    };
     let inner = col()
         .w(size::SIDEBAR)
         .h_full()
@@ -129,10 +141,11 @@ fn sidebar(app: &App, p: &Palette) -> El {
         .child(
             title_bar(row())
                 .h(size::TOP_BAR)
-                .pl(head_inset - space::XS)
+                .pl(toggle_at().0 - space::XS)
                 .gap(space::XS)
                 .items_center()
-                .child(toggle(app, p))
+                // Where the shell draws the sidebar's button.
+                .child(el().w(ICON_BUTTON))
                 .child(label("textures.gg").font(text::WORDMARK).color(p.ink)),
         )
         .child(col().gap(space::TIGHT).children(places))
@@ -156,16 +169,16 @@ fn sidebar(app: &App, p: &Palette) -> El {
     base.child(inner)
 }
 
-/// The top bar: the sidebar's button while it's hidden, the place's name
-/// (or where the player is under it), and at its end the place's search and
-/// its one action. Its empty stretch moves the window on macOS.
+/// The top bar: the place's name (or where the player is under it), clear of
+/// the sidebar's button while the sidebar is hidden, and at its end the
+/// place's search and its one action. Only the name springs as the sidebar
+/// slides; the end stays at the window's edge. Its empty stretch moves the
+/// window on macOS.
 fn top_bar(app: &App, p: &Palette) -> El {
     let start = if app.nav.sidebar {
         space::PAGE
-    } else if cfg!(target_os = "macos") {
-        TRAFFIC_LIGHTS
     } else {
-        space::SM
+        toggle_at().0 + ICON_BUTTON + space::SM
     };
     let name = crumbs(app, p).unwrap_or_else(|| {
         label(app.nav.place.label())
@@ -180,9 +193,7 @@ fn top_bar(app: &App, p: &Palette) -> El {
         .pr(space::PAGE - space::XXS)
         .gap(space::SM)
         .items_center()
-        .motion(motion::SIDEBAR)
-        .children((!app.nav.sidebar).then(|| toggle(app, p)))
-        .child(name)
+        .child(row().motion(motion::SIDEBAR).child(name))
         .child(el().grow(1.0))
         .children(update(app, p))
         .children(place_top(app, p))

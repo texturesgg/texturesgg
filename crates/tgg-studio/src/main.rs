@@ -613,7 +613,12 @@ fn main() {
             .on_open_url(links::opened_with)
             .init(move || {
                 let data = Data::of_player();
-                let mut app = App::new(start(iso.as_deref(), &data), settings::load(), data, true);
+                let mut app = App::new(
+                    start(iso.as_deref(), &data),
+                    settings::load(),
+                    data,
+                    persists(),
+                );
                 open_files(&mut app);
                 if let Some(link) = links::in_arguments(rune::extra_args()) {
                     links::open(&mut app, link);
@@ -642,7 +647,14 @@ fn launch() -> App {
         } => Start::Game(game),
         other => other,
     };
-    App::new(start, settings::load(), data, true)
+    App::new(start, settings::load(), data, persists())
+}
+
+/// Whether changes to settings are saved: in a window, yes; in Rune's
+/// headless runs (`--snap`, `--script`), no, so a scene or a recording that
+/// hides the sidebar or picks an editor leaves the player's settings alone.
+fn persists() -> bool {
+    rune::tooling::headless_run().is_none()
 }
 
 /// The game given, else the one chosen before, else the one Slippi Launcher
