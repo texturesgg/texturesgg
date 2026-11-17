@@ -3,7 +3,7 @@
 //! this is the app.
 
 use super::{FirstRun, LINKS, Picks, Stage, actions};
-use crate::mods::{Disc, Work, size_text};
+use crate::mods::{Disc, Registry, Work, size_text};
 use crate::state::App;
 use crate::ui::tokens::{Palette, radius, size, space, text};
 use crate::ui::{
@@ -128,6 +128,7 @@ fn disc_row(app: &App, p: &Palette) -> El {
 /// The game: what tgg-melee is and its size, or the download while it runs.
 fn game_row(app: &App, stage: Stage, has_disc: bool, p: &Palette) -> El {
     let installed = app.mods.port().is_some() || stage == Stage::Done;
+    let mut control = None;
     let mut body = col()
         .w_full()
         .gap(space::SNUG)
@@ -156,8 +157,31 @@ fn game_row(app: &App, stage: Stage, has_disc: bool, p: &Palette) -> El {
             },
         );
         body = body.child(label(words).font(text::BODY).color(p.muted).wrap());
+        // Without a release to download, the button can't do anything: say
+        // why, and offer to ask again.
+        if release.is_none() {
+            let why = match &app.mods.registry {
+                Registry::Offline => Some("Can't reach textures.gg. Check your connection."),
+                Registry::Failed(why) => Some(why.as_str()),
+                Registry::NotAsked | Registry::Asking | Registry::Answered => None,
+            };
+            if let Some(why) = why {
+                body = body.child(
+                    label(why)
+                        .font(text::BODY)
+                        .color(p.danger)
+                        .wrap()
+                        .key("first-run/why"),
+                );
+                control = Some(
+                    text_action("Try again", false, p)
+                        .key("first-run/try-again")
+                        .on_press(crate::mods::actions::fetch),
+                );
+            }
+        }
     }
-    step_row(2, installed, body, None, !has_disc, p)
+    step_row(2, installed, body, control, !has_disc, p)
 }
 
 /// The mods to start with: three choices before setup, what they made after.
