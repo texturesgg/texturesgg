@@ -65,7 +65,9 @@ fn find_a_match_starts_the_active_sets_game_searching_from_its_own_folder() {
     });
     if app.sets.trust.is_some() {
         super::actions::trust_yes(&mut app);
-        until(&mut app, |app| app.mods.playing.is_some() || !app.sets.busy());
+        until(&mut app, |app| {
+            app.mods.playing.is_some() || !app.sets.busy()
+        });
     }
     assert!(
         app.mods.playing.is_some(),
@@ -73,7 +75,10 @@ fn find_a_match_starts_the_active_sets_game_searching_from_its_own_folder() {
         app.notice.as_ref().map(|notice| &notice.text)
     );
     assert_eq!(
-        app.sets.session.as_ref().map(|session| session.name.as_str()),
+        app.sets
+            .session
+            .as_ref()
+            .map(|session| session.name.as_str()),
         Some("Friday night")
     );
 
@@ -95,7 +100,8 @@ fn find_a_match_starts_the_active_sets_game_searching_from_its_own_folder() {
     let profiles = app.data.tgg.join("tgg").join("profiles");
     assert!(
         env.lines()
-            .any(|line| line.starts_with("TGG_MODS_DIR=") && line.contains(&*profiles.to_string_lossy())),
+            .any(|line| line.starts_with("TGG_MODS_DIR=")
+                && line.contains(&*profiles.to_string_lossy())),
         "its mods come from the set's own folder, not the mods folder: {env}"
     );
 

@@ -19,25 +19,21 @@ pub fn trust(app: &App, p: &Palette) -> Option<El> {
         .wrap()
     });
     let remember = trust.remember;
-    let body = col()
-        .px(space::LG)
-        .gap(space::SM)
-        .children(lines)
-        .child(
-            row()
-                .gap(space::SM)
-                .items_center()
-                .child(
-                    switch("sets/trust/remember", remember, p)
-                        .label("Don't ask again for these publishers")
-                        .on_press(move |app: &mut App| actions::set_remember(app, !remember)),
-                )
-                .child(
-                    label("Don't ask again for these publishers")
-                        .font(text::SMALL)
-                        .color(p.muted),
-                ),
-        );
+    let body = col().px(space::LG).gap(space::SM).children(lines).child(
+        row()
+            .gap(space::SM)
+            .items_center()
+            .child(
+                switch("sets/trust/remember", remember, p)
+                    .label("Don't ask again for these publishers")
+                    .on_press(move |app: &mut App| actions::set_remember(app, !remember)),
+            )
+            .child(
+                label("Don't ask again for these publishers")
+                    .font(text::SMALL)
+                    .color(p.muted),
+            ),
+    );
     Some(dialog(
         "sets/trust",
         "alertdialog",

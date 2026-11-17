@@ -86,7 +86,10 @@ pub fn launch(app: &mut App, how: How) {
         return;
     }
     if app.mods.port().is_none() || !matches!(app.mods.disc, Disc::Found(_)) {
-        app.tell("tgg-melee and your Melee disc have to be set up first.", true);
+        app.tell(
+            "tgg-melee and your Melee disc have to be set up first.",
+            true,
+        );
         return;
     }
     let (net, data, mods) = (
@@ -107,10 +110,12 @@ pub fn launch(app: &mut App, how: How) {
                 settings: Default::default(),
             })
             .collect();
-        start_work(app, how.clone(), format!("Getting {label}'s mods"));
+        start_work(app, format!("Getting {label}'s mods"));
         app.jobs.spawn("queue plan", move || {
             let result = tgg_mod::plan_profile(&*net, &data, &mods, &profile)
-                .map(|(plan, _)| Source::Queue { plan })
+                .map(|(plan, _)| Source::Queue {
+                    plan: Box::new(plan),
+                })
                 .map_err(|error| error.to_string());
             Job::Sets(Box::new(Done::ReadyToPrepare { how, result }))
         });
@@ -122,7 +127,7 @@ pub fn launch(app: &mut App, how: How) {
     };
     if set.is_installed() {
         let port = app.mods.port().map(tgg_mod::PortInstall::port);
-        start_work(app, how.clone(), "Checking your mods".to_owned());
+        start_work(app, "Checking your mods".to_owned());
         app.jobs.spawn("withdrawn", move || {
             let notices = port
                 .map(|port| tgg_mod::withdraw::check_withdrawn(&*net, &data, &mods, &port))
@@ -137,7 +142,7 @@ pub fn launch(app: &mut App, how: How) {
         return;
     }
     let skins = skins_on(app);
-    start_work(app, how.clone(), format!("Getting {}'s mods", set.name));
+    start_work(app, format!("Getting {}'s mods", set.name));
     app.jobs.spawn("set plan", move || {
         let result = sets::plan(&*net, &data, &mods, &set, skins)
             .map(|plan| Source::Set {
@@ -150,9 +155,8 @@ pub fn launch(app: &mut App, how: How) {
 }
 
 /// Show `doing` while a game is got ready.
-fn start_work(app: &mut App, how: How, doing: String) {
+fn start_work(app: &mut App, doing: String) {
     app.sets.launching = Some(Launching {
-        how,
         doing,
         progress: Arc::new(Mutex::new(None)),
         cancel: Arc::new(AtomicBool::new(false)),
@@ -173,7 +177,10 @@ fn planned(app: &mut App, how: How, source: Source) {
         .untrusted()
         .into_iter()
         .map(|publisher| {
-            let key = publisher.id.clone().unwrap_or_else(|| publisher.name.clone());
+            let key = publisher
+                .id
+                .clone()
+                .unwrap_or_else(|| publisher.name.clone());
             let names = plan.needing(publisher).map(|m| m.name.clone()).collect();
             (key, publisher.name.clone(), names)
         })
@@ -232,11 +239,7 @@ pub fn set_remember(app: &mut App, remember: bool) {
 
 /// Fetch what the game needs into its own folder, off the window's thread.
 fn prepare(app: &mut App, how: How, source: Source) {
-    let (net, data, waker) = (
-        app.mods.net.clone(),
-        app.data.tgg.clone(),
-        app.jobs.waker(),
-    );
+    let (net, data, waker) = (app.mods.net.clone(), app.data.tgg.clone(), app.jobs.waker());
     let name = match &source {
         Source::Set { set, .. } => set.name.clone(),
         Source::Queue { .. } => match &how {
@@ -245,7 +248,7 @@ fn prepare(app: &mut App, how: How, source: Source) {
         },
     };
     if app.sets.launching.is_none() {
-        start_work(app, how.clone(), format!("Getting {name}'s mods"));
+        start_work(app, format!("Getting {name}'s mods"));
     }
     let Some(launching) = &app.sets.launching else {
         return;
@@ -297,7 +300,10 @@ fn started(
             });
         }
         Err(error) => app.tell(
-            format!("tgg-melee couldn't start: {}.", capitalized(&error.to_string())),
+            format!(
+                "tgg-melee couldn't start: {}.",
+                capitalized(&error.to_string())
+            ),
             true,
         ),
     }
@@ -387,12 +393,6 @@ pub fn done(app: &mut App, done: Done) -> bool {
                 }
             }
         }
-        Done::Changed(result) => {
-            if let Err(why) = result {
-                app.tell(capitalized(&why), true);
-            }
-            read(app);
-        }
     }
     true
 }
@@ -462,8 +462,8 @@ fn capitalized(line: &str) -> String {
 impl Sets {
     /// Whether a set's game is running: its mods can't change until it ends.
     pub fn running(&self, key: &str) -> bool {
-        self.session.as_ref().is_some_and(|session| {
-            self.get(key).is_some_and(|set| set.name == session.name)
-        })
+        self.session
+            .as_ref()
+            .is_some_and(|session| self.get(key).is_some_and(|set| set.name == session.name))
     }
 }

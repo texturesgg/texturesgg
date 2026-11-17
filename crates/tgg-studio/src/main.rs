@@ -24,6 +24,10 @@ mod preferences;
 mod profile;
 mod replays;
 mod report;
+#[expect(
+    dead_code,
+    reason = "first run, Play and Mods use the sets, in the pull requests after this one"
+)]
 mod sets;
 mod shell;
 mod signin;

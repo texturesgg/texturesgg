@@ -23,7 +23,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tgg_mod::sets::{MySet, QueueMod, SetPlan};
-use tgg_mod::{Prepared, Progress, ProfilePlan};
+use tgg_mod::{Prepared, ProfilePlan, Progress};
 
 #[derive(Default)]
 pub struct Sets {
@@ -114,7 +114,6 @@ impl How {
 
 /// A game being got ready.
 pub struct Launching {
-    pub how: How,
     /// What's being done, for the player: "Getting Friday night's mods".
     pub doing: String,
     pub progress: Arc<Mutex<Option<Progress>>>,
@@ -127,7 +126,7 @@ pub enum Source {
     /// One of the player's sets (not Installed mods).
     Set { set: MySet, plan: Arc<SetPlan> },
     /// A queue's mods, for one session.
-    Queue { plan: ProfilePlan },
+    Queue { plan: Box<ProfilePlan> },
 }
 
 impl Source {
@@ -184,6 +183,4 @@ pub enum Done {
         name: String,
         result: Result<Prepared, String>,
     },
-    /// A set changed on disk (made, renamed, a line added): read them again.
-    Changed(Result<String, String>),
 }
