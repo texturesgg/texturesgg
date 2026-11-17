@@ -106,17 +106,30 @@ const SCENES: &[Scene] = &[
             };
         }
     }),
-    ("stages", |app| skins(app).melee.tab = melee::Tab::Stages),
-    ("skins", |app| {
-        skins(app);
-    }),
-    ("fox", |app| {
-        if let Some(fox) = melee_dat::Character::from_code("Fx") {
-            melee::actions::open_fighter(skins(app), fox);
+    // Skins as it opens: textures.gg's skins, with their previews (live, for
+    // a look).
+    ("skins", |app| skins_on(app, melee::Tab::Browse)),
+    ("skins-using", |app| skins_on(app, melee::Tab::Using)),
+    ("skins-made", |app| skins_on(app, melee::Tab::Made)),
+    // A skin's sheet: the first of the player's made for a costume.
+    ("skins-sheet", |app| {
+        skins_on(app, melee::Tab::Using);
+        let id = app
+            .library
+            .skins()
+            .iter()
+            .rev()
+            .find(|skin| matches!(skin.slot, Some(melee_dat::MeleeSlot::Costume { .. })))
+            .map(|skin| skin.id);
+        if let Some(id) = id {
+            melee::actions::open_skin(app, id);
         }
     }),
-    ("fox-shine", |app| show_shared(app, "Fx", "Shine")),
-    ("fox-laser", |app| show_shared(app, "Fx", "Laser")),
+    // Make a skin's picker, over the page.
+    ("skins-make", |app| {
+        skins_on(app, melee::Tab::Using);
+        melee::actions::make(app);
+    }),
     ("fox-edit", |app| {
         if let Some(fox) = melee_dat::Character::from_code("Fx") {
             melee::actions::open_fighter(skins(app), fox);
@@ -183,28 +196,10 @@ const SCENES: &[Scene] = &[
             }
         }
     }),
-    ("fox-moves", |app| {
-        if let Some(fox) = melee_dat::Character::from_code("Fx") {
-            melee::actions::open_fighter(skins(app), fox);
-            melee::actions::toggle_pane(app, melee::Pane::Moves);
-        }
-    }),
-    ("final-destination", |app| {
-        if let Some(stage) = app
-            .melee
-            .stages
-            .iter()
-            .copied()
-            .find(|stage| stage.name() == "Final Destination")
-        {
-            melee::actions::open_stage(skins(app), stage);
-        }
-    }),
-    ("library", melee::actions::show_mine),
-    // Review over Library: Fox's green costume, offered as a skin, and a
-    // file that isn't one.
-    ("library-review", |app| {
-        melee::actions::show_mine(app);
+    // The review before a file the player picked joins their skins: Fox's
+    // green costume, offered as a skin, and a file that isn't one.
+    ("skins-review", |app| {
+        skins_on(app, melee::Tab::Using);
         let (Some(fox), Some(references)) = (melee_dat::Character::from_code("Fx"), &app.game)
         else {
             return;
@@ -304,10 +299,10 @@ const SCENES: &[Scene] = &[
     }),
     // A toast after an install, offering Undo.
     ("toast", |app| {
-        skins(app);
+        skins_on(app, melee::Tab::Using);
         if let Ok(slot) = "PlFxOr.dat".parse() {
             app.tell_undoable(
-                "Installed DARK GOKU FOX HALO into Fox · Orange in Slippi.",
+                "Wrote DARK GOKU FOX HALO into Fox · Orange in your Melee disc.",
                 slot,
             );
         }
@@ -454,22 +449,18 @@ const SCENES: &[Scene] = &[
         });
     }),
     // You, signed in as ciao, with what's been made on this computer.
-    // $TGG_SCENE_HANDLE names whose profile textures.gg is asked for (for a
-    // look; the default has none).
     ("profile", |app| {
-        let handle = std::env::var("TGG_SCENE_HANDLE").unwrap_or_else(|_| "ciao".into());
         app.signin.who = Some(tgg_account::SignedIn {
             account: tgg_account::Account {
-                display_name: Some(handle.clone()),
-                handle,
+                display_name: Some("ciao".into()),
+                handle: "ciao".into(),
                 id: None,
             },
             verified: true,
         });
-        // Read before the picture is taken.
         app.jobs.inline = true;
         nav::actions::go(app, nav::Place::Profile);
-        jobs::poll_now(app);
+        poll_inline(app);
         app.jobs.inline = false;
     }),
     // The player's own replays, read and resolved against the live
@@ -477,14 +468,14 @@ const SCENES: &[Scene] = &[
     ("replays", |app| {
         app.jobs.inline = true;
         nav::actions::go(app, nav::Place::Replays);
-        jobs::poll_now(app);
+        poll_inline(app);
         app.jobs.inline = false;
     }),
     // The same, its first two-player replay chosen, with its stats.
     ("replay-details", |app| {
         app.jobs.inline = true;
         nav::actions::go(app, nav::Place::Replays);
-        jobs::poll_now(app);
+        poll_inline(app);
         let first = app
             .replays
             .items
@@ -497,7 +488,29 @@ const SCENES: &[Scene] = &[
             .map(|item| item.path.clone());
         if let Some(path) = first {
             replays::actions::select(app, &path);
-            jobs::poll_now(app);
+            poll_inline(app);
+        }
+        app.jobs.inline = false;
+    }),
+    // What a replay says before it plays when one of its mods was withdrawn
+    // (the notices are fixed here, for the picture).
+    ("replays-withdrawn", |app| {
+        app.jobs.inline = true;
+        nav::actions::go(app, nav::Place::Replays);
+        poll_inline(app);
+        let found = app.replays.items.iter().find_map(|item| {
+            let plan = item.plan.clone()?;
+            matches!(plan.game, tgg_mod::GameNeed::Installed(_))
+                .then_some((item.path.clone(), plan))
+        });
+        if let Some((path, plan)) = found {
+            app.replays.selected = Some(path.clone());
+            app.replays.review = Some(replays::Review {
+                path,
+                plan,
+                remember: false,
+                notices: vec!["Playing without Turbo: withdrawn (crashes on Windows)".to_owned()],
+            });
         }
         app.jobs.inline = false;
     }),
@@ -633,16 +646,23 @@ fn iso_argument() -> Option<PathBuf> {
     None
 }
 
-/// For scenes: open the fighter `code` names and play the move that shows
-/// its shared model `name`.
-fn show_shared(app: &mut App, code: &str, name: &str) {
-    let Some(character) = melee_dat::Character::from_code(code) else {
-        return;
-    };
-    melee::actions::open_fighter(skins(app), character);
-    if let Some(model) = melee_dat::SharedModel::of(character).find(|model| model.name() == name) {
-        stage::actions::play_action(app, model.action());
+/// For scenes: jobs run inline, and a result can start the next one (the
+/// replays read, then they're planned), so hand results over until none is
+/// left for the picture to wait on.
+fn poll_inline(app: &mut App) {
+    for _ in 0..4 {
+        jobs::poll_now(app);
     }
+}
+
+/// For scenes: Skins on `tab`, the site's listing and pictures read inline
+/// when it's Browse (live, for a look).
+fn skins_on(app: &mut App, tab: melee::Tab) {
+    app.jobs.inline = true;
+    nav::actions::go(app, nav::Place::Skins);
+    melee::actions::show_tab(app, tab);
+    poll_inline(app);
+    app.jobs.inline = false;
 }
 
 /// For scenes: Start a mod open, its SDK and the tools found given rather

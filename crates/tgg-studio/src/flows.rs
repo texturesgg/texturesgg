@@ -3,7 +3,6 @@
 //! are disc images written by hand.
 
 use crate::first_run::FirstRun;
-use crate::melee::Subject;
 use crate::nav::Place;
 use crate::shell;
 use crate::state::{App, Data, Start};
@@ -253,10 +252,11 @@ fn first_run_installs_the_game_and_makes_the_picked_set() {
 }
 
 #[test]
-fn the_roster_shows_the_games_fighters_and_whats_changed_once_its_read() {
+fn the_picker_shows_the_games_fighters_and_whats_changed_once_its_read() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
     open_place(&mut rt, Place::Skins);
+    tap(&mut rt, "skins/make");
     assert!(
         rt.find("melee/fighter/Falco").is_some(),
         "the test disc holds a Falco costume"
@@ -311,12 +311,14 @@ fn states_read_for_another_game_are_set_aside() {
 }
 
 #[test]
-fn the_stages_tab_shows_the_stages() {
+fn the_picker_shows_the_stages_too() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
     open_place(&mut rt, Place::Skins);
-    tap(&mut rt, "melee/tab/stages");
-    assert_eq!(rt.state.melee.tab, crate::melee::Tab::Stages);
+    tap(&mut rt, "skins/make");
+    settle(&mut rt);
+    tap(&mut rt, "skins/picker/stages");
+    assert_eq!(rt.state.melee.picker, crate::melee::Roster::Stages);
     assert!(rt.find("melee/fighter/Falco").is_none());
 }
 
@@ -329,17 +331,11 @@ fn press_escape(rt: &mut Runtime<App>) {
 }
 
 #[test]
-fn a_fighter_opens_onto_the_stage_and_escape_closes_it_into_its_plate() {
+fn picking_a_fighter_opens_the_editor_and_escape_goes_back() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
-    open_place(&mut rt, Place::Skins);
-    tap(&mut rt, "melee/fighter/Falco");
-    assert_eq!(
-        rt.state.melee.subject,
-        Some(Subject::Fighter(
-            melee_dat::Character::from_code("Fc").expect("Falco")
-        ))
-    );
+    make_a_skin(&mut rt, "Falco");
+    assert!(rt.state.editor.is_some(), "Falco's costume is open");
     let shown = rt
         .state
         .stage
@@ -349,35 +345,26 @@ fn a_fighter_opens_onto_the_stage_and_escape_closes_it_into_its_plate() {
     assert_eq!(shown.slot.file_name(), "PlFcRe.dat");
     assert!(rt.find("stage/viewport").is_some());
     assert!(
-        rt.find("melee/crumb").is_some(),
-        "the title row says where the player is"
-    );
-    assert!(
         rt.find("melee/fighter/Falco").is_none(),
-        "the roster gives way to the stage"
+        "the picker gives way to the editor"
     );
     press_escape(&mut rt);
-    assert_eq!(rt.state.melee.subject, None);
+    settle(&mut rt);
+    assert!(rt.state.editor.is_none(), "nothing was unsaved");
     assert!(rt.state.stage.shown.is_none(), "the stage empties");
-    assert!(rt.find("melee/fighter/Falco").is_some());
-}
-
-#[test]
-fn the_breadcrumb_goes_back_to_the_roster() {
-    let (_folder, iso) = melee_iso();
-    let (mut rt, _data) = runtime(game_at(&iso));
-    open_place(&mut rt, Place::Skins);
-    tap(&mut rt, "melee/fighter/Falco");
-    tap(&mut rt, "melee/crumb");
     assert_eq!(rt.state.melee.subject, None);
+    assert!(rt.find("skins/make").is_some(), "back on Skins");
 }
 
 #[test]
-fn a_costume_that_wont_load_says_why_and_stays_on_the_roster() {
+fn a_costume_that_wont_load_says_why_and_stays_on_the_page() {
     let (_folder, iso) = disc_holding(b"not a costume");
     let (mut rt, _data) = runtime(game_at(&iso));
     open_place(&mut rt, Place::Skins);
+    tap(&mut rt, "skins/make");
+    settle(&mut rt);
     tap(&mut rt, "melee/fighter/Falco");
+    assert!(rt.state.editor.is_none());
     assert_eq!(rt.state.melee.subject, None);
     let problem = rt.state.melee.problem.clone().expect("it says why");
     assert!(problem.starts_with("Falco couldn't open"), "{problem}");
@@ -385,30 +372,10 @@ fn a_costume_that_wont_load_says_why_and_stays_on_the_roster() {
 }
 
 #[test]
-fn a_pane_folds_to_its_header() {
-    let (_folder, iso) = melee_iso();
-    let (mut rt, _data) = runtime(game_at(&iso));
-    open_place(&mut rt, Place::Skins);
-    tap(&mut rt, "melee/fighter/Falco");
-    assert!(rt.find("melee/costume/PlFcRe.dat").is_some());
-    tap(&mut rt, "melee/pane/costumes");
-    assert!(
-        rt.find("melee/costume/PlFcRe.dat").is_none(),
-        "folded, the costumes hide"
-    );
-    assert!(
-        rt.find("melee/pane/costumes").is_some(),
-        "but the header stays"
-    );
-}
-
-#[test]
 fn dragging_across_the_stage_turns_the_camera_by_how_far_it_went() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
-    open_place(&mut rt, Place::Skins);
-    tap(&mut rt, "melee/fighter/Falco");
-    settle(&mut rt);
+    make_a_skin(&mut rt, "Falco");
     let before = rt
         .state
         .stage
@@ -498,8 +465,7 @@ fn dragging_across_the_stage_turns_the_camera_by_how_far_it_went() {
 fn going_to_another_place_takes_the_fighter_off_the_stage() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
-    open_place(&mut rt, Place::Skins);
-    tap(&mut rt, "melee/fighter/Falco");
+    make_a_skin(&mut rt, "Falco");
     tap(&mut rt, Place::Mods.key());
     assert!(rt.state.stage.shown.is_none());
     assert_eq!(rt.state.melee.subject, None);
@@ -513,14 +479,31 @@ fn falco_skin(folder: &Path) -> (PathBuf, Vec<u8>) {
     (path, bytes)
 }
 
-/// Add `file` through the Library's file dialog, into Review.
+/// Add `file` through the Skin's file dialog, into Review.
 fn add_through_review(rt: &mut Runtime<App>, file: PathBuf) {
     open_place(rt, Place::Skins);
-    tap(rt, "melee/tab/mine");
-    tap(rt, "library/add-file");
+    tap(rt, "skins/tab/using");
+    tap(rt, "skins/add");
     rt.resolve_file_dialog(Some(file))
         .expect("a dialog was open");
     rt.frame(FRAME);
+    settle(rt);
+}
+
+/// Make a skin on Skins: the picker, then the fighter, which opens the
+/// editor.
+fn make_a_skin(rt: &mut Runtime<App>, fighter: &str) {
+    open_place(rt, Place::Skins);
+    tap(rt, "skins/make");
+    // The picker fades and rises in; let it land where the plate is drawn.
+    settle(rt);
+    tap(rt, &format!("melee/fighter/{fighter}"));
+    settle(rt);
+}
+
+/// Open the player's skin `id` from its plate, and let its sheet land.
+fn open_skin_sheet(rt: &mut Runtime<App>, id: tgg_app::ids::SkinId) {
+    tap(rt, &format!("skins/skin/{id}"));
     settle(rt);
 }
 
@@ -623,7 +606,7 @@ fn an_installs_toast_undoes_it_and_dismisses() {
 }
 
 #[test]
-fn an_install_undoes_from_the_fighters_costume() {
+fn an_install_undoes_from_its_skins_sheet() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
     let original = tgg_app::test_dat::model();
@@ -637,11 +620,11 @@ fn an_install_undoes_from_the_fighters_costume() {
         rt.state.melee.undoable.contains(&slot),
         "the install can be undone"
     );
-    tap(&mut rt, Place::Skins.key());
-    tap(&mut rt, "melee/tab/fighters");
-    tap(&mut rt, "melee/fighter/Falco");
-    settle(&mut rt);
-    tap(&mut rt, "melee/undo");
+    let id = rt.state.library.skins()[0].id;
+    tap(&mut rt, "skins/tab/using");
+    open_skin_sheet(&mut rt, id);
+    tap(&mut rt, "skins/sheet/slippi");
+    reread(&mut rt);
     let game = rt.state.game.as_ref().expect("a game").game();
     assert_eq!(
         game.read_slot(slot).expect("read back"),
@@ -651,7 +634,7 @@ fn an_install_undoes_from_the_fighters_costume() {
 }
 
 #[test]
-fn a_skin_comes_out_of_the_library() {
+fn a_skin_comes_out_of_the_players_skins() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
     let files = tempfile::tempdir().expect("temp dir");
@@ -660,7 +643,9 @@ fn a_skin_comes_out_of_the_library() {
     tap(&mut rt, "review/add");
     let id = rt.state.library.skins()[0].id;
     settle(&mut rt);
-    tap(&mut rt, &format!("library/remove/{id}"));
+    tap(&mut rt, "skins/tab/using");
+    open_skin_sheet(&mut rt, id);
+    tap(&mut rt, "skins/sheet/remove");
     assert!(rt.state.library.skins().is_empty());
 }
 
@@ -682,21 +667,24 @@ fn a_skin_goes_into_tgg_melee_and_comes_back_out() {
             .get("PlFcRe.dat")
             .map(|skin| skin.sha256.clone())
     };
-    tap(&mut rt, &format!("library/install-port/{id}"));
+    tap(&mut rt, "skins/tab/using");
+    open_skin_sheet(&mut rt, id);
+    tap(&mut rt, "skins/sheet/use");
     assert_eq!(plays(&skins_file), Some(id.to_string()));
     let notice = rt.state.notice.as_ref().expect("it says so");
     assert!(notice.text.contains("tgg-melee"), "{}", notice.text);
     assert!(
-        rt.find(&format!("library/install-port/{id}")).is_none(),
-        "it's in tgg-melee now"
+        crate::library::view::in_game(&rt.state, &rt.state.library.skins()[0]),
+        "the switch shows it on"
     );
+    let skin = &rt.state.library.skins()[0];
     assert!(
-        rt.find(&format!("library/install/{id}")).is_some(),
-        "and not yet in Slippi"
+        !crate::library::view::in_iso(&rt.state, skin),
+        "not in Slippi"
     );
     tap(&mut rt, "shell/notice/undo");
     assert_eq!(plays(&skins_file), None, "Undo takes it back out");
-    tap(&mut rt, &format!("library/install-port/{id}"));
+    tap(&mut rt, "skins/sheet/use");
     let slot = rt.state.library.skins()[0]
         .slot
         .expect("made for Falco Red");
@@ -746,11 +734,7 @@ fn escape_closes_review_without_adding() {
 fn editing() -> (Runtime<App>, TempDir, TempDir) {
     let (folder, iso) = melee_iso();
     let (mut rt, data) = runtime(game_at(&iso));
-    open_place(&mut rt, Place::Skins);
-    tap(&mut rt, "melee/fighter/Falco");
-    settle(&mut rt);
-    tap(&mut rt, "melee/edit");
-    settle(&mut rt);
+    make_a_skin(&mut rt, "Falco");
     (rt, folder, data)
 }
 
@@ -794,11 +778,10 @@ fn edit_textures_opens_the_costume_showing_with_its_first_texture() {
 fn done_without_edits_goes_straight_back() {
     let (mut rt, _disc, _data) = editing();
     tap(&mut rt, "editor/done");
+    settle(&mut rt);
     assert!(rt.state.editor.is_none());
-    assert!(
-        rt.state.melee.subject.is_some(),
-        "back to Falco on the stage"
-    );
+    assert!(rt.state.stage.shown.is_none(), "the stage empties");
+    assert!(rt.find("skins/make").is_some(), "back on Skins");
 }
 
 #[test]
@@ -877,14 +860,15 @@ fn leaving_with_unsaved_edits_asks_and_discarding_puts_the_costume_back() {
     tap(&mut rt, "prompt/discard");
     assert!(rt.state.editor.is_none());
     assert!(
-        rt.state
-            .stage
-            .shown
-            .as_ref()
-            .expect("Falco on the stage")
-            .edited
-            .is_empty(),
-        "the edit is gone"
+        rt.state.stage.shown.is_none(),
+        "the stage lets the edited costume go"
+    );
+    let slot: melee_dat::MeleeSlot = "PlFcRe.dat".parse().expect("a slot");
+    let game = rt.state.game.as_ref().expect("a game").game();
+    assert_eq!(
+        game.read_slot(slot).expect("read back"),
+        tgg_app::test_dat::model(),
+        "the costume is as it was"
     );
 }
 
@@ -909,11 +893,7 @@ fn relaunch(iso: &Path, data: &Path) -> Runtime<App> {
 fn unsaved_edits_left_by_a_closed_window_reopen_next_launch() {
     let (folder, iso) = melee_iso();
     let (mut rt, data) = runtime(game_at(&iso));
-    open_place(&mut rt, Place::Skins);
-    tap(&mut rt, "melee/fighter/Falco");
-    settle(&mut rt);
-    tap(&mut rt, "melee/edit");
-    settle(&mut rt);
+    make_a_skin(&mut rt, "Falco");
     let files = tempfile::tempdir().expect("temp dir");
     let red = png(files.path(), 8, [255, 0, 0, 255]);
     rt.update(|app, _| crate::editor::files::import_file(app, 0, &red));
@@ -1084,25 +1064,6 @@ fn a_click_on_the_model_asks_to_pick_and_a_drag_doesnt() {
             .pick
             .is_none(),
         "a drag turns the camera instead"
-    );
-}
-
-#[test]
-fn off_the_editor_a_click_on_the_model_picks_nothing() {
-    let (_folder, iso) = melee_iso();
-    let (mut rt, _data) = runtime(game_at(&iso));
-    open_place(&mut rt, Place::Skins);
-    tap(&mut rt, "melee/fighter/Falco");
-    settle(&mut rt);
-    tap(&mut rt, "stage/viewport");
-    assert!(
-        rt.state
-            .stage
-            .shown
-            .as_ref()
-            .expect("on the stage")
-            .pick
-            .is_none()
     );
 }
 
@@ -2221,7 +2182,7 @@ fn a_report_shows_what_it_would_send_and_copies_it() {
     let (mut rt, _data) = runtime(game_at(&iso));
     tap(&mut rt, "sidebar/settings");
     settle(&mut rt);
-    tap_shown(&mut rt, "settings/report");
+    tap_shown(&mut rt, "settings/report/open");
     settle(&mut rt);
     assert!(
         !rt.state.preferences.open,
@@ -2250,31 +2211,6 @@ fn a_report_shows_what_it_would_send_and_copies_it() {
         rt.state.report.is_none(),
         "once it's sent, the button closes it"
     );
-}
-
-#[test]
-fn a_recent_edit_opens_again_from_skins() {
-    let (mut rt, _disc, _data) = editing();
-    let slot = rt.state.editor.as_ref().expect("editing").slot;
-    assert_eq!(
-        rt.state.settings.recent.first(),
-        Some(&slot),
-        "remembered as it opened"
-    );
-    let key = format!("skins/recent/{}", slot.file_name());
-    rt.update(crate::editor::actions::leave);
-    tap(&mut rt, Place::Mods.key());
-    tap(&mut rt, Place::Skins.key());
-    assert!(rt.state.editor.is_none());
-    assert!(rt.find(&key).is_some(), "Skins lists it");
-    tap(&mut rt, &key);
-    settle(&mut rt);
-    assert_eq!(
-        rt.state.editor.as_ref().map(|document| document.slot),
-        Some(slot),
-        "open for editing again"
-    );
-    assert_eq!(rt.state.nav.place, Place::Skins);
 }
 
 #[test]
@@ -2479,7 +2415,9 @@ fn a_replay_that_needs_mods_is_reviewed_then_plays_in_its_own_setup() {
         .to_owned();
     rt.update(|app, _| crate::mods::actions::use_disc(app, iso.clone()));
     tap_shown(&mut rt, &format!("replays/{}/play", path.display()));
-    settle(&mut rt);
+    // A replay that plays from the installed mods is checked for
+    // withdrawals off the window's thread before its review shows.
+    jobs_until(&mut rt, |app| app.replays.review.is_some());
     let review = rt
         .state
         .replays
@@ -2656,7 +2594,7 @@ fn a_toast_goes_by_itself_but_a_failure_stays() {
 }
 
 #[test]
-fn your_skins_shows_just_the_skins_the_player_made() {
+fn made_by_you_shows_just_the_skins_the_player_made() {
     let (mut rt, _disc, _data) = editing();
     tap(&mut rt, "editor/save");
     settle(&mut rt);
@@ -2664,13 +2602,10 @@ fn your_skins_shows_just_the_skins_the_player_made() {
     assert!(edited > 0, "saving keeps the costume as a skin");
     rt.update(crate::editor::actions::leave);
     settle(&mut rt);
-    tap(&mut rt, "melee/crumb");
-    settle(&mut rt);
-    tap(&mut rt, "melee/tab/mine");
-    tap(&mut rt, "library/tab/made");
+    tap(&mut rt, "skins/tab/made");
     settle(&mut rt);
     let skin = &rt.state.library.skins()[0];
-    assert!(rt.find(&format!("library/skin/{}", skin.id)).is_some());
+    assert!(rt.find(&format!("skins/skin/{}", skin.id)).is_some());
 }
 
 /// Signed in to textures.gg as ciao, as the site last said.
@@ -2703,14 +2638,13 @@ fn you_shows_the_skins_the_player_made_and_goes_to_them() {
         "no place above is marked"
     );
     let skin = rt.state.library.skins()[0].id;
-    assert!(rt.find(&format!("library/skin/{skin}")).is_some());
+    assert!(rt.find(&format!("profile/skin/{skin}")).is_some());
     // Nothing being made on Mods yet: it says where to start one.
     assert!(rt.find("profile/mods/empty").is_some());
     tap(&mut rt, "profile/skins/all");
     settle(&mut rt);
     assert_eq!(rt.state.nav.place, Place::Skins);
-    assert_eq!(rt.state.melee.tab, crate::melee::Tab::Mine);
-    assert_eq!(rt.state.library_page.filter, crate::library::Filter::Made);
+    assert_eq!(rt.state.melee.tab, crate::melee::Tab::Made);
 }
 
 #[test]
@@ -2721,10 +2655,15 @@ fn you_with_nothing_made_says_where_to_make_it() {
     rt.frame(FRAME);
     tap(&mut rt, "sidebar/account");
     settle(&mut rt);
-    assert!(rt.find("profile/name").is_some());
-    tap(&mut rt, "profile/skins/empty/go");
+    assert!(rt.find("profile/head").is_some(), "who's signed in shows");
+    assert!(
+        rt.find("profile/skins/empty").is_some(),
+        "it says where skins you make show"
+    );
+    tap(&mut rt, "profile/skins/make");
     settle(&mut rt);
     assert_eq!(rt.state.nav.place, Place::Skins);
+    assert!(rt.state.melee.making, "the picker opens");
 }
 
 #[test]
@@ -2734,93 +2673,4 @@ fn signed_out_the_account_row_signs_in_instead() {
     tap(&mut rt, "sidebar/account");
     assert!(rt.state.signin.login.is_some(), "the sign-in dialog opens");
     assert_eq!(rt.state.nav.place, Place::Play);
-}
-
-/// textures.gg as You reads it for ciao: one Melee pack, Falco's red
-/// costume alone, liked by nobody, and no code mods (the site's 404).
-fn ciaos_site() -> std::sync::Arc<tgg_mod::FakeNet> {
-    let net = std::sync::Arc::new(tgg_mod::FakeNet::empty());
-    let api = format!("{}/api", tgg_mod::FakeNet::API);
-    net.serve(
-        &format!("{api}/users/ciao"),
-        r#"{"name":"ciao","image":null,"pronouns":"they/them","bio":"Makes Falcos.",
-            "createdAt":"2026-09-13T01:32:28.273Z",
-            "stats":{"packCount":1,"downloadCount":1204,"likeCount":3}}"#,
-    );
-    net.serve(
-        &format!("{api}/users/ciao/uploads?pageSize=24"),
-        r#"{"items":[{"id":"p1","title":"Red Falco","slug":"red-falco","thumbnailKey":null,
-            "voteCount":3,"gameSlug":"melee","targetName":"Falco"}]}"#,
-    );
-    net.serve(
-        &format!("{api}/users/ciao/likes?pageSize=24"),
-        r#"{"items":[]}"#,
-    );
-    net.serve(
-        &format!("{api}/packs/by-id/p1/download"),
-        tgg_app::test_dat::model(),
-    );
-    net.serve(
-        &format!("{api}/games/melee/packs/red-falco"),
-        r#"{"mods":[{"fileName":"PlFcRe.dat"}]}"#,
-    );
-    net
-}
-
-#[test]
-fn you_shows_the_profile_as_the_site_does_and_adds_a_pack() {
-    let (_folder, iso) = melee_iso();
-    let (mut rt, data) = runtime(game_at(&iso));
-    rt.update(|app, _| app.mods.net = ciaos_site());
-    sign_in_as_ciao(&mut rt);
-    rt.frame(FRAME);
-    tap(&mut rt, "sidebar/account");
-    jobs_until(&mut rt, |app| app.profile.user.is_some());
-    let user = rt.state.profile.user.clone().expect("read").expect("found");
-    assert_eq!(user.stats.download_count, 1204);
-    assert!(rt.find("profile/stats").is_some());
-    assert!(rt.find("profile/tab/mods").is_none(), "no code mods yet");
-    assert!(rt.find("profile/pack/p1").is_some());
-    // Add downloads it and asks where it goes, as a file of the player's would.
-    tap(&mut rt, "profile/pack/p1/add");
-    jobs_until(&mut rt, |app| app.library_page.review.is_some());
-    assert!(data.path().join("downloads").join("PlFcRe.dat").exists());
-    tap(&mut rt, "review/add");
-    settle(&mut rt);
-    assert_eq!(rt.state.library.skins().len(), 1);
-    // Liked nothing: Likes says what would show.
-    tap(&mut rt, "profile/tab/likes");
-    settle(&mut rt);
-    assert!(rt.find("profile/published/note").is_some());
-}
-
-#[test]
-fn you_says_when_textures_gg_cant_be_reached_and_tries_again() {
-    let (_folder, iso) = melee_iso();
-    let (mut rt, _data) = runtime(game_at(&iso));
-    let net = ciaos_site();
-    net.set_offline(true);
-    let shared = net.clone();
-    rt.update(move |app, _| app.mods.net = shared);
-    sign_in_as_ciao(&mut rt);
-    rt.frame(FRAME);
-    tap(&mut rt, "sidebar/account");
-    jobs_until(&mut rt, |app| app.profile.user.is_some());
-    assert!(rt.find("profile/published/problem").is_some());
-    net.set_offline(false);
-    tap(&mut rt, "profile/published/again");
-    jobs_until(&mut rt, |app| {
-        app.profile.packs.as_ref().is_some_and(Result::is_ok)
-    });
-    assert!(rt.find("profile/pack/p1").is_some());
-}
-
-#[test]
-fn member_since_and_counts_read_as_the_site_writes_them() {
-    assert_eq!(
-        crate::profile::view::member_since("2026-09-13T01:32:28.273Z").as_deref(),
-        Some("Member since September 2026")
-    );
-    assert_eq!(crate::profile::view::grouped(1_204_000), "1,204,000");
-    assert_eq!(crate::profile::view::grouped(12), "12");
 }

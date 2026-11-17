@@ -1,212 +1,141 @@
-//! The player's skins, under Skins' "Your skins" tab, as plates grouped by
-//! the fighter each was made for, newest first; stages and skins without a
-//! slot last.
+//! The player's skins as a plate each: its picture, its name, where it goes,
+//! and a yellow mark while tgg-melee plays it. Skins groups them by what
+//! they change; You shows the ones the player made.
 
-use super::{Filter, actions};
 use crate::jobs::renders::RenderKey;
 use crate::state::App;
-use crate::ui::tokens::{Palette, space, text};
-use crate::ui::{
-    self, ButtonKind, TEXT_ACTION_INSET, button, card_plate, chip, spacer, text_action,
-};
+use crate::ui::tokens::{Palette, space};
+use crate::ui::{card as ui_card, card_plate, status};
 use melee_dat::MeleeSlot;
-use rune::{El, col, row, text as label};
-use tgg_app::costumes::{EFFECTS_FILE, FIGHTER_FILE, fighters};
-use tgg_app::install::SlotState;
+use rune::{El, row};
+use tgg_app::costumes::fighters;
 use tgg_app::library::{Skin, SkinSource};
 
-/// Skins' "Your skins" tab: which of them show, adding more, and the skins
-/// grouped by fighter.
-pub fn body(app: &App, p: &Palette) -> Vec<El> {
-    let skins = app.library.skins();
-    let in_game = skins.iter().filter(|skin| installed(app, skin)).count();
-    let made_here = skins.iter().filter(|skin| made(skin)).count();
-    let filter = app.library_page.filter;
-    let choice = |name: String, which: Filter, key: &str| {
-        chip(&name, filter == which, p)
-            .key(key.to_owned())
-            .role("radio")
-            .on_press(move |app: &mut App| actions::show_filter(app, which))
-    };
-    let top = row()
-        .gap(space::SNUG)
-        .items_center()
-        .child(choice(
-            format!("All {}", skins.len()),
-            Filter::All,
-            "library/tab/all",
-        ))
-        .child(choice(
-            format!("Installed {in_game}"),
-            Filter::InGame,
-            "library/tab/in-game",
-        ))
-        .child(choice(
-            format!("Not installed {}", skins.len() - in_game),
-            Filter::NotInstalled,
-            "library/tab/not-installed",
-        ))
-        .child(choice(
-            format!("Made by you {made_here}"),
-            Filter::Made,
-            "library/tab/made",
-        ))
-        .child(spacer())
-        .child(
-            button("Add a file…", ButtonKind::Secondary, p)
-                .key("library/add-file")
-                .on_press_tx(actions::choose_file),
-        )
-        .child(
-            button("Add a folder…", ButtonKind::Secondary, p)
-                .key("library/add-folder")
-                .on_press_tx(actions::choose_folder),
-        );
-    let mut body = vec![top];
-    if skins.is_empty() {
-        body.push(
-            label("You have no skins yet. Add them from a file, a zip, or a folder of them.")
-                .key("library/empty")
-                .font(text::BODY)
-                .color(p.muted),
-        );
-    } else {
-        body.extend(groups(app).into_iter().map(|(name, skins)| {
-            col()
-                .gap(space::SM)
-                .child(label(name).font(text::LABEL).color(p.faint))
-                .child(
-                    row()
-                        .flex_wrap()
-                        .gap(space::MD)
-                        .children(skins.into_iter().map(|skin| card(app, skin, p))),
-                )
-        }));
-    }
-    body
-}
-
-/// How many skins the player has, for the tab's count.
-pub fn count(app: &App) -> usize {
-    app.library.skins().len()
-}
-
-/// Whether `skin` is in either game now: the Slippi ISO or tgg-melee.
-fn installed(app: &App, skin: &Skin) -> bool {
-    in_slippi(app, skin) || in_tgg_melee(app, skin)
-}
-
-/// Whether `skin` is in the Slippi ISO now.
-fn in_slippi(app: &App, skin: &Skin) -> bool {
-    let states = app.melee.states.as_ref();
-    skin.slot.is_some_and(|slot| matches!(states.and_then(|states| states.get(&slot)), Some(SlotState::Skin(there)) if there.id == skin.id))
-}
-
-/// Whether tgg-melee plays `skin` now.
-fn in_tgg_melee(app: &App, skin: &Skin) -> bool {
-    skin.slot
-        .is_some_and(|slot| super::port::plays(app, skin.id, slot))
-}
-
-/// The skins the tab shows, grouped by the fighter they were made for (newest
-/// first), stages and skins without a slot last.
-fn groups(app: &App) -> Vec<(String, Vec<&Skin>)> {
-    let mut groups: Vec<(String, Vec<&Skin>)> = Vec::new();
-    for skin in app.library.skins().iter().rev() {
-        let shown = match app.library_page.filter {
-            Filter::All => true,
-            Filter::InGame => installed(app, skin),
-            Filter::NotInstalled => !installed(app, skin),
-            Filter::Made => made(skin),
-        };
-        if !shown {
-            continue;
-        }
-        let group = match skin.slot {
-            Some(MeleeSlot::Costume { character, .. } | MeleeSlot::FighterData(character)) => {
-                character.name().to_owned()
-            }
-            Some(MeleeSlot::Effects(effects)) => fighters(effects),
-            Some(MeleeSlot::Stage(_)) => "Stages".to_owned(),
-            None => "Without a slot".to_owned(),
-        };
-        match groups.iter_mut().find(|(name, _)| *name == group) {
-            Some((_, skins)) => skins.push(skin),
-            None => groups.push((group, vec![skin])),
-        }
-    }
-    groups.sort_by_key(|(name, _)| matches!(name.as_str(), "Stages" | "Without a slot"));
-    groups
-}
-
-/// A skin: its picture, its name, where it goes, whether it's in the game,
-/// and installing or removing it.
+/// A skin's plate: its picture, its name, where it goes, and a gold dot with
+/// "Using" while tgg-melee plays it. The caller keys it and makes pressing
+/// it open it.
 pub fn card(app: &App, skin: &Skin, p: &Palette) -> El {
     let mut picture = card_plate(p);
     if let Some(pixels) = app.renders.get(RenderKey::Skin(skin.id)) {
         picture = picture.pixels_fit(pixels, rune::SurfaceFit::Fill);
     }
-    // The fighter is the group's heading: say the color, the file, or the stage.
-    let goes = match skin.slot {
-        Some(MeleeSlot::Costume { color, .. }) => color.name().to_owned(),
-        Some(MeleeSlot::FighterData(_)) => FIGHTER_FILE.to_owned(),
-        Some(MeleeSlot::Effects(_)) => EFFECTS_FILE.to_owned(),
-        Some(MeleeSlot::Stage(stage)) => stage.name().to_owned(),
-        None => "No slot".to_owned(),
+    let using = in_game(app, skin);
+    let goes = goes(skin);
+    let words = match (using, goes.is_empty()) {
+        (true, true) => "Using".to_owned(),
+        (true, false) => format!("Using · {goes}"),
+        (false, _) => goes,
     };
-    let (slippi, tgg_melee) = (in_slippi(app, skin), in_tgg_melee(app, skin));
-    let id = skin.id;
-    let status = ui::status(
-        match (slippi, tgg_melee) {
-            (true, true) => format!("{goes} · in Slippi and tgg-melee"),
-            (true, false) => format!("{goes} · in Slippi"),
-            (false, true) => format!("{goes} · in tgg-melee"),
-            (false, false) => goes,
-        },
-        slippi || tgg_melee,
-        p,
-    );
-    // Installing it, into whichever game doesn't have it yet.
-    let into_slippi = skin
-        .slot
-        .filter(|_| !slippi && app.game.is_some())
-        .map(|slot| {
-            text_action("Into Slippi", false, p)
-                .key(format!("library/install/{}", skin.id))
-                .help("Install it into your Slippi ISO")
-                .on_press(move |app: &mut App| actions::install(app, id, slot))
-        });
-    let into_tgg_melee = skin
-        .slot
-        .filter(|&slot| !tgg_melee && super::port::takes(slot))
-        .map(|slot| {
-            text_action("Into tgg-melee", false, p)
-                .key(format!("library/install-port/{}", skin.id))
-                .help("Install it into tgg-melee")
-                .on_press(move |app: &mut App| super::port::install(app, id, slot))
-        });
-    let remove = text_action("Remove", true, p)
-        .key(format!("library/remove/{}", skin.id))
-        .on_press(move |app: &mut App| actions::remove(app, id));
-    // The actions pull back their own padding, so their words line up with the name's.
-    ui::card(picture, &skin.name, status, p)
-        .key(format!("library/skin/{}", skin.id))
-        .children(
-            skin.slot
-                .and_then(|slot| super::port::verdict(app, id, slot))
-                .and_then(|verdict| crate::melee::subject::verdict_word(verdict, p)),
-        )
-        .child(
-            row()
-                .gap(space::XXS)
-                .ml(-TEXT_ACTION_INSET)
-                .children(into_slippi)
-                .children(into_tgg_melee)
-                .child(remove),
-        )
+    ui_card(picture, &name(skin), status(words, using, p), p)
+}
+
+/// A skin's name as a surface says it: its own, unless that's only the name
+/// of the game file it came from, which reads as its fighter (`PlFc` is
+/// "Falco").
+pub fn name(skin: &Skin) -> String {
+    shown_name(&skin.name, skin.slot)
+}
+
+/// [`name`] for a file before it joins the library, under the slot it would
+/// go in.
+pub fn shown_name(name: &str, slot: Option<MeleeSlot>) -> String {
+    let Some(slot) = slot else {
+        return name.to_owned();
+    };
+    let file = slot.file_name();
+    let stem = file.trim_end_matches(".dat");
+    let only_the_file = [file.as_str(), stem]
+        .iter()
+        .any(|file| name.eq_ignore_ascii_case(file));
+    if !only_the_file {
+        return name.to_owned();
+    }
+    slot_place(Some(slot))
+        .split(" · ")
+        .next()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// Where a skin goes, without repeating its name: a skin called "Falco"
+/// reads "all costumes".
+pub fn goes(skin: &Skin) -> String {
+    let place = place(skin);
+    place
+        .strip_prefix(&name(skin))
+        .map_or(place.clone(), |rest| {
+            rest.trim_start_matches(" · ").to_owned()
+        })
+}
+
+/// Where it goes, in words: "Fox · Orange", "Battlefield".
+pub fn place(skin: &Skin) -> String {
+    slot_place(skin.slot)
+}
+
+/// Where a slot goes, in words, never the file name it lives in.
+pub fn slot_place(slot: Option<MeleeSlot>) -> String {
+    match slot {
+        Some(MeleeSlot::Costume { character, color }) => {
+            format!("{} · {}", character.name(), color.name())
+        }
+        Some(MeleeSlot::FighterData(character)) => format!("{} · all costumes", character.name()),
+        Some(MeleeSlot::Effects(effects)) => format!("{} · effects", fighters(effects)),
+        Some(MeleeSlot::Stage(stage)) => stage.name().to_owned(),
+        None => "No slot to go in".to_owned(),
+    }
+}
+
+/// Who made it: the player for one they saved from the editor, else the
+/// file it was added from.
+pub fn maker(skin: &Skin) -> &'static str {
+    if made(skin) {
+        "by You"
+    } else {
+        "Added from a file"
+    }
+}
+
+/// Whether tgg-melee plays `skin` now.
+pub fn in_game(app: &App, skin: &Skin) -> bool {
+    skin.slot
+        .is_some_and(|slot| super::port::plays(app, skin.id, slot))
 }
 
 /// Whether the player made `skin`: saved it from the editor.
 pub fn made(skin: &Skin) -> bool {
     matches!(skin.source, SkinSource::Edited { .. })
+}
+
+/// What a skin changes.
+pub fn kind(skin: &Skin) -> Option<crate::melee::Kind> {
+    use crate::melee::Kind;
+    match skin.slot? {
+        MeleeSlot::Costume { .. } | MeleeSlot::FighterData(_) => Some(Kind::Fighters),
+        MeleeSlot::Effects(_) => Some(Kind::Effects),
+        MeleeSlot::Stage(_) => Some(Kind::Stages),
+    }
+}
+
+/// Whether the player's Melee disc holds `skin` in its slot now: for "Also
+/// in Slippi" and its undo.
+pub fn in_iso(app: &App, skin: &Skin) -> bool {
+    use tgg_app::install::SlotState;
+    let states = app.melee.states.as_ref();
+    skin.slot.is_some_and(|slot| {
+        matches!(
+            states.and_then(|states| states.get(&slot)),
+            Some(SlotState::Skin(there)) if there.id == skin.id
+        )
+    })
+}
+
+/// The frame a sheet's picture sits in: square, rounded.
+pub fn sheet_plate(p: &Palette, width: f32) -> El {
+    card_plate(p).w(width).aspect_ratio(1.0)
+}
+
+/// A row of skins, wrapping to the page.
+pub fn grid(cards: Vec<El>) -> El {
+    row().flex_wrap().gap(space::MD).children(cards)
 }

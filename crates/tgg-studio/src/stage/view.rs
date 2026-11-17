@@ -17,12 +17,6 @@ const PLAYHEAD: f32 = 16.0;
 /// The plate with the model drawn on it. Dragging across it turns the
 /// camera (with Shift, moves it), and the wheel moves it in and out. `matched` names it to the roster's plate it opens from.
 pub fn plate(app: &App, matched: &str, p: &Palette) -> El {
-    let caption = app
-        .stage
-        .shown
-        .as_ref()
-        .map(|shown| shown.slot.file_name())
-        .unwrap_or_default();
     let dragging = app
         .stage
         .shown
@@ -46,12 +40,6 @@ pub fn plate(app: &App, matched: &str, p: &Palette) -> El {
                 })
                 .on_drag(actions::orbit)
                 .on_wheel(actions::zoom),
-        )
-        .child(
-            label(caption)
-                .font(text::MONO_SMALL)
-                .color(p.faint)
-                .absolute(space::SM, space::XS + 2.0),
         )
 }
 

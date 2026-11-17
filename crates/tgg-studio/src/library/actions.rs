@@ -3,12 +3,12 @@
 //! install, or putting the game's own file back. Melee's slot actions use
 //! the same ones.
 
-use super::{Filter, Review, ReviewItem};
+use super::{Review, ReviewItem};
 use crate::jobs::renders::RenderKey;
 use crate::state::App;
 use melee_dat::{MeleeReferenceCatalog, MeleeSlot};
 use rune::{FileDialogOptions, Tx};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tgg_app::costumes::slot_label;
 use tgg_app::ids::SkinId;
 use tgg_app::install;
@@ -16,10 +16,6 @@ use tgg_app::library::SkinSource;
 
 /// The files a skin comes in: a DAT (or a stage's USD), or a zip of them.
 const SKIN_FILES: [&str; 3] = ["dat", "usd", "zip"];
-
-pub fn show_filter(app: &mut App, filter: Filter) {
-    app.library_page.filter = filter;
-}
 
 /// Ask for pictures of the library's skins that don't have one yet. A skin
 /// for a file costumes share draws as the first model it changes.
@@ -46,39 +42,6 @@ pub fn choose_file(_: &mut App, tx: &mut Tx) {
         Ok(None) => {}
         Err(error) => app.tell(format!("The file dialog couldn't open: {error}"), true),
     });
-}
-
-/// Ask for a folder, then look at every skin file in it.
-pub fn choose_folder(_: &mut App, tx: &mut Tx) {
-    let options = FileDialogOptions {
-        title: "Add a folder of skins".into(),
-        ..Default::default()
-    };
-    tx.open_folder(options, |app: &mut App, answer, _| match answer {
-        Ok(Some(folder)) => add(app, &skin_files(&folder)),
-        Ok(None) => {}
-        Err(error) => app.tell(format!("The file dialog couldn't open: {error}"), true),
-    });
-}
-
-/// The skin files directly in `folder`, by name.
-fn skin_files(folder: &Path) -> Vec<PathBuf> {
-    let mut files: Vec<PathBuf> = std::fs::read_dir(folder)
-        .into_iter()
-        .flatten()
-        .filter_map(|entry| Some(entry.ok()?.path()))
-        .filter(|path| {
-            path.extension()
-                .and_then(|extension| extension.to_str())
-                .is_some_and(|extension| {
-                    SKIN_FILES
-                        .iter()
-                        .any(|kind| kind.eq_ignore_ascii_case(extension))
-                })
-        })
-        .collect();
-    files.sort();
-    files
 }
 
 /// Look at `paths` (DATs, or zips of them) and open Review, where the
@@ -157,16 +120,19 @@ pub fn confirm_review(app: &mut App, install_them: bool) {
                 ) {
                     Ok(()) => {
                         changed.push(slot);
-                        done.push(format!("installed {} into {place} in Slippi", skin.name));
+                        done.push(format!(
+                            "installed {} into {place} in Slippi",
+                            super::view::name(&skin)
+                        ));
                     }
-                    Err(error) => failed.push(format!("{}: {error}", skin.name)),
+                    Err(error) => failed.push(format!("{}: {error}", super::view::name(&skin))),
                 }
             }
             (true, _, None) => failed.push(format!(
                 "{} was added but has no slot to install into",
-                skin.name
+                super::view::name(&skin)
             )),
-            _ => done.push(format!("added {} ({place})", skin.name)),
+            _ => done.push(format!("added {} ({place})", super::view::name(&skin))),
         }
     }
     let text = done
@@ -195,7 +161,10 @@ pub fn confirm_review(app: &mut App, install_them: bool) {
 /// history.
 pub fn remove(app: &mut App, id: SkinId) {
     match app.library.remove(id) {
-        Ok(skin) => app.tell(format!("Removed {} from your library.", skin.name), false),
+        Ok(skin) => app.tell(
+            format!("Removed {} from your library.", super::view::name(&skin)),
+            false,
+        ),
         Err(error) => app.tell(error.to_string(), true),
     }
 }
@@ -208,7 +177,7 @@ pub fn install(app: &mut App, id: SkinId, slot: MeleeSlot) {
         .skins()
         .iter()
         .find(|skin| skin.id == id)
-        .map_or("the skin".to_owned(), |skin| skin.name.clone());
+        .map_or("the skin".to_owned(), super::view::name);
     let result = app
         .library
         .read(id)
@@ -295,6 +264,43 @@ fn slots_changed(app: &mut App, slots: &[MeleeSlot]) {
         && let Err(problem) = crate::stage::actions::show(app, slot)
     {
         app.tell(problem, true);
+    }
+}
+
+/// Turn `skins` on in tgg-melee, or off: the skins mod plays each in its
+/// slot, and the game's own file comes back when it's off.
+pub fn turn_on(app: &mut App, skins: &[SkinId], on: bool) {
+    for id in skins {
+        let Some(slot) = app
+            .library
+            .skins()
+            .iter()
+            .find(|skin| skin.id == *id)
+            .and_then(|skin| skin.slot)
+        else {
+            continue;
+        };
+        if on {
+            super::port::install(app, *id, slot);
+        } else if super::port::plays(app, *id, slot) {
+            super::port::remove(app, slot);
+        }
+    }
+}
+
+/// Write `skins` into their slots of the player's Melee disc, or take the
+/// last write back.
+pub fn write_into_slippi(app: &mut App, skins: &[SkinId], on: bool) {
+    for id in skins {
+        let Some(skin) = app.library.skins().iter().find(|skin| skin.id == *id) else {
+            continue;
+        };
+        let Some(slot) = skin.slot else { continue };
+        if on {
+            install(app, *id, slot);
+        } else if super::view::in_iso(app, skin) {
+            undo(app, slot);
+        }
     }
 }
 

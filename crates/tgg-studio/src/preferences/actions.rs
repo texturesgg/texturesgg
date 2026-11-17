@@ -6,6 +6,7 @@ use rune::{FileDialogOptions, Tx};
 /// Show the dialog: the apps that open PNGs as they are now, and the image
 /// editor's field showing when the one kept is none of them.
 pub fn open(app: &mut App) {
+    crate::mods::actions::read_disk(app);
     let kept = app.settings.external_editor.clone();
     let apps = tgg_app::image_apps::image_apps();
     let preferences = &mut app.preferences;

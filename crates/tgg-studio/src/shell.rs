@@ -223,9 +223,17 @@ fn place_top(app: &App, p: &Palette) -> Vec<El> {
         return vec![editor::view::actions(document, p)];
     }
     match app.nav.place {
-        Place::Skins => melee::subject::title_actions(app, p).into_iter().collect(),
+        Place::Skins => vec![melee::view::search(app, p)],
         Place::Mods => mods::view::top_bar(app, p),
-        Place::Replays => replays::view::top_bar(app, p),
+        Place::Replays => {
+            let mut top = replays::view::top_bar(app, p);
+            top.push(
+                crate::ui::button_small("Open a replay file", crate::ui::ButtonKind::Secondary, p)
+                    .key("replays/open")
+                    .on_press_tx(replays::actions::open_file),
+            );
+            top
+        }
         Place::Play => play::view::top_bar(app, p),
         Place::Profile => Vec::new(),
     }

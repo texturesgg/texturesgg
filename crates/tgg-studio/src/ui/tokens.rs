@@ -229,6 +229,8 @@ pub mod size {
     /// A dialog asking a question, and one holding a list to look over.
     pub const DIALOG: f32 = 460.0;
     pub const DIALOG_WIDE: f32 = 560.0;
+    /// A skin's sheet: its picture beside what it does.
+    pub const SHEET: f32 = 760.0;
     /// The tallest a dialog grows; what it holds scrolls past that.
     pub const DIALOG_MOST_HEIGHT: f32 = 640.0;
 }

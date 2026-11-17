@@ -56,6 +56,10 @@ pub struct Replays {
     pub search: rune::TextEdit,
     /// Only replays from this folder, by name; all when none.
     pub source: Option<String>,
+    /// The replay whose mods are being checked against withdrawals.
+    pub checking: Option<PathBuf>,
+    /// The replays whose mods have been checked this session.
+    pub checked: std::collections::HashSet<PathBuf>,
 }
 
 /// A replay in the list.
@@ -109,6 +113,9 @@ pub struct Review {
     pub plan: ProfilePlan,
     /// Remember the yes for the publishers it asks about.
     pub remember: bool,
+    /// What its mods' withdrawal changed, in the player's words, before it
+    /// plays.
+    pub notices: Vec<String>,
 }
 
 /// A replay's profile being prepared: its progress and cancel flag.
@@ -156,14 +163,24 @@ pub enum Done {
         plans: Vec<(PathBuf, ProfilePlan)>,
     },
     /// A replay's profile, prepared to play.
+    Prepared {
+        path: PathBuf,
+        result: Box<Result<Prepared, Error>>,
+    },
     /// A replay's stats, read from its frames.
     Stats {
         path: PathBuf,
         result: Result<Vec<tgg_app::replay_stats::PlayerStats>, String>,
     },
-    Prepared {
+    /// What a replay's mods' withdrawal did, checked before it plays.
+    Checked {
         path: PathBuf,
-        result: Box<Result<Prepared, Error>>,
+        result: Result<Vec<tgg_mod::WithdrawNotice>, String>,
+    },
+    /// A replay the player chose by its file, read and planned.
+    Opened {
+        read: Box<Read>,
+        plan: Option<Box<ProfilePlan>>,
     },
 }
 

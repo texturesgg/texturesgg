@@ -21,6 +21,21 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
     let review = app.replays.review.as_ref()?;
     let plan = &review.plan;
     let mut sections: Vec<El> = Vec::new();
+    if !review.notices.is_empty() {
+        sections.push(
+            col()
+                .key("replays/review/notices")
+                .px(space::LG)
+                .py(space::SM)
+                .gap(space::XXS)
+                .children(
+                    review
+                        .notices
+                        .iter()
+                        .map(|notice| label(notice.clone()).font(text::SMALL).color(p.ink).wrap()),
+                ),
+        );
+    }
     match &plan.game {
         GameNeed::Installed(port) if !port.current => sections.push(note(
             format!(
@@ -162,7 +177,11 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
         );
     let fetch =
         plan.mods.iter().any(|m| !m.cached) || matches!(plan.game, GameNeed::Available { .. });
-    let line = if fetch {
+    let as_installed =
+        plan.fit == tgg_mod::Fit::AsInstalled && matches!(plan.game, GameNeed::Installed(_));
+    let line = if as_installed {
+        "It plays with the mods you have installed.".to_owned()
+    } else if fetch {
         let size = plan.size()
             + if let GameNeed::Available {
                 size: Some(size), ..
@@ -173,11 +192,11 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
                 0
             };
         format!(
-            "It plays with the mods its game had, in a setup of its own: your mods stay as they are. {} to download.",
+            "It plays with the mods its game had, apart from your own. Yours stay as they are. {} to download.",
             size_text(size)
         )
     } else {
-        "It plays with the mods its game had, in a setup of its own: your mods stay as they are."
+        "It plays with the mods its game had, apart from your own. Yours stay as they are."
             .to_owned()
     };
     let parts = Dialog {

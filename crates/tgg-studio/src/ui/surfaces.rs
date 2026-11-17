@@ -141,6 +141,8 @@ pub enum DialogWidth {
     Narrow,
     /// A list to look over.
     Wide,
+    /// A skin's sheet: its picture beside what it does.
+    Sheet,
 }
 
 /// A dialog's parts: its head, what's in it, and its buttons, in a row:
@@ -167,6 +169,7 @@ pub fn dialog<S: 'static>(
     let width = match width {
         DialogWidth::Narrow => size::DIALOG,
         DialogWidth::Wide => size::DIALOG_WIDE,
+        DialogWidth::Sheet => size::SHEET,
     };
     let (y, blur) = elevation::DIALOG;
     let mut dialog = col()

@@ -7,10 +7,10 @@
 use super::{Item, Replays, Status, actions};
 use crate::jobs::renders::RenderKey;
 use crate::state::App;
-use crate::ui::tokens::{Palette, radius, size, space, text};
+use crate::ui::tokens::{Palette, size, space, text};
 use crate::ui::{
-    ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, chip, icon_tile, progress, search_box,
-    search_field, skeleton, spacer, split, split_list, split_page, text_action,
+    ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, chip, icon_tile, list_row, progress,
+    search_box, search_field, skeleton, spacer, split, split_list, split_page, text_action,
 };
 use rune::{El, ScrollSpec, col, row, text as label};
 
@@ -49,16 +49,10 @@ pub fn view(app: &App, p: &Palette) -> El {
             })
             .collect()
     } else if replays.items.is_empty() {
-        let folders: Vec<String> = replays
-            .folders
-            .iter()
-            .map(|(_, path)| path.display().to_string())
-            .collect();
         vec![
-            label(format!(
-                "No replays yet. Slippi and tgg-melee's recorder save them in {}.",
-                folders.join(" and ")
-            ))
+            label(
+                "No replays yet. Slippi and tgg-melee's recorder save them in your replay folders.",
+            )
             .key("replays/empty")
             .font(text::BODY)
             .color(p.muted)
@@ -163,12 +157,7 @@ fn replay_row(app: &App, replays: &Replays, item: &Item, p: &Palette) -> El {
             info.and_then(|info| info.started.as_ref())
                 .map(|started| started.replace('T', " ").chars().take(16).collect())
         })
-        .unwrap_or_else(|| {
-            item.path
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_default()
-        });
+        .unwrap_or_default();
     let players: Vec<String> = info
         .map(|info| {
             info.players
@@ -209,6 +198,7 @@ fn replay_row(app: &App, replays: &Replays, item: &Item, p: &Palette) -> El {
         .preparing
         .as_ref()
         .filter(|preparing| preparing.path == item.path);
+    let checking = replays.checking.as_ref() == Some(&item.path);
     let end: El = if let Some(preparing) = preparing {
         row()
             .key(format!("{key}/preparing"))
@@ -221,6 +211,11 @@ fn replay_row(app: &App, replays: &Replays, item: &Item, p: &Palette) -> El {
                     .child(progress(preparing.fraction(), p)),
             )
             .child(text_action("Stop", false, p).on_press(actions::cancel_preparing))
+    } else if checking {
+        label("Checking its mods…")
+            .key(format!("{key}/checking"))
+            .font(text::SMALL)
+            .color(p.muted)
     } else {
         let path = item.path.clone();
         row().children(play_button(app, item, p).map(|button| {
@@ -231,20 +226,18 @@ fn replay_row(app: &App, replays: &Replays, item: &Item, p: &Palette) -> El {
     };
     let chosen = replays.selected.as_ref() == Some(&item.path);
     let pressed = item.path.clone();
-    row()
+    let unreadable = match &item.status {
+        Status::Unreadable(why) => Some(why.clone()),
+        _ => None,
+    };
+    list_row(p)
         .key(key)
-        .py(space::XS)
-        .px(space::XS)
-        .mx(-space::XS)
-        .gap(space::SM)
-        .items_center()
-        .radius(radius::CONTROL)
+        .mx(-space::SM)
         .fill(if chosen {
             p.selected
         } else {
             rune::Color::TRANSPARENT
         })
-        .hover(p.hover)
         .cursor(rune::Cursor::Pointer)
         .role("button")
         .focusable(true)
@@ -266,10 +259,17 @@ fn replay_row(app: &App, replays: &Replays, item: &Item, p: &Palette) -> El {
                     .truncate(),
                 )
                 .child(
-                    label(format!("{when} · {}", facts.join(" · ")))
-                        .font(text::SMALL)
-                        .color(p.muted)
-                        .truncate(),
+                    label(if when.is_empty() {
+                        facts.join(" · ")
+                    } else {
+                        format!("{when} · {}", facts.join(" · "))
+                    })
+                    .font(text::SMALL)
+                    .color(p.muted)
+                    .truncate(),
+                )
+                .children(
+                    unreadable.map(|why| label(why).font(text::SMALL).color(p.danger).truncate()),
                 ),
         )
         .child(status_badge(&item.status, p))
@@ -281,7 +281,8 @@ fn replay_row(app: &App, replays: &Replays, item: &Item, p: &Palette) -> El {
 /// are on their way. The caller keys it and makes pressing it play.
 pub fn play_button(app: &App, item: &Item, p: &Palette) -> Option<El> {
     let playable = !matches!(item.status, Status::Unreadable(_) | Status::NoGame(_));
-    (playable && app.mods.playing.is_none() && app.replays.preparing.is_none())
+    let checking = app.replays.checking.as_ref() == Some(&item.path);
+    (playable && !checking && app.mods.playing.is_none() && app.replays.preparing.is_none())
         .then(|| button("Watch", ButtonKind::Secondary, p))
 }
 
@@ -292,9 +293,9 @@ pub fn status_badge(status: &Status, p: &Palette) -> El {
         Status::AsIs => badge("Plays as is", Tone::Mine, p),
         Status::Needs {
             mods: 0,
-            game: Some(version),
+            game: Some(_),
             ..
-        } => badge(format!("Needs tgg-melee {version}"), Tone::News, p),
+        } => badge("Needs another tgg-melee", Tone::News, p),
         Status::Needs { mods, game, .. } => {
             let mods_words = if *mods == 1 {
                 "1 mod".to_owned()
@@ -302,17 +303,13 @@ pub fn status_badge(status: &Status, p: &Palette) -> El {
                 format!("{mods} mods")
             };
             let words = match game {
-                Some(version) => format!("Needs {mods_words}, tgg-melee {version}"),
-                None if *mods == 0 => "Needs its own setup".to_owned(),
+                Some(_) => format!("Needs {mods_words}, and another tgg-melee"),
+                None if *mods == 0 => "Needs its own mods".to_owned(),
                 None => format!("Needs {mods_words}"),
             };
             badge(words, Tone::News, p)
         }
-        Status::NoGame(version) => badge(
-            format!("tgg-melee {version} isn't available"),
-            Tone::Danger,
-            p,
-        ),
+        Status::NoGame(_) => badge("Its tgg-melee isn't available", Tone::Danger, p),
         Status::Unreadable(_) => badge("Can't be read", Tone::Danger, p),
     }
 }

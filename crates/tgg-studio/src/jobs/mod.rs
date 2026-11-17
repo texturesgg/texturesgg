@@ -41,8 +41,8 @@ pub enum Done {
     FirstRun(Box<crate::first_run::Done>),
     /// Play: the queues the meeting point lists.
     Play(Box<crate::play::Done>),
-    /// You: a profile read from textures.gg, a pack downloaded.
-    Profile(Box<crate::profile::Done>),
+    /// Skins: textures.gg's listing, or a skin downloaded from it.
+    Skins(Box<crate::library::site::Done>),
     /// What the game makes of skins in tgg-melee's slots (`library::port`).
     Verdicts(Vec<(tgg_app::ids::SkinId, MeleeSlot, Option<tgg_mod::Verdict>)>),
     /// The toast with this id has shown long enough.
@@ -229,7 +229,7 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
                 undoable,
             } => crate::melee::actions::states_read(app, &iso, states, undoable),
             Done::Mods(done) => crate::mods::actions::done(app, *done),
-            Done::Profile(done) => crate::profile::actions::done(app, *done),
+            Done::Skins(done) => crate::library::site::done(app, *done),
             Done::ReportSent(result) => crate::report::actions::sent(app, result),
             Done::SignIn(done) => crate::signin::actions::done(app, *done, tx),
             Done::Replays(done) => crate::replays::actions::done(app, *done),
