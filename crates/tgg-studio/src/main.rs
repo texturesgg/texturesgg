@@ -60,6 +60,16 @@ const SCENES: &[Scene] = &[
         first_run_scene(app);
         scene_disc(app);
     }),
+    // textures.gg has no tgg-melee this app can use (before tgg-melee's
+    // first release on mod API 1.0, every new player sees this).
+    ("first-run-no-game", |app| {
+        first_run_scene(app);
+        scene_disc(app);
+        app.mods.releases.clear();
+        app.mods.registry = mods::Registry::Failed(
+            "textures.gg doesn't have a tgg-melee for this version of the app yet.".into(),
+        );
+    }),
     ("first-run-downloading", |app| {
         first_run_scene(app);
         scene_disc(app);

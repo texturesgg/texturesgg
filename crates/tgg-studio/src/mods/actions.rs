@@ -754,7 +754,7 @@ fn fetched(
     let mut note = |error: &Error| match error {
         Error::Offline(_) => offline = true,
         Error::NoCatalog(_) => {}
-        error => failed = Some(capitalized(&error.to_string())),
+        error => failed = Some(said(error)),
     };
     match releases {
         Ok(releases) => mods.releases = releases,
@@ -1175,6 +1175,28 @@ fn capitalized(line: &str) -> String {
     characters.next().map_or_else(String::new, |first| {
         first.to_uppercase().chain(characters).collect()
     })
+}
+
+/// What went wrong asking textures.gg, in the player's words. A tgg-melee
+/// for another mod API is the app's version to fix, not `tgg`'s, as the
+/// library's own words say.
+fn said(error: &Error) -> String {
+    let api = |api: &str| -> u32 {
+        api.rsplit('/')
+            .next()
+            .and_then(|n| n.parse().ok())
+            .unwrap_or(0)
+    };
+    match error {
+        Error::ReleaseApi { api: theirs, .. } if api(theirs) < api(tgg_mod::API) => {
+            "textures.gg doesn't have a tgg-melee for this version of the app yet.".to_owned()
+        }
+        Error::ReleaseApi { .. } => {
+            "There's a newer tgg-melee than this version of the app can use. Update the app."
+                .to_owned()
+        }
+        error => capitalized(&error.to_string()),
+    }
 }
 
 /// Show all of a part of the chosen mod's details, or only its start again.
