@@ -9,7 +9,7 @@ use crate::state::App;
 use crate::ui::tokens::{Palette, radius, size, space, text};
 use crate::ui::{
     ButtonKind, Icon, Tone, badge, button, button_off, callout, chip, icon, icon_tile, list_row,
-    progress, rule, search_box, search_field, skeleton, spacer, text_action,
+    progress, search_box, search_field, skeleton, spacer, text_action,
 };
 use rune::{El, ScrollSpec, col, row, text as label};
 use std::collections::BTreeSet;
@@ -408,26 +408,28 @@ fn all(app: &App, p: &Palette) -> El {
             .pt(space::SM)
             .gap(space::XXS)
             .child(section("Not built for this version yet", p))
-            .child(list(
-                unbuilt
-                    .into_iter()
-                    .map(|summary| unbuilt_row(app, summary, p)),
-                p,
-            ))
+            .child(
+                col().children(
+                    unbuilt
+                        .into_iter()
+                        .map(|summary| unbuilt_row(app, summary, p)),
+                ),
+            )
     });
     col()
         .gap(space::SM)
         .children(note(mods, p).filter(|_| mods.port().is_none()))
         .children(empty)
-        .child(list(
-            rows.chain(
-                loading(mods)
-                    .then(|| placeholder_rows(p))
-                    .into_iter()
-                    .flatten(),
+        .child(
+            col().children(
+                rows.chain(
+                    loading(mods)
+                        .then(|| placeholder_rows(p))
+                        .into_iter()
+                        .flatten(),
+                ),
             ),
-            p,
-        ))
+        )
         .children(waiting)
 }
 
@@ -462,13 +464,6 @@ fn placeholder_rows(p: &Palette) -> impl Iterator<Item = El> + '_ {
             .child(skeleton(0.3, p))
             .child(skeleton(0.6, p))
     })
-}
-
-/// Rows between rules.
-fn list(rows: impl Iterator<Item = El>, p: &Palette) -> El {
-    col()
-        .child(rule(p))
-        .children(rows.flat_map(|row| [row, rule(p)]))
 }
 
 /// A mod textures.gg offers: its icon, name, whether it has to match in

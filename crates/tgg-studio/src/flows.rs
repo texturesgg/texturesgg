@@ -1725,6 +1725,425 @@ fn find_a_match_starts_the_set_and_cancel_ends_it() {
 }
 
 #[test]
+fn offline_mods_says_so_and_keeps_what_is_installed() {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    net.set_offline(true);
+    let (rt, _disc, _data) = on_mods(net);
+    assert_eq!(rt.state.mods.registry, crate::mods::Registry::Offline);
+    assert!(rt.find("mods/registry").is_some());
+}
+
+#[test]
+fn every_mod_can_be_browsed_and_searched_before_tgg_melee_is_installed() {
+    let (mut rt, _disc, _data) = on_mods(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    assert_eq!(
+        rt.state.mods.offered().len(),
+        10,
+        "the newest release of each, from the newest tgg-melee's catalog"
+    );
+    assert!(rt.find("mods/catalog/tgg.netplay").is_some());
+    assert!(
+        rt.find("mods/catalog/tgg.netplay/add").is_none(),
+        "installing waits for tgg-melee"
+    );
+    rt.update(|app, _| app.mods.search.text = "replay".into());
+    rt.frame(FRAME);
+    let found: Vec<String> = rt
+        .state
+        .mods
+        .found()
+        .iter()
+        .map(|entry| entry.manifest.id.to_string())
+        .collect();
+    assert_eq!(found.len(), 3, "the three replay mods: {found:?}");
+    assert!(found.iter().all(|id| id.starts_with("tgg.replay-")));
+    assert!(
+        rt.find("mods/catalog/tgg.netplay").is_none(),
+        "the search hides the rest"
+    );
+    // A tag, and the publisher, find mods too.
+    rt.update(|app, _| app.mods.search.text = "quality-of-life".into());
+    rt.frame(FRAME);
+    assert_eq!(rt.state.mods.found().len(), 3, "the replay mods' tag");
+    rt.update(|app, _| app.mods.search.text = "textures.gg".into());
+    rt.frame(FRAME);
+    assert_eq!(rt.state.mods.found().len(), 10, "every mod's publisher");
+    rt.update(|app, _| app.mods.search.text = "nothing like this".into());
+    rt.frame(FRAME);
+    assert!(rt.find("mods/all/empty").is_some());
+}
+
+/// Show Installed mods, where Add puts a mod in the mods folder.
+fn on_installed(rt: &mut Runtime<App>) {
+    rt.update(|app, _| {
+        crate::mods::actions::choose_set(app, tgg_mod::sets::INSTALLED);
+    });
+    settle(rt);
+}
+
+#[test]
+fn one_mod_installs_with_what_it_needs() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    on_installed(&mut rt);
+    tap_shown(&mut rt, "mods/catalog/tgg.direct-connect/add");
+    settle(&mut rt);
+    let review = rt.state.mods.review.as_ref().expect("the plan shows first");
+    let ids: Vec<String> = review
+        .plan
+        .steps
+        .iter()
+        .map(|step| step.id.to_string())
+        .collect();
+    assert!(
+        ids.contains(&"tgg.direct-connect".to_owned()) && ids.contains(&"tgg.netplay".to_owned()),
+        "and what it needs: {ids:?}"
+    );
+    tap(&mut rt, "mods/review/confirm");
+    let direct: tgg_mod::ModId = "tgg.direct-connect".parse().expect("an id");
+    jobs_until(&mut rt, |app| {
+        app.mods.work.is_none()
+            && !app.mods.local.mods.is_empty()
+            && app
+                .sets
+                .get(tgg_mod::sets::INSTALLED)
+                .is_some_and(|set| set.mod_line(&direct).is_some())
+    });
+    assert_eq!(rt.state.mods.local.mods.len(), 2);
+    assert!(
+        rt.find("mods/set/tgg.direct-connect/switch").is_some(),
+        "installed, its row in the mods folder has its switch"
+    );
+    assert_eq!(
+        rt.state.mods.selected, None,
+        "pressing Add didn't open the details"
+    );
+}
+
+#[test]
+fn a_mods_details_slide_in_and_install_it() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    on_installed(&mut rt);
+    narrow(&mut rt);
+    tap_shown(&mut rt, "mods/catalog/tgg.replay-browser");
+    settle(&mut rt);
+    assert_eq!(
+        rt.state
+            .mods
+            .selected
+            .as_ref()
+            .map(ToString::to_string)
+            .as_deref(),
+        Some("tgg.replay-browser")
+    );
+    let width = rt
+        .presented("mods/details")
+        .map_or(0.0, |(rect, _)| rect[2]);
+    assert!(
+        width > 300.0,
+        "the pane opens to its column, not {width} pt"
+    );
+    assert!(rt.find("mods/details/body").is_some());
+    tap(&mut rt, "mods/details/install");
+    settle(&mut rt);
+    tap(&mut rt, "mods/review/confirm");
+    jobs_until(&mut rt, |app| {
+        app.mods.work.is_none() && !app.mods.local.mods.is_empty()
+    });
+    assert!(
+        rt.find("mods/details/switch").is_some(),
+        "installed, the pane shows its switch"
+    );
+    tap(&mut rt, "mods/details/close");
+    settle(&mut rt);
+    let width = rt
+        .presented("mods/details")
+        .map_or(0.0, |(rect, _)| rect[2]);
+    assert!(
+        width < 0.5,
+        "closed, the pane narrows to nothing, not {width} pt"
+    );
+}
+
+#[test]
+fn rows_say_who_publishes_each_mod_and_the_details_bring_its_page() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    assert_eq!(
+        rt.state.mods.listings.len(),
+        10,
+        "the registry's listing of every mod"
+    );
+    let netplay: tgg_mod::ModId = "tgg.netplay".parse().expect("an id");
+    assert!(!rt.state.mods.listings[&netplay].author.is_empty());
+    // Icons arrive on threads of their own.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while rt
+        .state
+        .mods
+        .icon(&netplay)
+        .is_none_or(|pixels| format!("{pixels:?}").contains("0x0"))
+    {
+        assert!(std::time::Instant::now() < deadline, "the icon arrives");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    tap_shown(&mut rt, "mods/catalog/tgg.netplay");
+    jobs_until(&mut rt, |app| {
+        app.mods.details.get(&netplay).is_some_and(Option::is_some)
+    });
+    assert!(
+        rt.find("mods/details/body").is_some(),
+        "its details, with who publishes it"
+    );
+    assert!(rt.find("mods/details/readme").is_some(), "its README");
+    assert!(
+        rt.find("mods/details/releases").is_some(),
+        "and its releases"
+    );
+}
+
+#[test]
+fn a_mod_not_built_for_this_version_is_listed_and_says_so() {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let (mut rt, _disc, _data) = with_port(net);
+    // The registry lists a mod with no build for this game yet.
+    rt.update(|app, _| {
+        let mut summary = app
+            .mods
+            .listings
+            .values()
+            .next()
+            .expect("a listing")
+            .clone();
+        summary.id = "tgg.someday".parse().expect("an id");
+        summary.name = "Someday".into();
+        app.mods.listings.insert(summary.id.clone(), summary);
+    });
+    rt.frame(FRAME);
+    assert!(rt.find("mods/all/unbuilt").is_some() && rt.find("mods/listed/tgg.someday").is_some());
+    tap_shown(&mut rt, "mods/listed/tgg.someday");
+    settle(&mut rt);
+    assert!(
+        rt.find("mods/details/unbuilt").is_some(),
+        "its details say it waits for a build"
+    );
+    assert!(rt.find("mods/details/install").is_none());
+}
+
+#[test]
+fn a_long_readme_and_release_history_show_their_start_until_asked() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    let netplay: tgg_mod::ModId = "tgg.netplay".parse().expect("an id");
+    tap_shown(&mut rt, "mods/catalog/tgg.netplay");
+    jobs_until(&mut rt, |app| {
+        app.mods.details.get(&netplay).is_some_and(Option::is_some)
+    });
+    // Say its README and history are long.
+    rt.update(|app, _| {
+        let Some(Some(page)) = app
+            .mods
+            .details
+            .get_mut(&"tgg.netplay".parse().expect("an id"))
+        else {
+            return;
+        };
+        page.readme = Some((0..30).map(|n| format!("Paragraph {n}.\n\n")).collect());
+        let release = page.releases[0].clone();
+        page.releases = vec![release; 12];
+    });
+    settle(&mut rt);
+    assert!(
+        rt.find("mods/details/readme/fold").is_some()
+            && rt.find("mods/details/releases/fold").is_some()
+    );
+    let readme = crate::mods::Expand::Readme;
+    tap_shown(&mut rt, "mods/details/readme/fold");
+    assert!(rt.state.mods.expanded.contains(&readme), "all of it shows");
+    assert!(
+        rt.find("mods/details/readme/fold").is_some(),
+        "and can be cut short again"
+    );
+    tap_shown(&mut rt, "mods/details/readme/fold");
+    assert!(!rt.state.mods.expanded.contains(&readme));
+}
+
+#[test]
+fn official_mods_say_so_and_come_first() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    let netplay: tgg_mod::ModId = "tgg.netplay".parse().expect("an id");
+    assert!(
+        rt.state.mods.official(&netplay),
+        "the fake's first-party mods are official"
+    );
+    // Their details say so, and they come first in the list.
+    tap_shown(&mut rt, "mods/catalog/tgg.netplay");
+    settle(&mut rt);
+    assert!(rt.find("mods/details/body").is_some());
+    // Say one isn't: it sorts after the official ones.
+    rt.update(|app, _| {
+        let id: tgg_mod::ModId = "tgg.competitive-rules".parse().expect("an id");
+        if let Some(summary) = app.mods.listings.get_mut(&id) {
+            summary.publisher.official = false;
+        }
+    });
+    let ids: Vec<String> = rt
+        .state
+        .mods
+        .offered()
+        .iter()
+        .map(|entry| entry.manifest.id.to_string())
+        .collect();
+    assert_eq!(
+        ids.last().map(String::as_str),
+        Some("tgg.competitive-rules"),
+        "{ids:?}"
+    );
+}
+
+#[test]
+fn versions_install_switch_and_remove_and_an_installed_newer_one_is_still_an_update() {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let (mut rt, _disc, _data) = with_port(net.clone());
+    net.publish_port("0.6.0");
+    rt.update(|app, _| crate::mods::actions::fetch(app));
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered
+    });
+    rt.update(|app, _| crate::mods::actions::show_versions(app, true));
+    settle(&mut rt);
+    assert!(
+        rt.find("mods/versions/0.6.0/install").is_some(),
+        "the newer release offers to install"
+    );
+    assert!(
+        rt.find("mods/versions/0.5.0/use").is_none(),
+        "the one in use has nothing to do"
+    );
+    tap(&mut rt, "mods/versions/0.6.0/install");
+    jobs_until(&mut rt, |app| {
+        app.mods.port().is_some_and(|port| port.version == "0.6.0")
+            && app.mods.registry == crate::mods::Registry::Answered
+    });
+    tap(&mut rt, "mods/versions/0.5.0/use");
+    settle(&mut rt);
+    assert_eq!(
+        rt.state.mods.port().map(|port| port.version.as_str()),
+        Some("0.5.0")
+    );
+    tap(&mut rt, "mods/versions/done");
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered
+    });
+    assert_eq!(
+        rt.state.mods.port_update().map(|release| release.version),
+        Some("0.6.0".to_owned()),
+        "0.6.0, installed, is still newer"
+    );
+    // Updating to an installed version downloads nothing.
+    rt.update(|app, _| crate::mods::actions::install_port(app));
+    assert!(
+        rt.state.mods.work.is_none(),
+        "using an installed version downloads nothing"
+    );
+    assert_eq!(
+        rt.state.mods.port().map(|port| port.version.as_str()),
+        Some("0.6.0")
+    );
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered
+    });
+    rt.update(|app, _| crate::mods::actions::show_versions(app, true));
+    settle(&mut rt);
+    tap(&mut rt, "mods/versions/0.5.0/remove");
+    assert_eq!(rt.state.mods.ports.len(), 1, "an older version can go");
+}
+
+#[test]
+fn a_newer_tgg_melee_is_offered_and_the_older_one_stays_to_go_back_to() {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let (mut rt, _disc, _data) = with_port(net.clone());
+    install_mods(&mut rt, "replays");
+    net.publish_port("0.6.0");
+    rt.update(|app, _| crate::mods::actions::fetch(app));
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered
+    });
+    assert_eq!(
+        rt.state.mods.port_update().map(|release| release.version),
+        Some("0.6.0".to_owned()),
+        "0.6.0 is offered"
+    );
+    rt.update(|app, _| crate::mods::actions::install_version(app, "0.6.0"));
+    jobs_until(&mut rt, |app| {
+        app.mods.port().is_some_and(|port| port.version == "0.6.0")
+            && app.mods.registry == crate::mods::Registry::Answered
+    });
+    assert_eq!(rt.state.mods.ports.len(), 2, "the older version stays");
+    rt.update(|app, _| crate::mods::actions::use_port(app, "0.5.0"));
+    assert_eq!(
+        rt.state.mods.port().map(|port| port.version.as_str()),
+        Some("0.5.0")
+    );
+}
+
+#[test]
+fn one_mod_updates_on_its_own_and_stays_in_its_set() {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let (mut rt, _disc, _data) = with_port(net.clone());
+    install_mods(&mut rt, "replays");
+    on_installed(&mut rt);
+    net.publish_mod("tgg.replay-recorder", "Replay recorder", "0.1.1", &[]);
+    net.publish_mod("tgg.replay-player", "Replay player", "0.2.1", &[]);
+    rt.update(|app, _| crate::mods::actions::fetch(app));
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered
+    });
+    tap_shown(&mut rt, "mods/set/tgg.replay-recorder/update");
+    // Only that mod changes, so no review: it updates on its own.
+    assert!(rt.state.mods.review.is_none());
+    let target = rt
+        .state
+        .mods
+        .work
+        .as_ref()
+        .and_then(|work| work.target.clone());
+    assert_eq!(
+        target.map(|id| id.to_string()).as_deref(),
+        Some("tgg.replay-recorder")
+    );
+    rt.frame(FRAME);
+    assert!(
+        rt.find("mods/work").is_none(),
+        "its progress isn't above the page"
+    );
+    jobs_until(&mut rt, |app| {
+        app.mods.work.is_none()
+            && app
+                .mods
+                .local
+                .get(&"tgg.replay-recorder".parse().expect("an id"))
+                .is_some_and(|m| m.update.is_none())
+    });
+    let local = &rt.state.mods.local;
+    let recorder = local
+        .get(&"tgg.replay-recorder".parse().expect("an id"))
+        .expect("installed");
+    assert_eq!(recorder.manifest.version.to_string(), "0.1.1");
+    assert_eq!(recorder.sets(), ["replays"], "still part of Replays");
+    assert!(
+        !recorder.direct(),
+        "not turned into one installed on its own"
+    );
+    let player = local
+        .get(&"tgg.replay-player".parse().expect("an id"))
+        .expect("installed");
+    assert_eq!(
+        player.manifest.version.to_string(),
+        "0.2.0",
+        "the other mod's update waits"
+    );
+    assert!(player.update.is_some());
+}
+
+#[test]
 fn settings_keep_each_change_and_the_image_editor_when_closed() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
