@@ -2,7 +2,6 @@
 
 use crate::state::App;
 use rune::{FileDialogOptions, Tx};
-use tgg_app::settings::Appearance;
 
 /// Show the dialog: the apps that open PNGs as they are now, and the image
 /// editor's field showing when the one kept is none of them.
@@ -66,12 +65,6 @@ pub fn browse_editor(_: &mut App, tx: &mut Tx) {
 pub fn report_problem(app: &mut App) {
     close(app);
     crate::report::actions::open(app, false);
-}
-
-/// Draw in `appearance`'s palette, and remember it.
-pub fn set_appearance(app: &mut App, appearance: Appearance) {
-    app.preferences.menu = None;
-    app.change_settings(move |settings| settings.set_appearance(appearance));
 }
 
 /// Check for a newer version at launch, or not.

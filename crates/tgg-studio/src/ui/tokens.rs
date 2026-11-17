@@ -1,12 +1,11 @@
-//! Design tokens, from the textures.gg site's design system as tgg-ui copies
-//! them, in the Catalog direction's use (`spikes/editor-next/mocks/b-language.html`).
+//! Design tokens: the launch look (`tgg-melee-goals/studio/build-brief.md`,
+//! "The shell"), dark, calm, almost no drawn borders. Surfaces are washes of
+//! white over the content's near-black, so a card or a hovered row reads as
+//! a lift rather than an outline.
 //!
-//! The site is the source. Colors are written as the site writes them (sRGB
-//! hex) and converted to Rune's linear colors; lengths are in points, which
-//! Rune draws at the display's scale.
-//!
-//! The whole scale is here, as the site defines it, though not every step is
-//! used yet.
+//! Colors are written as sRGB hex and converted to Rune's linear colors;
+//! Rune blends in sRGB, so a 3.5% white wash looks as it does in CSS.
+//! Lengths are in points, which Rune draws at the display's scale.
 #![allow(dead_code, unused_imports)]
 
 use rune::Color;
@@ -24,31 +23,52 @@ pub fn rgb(hex: u32) -> Color {
     }
 }
 
-/// One palette's colors (the web's `color` group, and the editor's
-/// additions: `sunk` behind the sidebar, `plate` behind a model).
+/// White at `alpha`: the washes surfaces are made of.
+fn white(alpha: f32) -> Color {
+    rgb(0xFFFFFF).alpha(alpha)
+}
+
+/// The sidebar's smoked glass over the system's blur of what's behind the
+/// window, where the system blurs (macOS): `rgba(36,36,34,.8)`.
+pub fn glass() -> Color {
+    rgb(0x242422).alpha(0.8)
+}
+
+/// One palette's colors.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Palette {
+    /// The sidebar, where the system can't blur behind the window.
     pub sunk: Color,
+    /// The content, to the window's edge.
     pub bg: Color,
+    /// A card, and a hovered row: a wash over `bg`.
     pub surface: Color,
+    /// What floats: dialogs, menus, toasts. Opaque.
     pub raise: Color,
     pub ink: Color,
     pub muted: Color,
     pub faint: Color,
+    /// A card's inner hairline.
     pub line: Color,
+    /// A rule that has to show: under a dialog's head, a field's edge.
     pub line_strong: Color,
-    /// A fill: what's yours (installed, changed, selected). Never text.
+    /// Yellow, for small things only: "Using" and "In it", switches, "Has
+    /// to match in netplay", a waiting dot. Never a large fill.
     pub accent: Color,
     /// Accent-colored text and lines: focus rings, selected edges.
     pub accent_text: Color,
     pub danger: Color,
     pub success: Color,
-    /// Text on an ink fill (the primary button).
+    /// Text on an ink fill (the main button).
     pub on_ink: Color,
-    /// The 4% wash under a hovered row.
+    /// Under a hovered row: the card's wash.
     pub hover: Color,
-    /// The gold wash under a selected row.
+    /// The yellow wash under a "Using" chip or a chosen choice.
     pub selected: Color,
+    /// Every button but the main one.
+    pub fill: Color,
+    /// The sidebar row of the place showing.
+    pub current: Color,
     /// Behind a model on the stage: hsd-render clears to this.
     pub plate: Color,
     /// Over the window behind a dialog.
@@ -58,7 +78,8 @@ pub struct Palette {
 }
 
 impl Palette {
-    /// The palette for `appearance`.
+    /// The palette for `appearance`. The app is dark only for launch
+    /// (`shell::view` draws in [`Palette::gallery`]); Paper stays for later.
     pub fn of(appearance: Appearance) -> Self {
         match appearance {
             Appearance::Gallery => Self::gallery(),
@@ -69,29 +90,31 @@ impl Palette {
     /// The dark default.
     pub fn gallery() -> Self {
         Self {
-            sunk: rgb(0x0C0C0B),
-            bg: rgb(0x111110),
-            surface: rgb(0x1B1B19),
-            raise: rgb(0x262522),
+            sunk: rgb(0x161615),
+            bg: rgb(0x0C0C0B),
+            surface: white(0.035),
+            raise: rgb(0x1C1C1A),
             ink: rgb(0xF2EFE8),
             muted: rgb(0xA8A39A),
-            faint: rgb(0x77726A),
-            line: rgb(0x2F2E2A),
-            line_strong: rgb(0x3A3934),
+            faint: rgb(0x6F6B64),
+            line: white(0.05),
+            line_strong: white(0.09),
             accent: rgb(0xF5C84B),
             accent_text: rgb(0xF5C84B),
             danger: rgb(0xF07167),
             success: rgb(0x7BD88F),
             on_ink: rgb(0x111110),
-            hover: rgb(0xFFF8E6).alpha(0.035),
+            hover: white(0.035),
             selected: rgb(0xF5C84B).alpha(0.12),
+            fill: white(0.09),
+            current: white(0.08),
             plate: rgb(0x050509),
-            scrim: Color::BLACK.alpha(0.6),
+            scrim: Color::BLACK.alpha(0.55),
             shadow: Color::BLACK.alpha(0.55),
         }
     }
 
-    /// The light palette; surfaces lighten toward the viewer.
+    /// The light palette, kept for after launch.
     pub fn paper() -> Self {
         Self {
             sunk: rgb(0xEBE6DA),
@@ -110,17 +133,17 @@ impl Palette {
             on_ink: rgb(0xFAF7F0),
             hover: rgb(0x1C1B19).alpha(0.04),
             selected: rgb(0xF5C84B).alpha(0.2),
+            fill: rgb(0x1C1B19).alpha(0.07),
+            current: rgb(0x1C1B19).alpha(0.06),
             plate: rgb(0x050509),
-            // As Gallery's for now: Paper's dialogs are yet to be designed.
             scrim: Color::BLACK.alpha(0.6),
             shadow: Color::BLACK.alpha(0.55),
         }
     }
 }
 
-/// Spacing in points (`space`). `TIGHT` and `SNUG` are the desktop's
-/// half-steps, for parts of one thing: lines of an item stacked, and a dot
-/// beside its words.
+/// Spacing in points (`space`). `TIGHT` and `SNUG` are half-steps, for
+/// parts of one thing: lines of an item stacked, and a dot beside its words.
 pub mod space {
     /// Between stacked lines of one item: a name over its detail.
     pub const TIGHT: f32 = 2.0;
@@ -128,38 +151,54 @@ pub mod space {
     /// Between inline parts of one thing: a dot and its words, chips.
     pub const SNUG: f32 = 6.0;
     pub const XS: f32 = 8.0;
+    /// A list row's padding down its sides.
+    pub const ROW_Y: f32 = 10.0;
     pub const SM: f32 = 12.0;
     pub const MD: f32 = 16.0;
     pub const LG: f32 = 24.0;
     pub const XL: f32 = 32.0;
     pub const XXL: f32 = 48.0;
     /// A place's page in from the place's sides.
-    pub const PAGE: f32 = LG + XXS;
+    pub const PAGE: f32 = 28.0;
 }
 
-/// Corners in points. Tables and plates are square; controls and panes take
-/// `CONTROL`. No pills: a deliberate break from the site.
+/// Corners in points.
 pub mod radius {
-    pub const CONTROL: f32 = 4.0;
+    /// Rows: the sidebar's, a list's, a menu's.
+    pub const CONTROL: f32 = 7.0;
+    /// Cards and dialogs.
+    pub const CARD: f32 = 12.0;
+    /// A pill: buttons, chips, fields. Rune holds a corner to half the
+    /// shorter side, so this is round at any height.
+    pub const PILL: f32 = 999.0;
 }
 
 /// The window's fixed measures, in points.
 pub mod size {
-    /// The title row, and the sidebar's head beside it.
-    pub const TITLE_ROW: f32 = 44.0;
-    pub const SIDEBAR: f32 = 220.0;
-    /// A place in the sidebar, and a row in a pane.
-    pub const ROW: f32 = 32.0;
-    /// A game's card on Play, and a card like it.
-    pub const GAME_CARD: f32 = 340.0;
+    /// The top bar, inside the content.
+    pub const TOP_BAR: f32 = 52.0;
+    /// The sidebar, shown.
+    pub const SIDEBAR: f32 = 232.0;
+    /// A place in the sidebar, and a row in a menu or pane.
+    pub const ROW: f32 = 30.0;
+    /// A glyph's side.
+    pub const ICON: f32 = 16.0;
+    /// A glyph's stroke.
+    pub const ICON_STROKE: f32 = 1.4;
     /// A toast saying what just happened.
     pub const TOAST: f32 = 440.0;
     pub const TOAST_HEIGHT: f32 = 44.0;
     /// A tab's words, centered in this, over its underline; what sits at
     /// the end of a row of tabs centers in it too.
     pub const TAB: f32 = 34.0;
-    /// A control's height.
-    pub const CONTROL: f32 = 28.0;
+    /// A button's height, and a field's.
+    pub const CONTROL: f32 = 30.0;
+    /// A small button's.
+    pub const CONTROL_SMALL: f32 = 26.0;
+    /// A page's main action.
+    pub const CONTROL_MAIN: f32 = 40.0;
+    /// The search in the top bar.
+    pub const SEARCH: f32 = 260.0;
     /// The pane column beside the stage.
     pub const PANE_COLUMN: f32 = 320.0;
     /// A list's details beside the list, at their narrowest and widest;
@@ -184,11 +223,11 @@ pub mod size {
     /// A status dot's side.
     pub const DOT: f32 = 6.0;
     /// An account's mark, in a row.
-    pub const AVATAR: f32 = 22.0;
-    /// An account's picture, heading You, as the site's profile heads it.
+    pub const AVATAR: f32 = 20.0;
+    /// An account's picture, heading You.
     pub const PORTRAIT: f32 = 72.0;
     /// A dialog asking a question, and one holding a list to look over.
-    pub const DIALOG: f32 = 440.0;
+    pub const DIALOG: f32 = 460.0;
     pub const DIALOG_WIDE: f32 = 560.0;
     /// The tallest a dialog grows; what it holds scrolls past that.
     pub const DIALOG_MOST_HEIGHT: f32 = 640.0;
@@ -197,7 +236,7 @@ pub mod size {
 /// Shadows: how far below and how blurred, in points.
 pub mod elevation {
     /// A dialog over the window.
-    pub const DIALOG: (f32, f32) = (24.0, 60.0);
+    pub const DIALOG: (f32, f32) = (18.0, 50.0);
     /// A toast over the place.
     pub const TOAST: (f32, f32) = (8.0, 24.0);
 }
@@ -205,22 +244,27 @@ pub mod elevation {
 const SANS: Family = Family::Named("Schibsted Grotesk");
 const MONO: Family = Family::Named("DM Mono");
 
-/// Type styles (`text`), at desktop density. Headings are heavy and tight;
-/// facts (versions, sizes, frames, file names) are mono.
+/// Type styles (`text`). Schibsted Grotesk 13 for body, 12 for secondary
+/// and section labels, 24 bold for a page's one big title; DM Mono only for
+/// counts and codes.
 pub mod text {
     use super::{MONO, SANS, TextStyle};
 
-    pub const DISPLAY: TextStyle = TextStyle::new(56.0, 800.0).family(SANS).tracking(-2.5);
-    pub const H1: TextStyle = TextStyle::new(40.0, 800.0).family(SANS).tracking(-1.6);
-    pub const H2: TextStyle = TextStyle::new(28.0, 700.0).family(SANS).tracking(-0.85);
-    pub const H3: TextStyle = TextStyle::new(18.0, 700.0).family(SANS).tracking(-0.27);
-    pub const BODY: TextStyle = TextStyle::new(13.5, 400.0).family(SANS);
-    pub const STRONG: TextStyle = TextStyle::new(13.5, 600.0).family(SANS);
-    pub const TITLE: TextStyle = TextStyle::new(13.5, 700.0).family(SANS);
-    pub const LABEL: TextStyle = TextStyle::new(12.5, 600.0).family(SANS);
-    pub const SMALL: TextStyle = TextStyle::new(12.5, 400.0).family(SANS);
-    pub const WORDMARK: TextStyle = TextStyle::new(15.0, 800.0).family(SANS).tracking(-0.45);
-    pub const MONO_TEXT: TextStyle = TextStyle::new(12.5, 400.0)
+    /// A page's one big title, where it has one.
+    pub const H1: TextStyle = TextStyle::new(24.0, 700.0).family(SANS).tracking(-0.4);
+    /// A code to read out.
+    pub const H2: TextStyle = TextStyle::new(20.0, 700.0).family(SANS).tracking(-0.3);
+    /// A dialog's or sheet's title.
+    pub const H3: TextStyle = TextStyle::new(17.0, 700.0).family(SANS).tracking(-0.2);
+    pub const BODY: TextStyle = TextStyle::new(13.0, 400.0).family(SANS);
+    pub const STRONG: TextStyle = TextStyle::new(13.0, 600.0).family(SANS);
+    /// The place's name in the top bar.
+    pub const TITLE: TextStyle = TextStyle::new(14.0, 600.0).family(SANS);
+    /// A section label: muted, over a group.
+    pub const LABEL: TextStyle = TextStyle::new(12.0, 500.0).family(SANS);
+    pub const SMALL: TextStyle = TextStyle::new(12.0, 400.0).family(SANS);
+    pub const WORDMARK: TextStyle = TextStyle::new(13.0, 600.0).family(SANS);
+    pub const MONO_TEXT: TextStyle = TextStyle::new(12.0, 400.0)
         .family(MONO)
         .features("'zero' 1, 'tnum' 1");
     pub const MONO_SMALL: TextStyle = TextStyle::new(11.5, 400.0)
@@ -228,11 +272,25 @@ pub mod text {
         .features("'zero' 1, 'tnum' 1");
 }
 
-/// Motion: Rune's springs, which the Catalog's motion rules name (fade 150,
-/// snappy 250, default 300, calm 400 ms). One curve; nothing loops but the
-/// fighter.
+/// Motion. Two things move: the sidebar (180 ms) and a page or sheet
+/// coming in (a 220 ms fade and a 6-point rise). The rest lands at once,
+/// apart from Rune's color springs on hover.
 pub mod motion {
     pub use rune::tok::motion::{
         INSTANT as FADE, REFLOW as CALM, SETTLE as DEFAULT, SNAP as SNAPPY,
     };
+    use rune::{Spring, Transition};
+
+    /// The sidebar showing or hiding.
+    pub const SIDEBAR: Spring = Spring::new(0.18, 0.0);
+    /// How far a page or sheet rises as it comes in.
+    pub const RISE: f32 = 6.0;
+    const ENTER: Spring = Spring::new(0.22, 0.0);
+
+    /// A page or sheet coming in: it fades in and rises.
+    pub fn enter() -> Transition {
+        Transition::offset(0.0, RISE)
+            .combined(Transition::opacity())
+            .springs(rune::SpringPair::new(ENTER, ENTER))
+    }
 }

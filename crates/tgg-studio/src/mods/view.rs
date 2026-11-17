@@ -8,7 +8,7 @@ use crate::state::App;
 use crate::ui::tokens::{Palette, radius, size, space, text};
 use crate::ui::{
     ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, button_off, callout, chip, icon_tile,
-    page_head, panel, progress, rule, search_field, skeleton, spacer, split, split_list,
+    panel, progress, rule, search_box, search_field, skeleton, spacer, split, split_list,
     split_page, status, switch, tab, text_action,
 };
 use rune::{El, ScrollSpec, col, el, row, text as label};
@@ -26,15 +26,7 @@ const PLACEHOLDERS: usize = 4;
 
 pub fn view(app: &App, p: &Palette) -> El {
     let mods = &app.mods;
-    let head = row()
-        .items_end()
-        .gap(space::LG)
-        .child(col().grow(1.0).min_w(0.0).child(page_head(
-            "Mods",
-            "From textures.gg, for tgg-melee: Melee with mods built in.",
-            p,
-        )))
-        .child(head_side(app, p));
+    let head = row().child(spacer()).child(head_side(app, p));
     let list = match mods.tab {
         Tab::Sets => sets(mods, p),
         Tab::All => all(mods, p),
@@ -43,7 +35,7 @@ pub fn view(app: &App, p: &Palette) -> El {
     let notices: Vec<El> = notices(app, p);
     // Wide, a list and its details sit side by side, each scrolling on its
     // own under the head and tabs, which stay.
-    let top = top(mods, p);
+    let top: Option<El> = None;
     if app.side_by_side() && mods.tab != Tab::Sets {
         let lists = split(
             split_list("mods/scroll", top, list),
@@ -59,7 +51,7 @@ pub fn view(app: &App, p: &Palette) -> El {
                     .gap(space::MD)
                     .grow(1.0)
                     .min_h(0.0)
-                    .child(col().child(tabs(mods, p)).child(rule(p)))
+                    .child(tabs(mods, p))
                     .child(lists),
             );
         return col().grow(1.0).min_h(0.0).child(page);
@@ -84,7 +76,7 @@ pub fn view(app: &App, p: &Palette) -> El {
         .child(
             col()
                 .gap(space::MD)
-                .child(col().child(tabs(mods, p)).child(rule(p)))
+                .child(tabs(mods, p))
                 .child(list),
         );
     col()
@@ -97,13 +89,21 @@ pub fn view(app: &App, p: &Palette) -> El {
         .child(page)
 }
 
-/// What stays above a tab's list: All mods' search.
-fn top(mods: &Mods, p: &Palette) -> Option<El> {
-    (mods.tab == Tab::All).then(|| {
-        search_field(&mods.search, "Search mods", p)
+/// The top bar's end on Mods: the search, and Start a mod once there's a
+/// tgg-melee to make one for.
+pub fn top_bar(app: &App, p: &Palette) -> Vec<El> {
+    let search = search_box(
+        search_field(&app.mods.search, "Search mods", p)
             .key("mods/search")
-            .on_edit(|app: &mut App| &mut app.mods.search)
-    })
+            .on_edit(|app: &mut App| &mut app.mods.search),
+        p,
+    );
+    let start = app.mods.port().is_some().then(|| {
+        button("Start a mod", ButtonKind::Secondary, p)
+            .key("mods/new-mod")
+            .on_press(crate::newmod::actions::open)
+    });
+    std::iter::once(search).chain(start).collect()
 }
 
 /// Installed's Update all, at the tabs' end while there are updates: no
@@ -154,13 +154,7 @@ fn tabs(mods: &Mods, p: &Palette) -> El {
                 .items_center()
                 .gap(space::XXS)
                 .mr(-TEXT_ACTION_INSET)
-                .children(update_all(mods, p))
-                // Starting a mod of one's own, from tgg-melee's SDK.
-                .children(mods.port().is_some().then(|| {
-                    text_action("New mod…", false, p)
-                        .key("mods/new-mod")
-                        .on_press(crate::newmod::actions::open)
-                })),
+                .children(update_all(mods, p)),
         )
 }
 

@@ -19,32 +19,36 @@ pub fn foot(app: &App, p: &Palette) -> El {
         || "Sign in".to_owned(),
         |signed| super::shown_name(&signed.account),
     );
-    let mark = who.map(|signed| avatar(&super::shown_name(&signed.account), p));
+    // Signed out, the person glyph stands where the face would be.
+    let mark = who.map_or_else(
+        || crate::ui::person(p.faint),
+        |signed| avatar(&super::shown_name(&signed.account), p),
+    );
     let account = row()
         .key("sidebar/account")
         .grow(1.0)
         .min_w(0.0)
         .h(size::ROW)
-        .px(PLACE_INSET)
+        .px(PLACE_INSET - space::TIGHT)
         .gap(space::XS)
         .items_center()
         .radius(radius::CONTROL)
-        // Marked while You shows, as the places above are.
+        // Filled while You shows, as the places above are.
         .fill(if app.nav.place == crate::nav::Place::Profile {
-            p.hover
+            p.current
         } else {
             rune::Color::TRANSPARENT
         })
-        .hover(p.hover)
+        .hover(p.current)
         .cursor(rune::Cursor::Pointer)
         .role("button")
         .label(name.clone())
         .focusable(true)
         .on_press_tx(actions::account_row)
-        .children(mark)
+        .child(mark)
         .child(
             label(name)
-                .font(text::STRONG)
+                .font(text::BODY)
                 .color(if who.is_some() { p.ink } else { p.muted })
                 .truncate(),
         );
@@ -53,8 +57,6 @@ pub fn foot(app: &App, p: &Palette) -> El {
         .help(keys::hint("Settings", keys::Command::Settings))
         .on_press(crate::preferences::actions::open);
     row()
-        .mx(space::XS)
-        .my(space::SNUG)
         .gap(space::TIGHT)
         .items_center()
         .child(account)

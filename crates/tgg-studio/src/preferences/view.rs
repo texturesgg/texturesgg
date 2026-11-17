@@ -10,7 +10,6 @@ use crate::ui::{
     select_menu, select_rule, spacer, switch, text_action, text_field,
 };
 use rune::{El, col, row};
-use tgg_app::settings::Appearance;
 
 /// The image editor's choices and field, at their widest.
 const CHOICES: f32 = 300.0;
@@ -21,7 +20,6 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
     }
     let rows = [
         image_editor(app, p),
-        appearance(app, p),
         updates(app, p),
         game(app, p),
         disc(app, p),
@@ -116,34 +114,6 @@ fn editor_value(app: &App) -> String {
     }
 }
 
-fn appearance(app: &App, p: &Palette) -> El {
-    let open = app.preferences.menu == Some(Menu::Appearance);
-    let value = appearance_name(app.settings.appearance());
-    setting(
-        "settings/appearance/row",
-        "Appearance",
-        "How the app looks.",
-        select(value, open, p)
-            .key("settings/appearance")
-            .label("Appearance")
-            .on_press(|app: &mut App| actions::toggle_menu(app, Menu::Appearance)),
-        p,
-    )
-}
-
-/// The palettes, by the name they show.
-const APPEARANCES: [(Appearance, &str); 2] = [
-    (Appearance::Gallery, "Gallery (dark)"),
-    (Appearance::Paper, "Paper (light)"),
-];
-
-fn appearance_name(appearance: Appearance) -> &'static str {
-    APPEARANCES
-        .iter()
-        .find(|(known, _)| *known == appearance)
-        .map_or("Gallery (dark)", |(_, name)| name)
-}
-
 /// The open select's menu, at the window's root over Settings.
 pub fn menu(app: &App, p: &Palette) -> Option<El> {
     if !app.preferences.open {
@@ -176,27 +146,6 @@ pub fn menu(app: &App, p: &Palette) -> Option<El> {
             );
             Some(select_menu(
                 "settings/image-editor",
-                items,
-                actions::close_menu,
-                p,
-            ))
-        }
-        Menu::Appearance => {
-            let now = app.settings.appearance();
-            let items = APPEARANCES
-                .iter()
-                .map(|(appearance, name)| {
-                    let appearance = *appearance;
-                    select_item(name, now == appearance, p)
-                        .key(format!(
-                            "settings/appearance/{}",
-                            name.split(' ').next().unwrap_or(name).to_lowercase()
-                        ))
-                        .on_press(move |app: &mut App| actions::set_appearance(app, appearance))
-                })
-                .collect();
-            Some(select_menu(
-                "settings/appearance",
                 items,
                 actions::close_menu,
                 p,

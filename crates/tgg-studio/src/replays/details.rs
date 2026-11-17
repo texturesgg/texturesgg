@@ -29,7 +29,7 @@ pub fn shown(app: &App) -> bool {
 pub fn view(app: &App, p: &Palette) -> El {
     let shown = shown(app);
     let head = title_bar(row())
-        .h(size::TITLE_ROW)
+        .h(size::TOP_BAR)
         .pl(space::MD)
         .pr(space::XS)
         .gap(space::XS)

@@ -2023,13 +2023,6 @@ fn settings_keep_each_change_and_the_image_editor_when_closed() {
     rt.frame(FRAME);
     assert!(rt.state.preferences.open, "Ctrl , opens Settings");
     settle(&mut rt);
-    tap(&mut rt, "settings/appearance");
-    settle(&mut rt);
-    tap(&mut rt, "settings/appearance/paper");
-    assert_eq!(
-        rt.state.settings.appearance(),
-        tgg_app::settings::Appearance::Paper
-    );
     tap(&mut rt, "settings/updates/switch");
     assert_eq!(rt.state.settings.check_for_updates, Some(false));
     // Another app, by its command.

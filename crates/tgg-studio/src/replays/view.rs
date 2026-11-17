@@ -9,8 +9,8 @@ use crate::jobs::renders::RenderKey;
 use crate::state::App;
 use crate::ui::tokens::{Palette, radius, size, space, text};
 use crate::ui::{
-    ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, chip, icon_tile, page_head, progress, rule,
-    search_field, skeleton, split, split_list, split_page, text_action,
+    ButtonKind, TEXT_ACTION_INSET, Tone, badge, button, chip, icon_tile, progress, search_box,
+    search_field, skeleton, spacer, split, split_list, split_page, text_action,
 };
 use rune::{El, ScrollSpec, col, row, text as label};
 
@@ -33,13 +33,9 @@ pub fn view(app: &App, p: &Palette) -> El {
             })
     };
     let head = row()
-        .items_end()
-        .gap(space::LG)
-        .child(col().grow(1.0).min_w(0.0).child(page_head(
-            "Replays",
-            "Your Slippi and tgg-melee replays. All of them play back in tgg-melee, with the mods each game had.",
-            p,
-        )))
+        .items_center()
+        .child(filters(replays, p))
+        .child(spacer())
         .child(row().mr(-TEXT_ACTION_INSET).child(refresh));
     let shown = replays.shown();
     let body: Vec<El> = if !replays.scanned {
@@ -81,15 +77,12 @@ pub fn view(app: &App, p: &Palette) -> El {
             .map(|item| replay_row(app, replays, item, p))
             .collect()
     };
-    let list = col()
-        .key("replays/list")
-        .child(rule(p))
-        .children(body.into_iter().flat_map(|row| [row, rule(p)]));
+    let list = col().key("replays/list").children(body);
     // Wide, the list and the chosen replay's details sit side by side, each
-    // scrolling on its own under the head and filters, which stay.
+    // scrolling on its own under the filters, which stay.
     if app.side_by_side() {
-        let page = split_page().child(head).child(split(
-            split_list("replays/scroll", Some(filters(replays, p)), list),
+        let page = split_page().child(split(
+            split_list("replays/scroll", Some(head), list),
             super::details::column(app, p),
         ));
         return col().grow(1.0).min_h(0.0).child(page);
@@ -98,15 +91,8 @@ pub fn view(app: &App, p: &Palette) -> El {
         .px(space::PAGE)
         .pt(space::XS)
         .pb(space::XL)
-        .gap(space::LG)
-        .child(head)
-        .child(
-            col()
-                .max_w(COLUMN)
-                .gap(space::SM)
-                .child(filters(replays, p))
-                .child(list),
-        );
+        .gap(space::SM)
+        .child(col().max_w(COLUMN).gap(space::SM).child(head).child(list));
     col()
         .key("replays/scroll")
         .grow(1.0)
@@ -117,7 +103,17 @@ pub fn view(app: &App, p: &Palette) -> El {
         .child(page)
 }
 
-/// The search, and which folder's replays show.
+/// The top bar's end on Replays: the search.
+pub fn top_bar(app: &App, p: &Palette) -> Vec<El> {
+    vec![search_box(
+        search_field(&app.replays.search, "Search players, fighters, stages", p)
+            .key("replays/search")
+            .on_edit(|app: &mut App| &mut app.replays.search),
+        p,
+    )]
+}
+
+/// Which folder's replays show.
 fn filters(replays: &Replays, p: &Palette) -> El {
     let choice = |name: &str, source: Option<String>| {
         let chosen = replays.source == source;
@@ -130,23 +126,12 @@ fn filters(replays: &Replays, p: &Palette) -> El {
             .role("radio")
             .on_press(move |app: &mut App| actions::set_source(app, source.clone()))
     };
-    row()
-        .gap(space::SM)
-        .items_center()
-        .child(
-            search_field(&replays.search, "Search players, fighters, stages", p)
-                .key("replays/search")
-                .grow(1.0)
-                .on_edit(|app: &mut App| &mut app.replays.search),
-        )
-        .child(
-            row().gap(space::SNUG).child(choice("All", None)).children(
-                replays
-                    .folders
-                    .iter()
-                    .map(|(name, _)| choice(name, Some(name.clone()))),
-            ),
-        )
+    row().gap(space::SNUG).child(choice("All", None)).children(
+        replays
+            .folders
+            .iter()
+            .map(|(name, _)| choice(name, Some(name.clone()))),
+    )
 }
 
 /// A player's fighter as the player's game draws that costume, once its

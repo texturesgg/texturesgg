@@ -12,6 +12,8 @@ use std::path::Path;
 
 /// Where the player gets Slippi Launcher, which installs Slippi's Dolphin.
 const SLIPPI_URL: &str = "https://slippi.gg";
+/// A game's card.
+const GAME_CARD: f32 = 340.0;
 
 pub fn view(app: &App, p: &Palette) -> El {
     let page = col()
@@ -54,7 +56,7 @@ fn game_card(
 ) -> El {
     panel(p)
         .key(key.to_owned())
-        .w(size::GAME_CARD)
+        .w(GAME_CARD)
         .gap(space::MD)
         .child(
             col()

@@ -23,7 +23,7 @@ pub enum Place {
 }
 
 impl Place {
-    pub const ALL: [Place; 4] = [Place::Play, Place::Skins, Place::Mods, Place::Replays];
+    pub const ALL: [Place; 4] = [Place::Play, Place::Mods, Place::Skins, Place::Replays];
 
     pub fn label(self) -> &'static str {
         match self {

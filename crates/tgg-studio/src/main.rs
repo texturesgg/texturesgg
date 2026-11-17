@@ -423,9 +423,6 @@ const SCENES: &[Scene] = &[
         app.jobs.inline = false;
     }),
     ("no-sidebar", |app| app.nav.sidebar = false),
-    ("paper", |app| {
-        app.settings.set_appearance(settings::Appearance::Paper)
-    }),
 ];
 
 fn main() {

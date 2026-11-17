@@ -6,7 +6,7 @@ use super::{Melee, Subject, Tab, actions};
 use crate::jobs::renders::RenderKey;
 use crate::state::App;
 use crate::ui::tokens::{Palette, space, text};
-use crate::ui::{self, TEXT_ACTION_INSET, card_plate, page_head, rule, tab, text_action};
+use crate::ui::{self, TEXT_ACTION_INSET, card_plate, spacer, tab, text_action};
 use melee_dat::MeleeSlot;
 use rune::{El, ScrollSpec, col, row, text as label};
 
@@ -91,17 +91,7 @@ pub fn view(app: &App, p: &Palette) -> El {
         .pt(space::XS)
         .pb(space::XL)
         .gap(space::MD)
-        .child(
-            row()
-                .items_end()
-                .gap(space::LG)
-                .child(col().grow(1.0).min_w(0.0).child(page_head(
-                    crate::nav::Place::Skins.label(),
-                    "Your skins, for Slippi and tgg-melee.",
-                    p,
-                )))
-                .children(game(app, p)),
-        )
+        .children(game(app, p).map(|game| row().child(spacer()).child(game)))
         .children(recent(app, p))
         .children(melee.problem.as_ref().map(|problem| {
             label(problem.clone())
@@ -109,7 +99,7 @@ pub fn view(app: &App, p: &Palette) -> El {
                 .font(text::BODY)
                 .color(p.danger)
         }))
-        .child(col().child(tabs).child(rule(p)))
+        .child(tabs)
         .children(body);
     col()
         .key("melee/scroll")

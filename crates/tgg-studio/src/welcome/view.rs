@@ -108,7 +108,7 @@ fn games(games: &[GameChoice], p: &Palette) -> El {
 /// does once there's a game.
 fn title_band() -> El {
     title_bar(row())
-        .h(size::TITLE_ROW)
+        .h(size::TOP_BAR)
         .w_full()
         .absolute(0.0, 0.0)
 }
