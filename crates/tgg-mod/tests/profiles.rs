@@ -315,29 +315,48 @@ fn a_tgg_replay_without_a_profile_reads_its_mods() {
 }
 
 #[test]
-fn unofficial_mods_wait_for_the_players_yes() {
+fn unofficial_native_mods_wait_for_the_players_yes_by_account() {
     let net = FakeNet::new();
     let player = player();
     install_port(&net, &player);
-    net.set_publisher(
-        "tgg.legal-stages",
-        Publisher {
-            name: "someone".into(),
-            official: false,
-        },
-    );
+    let someone = Publisher {
+        id: Some("acct-someone".into()),
+        name: "someone".into(),
+        official: false,
+    };
+    net.set_publisher("tgg.legal-stages", someone.clone());
     let replay = player.file("game.slp", &tgg_replay(competitive_profile()));
     let profile = tgg_mod::profile_from_slp(&replay, None).expect("profile");
+    // Files alone carry no code: no question.
+    assert!(resolve(&net, &player, &profile).untrusted().is_empty());
+
+    net.set_native("tgg.legal-stages");
     let plan = resolve(&net, &player, &profile);
-    assert_eq!(plan.untrusted(), ["someone"]);
+    assert_eq!(plan.untrusted(), [&someone]);
     let result = tgg_mod::prepare_profile(&net, &plan, &player.data, &no_progress, &go());
     assert!(
         matches!(&result, Err(Error::NeedsTrust { publisher, .. }) if publisher == "someone"),
         "{result:?}"
     );
-    tgg_mod::remember_trust(&player.data, "someone", true).expect("remember");
-    let plan = resolve(&net, &player, &profile);
-    assert!(plan.untrusted().is_empty());
+    tgg_mod::remember_trust(&player.data, &someone, true).expect("remember");
+    assert!(resolve(&net, &player, &profile).untrusted().is_empty());
+    // A rename keeps the yes; the same name on another account doesn't get it.
+    net.set_publisher(
+        "tgg.legal-stages",
+        Publisher {
+            name: "renamed".into(),
+            ..someone.clone()
+        },
+    );
+    assert!(resolve(&net, &player, &profile).untrusted().is_empty());
+    net.set_publisher(
+        "tgg.legal-stages",
+        Publisher {
+            id: Some("acct-impostor".into()),
+            ..someone
+        },
+    );
+    assert_eq!(resolve(&net, &player, &profile).untrusted().len(), 1);
 }
 
 #[test]

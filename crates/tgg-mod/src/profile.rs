@@ -667,8 +667,9 @@ pub struct ProfileMod {
     pub cached: bool,
     /// The bytes it downloads when it isn't cached.
     pub size: u64,
-    /// Fetching it takes the player's yes: its publisher isn't official
-    /// and the player hasn't said yes to them.
+    /// Fetching it takes the player's yes: it's native code (a library the
+    /// game loads), its publisher isn't official, and the player hasn't
+    /// said yes to that publisher's account.
     pub needs_trust: bool,
     /// What to download.
     pub package: PackageRef,
@@ -708,17 +709,35 @@ impl ProfilePlan {
         self.mods.iter().filter(|m| !m.cached).map(|m| m.size).sum()
     }
 
-    /// The publishers whose yes the plan's mods need.
-    pub fn untrusted(&self) -> Vec<&str> {
-        let mut publishers: Vec<&str> = self
-            .mods
-            .iter()
-            .filter(|m| m.needs_trust)
-            .map(|m| m.publisher.name.as_str())
-            .collect();
-        publishers.sort();
-        publishers.dedup();
+    /// The publishers whose yes the plan's native mods need, each once,
+    /// sorted by name.
+    pub fn untrusted(&self) -> Vec<&Publisher> {
+        let mut publishers: Vec<&Publisher> = Vec::new();
+        for m in self.mods.iter().filter(|m| m.needs_trust) {
+            if !publishers.contains(&&m.publisher) {
+                publishers.push(&m.publisher);
+            }
+        }
+        publishers.sort_by(|a, b| a.name.cmp(&b.name));
         publishers
+    }
+
+    /// The plan's mods that need `publisher`'s yes.
+    pub fn needing<'a>(&'a self, publisher: &'a Publisher) -> impl Iterator<Item = &'a ProfileMod> {
+        self.mods
+            .iter()
+            .filter(move |m| m.needs_trust && m.publisher == *publisher)
+    }
+
+    /// Take `trusted` (publisher account ids, or names for a publisher
+    /// without one) as the player's yes for this session.
+    pub fn trust_for_session(&mut self, trusted: &[String]) {
+        for m in &mut self.mods {
+            let key = m.publisher.id.as_ref().unwrap_or(&m.publisher.name);
+            if trusted.contains(key) {
+                m.needs_trust = false;
+            }
+        }
     }
 }
 
@@ -848,6 +867,7 @@ pub fn resolve_profile(
         .iter()
         .map(|(entry, settings)| {
             let publisher = entry.publisher.clone().unwrap_or_else(|| Publisher {
+                id: None,
                 name: "unknown".into(),
                 official: false,
             });
@@ -855,9 +875,11 @@ pub fn resolve_profile(
                 id: entry.manifest.id.clone(),
                 name: entry.manifest.name.clone(),
                 version: entry.manifest.version.clone(),
-                // Scripts never ask: the game's sandbox, not the publisher,
-                // is what keeps them off the player's machine
-                needs_trust: !entry.manifest.script && !trust.allows(&publisher),
+                // Only native code asks: scripts run in the game's sandbox
+                // and files carry no code
+                needs_trust: entry.manifest.entry.is_some()
+                    && !entry.manifest.script
+                    && !trust.allows(&publisher),
                 publisher,
                 cached: crate::cache::is_cached(&packages, &entry.package),
                 size: entry.package.size,

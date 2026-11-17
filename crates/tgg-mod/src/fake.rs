@@ -204,6 +204,18 @@ impl FakeNet {
         state.revision += 1;
     }
 
+    /// List the mod `id` as native code (a library the game loads), as the
+    /// catalog lists a C mod. Its package stays the same.
+    pub fn set_native(&self, id: &str) {
+        let mut state = self.state();
+        for entry in &mut state.catalog {
+            if entry.manifest.id.as_str() == id {
+                entry.manifest.entry = Some(format!("{id}.so"));
+            }
+        }
+        state.revision += 1;
+    }
+
     /// Withdraw the release `id` `version`, as a moderator would: it leaves
     /// the catalog and its package stops downloading, and the catalog lists
     /// it as withdrawn with `reason` and `mode`.
@@ -291,6 +303,7 @@ impl FakeNet {
                 signature: None,
             },
             publisher: Some(Publisher {
+                id: Some("official".into()),
                 name: "textures.gg".into(),
                 official: true,
             }),
@@ -449,6 +462,7 @@ impl FakeNet {
                     description: entry.manifest.description.clone(),
                     author: "texturesgg".into(),
                     publisher: Publisher {
+                        id: Some("official".into()),
                         name: "textures.gg".into(),
                         official: true,
                     },

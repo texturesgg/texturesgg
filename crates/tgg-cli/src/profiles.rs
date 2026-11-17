@@ -28,8 +28,8 @@ pub enum ProfileCommand {
         /// for a program to read.
         #[arg(long)]
         machine: bool,
-        /// Download this publisher's mods (repeatable).
-        #[arg(long = "trust", value_name = "PUBLISHER")]
+        /// Download native mods from this publisher account id (repeatable).
+        #[arg(long = "trust", value_name = "PUBLISHER_ID")]
         trust: Vec<String>,
         /// Remember each --trust answer for next time.
         #[arg(long)]
@@ -239,28 +239,31 @@ pub fn prepare_machine(
         emit(json!({"event": "error", "message": withdrawn.to_string()}));
         return Ok(());
     }
+    // `trusted` names publisher account ids (a name for a publisher the
+    // registry gives no id).
     if remember {
-        for publisher in trusted {
-            tgg_mod::remember_trust(&ctx.data, publisher, true)?;
+        for publisher in plan.untrusted() {
+            let key = publisher.id.as_ref().unwrap_or(&publisher.name);
+            if trusted.contains(key) {
+                tgg_mod::remember_trust(&ctx.data, publisher, true)?;
+            }
         }
     }
-    for m in &mut plan.mods {
-        if trusted.contains(&m.publisher.name) {
-            m.needs_trust = false;
-        }
-    }
+    plan.trust_for_session(trusted);
     let untrusted = plan.untrusted();
     if !untrusted.is_empty() {
+        // Each publisher of native code still needing the player's yes: its
+        // id (what --trust takes back), name and mods.
         let publishers: Vec<Value> = untrusted
             .iter()
-            .map(|name| {
-                let mods: Vec<&str> = plan
-                    .mods
-                    .iter()
-                    .filter(|m| m.needs_trust && m.publisher.name == *name)
-                    .map(|m| m.id.as_str())
-                    .collect();
-                json!({"name": name, "mods": mods})
+            .map(|publisher| {
+                let mods: Vec<&str> = plan.needing(publisher).map(|m| m.id.as_str()).collect();
+                json!({
+                    "id": publisher.id.as_ref().unwrap_or(&publisher.name),
+                    "name": publisher.name,
+                    "native": true,
+                    "mods": mods,
+                })
             })
             .collect();
         emit(json!({"event": "needs-trust", "publishers": publishers}));
@@ -390,41 +393,30 @@ fn prepare_here(ctx: &Ctx, source: &Path, yes: bool) -> Result<Option<Prepared>>
             bail!("not played");
         }
     }
-    for publisher in plan
-        .untrusted()
-        .into_iter()
-        .map(str::to_owned)
-        .collect::<Vec<_>>()
-    {
-        let names: Vec<&str> = plan
-            .mods
-            .iter()
-            .filter(|m| m.needs_trust && m.publisher.name == publisher)
-            .map(|m| m.name.as_str())
-            .collect();
+    let untrusted: Vec<tgg_mod::Publisher> = plan.untrusted().into_iter().cloned().collect();
+    for publisher in untrusted {
+        let name = &publisher.name;
+        let names: Vec<&str> = plan.needing(&publisher).map(|m| m.name.as_str()).collect();
+        let names = names.join(", ");
         let allow = if yes {
             true
         } else if ask {
-            let answer = crate::ui::confirm(format!(
-                "This replay used {} by {publisher}. Download it to watch?",
-                names.join(", ")
-            ))?;
+            println!(
+                "{names} runs native code on your computer. It's published by {name}, not textures.gg."
+            );
+            let answer = crate::ui::confirm(format!("Download and run code by {name}?"))?;
             tgg_mod::remember_trust(&ctx.data, &publisher, answer)?;
             answer
         } else {
             bail!(
-                "{} by {publisher} needs your OK. Run it in a terminal, or pass --yes",
-                names.join(", ")
+                "{names} runs native code by {name} and needs your OK. Run it in a terminal, or pass --yes"
             );
         };
         if !allow {
-            bail!("not downloading {publisher}'s mods");
+            bail!("not downloading code by {name}");
         }
-        for m in &mut plan.mods {
-            if m.publisher.name == publisher {
-                m.needs_trust = false;
-            }
-        }
+        let key = publisher.id.clone().unwrap_or_else(|| name.clone());
+        plan.trust_for_session(&[key]);
     }
     if plan.fit == Fit::AsInstalled {
         return Ok(None);
@@ -685,10 +677,12 @@ mod tests {
         setup.net.set_publisher(
             "tgg.neutral-spawns",
             Publisher {
+                id: Some("acct-someone".into()),
                 name: "someone".into(),
                 official: false,
             },
         );
+        setup.net.set_native("tgg.neutral-spawns");
         let replay = setup.slippi_replay();
         let run = |trusted: &[String], remember: bool| {
             let lines = std::sync::Mutex::new(Vec::new());
@@ -701,9 +695,13 @@ mod tests {
         assert_eq!(
             lines[1],
             json!({"event": "needs-trust",
-                   "publishers": [{"name": "someone", "mods": ["tgg.neutral-spawns"]}]})
+                   "publishers": [{"id": "acct-someone", "name": "someone", "native": true,
+                                   "mods": ["tgg.neutral-spawns"]}]})
         );
+        // The name isn't the account: it asks again.
         let lines = run(&["someone".to_owned()], true);
+        assert_eq!(lines.last().expect("line")["event"], "needs-trust");
+        let lines = run(&["acct-someone".to_owned()], true);
         assert_eq!(lines.last().expect("line")["event"], "done");
         // Remembered: no question next time.
         let lines = run(&[], false);
@@ -741,6 +739,7 @@ mod tests {
         setup.net.set_publisher(
             "tgg.neutral-spawns",
             Publisher {
+                id: Some("acct-someone".into()),
                 name: "someone".into(),
                 official: false,
             },

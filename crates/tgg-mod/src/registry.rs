@@ -153,6 +153,11 @@ pub struct ModSummary {
 /// the admins vouch for it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Publisher {
+    /// The publishing account's id, which never changes (a name can): what
+    /// a player's trust is remembered by. Absent from a registry that
+    /// doesn't say, whose publishers are asked about every time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub name: String,
     pub official: bool,
 }
