@@ -17,9 +17,9 @@ mod surfaces;
 pub mod tokens;
 
 pub use controls::{
-    ButtonKind, ICON_BUTTON, PLACE_INSET, TEXT_ACTION_INSET, button, button_main, button_off,
-    button_small, chip, icon_button, place_row, search_box, search_field, select, select_item,
-    select_menu, select_rule, slider, switch, tab, text_action, text_field,
+    ButtonKind, ICON_BUTTON, PLACE_INSET, TEXT_ACTION_INSET, button, button_done, button_main,
+    button_off, button_small, chip, icon_button, place_row, search_box, search_field, select,
+    select_item, select_menu, select_rule, slider, switch, tab, text_action, text_field,
 };
 pub use icons::{Icon, icon, person};
 pub use layout::{split, split_details, split_empty, split_list, split_page};

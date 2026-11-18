@@ -21,6 +21,8 @@ pub enum Icon {
     Chevron,
     Plus,
     Check,
+    Download,
+    More,
 }
 
 /// `icon` in `color`.
@@ -111,6 +113,20 @@ pub fn icon(icon: Icon, color: Color) -> El {
             false,
         ),
         Icon::Check => stroke(shape, &[[5.0, 12.5], [10.0, 17.0], [19.0, 7.0]], false),
+        // An arrow down onto a tray.
+        Icon::Download => stroke(
+            stroke(
+                stroke(shape, &[[12.0, 4.0], [12.0, 15.0]], false),
+                &[[7.5, 10.5], [12.0, 15.0], [16.5, 10.5]],
+                false,
+            ),
+            &[[5.0, 15.0], [5.0, 19.5], [19.0, 19.5], [19.0, 15.0]],
+            false,
+        ),
+        // Three dots in a row.
+        Icon::More => [6.0, 12.0, 18.0].into_iter().fold(shape, |shape, x| {
+            stroke(shape, &arc([x, 12.0], 0.8, 0.0, 360.0), true)
+        }),
     };
     rune::canvas(shape).size(size::ICON, size::ICON)
 }

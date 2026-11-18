@@ -72,6 +72,28 @@ impl Sets {
     }
 }
 
+/// A set in a few words: the textures.gg sets it builds on, by the names
+/// they're published under, then "+ N mods" for its own lines.
+pub fn summary(app: &crate::state::App, set: &MySet) -> String {
+    let own = set.name.to_lowercase();
+    let mut parts: Vec<String> = set
+        .builds_on()
+        .map(|link| app.mods.set_title(link))
+        .filter(|title| title.to_lowercase() != own)
+        .collect();
+    let added = set
+        .lines
+        .iter()
+        .filter(|line| matches!(line, tgg_mod::sets::Line::Mod(m) if !m.left_out))
+        .count();
+    match added {
+        0 => {}
+        1 => parts.push("1 mod".to_owned()),
+        n => parts.push(format!("{n} mods")),
+    }
+    parts.join(" + ")
+}
+
 /// A set's plan: being worked out, worked out, or why it couldn't be.
 #[derive(Clone)]
 pub enum Planned {

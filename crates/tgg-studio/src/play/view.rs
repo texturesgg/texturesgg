@@ -288,7 +288,9 @@ fn picker(app: &App, p: &Palette) -> El {
         || tgg_mod::sets::INSTALLED_NAME.to_owned(),
         |set| set.name.clone(),
     );
-    let summary = set.map(|set| summary(app, set)).unwrap_or_default();
+    let summary = set
+        .map(|set| crate::sets::summary(app, set))
+        .unwrap_or_default();
     col()
         .key("play/set")
         .min_w(0.0)
@@ -324,28 +326,6 @@ fn picker(app: &App, p: &Palette) -> El {
                 .truncate()
                 .min_w(0.0)
         }))
-}
-
-/// A set in a few words: the textures.gg sets it builds on, by the names
-/// they're published under, then "+ N mods" for its own lines.
-fn summary(app: &App, set: &tgg_mod::sets::MySet) -> String {
-    let own = set.name.to_lowercase();
-    let mut parts: Vec<String> = set
-        .builds_on()
-        .map(|link| app.mods.set_title(link))
-        .filter(|title| title.to_lowercase() != own)
-        .collect();
-    let added = set
-        .lines
-        .iter()
-        .filter(|line| matches!(line, tgg_mod::sets::Line::Mod(m) if !m.left_out))
-        .count();
-    match added {
-        0 => {}
-        1 => parts.push("1 mod".to_owned()),
-        n => parts.push(format!("{n} mods")),
-    }
-    parts.join(" + ")
 }
 
 /// Find a match, Play with a friend, Play offline, all one height; while a

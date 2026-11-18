@@ -388,6 +388,7 @@ pub fn search(app: &App, p: &Palette) -> El {
             .on_edit(|app: &mut App| &mut app.melee.search),
         p,
     )
+    .w(crate::ui::tokens::size::SEARCH)
 }
 
 /// The picker's plate for a fighter, with its picture and what's changed.

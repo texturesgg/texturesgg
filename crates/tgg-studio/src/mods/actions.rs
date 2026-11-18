@@ -1,6 +1,8 @@
 //! What the player does on the Mods page, and what comes back from its jobs.
 
-use super::{Disc, Done, Fallback, Filter, NewSet, Playing, Registry, Reload, Review, Work};
+use super::{
+    Disc, Done, Fallback, Filter, Menu, NewSet, Playing, Registry, Reload, Review, Sort, Work,
+};
 use crate::jobs::Done as Job;
 use crate::state::App;
 use rune::{FileDialogOptions, Tx};
@@ -463,6 +465,37 @@ pub fn leave_out(app: &mut App, id: &ModId, out: bool) {
 pub fn set_on(app: &mut App, id: &ModId, on: bool) {
     set_enabled(app, id, on);
     replan(app);
+}
+
+/// Take the mod `id` out of the set showing, however it's in it: switched
+/// off in the mods folder, its own line dropped, or left out of the set it
+/// comes from.
+pub fn take_away(app: &mut App, id: &ModId) {
+    let Some(set) = super::current_set(app) else {
+        return;
+    };
+    if set.is_installed() {
+        set_on(app, id, false);
+    } else if set.mod_line(id).is_some_and(|line| !line.left_out) {
+        take_out(app, id);
+    } else {
+        leave_out(app, id, true);
+    }
+}
+
+/// Open the page's menu `menu`, or close it when it's the one open.
+pub fn toggle_menu(app: &mut App, menu: Menu) {
+    app.mods.menu = (app.mods.menu != Some(menu)).then_some(menu);
+}
+
+pub fn close_menu(app: &mut App) {
+    app.mods.menu = None;
+}
+
+/// List the mods in the order `sort`.
+pub fn set_sort(app: &mut App, sort: Sort) {
+    app.mods.sort = sort;
+    app.mods.menu = None;
 }
 
 /// Open the New set sheet.

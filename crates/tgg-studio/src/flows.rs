@@ -1562,6 +1562,8 @@ fn a_textures_gg_set_arrives_locked_and_makes_your_own() {
         .expect("made");
     assert!(!mine.locked && mine.builds_on().any(|link| link == "competitive"));
     assert_eq!(rt.state.mods.chosen_set.as_deref(), Some(mine.key.as_str()));
+    tap(&mut rt, "mods/set/more");
+    settle(&mut rt);
     assert!(
         rt.find("mods/set/rename").is_some() && rt.find("mods/set/delete").is_some(),
         "a set of the player's can be renamed and deleted"
@@ -1638,6 +1640,41 @@ fn a_players_set_leaves_a_mod_out_and_puts_it_back() {
             .and_then(|set| set.mod_line(&id))
             .is_some_and(|line| !line.left_out)
     });
+}
+
+#[test]
+fn added_in_the_list_takes_a_mod_out_as_the_set_has_it() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    make_set(&mut rt, "Friday night", &["competitive"]);
+    let from_set = "tgg.quick-start".parse::<tgg_mod::ModId>().expect("an id");
+    let own = "tgg.replay-recorder"
+        .parse::<tgg_mod::ModId>()
+        .expect("an id");
+    let line = |app: &App, id: &tgg_mod::ModId| {
+        app.sets
+            .get("friday-night")
+            .and_then(|set| set.mod_line(id))
+            .map(|line| line.left_out)
+    };
+    jobs_until(&mut rt, |app| app.sets.plan("friday-night").is_some());
+    tap_shown(&mut rt, "mods/catalog/tgg.replay-recorder/add");
+    jobs_until(&mut rt, |app| line(app, &own) == Some(false));
+    jobs_until(&mut rt, |app| {
+        app.sets
+            .plan("friday-night")
+            .is_some_and(|plan| plan.mods.iter().any(|m| m.id == own))
+    });
+    // Its own line goes; one of the set it builds on is left out.
+    tap_shown(&mut rt, "mods/catalog/tgg.replay-recorder/remove");
+    jobs_until(&mut rt, |app| {
+        line(app, &own).is_none()
+            && app
+                .sets
+                .plan("friday-night")
+                .is_some_and(|plan| plan.mods.iter().all(|m| m.id != own))
+    });
+    tap_shown(&mut rt, "mods/catalog/tgg.quick-start/remove");
+    jobs_until(&mut rt, |app| line(app, &from_set) == Some(true));
 }
 
 #[test]
