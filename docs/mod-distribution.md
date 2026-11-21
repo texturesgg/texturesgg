@@ -45,7 +45,10 @@ competitive` and `tgg port run`. Mod makers keep `tgg mod publish`.
   port has a target (`x86_64-linux-gnu`, `x86_64-windows-gnu`,
   `aarch64-apple-darwin`) and a game layout id (`Port::game_abi`). A game-tier
   mod build fits a port when both match; a stable-tier build (manifest `"tier":
-  "stable"`, no `game_abi`) fits every port on its target.
+  "stable"`, no `game_abi`) fits every port on its target whose mod API
+  (`Port::api_version`) loads it: the same major, and from 1.0 the build's
+  minor or a newer one, unless it uses experimental parts. Before 1.0, and
+  with experimental parts, the minor has to match (`local::api_fits`).
 - **Mods folder**: the folder the game loads mods from, shared by every port
   version the player runs. A mod's folder is its id; a turned-off mod's folder
   is `.<id>` (the game skips dot-folders). `tgg_mod::install::ModsDir` already

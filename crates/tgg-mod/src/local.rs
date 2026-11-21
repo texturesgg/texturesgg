@@ -114,7 +114,8 @@ pub enum SetStatus {
 }
 
 /// Whether `manifest` fits `port`: a mod with no library fits every game, a
-/// stable-tier one every layout on its target.
+/// stable-tier one every layout on its target whose mod API it loads on
+/// ([`api_fits`]), and a game-tier one only its layout.
 pub fn fits(manifest: &Manifest, port: &Port) -> bool {
     manifest
         .game_abi
@@ -124,6 +125,46 @@ pub fn fits(manifest: &Manifest, port: &Port) -> bool {
             .target
             .as_ref()
             .is_none_or(|target| *target == port.target)
+        && api_fits(manifest, port)
+}
+
+/// Whether a game offering `port`'s mod API loads `manifest`'s, as the
+/// game's loader and the registry's catalog judge it. The major has to
+/// match. A script loads on its minor or a newer one. From 1.0 so does a
+/// stable-tier library, unless it uses experimental parts; before 1.0, and
+/// with experimental parts, the minor has to match. A game-tier library's
+/// layout already ties it to one build.
+///
+/// Without a version on either side (content, a package from before
+/// versions were recorded, a game built from source) the game decides when
+/// it loads the mod, as before versions were checked here.
+pub fn api_fits(manifest: &Manifest, port: &Port) -> bool {
+    if manifest.game_abi.is_some() {
+        return true;
+    }
+    let (Some(needs), Some(offers)) = (&manifest.api_version, &port.api_version) else {
+        return true;
+    };
+    let Some(offers) = api_version(offers) else {
+        return true;
+    };
+    // The game refuses a version it can't read.
+    let Some(needs) = api_version(needs) else {
+        return false;
+    };
+    if needs.0 != offers.0 {
+        return false;
+    }
+    if !manifest.script && (needs.0 == 0 || manifest.experimental) {
+        return needs.1 == offers.1;
+    }
+    needs.1 <= offers.1
+}
+
+/// A mod API version, `major.minor`.
+fn api_version(text: &str) -> Option<(u32, u32)> {
+    let (major, minor) = text.split_once('.')?;
+    Some((major.parse().ok()?, minor.parse().ok()?))
 }
 
 impl Local {
@@ -347,4 +388,119 @@ pub fn uninstall_set(mods: &Path, name: &str) -> Result<(), Error> {
         lock.mods.remove(id);
     }
     lock.write(mods)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn port(api_version: Option<&str>) -> Port {
+        Port {
+            executable: PathBuf::new(),
+            game_abi: "layout-b".into(),
+            name: "tgg-melee".into(),
+            target: "x86_64-linux-gnu".into(),
+            version: "1.2.0".into(),
+            api_version: api_version.map(str::to_owned),
+        }
+    }
+
+    /// A stable-tier library built for `api_version`.
+    fn library(api_version: &str) -> Manifest {
+        let mut manifest = Manifest::new(
+            "me.x".parse().expect("id"),
+            "X".into(),
+            Version::new(1, 0, 0),
+        );
+        manifest.tier = Some(crate::manifest::Tier::Stable);
+        manifest.target = Some("x86_64-linux-gnu".into());
+        manifest.api_version = Some(api_version.into());
+        manifest
+    }
+
+    fn experimental(api_version: &str) -> Manifest {
+        Manifest {
+            experimental: true,
+            ..library(api_version)
+        }
+    }
+
+    fn script(api_version: &str) -> Manifest {
+        Manifest {
+            script: true,
+            target: None,
+            ..library(api_version)
+        }
+    }
+
+    #[test]
+    fn a_stable_library_loads_on_its_minor_and_newer_ones_from_1_0() {
+        let on_1_2 = port(Some("1.2"));
+        assert!(fits(&library("1.0"), &on_1_2));
+        assert!(fits(&library("1.2"), &on_1_2));
+        assert!(!fits(&library("1.3"), &on_1_2));
+    }
+
+    #[test]
+    fn experimental_parts_tie_a_library_to_its_minor() {
+        assert!(!fits(&experimental("1.1"), &port(Some("1.2"))));
+        assert!(fits(&experimental("1.1"), &port(Some("1.1"))));
+    }
+
+    #[test]
+    fn before_1_0_a_library_needs_its_exact_minor() {
+        assert!(fits(&library("0.4"), &port(Some("0.4"))));
+        assert!(!fits(&library("0.3"), &port(Some("0.4"))));
+        assert!(!fits(&library("0.5"), &port(Some("0.4"))));
+    }
+
+    #[test]
+    fn another_major_never_fits() {
+        assert!(!fits(&library("1.0"), &port(Some("2.0"))));
+        assert!(!fits(&library("2.0"), &port(Some("1.4"))));
+        assert!(!fits(&script("1.0"), &port(Some("2.0"))));
+    }
+
+    #[test]
+    fn a_script_loads_on_its_minor_and_newer_ones() {
+        // The game's loader reads a script's names itself, so 0.x scripts
+        // load on newer minors too.
+        assert!(fits(&script("0.3"), &port(Some("0.4"))));
+        assert!(fits(&script("1.0"), &port(Some("1.2"))));
+        assert!(!fits(&script("1.3"), &port(Some("1.2"))));
+    }
+
+    #[test]
+    fn a_game_tier_library_fits_only_its_layout() {
+        let mut manifest = library("1.0");
+        manifest.tier = Some(crate::manifest::Tier::Game);
+        manifest.game_abi = Some("layout-b".into());
+        assert!(fits(&manifest, &port(Some("1.2"))));
+        manifest.game_abi = Some("layout-a".into());
+        assert!(!fits(&manifest, &port(Some("1.2"))));
+    }
+
+    #[test]
+    fn without_a_version_on_either_side_the_game_decides() {
+        assert!(fits(&library("1.3"), &port(None)));
+        let mut unversioned = library("1.0");
+        unversioned.api_version = None;
+        assert!(fits(&unversioned, &port(Some("1.2"))));
+        // Disc files only.
+        let content = Manifest::new(
+            "me.y".parse().expect("id"),
+            "Y".into(),
+            Version::new(1, 0, 0),
+        );
+        assert!(fits(&content, &port(Some("1.2"))));
+        // A version the game can't read, it refuses.
+        assert!(!fits(&library("one"), &port(Some("1.2"))));
+    }
+
+    #[test]
+    fn another_target_never_fits() {
+        let mut manifest = library("1.0");
+        manifest.target = Some("x86_64-windows-gnu".into());
+        assert!(!fits(&manifest, &port(Some("1.2"))));
+    }
 }
