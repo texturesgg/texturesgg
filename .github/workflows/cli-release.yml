@@ -17,6 +17,7 @@ on:
   pull_request:
     paths:
       - scripts/package-cli.sh
+      - scripts/notices.py
       - .github/workflows/cli-release.yml
   workflow_dispatch:
 

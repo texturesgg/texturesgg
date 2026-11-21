@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Build `tgg` for one platform and pack it into target/package/:
 # tgg-<version>-<platform>.tar.gz, or .zip for Windows, holding the binary,
-# README and license.
+# README, license, and the licenses of the crates it's built with
+# (THIRD_PARTY_NOTICES.txt, from scripts/notices.py).
 #
 # Usage: package-cli.sh <platform>
 #   x86_64-unknown-linux-musl, aarch64-unknown-linux-musl
@@ -65,6 +66,15 @@ esac
 
 cp crates/tgg-cli/README.md "$stage/"
 cp LICENSE "$stage/"
+case "$platform" in
+  universal-apple-darwin) triples=aarch64-apple-darwin,x86_64-apple-darwin ;;
+  *) triples="$platform" ;;
+esac
+# python3, or python where that's its name (Windows).
+python=python3
+"$python" -c '' 2>/dev/null || python=python
+"$python" scripts/notices.py --package tgg-cli --target "$triples" --title tgg \
+  --out "$stage/THIRD_PARTY_NOTICES.txt"
 cd target/package
 if [[ "$platform" == *-windows-* ]]; then
   7z a -bd "$name.zip" "$name" >/dev/null
