@@ -200,6 +200,18 @@ pub struct Manifest {
     pub settings: Option<serde_json::Value>,
 }
 
+/// What a package holds, as the registry lists a release's `kind`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ModKind {
+    /// Luau scripts and no library: one package for every system.
+    Script,
+    /// A library, built for each system.
+    Native,
+    /// Only disc files and assets: no code at all.
+    Content,
+}
+
 /// A library's API tier
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -347,6 +359,18 @@ impl Manifest {
         !self.script && self.target.is_some()
     }
 
+    /// What a packed manifest's package holds. An author's manifest has no
+    /// `target` yet, so it reads as content until it's packed.
+    pub fn kind(&self) -> ModKind {
+        if self.script {
+            ModKind::Script
+        } else if self.has_library() {
+            ModKind::Native
+        } else {
+            ModKind::Content
+        }
+    }
+
     /// The library's file name in a package or a mod's folder.
     pub fn library_name(&self) -> &str {
         default_entry(self.target.as_deref())
@@ -478,5 +502,23 @@ mod tests {
         let json = br#"{"api": "tgg-melee/1", "id": "me.x", "name": "X", "version": "1.0.0",
             "netplay": "cosmetic"}"#;
         assert!(matches!(Manifest::parse(json), Err(ManifestError::Netplay)));
+    }
+
+    #[test]
+    fn a_package_is_a_script_a_library_or_only_content() {
+        let mut manifest =
+            Manifest::new("me.x".parse().unwrap(), "X".into(), Version::new(1, 0, 0));
+        assert_eq!(manifest.kind(), ModKind::Content);
+        manifest.files.push(ModFile {
+            path: "PlFxNr.dat".into(),
+            size: 4,
+            sha256: "0".repeat(64),
+        });
+        assert_eq!(manifest.kind(), ModKind::Content);
+        manifest.target = Some("x86_64-linux-gnu".into());
+        assert_eq!(manifest.kind(), ModKind::Native);
+        manifest.target = None;
+        manifest.script = true;
+        assert_eq!(manifest.kind(), ModKind::Script);
     }
 }

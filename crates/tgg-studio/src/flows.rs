@@ -1780,7 +1780,10 @@ fn on_installed(rt: &mut Runtime<App>) {
 
 #[test]
 fn one_mod_installs_with_what_it_needs() {
-    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    // Native code is reviewed first.
+    net.set_native("tgg.direct-connect");
+    let (mut rt, _disc, _data) = with_port(net);
     on_installed(&mut rt);
     tap_shown(&mut rt, "mods/catalog/tgg.direct-connect/add");
     settle(&mut rt);
@@ -1817,8 +1820,32 @@ fn one_mod_installs_with_what_it_needs() {
 }
 
 #[test]
-fn a_mods_details_slide_in_and_install_it() {
+fn a_mod_of_only_files_installs_without_the_review() {
     let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    on_installed(&mut rt);
+    tap_shown(&mut rt, "mods/catalog/tgg.direct-connect/add");
+    settle(&mut rt);
+    assert!(
+        rt.state.mods.review.is_none(),
+        "no code of its own, nothing to review"
+    );
+    let direct: tgg_mod::ModId = "tgg.direct-connect".parse().expect("an id");
+    jobs_until(&mut rt, |app| {
+        app.mods.work.is_none() && app.mods.local.get(&direct).is_some()
+    });
+    assert_eq!(
+        rt.state.mods.local.mods.len(),
+        2,
+        "with what it needs: {:?}",
+        rt.state.mods.local.mods
+    );
+}
+
+#[test]
+fn a_mods_details_slide_in_and_install_it() {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    net.set_native("tgg.replay-browser");
+    let (mut rt, _disc, _data) = with_port(net);
     on_installed(&mut rt);
     narrow(&mut rt);
     tap_shown(&mut rt, "mods/catalog/tgg.replay-browser");

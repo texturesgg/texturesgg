@@ -98,7 +98,7 @@ pub use local::{
     Local, LocalMod, LocalSet, SetStatus, local, set_enabled, uninstall, uninstall_set,
 };
 pub use lock::{Lock, LockEntry, game_running};
-pub use manifest::{Manifest, ModClass, ModId, Tier};
+pub use manifest::{Manifest, ModClass, ModId, ModKind, Tier};
 pub use net::{HttpNet, Net, NetError};
 pub use netplay::Netplay;
 pub use package::{Package, ScriptListing};
@@ -122,7 +122,7 @@ pub use profile::{
 };
 pub use registry::{
     Image, ModDetails, ModPage, ModRelease, ModSummary, Publisher, Set, SetMod, System, catalog,
-    mod_details, mods, sets,
+    mod_details, mod_kind, mods, sets,
 };
 pub use scaffold::{
     CreatedMod, NewMod, Repository, SCRIPT_TEMPLATES, SCRIPT_TYPES, TEMPLATE, Tools, docs_url,
