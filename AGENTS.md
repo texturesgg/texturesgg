@@ -22,17 +22,17 @@ run git, cargo, pnpm and `direnv exec .` from inside one of the repositories.
 | `tgg-melee/` | `texturesgg/tgg-melee` (private) | the native Melee port with the mod runtime built in |
 | `mods/` | `texturesgg/mods` (public) | official mods, one folder per mod |
 | `external/` | none | reference clones: `melee` (decomp), `slippi-ssbm-asm`, `aurora`, `melee-unlocked`, `melee-party`, `zeron` and others |
-| `tgg-melee-goals/` | none | planning and design docs, not in git |
+| `tgg-melee-goals/` | local git | current launch, handoff, and active design docs (archived docs in git history) |
 | `slp-corpus/` | none | Slippi replays for the port's replay checks |
 
 - Read the decomp in `external/melee` or Slippi's codes in
   `external/slippi-ssbm-asm` before guessing how the game behaves. Clone new
   long-lived references into `external/`, not a scratch folder.
-- `tgg-melee-goals/launch-plan.md` is the shared launch state; design docs
-  (`matchmaking.md`, `sets-model.md`, `player-counts.md`, `threat-model.md`,
-  `luau-plan.md`, `c-vs-luau.md`, `api-strategy.md`, `copy-pass.md`) sit beside
-  it. Read the relevant one before changing that area, and record new
-  decisions there.
+- `tgg-melee-goals/launch-plan.md` is the shared launch state; active docs
+  (`HANDOFF.md`, `copy-pass.md`, `competition-promo.md`, `public-audit.md`,
+  `threat-model.md`, `matchmaking.md`, `sets-model.md`, `player-counts.md`)
+  sit beside it. Read the relevant one before changing that area, and record
+  new decisions there.
 - The clean Melee disc on this machine is
   `~/Games/Slippi/Super Smash Bros. Melee (USA) (En,Ja) (Rev 2).iso`.
 
