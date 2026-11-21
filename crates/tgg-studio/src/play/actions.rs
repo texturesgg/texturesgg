@@ -128,10 +128,10 @@ pub fn host(app: &mut App) {
     crate::sets::actions::launch(app, How::Host);
 }
 
-/// Join the room whose code was typed. The sheet stays: it's where the
-/// game's way into the room shows.
+/// Join the room whose code was typed, or whose invite was pasted. The
+/// sheet stays: it's where the game's way into the room shows.
 pub fn join(app: &mut App) {
-    let code = app.play.join.text.trim().to_owned();
+    let code = super::typed_code(&app.play.join.text);
     if code.is_empty() {
         return;
     }
@@ -161,10 +161,11 @@ pub fn copy_code(app: &mut App, tx: &mut rune::Tx) {
     }
 }
 
-/// Copy the room's link, to send a friend.
+/// Copy the room's invite, to send a friend: the site's page for it,
+/// which chat apps make clickable and which opens the app.
 pub fn copy_link(app: &mut App, tx: &mut rune::Tx) {
-    if !app.play.room.link.is_empty() {
-        tx.copy(app.play.room.link.clone());
+    if let Some(invite) = app.play.room.invite() {
+        tx.copy(invite);
     }
 }
 
