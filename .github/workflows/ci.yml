@@ -53,6 +53,15 @@ jobs:
       - name: Test
         run: cargo test --locked --workspace
 
+      # The packages carry the license of every crate tgg and the app link
+      # (scripts/notices.py): a crate without one fails here, not at release.
+      - name: Third-party notices
+        run: |
+          python3 scripts/notices.py --package tgg-cli --title tgg --out target/notices-tgg.txt \
+            --target x86_64-unknown-linux-musl,aarch64-unknown-linux-musl,aarch64-apple-darwin,x86_64-apple-darwin,x86_64-pc-windows-msvc
+          python3 scripts/notices.py --package tgg-studio --title textures.gg --out target/notices-studio.txt \
+            --target x86_64-unknown-linux-gnu,aarch64-apple-darwin,x86_64-apple-darwin,x86_64-pc-windows-msvc
+
   # tgg-studio ships for macOS and Windows too: the app and the crates under
   # it build, lint and pass their tests there.
   rust-other:

@@ -1,7 +1,10 @@
 //! Links from textures.gg: `textures-gg://mods/<id>` opens Mods on that
 //! mod, `textures-gg://sets/<name>` adds that set and opens it, and
 //! `textures-gg://join/<code>` opens Play and joins that room with the
-//! active set. A link waits until there's something to open it on: a game
+//! active set. A room's invite is `https://textures.gg/join/<code>`
+//! ([`invite`]), which chat apps make clickable and the site hands on as
+//! `textures-gg://join/<code>`; the app reads that form too, as when it's
+//! pasted. A link waits until there's something to open it on: a game
 //! chosen (first run picks it), and for a mod or a set, textures.gg's
 //! catalog for the tgg-melee in use.
 //!
@@ -21,6 +24,15 @@ use tgg_mod::ModId;
 /// The scheme the app is registered for.
 pub const SCHEME: &str = "textures-gg";
 
+/// The site, whose `/join/<code>` pages open the app on a room.
+const SITE: &str = "textures.gg";
+
+/// The invite to the room `code`, to send a friend: a web page, since chat
+/// apps don't make links of other schemes. The site opens the app from it.
+pub fn invite(code: &str) -> String {
+    format!("https://{SITE}/join/{code}")
+}
+
 /// What a link asks for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Link {
@@ -31,15 +43,19 @@ pub enum Link {
     Join(String),
 }
 
-/// The link `text` is, if it's one of textures.gg's. Browsers may add a
-/// trailing slash or a query; neither matters.
+/// The link `text` is, if it's one of textures.gg's: the app's own, or an
+/// invite to a room on the site. Browsers may add a trailing slash or a
+/// query; neither matters.
 pub fn parse(text: &str) -> Option<Link> {
     let (scheme, rest) = text.trim().split_once(':')?;
+    let rest = rest.strip_prefix("//")?;
+    let rest = rest.split(['?', '#']).next()?.trim_end_matches('/');
+    if scheme.eq_ignore_ascii_case("https") || scheme.eq_ignore_ascii_case("http") {
+        return invited(rest);
+    }
     if !scheme.eq_ignore_ascii_case(SCHEME) {
         return None;
     }
-    let rest = rest.strip_prefix("//")?;
-    let rest = rest.split(['?', '#']).next()?.trim_end_matches('/');
     let (kind, name) = rest.split_once('/')?;
     match kind.to_ascii_lowercase().as_str() {
         "mods" => name.parse().ok().map(Link::Mod),
@@ -47,6 +63,21 @@ pub fn parse(text: &str) -> Option<Link> {
         "join" => room_code(name).map(Link::Join),
         _ => None,
     }
+}
+
+/// The room a site address (`textures.gg/join/<code>`, after its scheme)
+/// invites to. Nothing else on the site opens the app.
+fn invited(address: &str) -> Option<Link> {
+    let (host, path) = address.split_once('/')?;
+    let host = host.to_ascii_lowercase();
+    if host != SITE && host.strip_prefix("www.") != Some(SITE) {
+        return None;
+    }
+    let (kind, code) = path.split_once('/')?;
+    if !kind.eq_ignore_ascii_case("join") {
+        return None;
+    }
+    room_code(code).map(Link::Join)
 }
 
 /// A room's code, as a link spells it: the letters direct-connect makes
@@ -294,8 +325,34 @@ mod tests {
             parse("textures-gg://JOIN/Kfxd?from=site"),
             Some(Link::Join("KFXD".into()))
         );
+        // The invite a room's sheet copies, as a chat app or a paste may
+        // hand it over.
+        for invite in [
+            "https://textures.gg/join/KFXD",
+            "https://textures.gg/join/kfxd/",
+            "http://textures.gg/join/KFXD",
+            "https://www.textures.gg/join/KFXD",
+            "HTTPS://Textures.GG/Join/kfxd?utm_source=chat#top",
+            " https://textures.gg/join/KFXD\n",
+        ] {
+            assert_eq!(parse(invite), Some(Link::Join("KFXD".into())), "{invite}");
+        }
+        assert_eq!(parse(&invite("KFXD")), Some(Link::Join("KFXD".into())));
         for not in [
             "https://textures.gg/games/melee/mods/tgg.ucf",
+            "https://textures.gg/mods/tgg.ucf",
+            "https://textures.gg/sets/competitive",
+            "https://textures.gg/join/",
+            "https://textures.gg/join/AICO",
+            "https://textures.gg/join/KFXD/more",
+            "https://textures.gg/x/join/KFXD",
+            "https://evil.example/join/KFXD",
+            "https://textures.gg.evil.example/join/KFXD",
+            "https://evil.textures.gg/join/KFXD",
+            "https://textures.gg@evil.example/join/KFXD",
+            "https://textures.gg:8443/join/KFXD",
+            "ftp://textures.gg/join/KFXD",
+            "https:textures.gg/join/KFXD",
             "textures-gg://mods/",
             "textures-gg://mods/../../etc",
             "textures-gg://sets/Competitive Rules",

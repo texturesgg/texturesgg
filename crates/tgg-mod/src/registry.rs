@@ -16,7 +16,7 @@
 use crate::catalog::Catalog;
 use crate::depends::Range;
 use crate::error::Error;
-use crate::manifest::ModId;
+use crate::manifest::{Manifest, ModId, ModKind};
 use crate::net::{Net, NetError};
 use crate::netplay::Netplay;
 use crate::port::Port;
@@ -164,6 +164,29 @@ pub struct ModSummary {
     pub targets: Vec<System>,
     /// What that release counts as for netplay; None before it has a build.
     pub netplay: Option<Netplay>,
+    /// What that release holds; None for one checked before the registry
+    /// recorded kinds, or a kind this tgg doesn't know.
+    #[serde(default, deserialize_with = "known_kind")]
+    pub kind: Option<ModKind>,
+    /// That release loads only on the mod API minor it was built for (it
+    /// uses experimental parts), so a new tgg-melee needs a new build of it.
+    #[serde(default)]
+    pub one_version: bool,
+}
+
+fn known_kind<'de, D: serde::Deserializer<'de>>(json: D) -> Result<Option<ModKind>, D::Error> {
+    let kind: Option<serde_json::Value> = Option::deserialize(json)?;
+    Ok(kind.and_then(|kind| serde_json::from_value(kind).ok()))
+}
+
+/// What a mod holds: what `manifest`, a package's own, says when there is
+/// one, else what the registry's listing says. A package's manifest is
+/// exact for that package, so whether native code needs a review never
+/// rests on the listing alone.
+pub fn mod_kind(manifest: Option<&Manifest>, listed: Option<&ModSummary>) -> Option<ModKind> {
+    manifest
+        .map(Manifest::kind)
+        .or_else(|| listed.and_then(|summary| summary.kind))
 }
 
 /// Who publishes a mod: the name textures.gg's admins gave it (first-party
@@ -321,6 +344,70 @@ fn query_escape(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `GET /api/registry/mods` item, with `more` added to its fields.
+    fn summary(more: &str) -> ModSummary {
+        let json = format!(
+            r#"{{"id": "me.x", "name": "X", "description": null, "author": "me",
+            "publisher": {{"name": "me", "official": false}}, "icon": null, "tags": [],
+            "installs": 0, "version": "1.0.0", "updatedAt": "2026-01-01T00:00:00Z",
+            "sets": [], "targets": [], "netplay": null{more}}}"#
+        );
+        serde_json::from_str(&json).expect("a summary")
+    }
+
+    #[test]
+    fn a_summary_says_what_its_release_holds() {
+        let script = summary(r#", "kind": "script", "oneVersion": false"#);
+        assert_eq!(script.kind, Some(ModKind::Script));
+        assert!(!script.one_version);
+        assert_eq!(
+            summary(r#", "kind": "content""#).kind,
+            Some(ModKind::Content)
+        );
+        let native = summary(r#", "kind": "native", "oneVersion": true"#);
+        assert_eq!(native.kind, Some(ModKind::Native));
+        assert!(native.one_version);
+        // Checked before kinds were recorded, from a registry before them,
+        // or a kind added since.
+        assert_eq!(summary(r#", "kind": null"#).kind, None);
+        assert_eq!(summary("").kind, None);
+        assert!(!summary("").one_version);
+        assert_eq!(summary(r#", "kind": "shader""#).kind, None);
+    }
+
+    #[test]
+    fn a_packages_manifest_says_what_it_holds_before_the_listing_does() {
+        let mut manifest =
+            Manifest::new("me.x".parse().unwrap(), "X".into(), Version::new(1, 0, 0));
+        let unknown = summary(r#", "kind": null"#);
+        let listed_native = summary(r#", "kind": "native""#);
+        // Disc files only: no library, no scripts.
+        assert_eq!(
+            mod_kind(Some(&manifest), Some(&unknown)),
+            Some(ModKind::Content)
+        );
+        assert_eq!(
+            mod_kind(Some(&manifest), Some(&listed_native)),
+            Some(ModKind::Content)
+        );
+        manifest.target = Some("x86_64-linux-gnu".into());
+        assert_eq!(mod_kind(Some(&manifest), None), Some(ModKind::Native));
+        manifest.target = None;
+        manifest.script = true;
+        assert_eq!(
+            mod_kind(Some(&manifest), Some(&unknown)),
+            Some(ModKind::Script)
+        );
+        // Not built for this game: the listing is all there is.
+        assert_eq!(mod_kind(None, Some(&listed_native)), Some(ModKind::Native));
+        assert_eq!(
+            mod_kind(None, Some(&summary(r#", "kind": "content""#))),
+            Some(ModKind::Content)
+        );
+        assert_eq!(mod_kind(None, Some(&unknown)), None);
+        assert_eq!(mod_kind(None, None), None);
+    }
 
     #[test]
     fn package_urls_resolve_against_the_catalog() {

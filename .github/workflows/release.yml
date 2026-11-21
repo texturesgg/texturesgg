@@ -22,6 +22,7 @@ on:
     paths:
       - dist/**
       - scripts/package-*.sh
+      - scripts/notices.py
       - scripts/studio-latest.sh
       - .github/workflows/release.yml
   workflow_dispatch:

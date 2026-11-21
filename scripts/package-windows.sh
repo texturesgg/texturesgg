@@ -37,6 +37,11 @@ cp "$ROOT/LICENSE" "$STAGE/licenses/LICENSE"
 for font in "$ROOT"/crates/tgg-studio/assets/fonts/*/; do
   cp "$font/OFL.txt" "$STAGE/licenses/fonts/$(basename "$font").txt"
 done
+# python3, or python where that's its name (Windows).
+python=python3
+"$python" -c '' 2>/dev/null || python=python
+"$python" "$ROOT/scripts/notices.py" --package tgg-studio --title textures.gg \
+  --target "$(rustc -vV | sed -n 's/^host: //p')" --out "$STAGE/licenses/THIRD_PARTY_NOTICES.txt"
 sign "$STAGE/tgg-studio.exe"
 
 # The installer, from the staged (and signed) files.

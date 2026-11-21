@@ -62,6 +62,8 @@
               rustToolchain
               pkgs.git
               pkgs.pkg-config
+              # scripts/notices.py
+              pkgs.python3
               pkgs.rust-analyzer
             ];
 

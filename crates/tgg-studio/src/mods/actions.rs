@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tgg_mod::sets::{self, MySet, Want};
-use tgg_mod::{Error, Local, ModId, Plan, Progress};
+use tgg_mod::{Error, Local, ModId, ModKind, Plan, Progress};
 
 /// How often the thread watching the game looks whether it's ended, or
 /// been asked to stop.
@@ -405,13 +405,14 @@ pub fn add(app: &mut App, id: &ModId) {
 }
 
 /// Install the mod `id` into the mods folder, as the page always has: a
-/// script at once, a native mod through the review that says what it does.
+/// script or content at once, a native mod through the review that says
+/// what it does.
 fn install(app: &mut App, id: &ModId) {
     let Some(entry) = app.mods.newest(id).cloned() else {
         return;
     };
     let Ok(any) = "*".parse() else { return };
-    if !entry.manifest.script {
+    if entry.manifest.kind() == ModKind::Native {
         review_mod(app, id);
         return;
     }

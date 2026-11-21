@@ -954,7 +954,7 @@ fn room_state(report: &Room, how: &How, p: &Palette) -> El {
 /// own Copy under it.
 fn shared(report: &Room, p: &Palette) -> Vec<El> {
     let mut parts = Vec::new();
-    if !report.link.is_empty() {
+    if let Some(invite) = report.invite() {
         parts.push(
             col()
                 .gap(space::XXS)
@@ -964,7 +964,7 @@ fn shared(report: &Room, p: &Palette) -> Vec<El> {
                         .gap(space::SM)
                         .items_center()
                         .child(
-                            label(report.link.clone())
+                            label(invite)
                                 .key("play/friend/link")
                                 .font(text::MONO_TEXT)
                                 .color(p.muted)

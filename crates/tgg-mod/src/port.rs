@@ -3,7 +3,9 @@
 //! tgg-melee records the manifest API, its game layout, its name, its target
 //! triple and its version in the executable's `tgg_port` section, each
 //! NUL-terminated, so a tool can tell which packages fit a build without
-//! running it. A build without the section has no mod loader.
+//! running it. A build without the section has no mod loader. The section
+//! doesn't name the mod API minor; an installed release's `release.json`
+//! does.
 
 use object::{Object, ObjectSection};
 use std::path::{Path, PathBuf};
@@ -20,6 +22,10 @@ pub struct Port {
     pub target: String,
     /// The game's version, such as `0.1.0`.
     pub version: String,
+    /// The mod API `major.minor` it offers, from its release: the
+    /// `release.json` an install keeps beside the executable. None for a
+    /// build with no release beside it, such as one built from source.
+    pub api_version: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -65,11 +71,15 @@ impl Port {
         if api != crate::API {
             return Err(PortError::Api(api));
         }
+        let game_abi = field()?;
+        let (name, target, version) = (field()?, field()?, field()?);
+        let api_version = crate::ports::api_version_beside(&executable, &game_abi, &version);
         Ok(Self {
-            game_abi: field()?,
-            name: field()?,
-            target: field()?,
-            version: field()?,
+            game_abi,
+            name,
+            target,
+            version,
+            api_version,
             executable,
         })
     }

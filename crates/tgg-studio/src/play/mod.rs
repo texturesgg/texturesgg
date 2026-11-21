@@ -94,7 +94,8 @@ pub struct Room {
     pub state: State,
     /// The room's code, ready to share.
     pub code: String,
-    /// The code as a link a friend opens, `textures-gg://join/<code>`.
+    /// The code as the game links it, `textures-gg://join/<code>`. What a
+    /// friend is sent is [`Room::invite`].
     pub link: String,
     /// Who made the room.
     pub host: String,
@@ -117,6 +118,24 @@ impl Room {
             0 => players.to_string(),
             max => format!("{players} of {max} players"),
         }
+    }
+
+    /// The invite to send a friend, once the game links the room: the
+    /// site's page for it (`https://textures.gg/join/<code>`).
+    pub fn invite(&self) -> Option<String> {
+        match crate::links::parse(&self.link)? {
+            crate::links::Link::Join(code) => Some(crate::links::invite(&code)),
+            _ => None,
+        }
+    }
+}
+
+/// The room code in what was typed in the join box: the code, or the code
+/// of a pasted invite.
+pub fn typed_code(text: &str) -> String {
+    match crate::links::parse(text) {
+        Some(crate::links::Link::Join(code)) => code,
+        _ => text.trim().to_owned(),
     }
 }
 
@@ -280,7 +299,10 @@ pub fn searching_now(count: u32) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Log, Queue, Room, Signin, State, matching, read_report, searching, searching_now};
+    use super::{
+        Log, Queue, Room, Signin, State, matching, read_report, searching, searching_now,
+        typed_code,
+    };
     use tgg_mod::sets::QueueMod;
 
     fn queue(kind: &str, label: &str, searching: u32, mods: &[(&str, &str)]) -> Queue {
@@ -367,11 +389,23 @@ mod tests {
         assert_eq!(room.state, State::Waiting);
         assert_eq!(room.code, "ABCD");
         assert_eq!(room.link, "textures-gg://join/ABCD");
+        assert_eq!(
+            room.invite().as_deref(),
+            Some("https://textures.gg/join/ABCD")
+        );
         assert_eq!(room.host, "saavy");
         assert_eq!(room.players, ["saavy", "bo"]);
         assert_eq!(room.max, 4);
         assert_eq!(room.count(), "2 of 4 players");
         assert_eq!(room.why, "");
+    }
+
+    #[test]
+    fn the_join_box_takes_a_code_or_a_pasted_invite() {
+        assert_eq!(typed_code(" KFXD "), "KFXD");
+        assert_eq!(typed_code("https://textures.gg/join/kfxd"), "KFXD");
+        assert_eq!(typed_code("textures-gg://join/KFXD/"), "KFXD");
+        assert_eq!(typed_code(""), "");
     }
 
     #[test]

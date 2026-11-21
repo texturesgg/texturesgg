@@ -301,6 +301,7 @@ mod tests {
                 name: "tgg-melee".into(),
                 target: String::new(),
                 version: FakeNet::PORT_VERSION.into(),
+                api_version: None,
             },
         )
         .expect("catalog");
@@ -381,6 +382,7 @@ mod tests {
             name: "tgg-melee".into(),
             target: String::new(),
             version: FakeNet::PORT_VERSION.into(),
+            api_version: None,
         };
         let catalog = refresh_catalog(&net, data.path(), &port).expect("catalog");
         assert_eq!(cached_catalog(data.path(), FakeNet::LAYOUT), Some(catalog));

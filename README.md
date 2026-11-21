@@ -75,7 +75,9 @@ TGG_MELEE_ISO=melee.iso cargo run --release -p hsd-render -- regression --softwa
 
 GPL-3.0-or-later. See [`LICENSE`](LICENSE). The bundled fonts are under the SIL
 Open Font License; their license files sit beside them in
-`crates/tgg-studio/assets/fonts/`.
+`crates/tgg-studio/assets/fonts/`. The packages of `tgg` and the app carry
+the licenses of the crates they're built with in `THIRD_PARTY_NOTICES.txt`,
+which `scripts/notices.py` writes.
 
 Parts of this work build on others': `gx-texture` follows Dolphin's texture
 decoder and adapts its tile walk from libWiiSharp (see its README), and the

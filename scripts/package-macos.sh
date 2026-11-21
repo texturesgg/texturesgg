@@ -39,6 +39,12 @@ install -m 644 "$ROOT/LICENSE" "$APP/Contents/Resources/licenses/LICENSE"
 for font in "$ROOT"/crates/tgg-studio/assets/fonts/*/; do
   install -m 644 "$font/OFL.txt" "$APP/Contents/Resources/licenses/fonts/$(basename "$font").txt"
 done
+# python3, or python where that's its name (Windows).
+python=python3
+"$python" -c '' 2>/dev/null || python=python
+"$python" "$ROOT/scripts/notices.py" --package tgg-studio --title textures.gg \
+  --target "$(rustc -vV | sed -n 's/^host: //p')" \
+  --out "$APP/Contents/Resources/licenses/THIRD_PARTY_NOTICES.txt"
 
 ICONSET="$OUT_DIR/AppIcon.iconset"
 rm -rf "$ICONSET" && mkdir -p "$ICONSET"

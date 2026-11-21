@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Build the app and package it for Linux:
 #   target/package/textures.gg-<version>-linux-<arch>.tar.gz
-# holding the binary, the desktop entry, the icon, the licenses, and an
-# install.sh that copies them into ~/.local.
+# holding the binary, the desktop entry, the icon, the licenses (with the
+# crates' in licenses/THIRD_PARTY_NOTICES.txt), and an install.sh that copies
+# them into ~/.local.
 #
 # Env: PROFILE=debug packages an unoptimized build (default: release).
 
@@ -34,6 +35,11 @@ install -m 644 "$ROOT/LICENSE" "$STAGE/licenses/LICENSE"
 for font in "$ROOT"/crates/tgg-studio/assets/fonts/*/; do
   install -m 644 "$font/OFL.txt" "$STAGE/licenses/fonts/$(basename "$font").txt"
 done
+# python3, or python where that's its name (Windows).
+python=python3
+"$python" -c '' 2>/dev/null || python=python
+"$python" "$ROOT/scripts/notices.py" --package tgg-studio --title textures.gg \
+  --target "$(rustc -vV | sed -n 's/^host: //p')" --out "$STAGE/licenses/THIRD_PARTY_NOTICES.txt"
 
 cat >"$STAGE/install.sh" <<'INSTALL'
 #!/usr/bin/env bash

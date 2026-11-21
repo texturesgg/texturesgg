@@ -497,6 +497,8 @@ impl FakeNet {
                         .collect(),
                     targets: System::this().into_iter().collect(),
                     netplay: Some(entry.netplay),
+                    kind: Some(entry.manifest.kind()),
+                    one_version: entry.manifest.experimental,
                 }
             })
             .collect();

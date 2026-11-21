@@ -11,7 +11,7 @@ use crate::ui::{
     text_action, title_bar,
 };
 use rune::{El, ScrollSpec, col, el, row, text as label};
-use tgg_mod::{Manifest, ModDetails};
+use tgg_mod::{Manifest, ModDetails, ModKind};
 
 /// The mod's icon in the pane's head.
 const ICON: f32 = 48.0;
@@ -201,17 +201,20 @@ fn facts(app: &App, id: &tgg_mod::ModId, p: &Palette) -> Vec<El> {
     let mut facts = Vec::new();
     if let Some(manifest) = manifest {
         facts.push(fact("Version", manifest.version.to_string(), p));
-        facts.push(fact(
-            "Kind",
-            if manifest.script { "Script" } else { "Native" }.to_owned(),
-            p,
-        ));
     } else if let Some(summary) = listed {
         facts.push(fact(
             "Version",
             format!("{} · not built for this tgg-melee yet", summary.version),
             p,
         ));
+    }
+    if let Some(kind) = tgg_mod::mod_kind(manifest, listed) {
+        let kind = match kind {
+            ModKind::Script => "Script",
+            ModKind::Native => "Native",
+            ModKind::Content => "Content",
+        };
+        facts.push(fact("Kind", kind.to_owned(), p));
     }
     if let Some(entry) = offered {
         if installed.is_some_and(|m| m.manifest.version < entry.manifest.version) {

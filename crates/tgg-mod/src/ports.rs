@@ -134,6 +134,7 @@ impl PortRelease {
             name: "tgg-melee".into(),
             target: self.target.clone(),
             version: self.version.clone(),
+            api_version: Some(self.api_version.clone()),
         }
     }
 
@@ -334,6 +335,18 @@ pub fn install_archive(bytes: &[u8], file: &ReleaseFile, dest: &Path) -> Result<
     }
     unpack(bytes, file, &staging)?;
     std::fs::rename(&staging, dest).map_err(Error::io(dest))
+}
+
+/// The mod API version the release installed beside `executable` offers,
+/// if its `release.json` is there and names the same build.
+pub(crate) fn api_version_beside(
+    executable: &Path,
+    game_abi: &str,
+    version: &str,
+) -> Option<String> {
+    let bytes = std::fs::read(executable.parent()?.join(RELEASE)).ok()?;
+    let release: PortRelease = serde_json::from_slice(&bytes).ok()?;
+    (release.game_abi == game_abi && release.version == version).then_some(release.api_version)
 }
 
 /// An installed version of the game.
@@ -739,5 +752,29 @@ mod tests {
             );
         }
         assert!(!dir.path().join("escape").exists());
+    }
+
+    #[test]
+    fn an_installed_release_says_what_mod_api_its_game_offers() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let executable = dir.path().join(EXECUTABLE);
+        assert_eq!(api_version_beside(&executable, "layout", "1.2.0"), None);
+        let release = serde_json::json!({
+            "version": "1.2.0", "commit": "0".repeat(40), "api": crate::API,
+            "api_version": "1.2", "game_abi": "layout", "target": "x86_64-linux-gnu",
+            "glibc": "2.34", "toolchain": {"gcc": "15", "nixpkgs": "x"},
+            "files": {
+                "game": {"name": "g.tar.gz", "size": 1, "sha256": ""},
+                "sdk": {"name": "s.tar.gz", "size": 1, "sha256": ""}
+            }
+        });
+        std::fs::write(dir.path().join(RELEASE), release.to_string()).expect("write");
+        assert_eq!(
+            api_version_beside(&executable, "layout", "1.2.0").as_deref(),
+            Some("1.2")
+        );
+        // A release.json left from another build says nothing of this one.
+        assert_eq!(api_version_beside(&executable, "other", "1.2.0"), None);
+        assert_eq!(api_version_beside(&executable, "layout", "1.3.0"), None);
     }
 }

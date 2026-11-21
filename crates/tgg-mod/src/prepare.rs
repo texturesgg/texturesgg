@@ -178,6 +178,7 @@ pub(crate) fn plan_profile_with(
                 name: "tgg-melee".into(),
                 target: String::new(),
                 version: String::new(),
+                api_version: None,
             };
             match cache::refresh_catalog(net, data, &port) {
                 Ok(catalog) => catalog,
