@@ -37,9 +37,10 @@ fn white(alpha: f32) -> Color {
 pub const GLASS: bool = cfg!(any(target_os = "macos", target_os = "linux"));
 
 /// The sidebar's smoked glass over the blur of what's behind the window,
-/// where it's glass (`GLASS`): `rgba(36,36,34,.8)`.
+/// where it's glass (`GLASS`): deep dark tint so colorful wallpapers don't
+/// wash out sidebar labels and icons.
 pub fn glass() -> Color {
-    rgb(0x242422).alpha(0.8)
+    rgb(0x141413).alpha(0.84)
 }
 
 /// One palette's colors.
@@ -56,6 +57,10 @@ pub struct Palette {
     pub ink: Color,
     pub muted: Color,
     pub faint: Color,
+    /// Inactive sidebar labels, lifted so they stay legible over glass.
+    pub sidebar_label: Color,
+    /// Inactive sidebar icons (places, sidebar toggle, settings gear).
+    pub sidebar_icon: Color,
     /// A card's inner hairline.
     pub line: Color,
     /// A rule that has to show: under a dialog's head, a field's edge.
@@ -105,6 +110,8 @@ impl Palette {
             ink: rgb(0xF2EFE8),
             muted: rgb(0xA8A39A),
             faint: rgb(0x6F6B64),
+            sidebar_label: rgb(0xC8C3B9),
+            sidebar_icon: rgb(0xB3AEA4),
             line: white(0.05),
             line_strong: white(0.09),
             accent: rgb(0xF5C84B),
@@ -132,6 +139,8 @@ impl Palette {
             ink: rgb(0x1C1B19),
             muted: rgb(0x5C574E),
             faint: rgb(0x8A8377),
+            sidebar_label: rgb(0x47433C),
+            sidebar_icon: rgb(0x5C574E),
             line: rgb(0xE0D9CA),
             line_strong: rgb(0xB8AF9C),
             accent: rgb(0xF5C84B),

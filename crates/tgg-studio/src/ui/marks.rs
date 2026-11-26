@@ -6,7 +6,7 @@ use rune::{Color, El, el, row, text};
 
 /// The sidebar toggle's glyph: a window with its sidebar drawn in.
 pub fn sidebar_glyph(p: &Palette) -> El {
-    icon(Icon::Sidebar, p.muted)
+    icon(Icon::Sidebar, p.sidebar_icon)
 }
 
 /// The close glyph: two strokes crossed.
@@ -155,7 +155,7 @@ pub fn icon_tile(pixels: Option<&rune::Pixels>, side: f32, p: &Palette) -> El {
 
 /// The settings glyph: a gear.
 pub fn settings_glyph(p: &Palette) -> El {
-    icon(Icon::Gear, p.faint)
+    icon(Icon::Gear, p.sidebar_icon)
 }
 
 /// An account's mark: its first letter on a round yellow face.

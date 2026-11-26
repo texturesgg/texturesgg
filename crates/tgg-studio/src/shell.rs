@@ -128,7 +128,7 @@ fn sidebar(app: &App, inset: f32, p: &Palette) -> El {
     let shown = app.nav.sidebar;
     let places = Place::ALL.into_iter().map(|place| {
         let current = app.nav.place == place;
-        let ink = if current { p.ink } else { p.faint };
+        let ink = if current { p.ink } else { p.sidebar_icon };
         place_row(Some(icon(glyph(place), ink)), place.label(), current, p)
             .key(place.key())
             .on_press_tx(move |app: &mut App, tx| editor::actions::go(app, place, tx))
@@ -159,12 +159,20 @@ fn sidebar(app: &App, inset: f32, p: &Palette) -> El {
         .clip_rounded(0.0)
         .fill(p.sunk);
     // Smoked glass where the window is see-through (`tokens::GLASS`); solid
-    // everywhere else. The material is macOS's blur; elsewhere it's a no-op.
-    let base = if crate::ui::tokens::GLASS {
-        base.system_material(rune::SystemMaterial::Popover)
-            .fill(crate::ui::tokens::glass())
+    // everywhere else. On macOS, `SystemMaterial::Popover` replaces the node's
+    // own fill with the native blur view behind the Metal layer, so the dark
+    // glass tint sits on `inner` over it while `base` keeps `p.sunk` as its
+    // opaque fallback.
+    let (base, inner) = if cfg!(target_os = "macos") {
+        (
+            base.system_material(rune::SystemMaterial::Popover)
+                .fill(p.sunk),
+            inner.fill(crate::ui::tokens::glass()),
+        )
+    } else if crate::ui::tokens::GLASS {
+        (base.fill(crate::ui::tokens::glass()), inner)
     } else {
-        base
+        (base, inner)
     };
     base.child(inner)
 }
