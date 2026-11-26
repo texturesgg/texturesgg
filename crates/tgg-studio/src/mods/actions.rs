@@ -1128,6 +1128,7 @@ pub fn use_disc(app: &mut App, path: PathBuf) {
 /// Stop meanwhile, from wherever it was started (here, or a replay).
 pub fn watch(app: &mut App, mut running: tgg_mod::Running) {
     let stop = Arc::new(AtomicBool::new(false));
+    let log = crate::sets::actions::game_log(app);
     app.mods.playing = Some(Playing { stop: stop.clone() });
     app.jobs.spawn("tgg-melee", move || {
         let ended = loop {
@@ -1141,14 +1142,43 @@ pub fn watch(app: &mut App, mut running: tgg_mod::Running) {
             }
         };
         Job::Mods(Box::new(Done::GameEnded(match ended {
-            Ok(Some(status)) if !status.success() => Err(match status.code() {
-                Some(code) => format!("tgg-melee stopped with exit code {code}."),
-                None => "tgg-melee was stopped.".to_owned(),
-            }),
+            Ok(Some(status)) if !status.success() => Err(game_exit_error(status, &log)),
             Ok(_) => Ok(()),
             Err(error) => Err(format!("Lost track of tgg-melee: {error}.")),
         })))
     });
+}
+
+/// How many lines from the end of `game.log` to record in `studio.log` when
+/// the game exits non-zero or crashes.
+const GAME_LOG_TAIL: usize = 20;
+
+/// Record the game's exit and the end of `game.log` in `studio.log`, and
+/// return the player-facing error message.
+fn game_exit_error(status: std::process::ExitStatus, log: &std::path::Path) -> String {
+    let message = format_exit_status(status);
+    tgg_app::log(&format!("{message} (log: {})", log.display()));
+    if let Ok(text) = std::fs::read_to_string(log) {
+        let lines: Vec<&str> = text.lines().collect();
+        for line in &lines[lines.len().saturating_sub(GAME_LOG_TAIL)..] {
+            tgg_app::log(&format!("  game.log: {line}"));
+        }
+    }
+    message
+}
+
+fn format_exit_status(status: std::process::ExitStatus) -> String {
+    if let Some(code) = status.code() {
+        return format!("tgg-melee stopped with exit code {code}. Check game.log for details.");
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            return format!("tgg-melee crashed with signal {signal}. Check game.log for details.");
+        }
+    }
+    "tgg-melee was stopped. Check game.log for details.".to_owned()
 }
 
 /// End the game.
@@ -1239,5 +1269,26 @@ pub fn toggle_expanded(app: &mut App, part: super::Expand) {
         app.mods.expanded.retain(|shown| *shown != part);
     } else {
         app.mods.expanded.push(part);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_exit_status;
+
+    #[cfg(unix)]
+    #[test]
+    fn exit_status_distinguishes_code_and_signal() {
+        use std::os::unix::process::ExitStatusExt;
+        let code = std::process::ExitStatus::from_raw(1 << 8);
+        assert_eq!(
+            format_exit_status(code),
+            "tgg-melee stopped with exit code 1. Check game.log for details."
+        );
+        let sigabrt = std::process::ExitStatus::from_raw(6);
+        assert_eq!(
+            format_exit_status(sigabrt),
+            "tgg-melee crashed with signal 6. Check game.log for details."
+        );
     }
 }
