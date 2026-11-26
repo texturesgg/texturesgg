@@ -562,12 +562,19 @@ const SCENES: &[Scene] = &[
                 path,
                 plan,
                 remember: false,
-                notices: vec!["Playing without Turbo: withdrawn (crashes on Windows)".to_owned()],
+                notices: vec![
+                    "Playing without Turbo. textures.gg withdrew it (crashes on Windows)."
+                        .to_owned(),
+                ],
             });
         }
         app.jobs.inline = false;
     }),
-    ("no-sidebar", |app| app.nav.sidebar = false),
+    ("no-sidebar", |app| {
+        play_scene(app);
+        play_queues(app, false);
+        app.nav.sidebar = false;
+    }),
 ];
 
 fn main() {
@@ -728,6 +735,10 @@ fn skins_on(app: &mut App, tab: melee::Tab) {
     app.jobs.inline = true;
     nav::actions::go(app, nav::Place::Skins);
     melee::actions::show_tab(app, tab);
+    // A headless run doesn't ask the site on its own; a scene does, for a look.
+    if tab == melee::Tab::Browse {
+        library::site::load(app);
+    }
     poll_inline(app);
     app.jobs.inline = false;
 }
@@ -944,10 +955,10 @@ fn show_scene_sets(app: &mut App, net: &dyn tgg_mod::Net, active: &str, chosen: 
 }
 
 /// For scenes: Play with tgg-melee and Competitive installed, Friday night
-/// building on Competitive, a signed-in player and three last matches.
-/// FakeNet has no queue endpoint, and a scene runs no frames, so the jobs
-/// Mods starts are run here and their answers taken before the scene sets
-/// what the shot shows.
+/// building on Competitive, a signed-in player and three last matches. A
+/// scene runs no frames, so the jobs Mods starts are run here and their
+/// answers taken before the scene sets what the shot shows (its queues
+/// too, by [`play_queues`]).
 fn play_scene(app: &mut App) {
     use tgg_mod::sets;
     app.jobs.inline = true;
@@ -1048,8 +1059,8 @@ fn play_queue(
     label: &str,
     searching: u32,
     mods: Vec<tgg_mod::sets::QueueMod>,
-) -> crate::play::Queue {
-    crate::play::Queue {
+) -> tgg_mod::Queue {
+    tgg_mod::Queue {
         kind: kind.to_owned(),
         label: label.to_owned(),
         searching,
@@ -1269,14 +1280,14 @@ fn notices_scene(app: &mut App) {
     };
     let plan = std::sync::Arc::make_mut(plan);
     plan.notices
-        .push("Competitive changed: added Prevent wobbling".to_owned());
+        .push("textures.gg took Weekend down, so its mods are now part of Friday night".to_owned());
     if let Ok(id) = "tgg.turbo".parse() {
         plan.mods.push(tgg_mod::sets::SetMod {
             id,
             group: tgg_mod::sets::Group::Added,
             version: None,
             class: None,
-            skipped: Some("withdrawn (crashes on Windows)".to_owned()),
+            skipped: Some("textures.gg withdrew it (crashes on Windows).".to_owned()),
         });
     }
 }

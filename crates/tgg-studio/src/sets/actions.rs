@@ -424,17 +424,20 @@ pub fn notices(app: &App, key: &str) -> Vec<String> {
         .cloned()
         .chain(plan.skipped().map(|m| {
             let why = m.skipped.as_deref().unwrap_or_default();
-            format!("Playing without {}: {why}", mod_name(app, &m.id))
+            format!("Playing without {}. {why}", mod_name(app, &m.id))
         }))
         .collect()
 }
 
 /// A withdrawal, in the player's words.
-fn withdrawn_words(app: &App, notice: &tgg_mod::WithdrawNotice) -> String {
+pub fn withdrawn_words(app: &App, notice: &tgg_mod::WithdrawNotice) -> String {
     let name = mod_name(app, &notice.id);
     match notice.action {
         tgg_mod::WithdrawAction::TurnedOff => {
-            format!("Playing without {name}: withdrawn ({})", notice.reason)
+            format!(
+                "Playing without {name}. textures.gg withdrew it ({}).",
+                notice.reason
+            )
         }
         tgg_mod::WithdrawAction::Warned => {
             format!("{name} was withdrawn ({}). It's still on.", notice.reason)

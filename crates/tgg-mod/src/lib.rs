@@ -48,6 +48,7 @@
 //!   sets they build on, run through the profile path.
 //! - [`skins`]: the skins tgg.skins loads (`skins.json`), and whether a
 //!   costume changes only looks.
+//! - [`queues`]: the meeting point's matchmaking queues.
 //! - [`scaffold`]: starting a new mod from an SDK example, a release's SDK,
 //!   the build tools on `PATH`, and the mod docs' address.
 
@@ -71,6 +72,7 @@ pub mod ports;
 pub mod prepare;
 mod process;
 pub mod profile;
+pub mod queues;
 pub mod registry;
 pub mod scaffold;
 pub mod sdk;
@@ -120,6 +122,7 @@ pub use profile::{
     SlippiCode, SlippiFacts, SlippiIgnore, SlippiMapping, profile_from_file, profile_from_local,
     profile_from_slp, profile_layout, resolve_profile, slippi_mapping,
 };
+pub use queues::{Queue, queues};
 pub use registry::{
     Image, ModDetails, ModPage, ModRelease, ModSummary, Publisher, Set, SetMod, System, catalog,
     mod_details, mod_kind, mods, sets,

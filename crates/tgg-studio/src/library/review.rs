@@ -118,9 +118,10 @@ fn rejected<'a>(review: &'a Review, p: &'a Palette) -> impl Iterator<Item = El> 
                 .py(space::SM)
                 .gap(space::TIGHT)
                 .child(
-                    label("A file that can't be added")
-                        .font(text::SMALL)
-                        .color(p.muted),
+                    label(rejected.file_name.clone())
+                        .font(text::STRONG)
+                        .color(p.ink)
+                        .truncate(),
                 )
                 .child(
                     label(rejected.reason.clone())

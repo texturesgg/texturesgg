@@ -268,7 +268,7 @@ fn a_set_builds_on_sets_and_its_own_lines_win() {
     let plan = player.plan(&net, &player.set("mine"), false);
     assert_eq!(
         row(&plan, "tgg.legal-stages").skipped.as_deref(),
-        Some("the sets it comes from take versions no release has in common")
+        Some("The sets it comes from don't share a version of it.")
     );
 
     // Withdrawn: skipped with the reason, and the rest still prepares.
@@ -278,7 +278,7 @@ fn a_set_builds_on_sets_and_its_own_lines_win() {
     let plan = player.plan(&net, &mine, false);
     assert_eq!(
         row(&plan, "tgg.skip-results").skipped.as_deref(),
-        Some("textures.gg withdrew tgg.skip-results 0.1.0: it desyncs")
+        Some("textures.gg withdrew it (it desyncs).")
     );
     let prepared = sets::prepare(&net, &plan, data, &mine, &no_progress, &go()).expect("prepare");
     assert!(prepared.folder.join("tgg.netplay").is_dir());

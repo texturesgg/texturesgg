@@ -63,7 +63,8 @@ pub struct Candidate {
     pub bytes: Rc<Vec<u8>>,
 }
 
-/// A file the library turned away, and why, in the player's words.
+/// A file the library turned away, and why, in the player's words: whole
+/// sentences. What went wrong in detail goes to the app's log.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Rejected {
     pub file_name: String,
@@ -138,13 +139,12 @@ impl Library {
             reason,
         };
         if bytes.len() > HSD_SCENE_MAX_DAT_BYTES {
-            return Err(reject(format!(
-                "it's larger than any Melee file ({} MB)",
-                bytes.len() / 1_000_000
-            )));
+            return Err(reject(TOO_BIG.to_owned()));
         }
-        let dat = DatFile::parse(&bytes)
-            .map_err(|error| reject(format!("it isn't a DAT file the app can read ({error})")))?;
+        let dat = DatFile::parse(&bytes).map_err(|error| {
+            crate::log(&format!("skins: {file_name} isn't a DAT: {error}"));
+            reject("It isn't a Melee file the app can read.".to_owned())
+        })?;
         let slot = catalog
             .costume_slot(dat.roots.iter().map(|root| root.name.as_str()))
             .or_else(|| {
@@ -188,8 +188,11 @@ impl Library {
                 Ok(bytes) => bytes,
                 Err(error) => {
                     let reason = match error {
-                        ReadError::TooLarge { .. } => error.to_string(),
-                        ReadError::Io(error) => format!("it couldn't be read ({error})"),
+                        ReadError::TooLarge { .. } => TOO_BIG.to_owned(),
+                        ReadError::Io(error) => {
+                            crate::log(&format!("skins: reading {file_name}: {error}"));
+                            "The app couldn't open it.".to_owned()
+                        }
                     };
                     results.push(Err(Rejected { file_name, reason }));
                     continue;
@@ -199,7 +202,7 @@ impl Library {
                 match dats_in_zip(&bytes) {
                     Ok(dats) if dats.is_empty() => results.push(Err(Rejected {
                         file_name,
-                        reason: "it has no DAT files inside".into(),
+                        reason: "It has no Melee files inside.".into(),
                     })),
                     Ok(dats) => results.extend(
                         dats.into_iter()
@@ -347,23 +350,28 @@ const MAX_ZIP_DAT_BYTES: usize = 8 * HSD_SCENE_MAX_DAT_BYTES;
 /// The most entries a zip may list.
 const MAX_ZIP_ENTRIES: usize = 10_000;
 
+/// Why a file is turned away for its size.
+const TOO_BIG: &str = "It's too big to be a skin.";
+
 /// Every DAT inside a zip archive, by file name, each within the largest
 /// size a Melee file can have and all of them within [`MAX_ZIP_DAT_BYTES`].
+/// Turned away, why in the player's words.
 fn dats_in_zip(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>, String> {
-    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
-        .map_err(|error| format!("it isn't a zip the app can open ({error})"))?;
+    let unreadable = |error: &dyn std::fmt::Display| {
+        crate::log(&format!("skins: reading a zip: {error}"));
+        "The app couldn't open this zip.".to_owned()
+    };
+    let mut archive =
+        zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|error| unreadable(&error))?;
     if archive.len() > MAX_ZIP_ENTRIES {
-        return Err(format!(
-            "it holds {} files, more than the {MAX_ZIP_ENTRIES} the app reads",
-            archive.len()
-        ));
+        return Err(TOO_BIG.to_owned());
     }
     let mut dats = Vec::new();
     let mut total = 0_usize;
     for index in 0..archive.len() {
         let mut entry = archive
             .by_index(index)
-            .map_err(|error| format!("its contents couldn't be read ({error})"))?;
+            .map_err(|error| unreadable(&error))?;
         let path = entry.name().to_owned();
         let Some(name) = Path::new(&path)
             .file_name()
@@ -379,14 +387,11 @@ fn dats_in_zip(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>, String> {
             .by_ref()
             .take(HSD_SCENE_MAX_DAT_BYTES as u64 + 1)
             .read_to_end(&mut data)
-            .map_err(|error| format!("{name} couldn't be read ({error})"))?;
+            .map_err(|error| unreadable(&error))?;
         if data.len() <= HSD_SCENE_MAX_DAT_BYTES {
             total += data.len();
             if total > MAX_ZIP_DAT_BYTES {
-                return Err(format!(
-                    "its DAT files unpack to more than the {} MB the app reads",
-                    MAX_ZIP_DAT_BYTES / 1_000_000
-                ));
+                return Err(TOO_BIG.to_owned());
             }
             dats.push((name, data));
         }
