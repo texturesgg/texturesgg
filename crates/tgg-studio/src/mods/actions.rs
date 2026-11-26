@@ -1272,11 +1272,10 @@ pub fn toggle_expanded(app: &mut App, part: super::Expand) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::format_exit_status;
 
-    #[cfg(unix)]
     #[test]
     fn exit_status_distinguishes_code_and_signal() {
         use std::os::unix::process::ExitStatusExt;
