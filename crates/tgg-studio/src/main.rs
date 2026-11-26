@@ -577,6 +577,10 @@ const SCENES: &[Scene] = &[
     }),
 ];
 
+/// Leading offset for macOS traffic lights; vertical offset centers them on
+/// `ui::tokens::size::TOP_BAR`.
+const TRAFFIC_LIGHT_X: f32 = 16.0;
+
 fn main() {
     // Started with a link while the app is open (Windows, Linux): the open
     // one takes it, and this one is done.
@@ -603,7 +607,14 @@ fn main() {
             poll: Some(jobs::poll),
             ..AppSpec::new("textures.gg", size, launch, shell::view)
         };
+        let traffic_light_y =
+            ((ui::tokens::size::TOP_BAR - rune::Chrome::TRAFFIC_LIGHT) / 2.0).round();
         let app = rune::App::new(spec)
+            .chrome(rune::Chrome {
+                full_size_content: true,
+                traffic_lights: Some((TRAFFIC_LIGHT_X, traffic_light_y)),
+                drag_regions: true,
+            })
             .window_options(rune::WindowOptions {
                 position,
                 // See-through where the sidebar is glass (`ui::tokens::GLASS`):

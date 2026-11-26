@@ -110,6 +110,45 @@ fn the_sidebar_hides_whole_and_its_toggle_stays_put() {
 }
 
 #[test]
+fn the_sidebar_toggle_clears_titlebar_inset_and_collapses_in_fullscreen() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    let chrome = rune::Chrome {
+        full_size_content: true,
+        traffic_lights: Some((
+            crate::TRAFFIC_LIGHT_X,
+            ((crate::ui::tokens::size::TOP_BAR - rune::Chrome::TRAFFIC_LIGHT) / 2.0).round(),
+        )),
+        drag_regions: true,
+    };
+    let inset = chrome.titlebar_inset();
+    rt.set_titlebar_inset(inset);
+    settle(&mut rt);
+    let windowed = rt.presented("shell/toggle").expect("the toggle shows").0;
+    assert!(
+        (windowed[0] - (inset + crate::ui::tokens::space::XS)).abs() < 0.5,
+        "toggle x {} should clear traffic lights inset {inset}",
+        windowed[0]
+    );
+    let light_midline = chrome.traffic_light_rects().expect("traffic lights")[0][1]
+        + rune::Chrome::TRAFFIC_LIGHT / 2.0;
+    let toggle_midline = windowed[1] + windowed[3] / 2.0;
+    assert!(
+        (toggle_midline - light_midline).abs() < 0.5,
+        "toggle midline {toggle_midline} should match traffic lights {light_midline}"
+    );
+    // Entering full screen drops the titlebar inset to 0.
+    rt.set_titlebar_inset(0.0);
+    settle(&mut rt);
+    let fullscreen = rt.presented("shell/toggle").expect("the toggle shows").0;
+    assert!(
+        (fullscreen[0] - crate::ui::tokens::space::XS).abs() < 0.5,
+        "toggle x {} should collapse to leading edge in full screen",
+        fullscreen[0]
+    );
+}
+
+#[test]
 fn ctrl_backslash_shows_and_hides_the_sidebar() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
