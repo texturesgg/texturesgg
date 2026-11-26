@@ -65,7 +65,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          tar -cf pkg.tar -C target/package .
+          (cd target/package && tar -cf ../../pkg.tar *.tar.gz)
           npx --yes wrangler@4.146.0 r2 object put "vgskins-assets/$CI_STAGE/linux.tar" \
             --file pkg.tar --content-type application/x-tar --cache-control "no-store" --remote
 
@@ -132,7 +132,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          tar -cf pkg.tar -C target/package .
+          (cd target/package && tar -cf ../../pkg.tar *.dmg)
           npx --yes wrangler@4.146.0 r2 object put "vgskins-assets/$CI_STAGE/macos.tar" \
             --file pkg.tar --content-type application/x-tar --cache-control "no-store" --remote
 
@@ -162,7 +162,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          tar -cf pkg.tar -C target/package .
+          (cd target/package && tar -cf ../../pkg.tar *-setup.exe *.zip)
           npx --yes wrangler@4.146.0 r2 object put "vgskins-assets/$CI_STAGE/windows.tar" \
             --file pkg.tar --content-type application/x-tar --cache-control "no-store" --remote
 
