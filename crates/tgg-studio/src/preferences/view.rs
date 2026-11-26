@@ -48,7 +48,7 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
         ]);
         Dialog {
             title: "Settings".into(),
-            line: "Kept as you change them.".into(),
+            line: "Changes save automatically.".into(),
             body: Some(body),
             buttons: vec![
                 spacer(),
@@ -77,10 +77,10 @@ fn setting(key: &str, name: &str, line: impl Into<String>, control: El, p: &Pale
 fn disc(app: &App, p: &Palette) -> El {
     let line = match &app.mods.disc {
         Disc::Found(path) => match path.file_name().and_then(|name| name.to_str()) {
-            Some(name) => format!("{name}. The game tgg-melee plays, as it shipped."),
-            None => "The game tgg-melee plays, as it shipped.".to_owned(),
+            Some(name) => format!("{name}. Clean Melee disc used by tgg-melee."),
+            None => "Clean Melee NTSC 1.02 disc used by tgg-melee.".to_owned(),
         },
-        Disc::Missing => "tgg-melee needs a Melee NTSC 1.02 disc, and none was found.".to_owned(),
+        Disc::Missing => "No Melee NTSC 1.02 disc found.".to_owned(),
         Disc::Unknown | Disc::Looking => "Looking for your disc…".to_owned(),
     };
     setting(
@@ -103,13 +103,11 @@ fn slippi(app: &App, p: &Palette) -> El {
             .file_name()
             .and_then(|name| name.to_str())
         {
-            Some(name) => format!("{name}. Also in Slippi writes skins into this disc."),
-            None => {
-                "Also in Slippi writes a skin into this disc, so Slippi plays it too.".to_owned()
-            }
+            Some(name) => format!("{name}. Skins with \"Also in Slippi\" are written here."),
+            None => "Skins with \"Also in Slippi\" are written to this disc.".to_owned(),
         }
     } else {
-        "Also in Slippi writes a skin into this disc.".to_owned()
+        "Skins with \"Also in Slippi\" are written to this disc.".to_owned()
     };
     setting(
         "settings/game",
@@ -156,7 +154,7 @@ fn image_editor(app: &App, p: &Palette) -> El {
         col()
             .gap(space::XXS)
             .child(
-                text_field(&preferences.editor, "A program, such as aseprite", p)
+                text_field(&preferences.editor, "Command or app path, like aseprite", p)
                     .key("settings/image-editor/field")
                     .on_edit(|app: &mut App| &mut app.preferences.editor),
             )
@@ -181,7 +179,7 @@ fn image_editor(app: &App, p: &Palette) -> El {
     setting(
         "settings/image-editor/row",
         "Image editor",
-        "Where Edit in your image editor opens a texture.",
+        "App used when editing a texture externally.",
         control,
         p,
     )
@@ -251,7 +249,7 @@ fn updates(app: &App, p: &Palette) -> El {
         "settings/updates",
         "Check for updates",
         format!(
-            "Once at launch, the app asks textures.gg whether a newer version is out. You have {}.",
+            "Check textures.gg for app updates at launch. You're on {}.",
             env!("CARGO_PKG_VERSION")
         ),
         switch("settings/updates/switch", on, p)
@@ -266,7 +264,7 @@ fn report(p: &Palette) -> El {
     setting(
         "settings/report",
         "Report a problem",
-        "Sends the app's log to textures.gg, and nothing else.",
+        "Send the app log to textures.gg.",
         button("Report a problem", ButtonKind::Secondary, p)
             .key("settings/report/open")
             .on_press(actions::report_problem),

@@ -35,7 +35,7 @@ pub fn view(app: &App, p: &Palette) -> El {
     } else if !has_disc {
         "Start with your Melee disc."
     } else {
-        "Nothing downloads until you press the button."
+        "Pick your starting mods, then download."
     };
     let mut body = col()
         .w(COLUMN)
@@ -104,7 +104,7 @@ fn disc_row(app: &App, p: &Palette) -> El {
             label(if found {
                 "Found on this computer."
             } else {
-                "We didn't find one on this computer. It's a file that ends in .iso, about 1.4 GB. Slippi uses the same one."
+                "None found on this computer. Pick your 1.4 GB Melee .iso file (the same one Slippi uses)."
             })
             .font(text::BODY)
             .color(p.muted)
@@ -201,7 +201,7 @@ fn mods_row(
     match stage {
         Stage::Ready => {
             body = body.child(
-                label("Pick any. They go into one set, and you can change it on Mods.")
+                label("Pick any to install. You can change your sets later on Mods.")
                     .font(text::BODY)
                     .color(p.muted)
                     .wrap(),
@@ -218,7 +218,7 @@ fn mods_row(
                 .collect();
             body = if offered.is_empty() {
                 body.child(
-                    label("Getting what textures.gg has…")
+                    label("Loading sets from textures.gg…")
                         .font(text::SMALL)
                         .color(p.faint),
                 )

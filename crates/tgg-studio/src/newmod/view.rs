@@ -65,7 +65,7 @@ fn form_parts(new_mod: &NewMod, p: &Palette) -> Dialog {
                     .key("newmod/sdk/fetching")
                     .gap(space::XS)
                     .child(
-                        label("Getting tgg-melee's SDK…")
+                        label("Downloading the tgg-melee SDK…")
                             .font(text::SMALL)
                             .color(p.muted),
                     )
@@ -80,7 +80,7 @@ fn form_parts(new_mod: &NewMod, p: &Palette) -> Dialog {
         }
         Some(Err(why)) => {
             body = body.child(callout(
-                label(format!("Couldn't get the SDK: {why}"))
+                label(format!("Couldn't download the SDK: {why}"))
                     .key("newmod/sdk/failed")
                     .font(text::SMALL)
                     .color(p.danger)
@@ -161,7 +161,7 @@ fn native_note(new_mod: &NewMod, p: &Palette) -> Option<El> {
         .is_some_and(|tools: &Tools| tools.cmake.is_none());
     Some(
         label(if missing {
-            "Native C builds with CMake, which isn't installed. tgg doctor says how to get it."
+            "Native C mods need CMake, which isn't installed. Run tgg doctor for setup steps."
         } else {
             "Native C builds with CMake, one build for each platform."
         })

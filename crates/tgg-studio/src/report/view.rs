@@ -60,7 +60,7 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
         } else {
             "Report a problem".into()
         },
-        line: "Sending shares exactly this, and nothing else.".into(),
+        line: "This is the log that gets sent.".into(),
         body: Some(body),
         buttons: vec![
             button("Close", ButtonKind::Secondary, p)

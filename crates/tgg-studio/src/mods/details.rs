@@ -180,7 +180,7 @@ fn body(app: &App, p: &Palette) -> Option<El> {
             }))
             .children(
                 (mods.details.get(id).is_some_and(Option::is_none)).then(|| {
-                    label("Asking textures.gg for more…")
+                    label("Loading details…")
                         .font(text::SMALL)
                         .color(p.faint)
                 }),
@@ -512,7 +512,7 @@ fn actions_for(app: &App, p: &Palette) -> El {
                 )
         }
         None if mods.port().is_none() => {
-            label("Install tgg-melee first; then this installs in one step.")
+            label("Install tgg-melee first to install this mod.")
                 .font(text::SMALL)
                 .color(p.muted)
                 .wrap()

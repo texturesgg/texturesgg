@@ -316,7 +316,7 @@ fn loading(mods: &Mods) -> bool {
 /// Why the list can't install yet, or has nothing.
 fn note(mods: &Mods, p: &Palette) -> Option<El> {
     let note = if mods.port().is_none() {
-        Some("Install tgg-melee first; then mods install in one step.".to_owned())
+        Some("Install tgg-melee first to install mods.".to_owned())
     } else {
         mods.no_mods.clone()
     };

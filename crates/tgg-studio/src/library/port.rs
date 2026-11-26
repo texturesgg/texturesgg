@@ -177,7 +177,7 @@ fn loader_missing(app: &mut App) -> Option<String> {
         crate::mods::actions::confirm_review(app);
         return Some("Installed in tgg-melee, with tgg.skins.".to_owned());
     }
-    Some("Installed in tgg-melee; it needs tgg.skins.".to_owned())
+    Some("Installed in tgg-melee. Enable tgg.skins to load it.".to_owned())
 }
 
 /// What tgg-melee has in `slot` now, kept so the change can be undone.

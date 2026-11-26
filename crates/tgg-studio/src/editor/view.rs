@@ -215,7 +215,7 @@ fn texture(document: &Document, p: &Palette) -> Option<El> {
                     button("Edit in your image editor", ButtonKind::Secondary, p)
                         .key("editor/external")
                         .help(hint(
-                            "Opens it there; each save there updates it here",
+                            "Opens in your image editor and reloads when you save",
                             Command::EditExternally,
                         ))
                         .on_press(external::edit),

@@ -53,7 +53,7 @@ pub fn edit(app: &mut App) {
             .insert(texture, Watched::new(path));
     }
     app.tell(
-        format!("Editing {name} in your image editor; each save there updates it here."),
+        format!("Editing {name} externally. Saving there updates it here."),
         false,
     );
 }
@@ -104,7 +104,7 @@ pub fn check(app: &mut App, tx: &mut Tx) -> bool {
         let Some(png) = png else {
             if watched.failed_to_decode(at) {
                 app.tell(
-                    format!("Couldn't read {name} as a PNG; save it again to try again."),
+                    format!("Couldn't read {name} as a PNG. Save it again to retry."),
                     true,
                 );
                 changed = true;

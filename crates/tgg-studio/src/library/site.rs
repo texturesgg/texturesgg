@@ -185,7 +185,7 @@ pub fn done(app: &mut App, done: Done) -> bool {
             let then = pending.map_or(Then::Keep, |(_, then)| then);
             match files {
                 Ok(paths) => keep(app, &pack, &title, &paths, then),
-                Err(error) => app.tell(format!("Couldn't get {title}: {error}."), true),
+                Err(error) => app.tell(format!("Couldn't download {title}: {error}."), true),
             }
         }
     }

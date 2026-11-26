@@ -63,7 +63,7 @@ fn sheet(app: &App, p: &Palette) -> Option<El> {
         })
         .and_then(|verdict| match verdict {
             tgg_mod::Verdict::Counts(_) => {
-                Some("In a netplay match this shows the normal file, on your screen only.")
+                Some("Disabled in netplay so matches stay in sync.")
             }
             _ => None,
         });
@@ -93,7 +93,7 @@ fn sheet(app: &App, p: &Palette) -> Option<El> {
                 )
                 .children(netplay.map(|words| label(words).font(text::SMALL).color(p.faint).wrap()))
                 .children(fetching.then(|| {
-                    label("Getting it from textures.gg…")
+                    label("Downloading from textures.gg…")
                         .font(text::SMALL)
                         .color(p.muted)
                 }))
