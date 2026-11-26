@@ -135,7 +135,7 @@ pub fn place_row(glyph: Option<El>, label: &str, current: bool, p: &Palette) -> 
         .child(
             text(label)
                 .font(type_::BODY)
-                .color(if current { p.ink } else { p.muted }),
+                .color(if current { p.ink } else { p.sidebar_label }),
         )
 }
 

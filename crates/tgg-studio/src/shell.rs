@@ -18,13 +18,10 @@ use crate::{
 };
 use rune::{Cx, El, col, el, row, text as label};
 
-/// How far in the sidebar's head starts on macOS, to clear the window's
-/// traffic lights, which sit over it.
-const TRAFFIC_LIGHTS: f32 = 72.0;
-
-pub fn view(app: &App, _: &mut Cx<App>) -> El {
+pub fn view(app: &App, cx: &mut Cx<App>) -> El {
     // Dark only for launch.
     let p = Palette::gallery();
+    let inset = cx.titlebar_inset();
     // First run takes the whole window until there's a disc and tgg-melee;
     // signing in is still asked in its dialog over it.
     if app.first_run.is_some() {
@@ -48,19 +45,19 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
                 app.window_height = rect[3];
             }
         })
-        .child(sidebar(app, &p))
+        .child(sidebar(app, inset, &p))
         .child(
             col()
                 .grow(1.0)
                 .min_w(0.0)
                 .h_full()
                 .fill(p.bg)
-                .child(top_bar(app, &p))
+                .child(top_bar(app, inset, &p))
                 .child(place(app, &p)),
         )
         // Over both, so it stays put while the sidebar slides away under it.
         .child({
-            let (x, y) = toggle_at();
+            let (x, y) = toggle_at(inset);
             toggle(app, &p).absolute(x, y)
         })
         // A mod's details, the whole window tall at its right, as the sidebar is at its left.
@@ -72,7 +69,6 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .children(editor::view::prompt(app, &p))
         .children(mods::review::view(app, &p))
         .children(mods::sheet::view(app, &p))
-        .children(mods::versions::view(app, &p))
         .children(preferences::view::view(app, &p))
         // A select's menu, over Settings.
         .children(preferences::view::menu(app, &p))
@@ -82,18 +78,20 @@ pub fn view(app: &App, _: &mut Cx<App>) -> El {
         .children(newmod::view::view(app, &p))
         .children(crate::sets::view::trust(app, &p))
         // Play's set picker's menu, over Settings, and its friend sheet;
-        // Mods' menus.
+        // Mods' and Skins' menus.
         .children(play::view::menu(app, &p))
         .children(play::view::friend(app, &p))
         .children(mods::view::menu(app, &p))
+        .children(melee::view::menu(app, &p))
 }
 
-/// Where the sidebar's button sits, from the window's top left: in the
-/// sidebar's head, clear of macOS's traffic lights, and in the same place
-/// over the content while the sidebar is hidden.
-fn toggle_at() -> (f32, f32) {
-    let x = if cfg!(target_os = "macos") {
-        TRAFFIC_LIGHTS
+/// Where the sidebar's button sits, from the window's top left: past macOS's
+/// traffic lights when present (`Cx::titlebar_inset`, 0 in full screen and on
+/// other platforms), and in the same place over the content while the sidebar
+/// is hidden.
+fn toggle_at(inset: f32) -> (f32, f32) {
+    let x = if inset > 0.0 {
+        inset + space::XS
     } else {
         space::XS
     };
@@ -126,11 +124,11 @@ fn glyph(place: Place) -> Icon {
 /// The app's name after the sidebar's button (drawn over the head by the
 /// shell), the four places, and the account row with the settings gear at the
 /// foot. Nothing else until friends exist. Hidden, it narrows to nothing.
-fn sidebar(app: &App, p: &Palette) -> El {
+fn sidebar(app: &App, inset: f32, p: &Palette) -> El {
     let shown = app.nav.sidebar;
     let places = Place::ALL.into_iter().map(|place| {
         let current = app.nav.place == place;
-        let ink = if current { p.ink } else { p.faint };
+        let ink = if current { p.ink } else { p.sidebar_icon };
         place_row(Some(icon(glyph(place), ink)), place.label(), current, p)
             .key(place.key())
             .on_press_tx(move |app: &mut App, tx| editor::actions::go(app, place, tx))
@@ -143,7 +141,7 @@ fn sidebar(app: &App, p: &Palette) -> El {
         .child(
             title_bar(row())
                 .h(size::TOP_BAR)
-                .pl(toggle_at().0 - space::XS)
+                .pl(toggle_at(inset).0 - space::XS)
                 .gap(space::XS)
                 .items_center()
                 // Where the shell draws the sidebar's button.
@@ -161,12 +159,20 @@ fn sidebar(app: &App, p: &Palette) -> El {
         .clip_rounded(0.0)
         .fill(p.sunk);
     // Smoked glass where the window is see-through (`tokens::GLASS`); solid
-    // everywhere else. The material is macOS's blur; elsewhere it's a no-op.
-    let base = if crate::ui::tokens::GLASS {
-        base.system_material(rune::SystemMaterial::Popover)
-            .fill(crate::ui::tokens::glass())
+    // everywhere else. On macOS, `SystemMaterial::Popover` replaces the node's
+    // own fill with the native blur view behind the Metal layer, so the dark
+    // glass tint sits on `inner` over it while `base` keeps `p.sunk` as its
+    // opaque fallback.
+    let (base, inner) = if cfg!(target_os = "macos") {
+        (
+            base.system_material(rune::SystemMaterial::Popover)
+                .fill(p.sunk),
+            inner.fill(crate::ui::tokens::glass()),
+        )
+    } else if crate::ui::tokens::GLASS {
+        (base.fill(crate::ui::tokens::glass()), inner)
     } else {
-        base
+        (base, inner)
     };
     base.child(inner)
 }
@@ -176,11 +182,11 @@ fn sidebar(app: &App, p: &Palette) -> El {
 /// place's search and its one action. Only the name springs as the sidebar
 /// slides; the end stays at the window's edge. Its empty stretch moves the
 /// window on macOS.
-fn top_bar(app: &App, p: &Palette) -> El {
+fn top_bar(app: &App, inset: f32, p: &Palette) -> El {
     let start = if app.nav.sidebar {
         space::PAGE
     } else {
-        toggle_at().0 + ICON_BUTTON + space::SM
+        toggle_at(inset).0 + ICON_BUTTON + space::SM
     };
     let name = crumbs(app, p).unwrap_or_else(|| {
         label(app.nav.place.label())

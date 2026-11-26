@@ -62,9 +62,7 @@ fn sheet(app: &App, p: &Palette) -> Option<El> {
             crate::library::port::verdict(app, skin.id, slot)
         })
         .and_then(|verdict| match verdict {
-            tgg_mod::Verdict::Counts(_) => {
-                Some("In a netplay match this shows the normal file, on your screen only.")
-            }
+            tgg_mod::Verdict::Counts(_) => Some("Disabled in netplay so matches stay in sync."),
             _ => None,
         });
     let fetching = app
@@ -93,7 +91,7 @@ fn sheet(app: &App, p: &Palette) -> Option<El> {
                 )
                 .children(netplay.map(|words| label(words).font(text::SMALL).color(p.faint).wrap()))
                 .children(fetching.then(|| {
-                    label("Getting it from textures.gg…")
+                    label("Downloading from textures.gg…")
                         .font(text::SMALL)
                         .color(p.muted)
                 }))

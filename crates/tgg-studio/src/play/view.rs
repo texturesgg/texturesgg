@@ -541,7 +541,7 @@ fn below(app: &App, p: &Palette) -> El {
         .gap(space::XS)
         .child(tile_head(
             "Other queues",
-            "Join one to play its mods for that match. Your set stays as it is.",
+            "Join a queue to play its mods for that match. Your own set stays unchanged.",
             p,
         ))
         .children(queues(app, p));
@@ -564,9 +564,9 @@ fn below(app: &App, p: &Palette) -> El {
 
 fn queues(app: &App, p: &Palette) -> Vec<El> {
     let queues = match &app.play.queues {
-        None => return vec![faint("Asking textures.gg what's open…", p)],
+        None => return vec![faint("Loading queues…", p)],
         Some(Err(_)) => {
-            return vec![quiet("Couldn't read what's open right now.", p)];
+            return vec![quiet("Couldn't load queues right now.", p)];
         }
         Some(Ok(queues)) => queues,
     };
@@ -939,7 +939,7 @@ fn room_state(report: &Room, how: &How, p: &Palette) -> El {
                 host => format!("{host}'s mods"),
             };
             body = body
-                .child(quiet(format!("Getting {whose}"), p))
+                .child(quiet(format!("Downloading {whose}"), p))
                 .child(faint("The game restarts with them and joins again.", p));
         }
         State::Playing => {

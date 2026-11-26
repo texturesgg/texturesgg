@@ -85,22 +85,11 @@ pub fn icon(icon: Icon, color: Color) -> El {
             &[[16.0, 16.0], [20.0, 20.0]],
             false,
         ),
-        Icon::Gear => {
-            let spokes = [
-                [[12.0, 3.0], [12.0, 6.0]],
-                [[12.0, 18.0], [12.0, 21.0]],
-                [[3.0, 12.0], [6.0, 12.0]],
-                [[18.0, 12.0], [21.0, 12.0]],
-                [[5.6, 5.6], [7.7, 7.7]],
-                [[16.3, 16.3], [18.4, 18.4]],
-                [[5.6, 18.4], [7.7, 16.3]],
-                [[16.3, 7.7], [18.4, 5.6]],
-            ];
-            spokes.into_iter().fold(
-                stroke(shape, &arc([12.0, 12.0], 3.0, 0.0, 360.0), true),
-                |shape, spoke| stroke(shape, &spoke, false),
-            )
-        }
+        Icon::Gear => stroke(
+            stroke(shape, &cogwheel([12.0, 12.0], 6.6, 9.4), true),
+            &arc([12.0, 12.0], 3.0, 0.0, 360.0),
+            true,
+        ),
         Icon::Close => stroke(
             stroke(shape, &[[6.0, 6.0], [18.0, 18.0]], false),
             &[[18.0, 6.0], [6.0, 18.0]],
@@ -161,6 +150,35 @@ fn arc(center: [f32; 2], radius: f32, from: f32, to: f32) -> Vec<[f32; 2]> {
             [center[0] + radius * cos, center[1] + radius * sin]
         })
         .collect()
+}
+
+/// A connected 6-tooth mechanical cogwheel outline centered at `center`.
+fn cogwheel(center: [f32; 2], inner: f32, outer: f32) -> Vec<[f32; 2]> {
+    const TEETH: usize = 6;
+    const PITCH: f32 = 360.0 / TEETH as f32;
+    const BASE_HALF: f32 = 14.0;
+    const TIP_HALF: f32 = 9.0;
+    const VALLEY_STEPS: usize = 5;
+    let point = |radius: f32, degrees: f32| {
+        let (sin, cos) = degrees.to_radians().sin_cos();
+        [center[0] + radius * cos, center[1] + radius * sin]
+    };
+    let mut points = Vec::with_capacity(TEETH * (4 + VALLEY_STEPS));
+    for tooth in 0..TEETH {
+        let mid = -90.0 + tooth as f32 * PITCH;
+        points.push(point(inner, mid - BASE_HALF));
+        points.push(point(outer, mid - TIP_HALF));
+        points.push(point(outer, mid + TIP_HALF));
+        points.push(point(inner, mid + BASE_HALF));
+        let valley_start = mid + BASE_HALF;
+        let valley_end = mid + PITCH - BASE_HALF;
+        for step in 1..VALLEY_STEPS {
+            let degrees =
+                valley_start + (valley_end - valley_start) * step as f32 / VALLEY_STEPS as f32;
+            points.push(point(inner, degrees));
+        }
+    }
+    points
 }
 
 /// A rectangle's outline from `at`, `size` big, its corners rounded.

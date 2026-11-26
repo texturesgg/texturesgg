@@ -109,9 +109,16 @@ fn fallback(folder: &Path, mods: &super::Mods) -> Option<Fallback> {
         })
 }
 
-/// Show or hide the versions of tgg-melee.
+/// Show or hide the tgg-melee versions sub-view inside Settings.
 pub fn show_versions(app: &mut App, shown: bool) {
     app.mods.versions = shown;
+    if shown {
+        app.preferences.open = true;
+        app.preferences.menu = None;
+        if app.mods.registry == Registry::NotAsked {
+            fetch(app);
+        }
+    }
 }
 
 pub fn hide_versions(app: &mut App) {

@@ -1,49 +1,65 @@
-//! Versions: tgg-melee's versions, installed and offered, newest first.
-//! The one in use is marked; another installed one can be used or removed,
-//! and one not installed yet installed (and used). It's modal: Escape or a
-//! click outside closes it.
+//! Versions: tgg-melee's versions, installed and offered, newest first,
+//! shown inline inside Settings. The one in use is marked; another installed
+//! one can be used or removed, and one not installed yet installed (and used).
 
-use super::{Mods, actions, size_text};
+use super::{Mods, Registry, actions, size_text};
 use crate::state::App;
 use crate::ui::tokens::{Palette, space, text};
-use crate::ui::{
-    ButtonKind, Dialog, DialogWidth, Tone, badge, button, dialog, rule, spacer, text_action,
-};
-use rune::{El, ScrollSpec, col, row, text as label};
+use crate::ui::{ButtonKind, Tone, badge, button, progress, rule, text_action};
+use rune::{El, col, row, text as label};
 
-/// The list's tallest, in points; longer lists scroll.
-const LIST_HEIGHT: f32 = 360.0;
-
-/// The dialog over a scrim, while it shows.
-pub fn view(app: &App, p: &Palette) -> Option<El> {
+/// The versions list for Settings' inline Versions sub-view.
+pub fn body(app: &App, p: &Palette) -> El {
     let mods = &app.mods;
-    if !mods.versions {
-        return None;
+    let listed = versions(mods);
+    let working = mods.work.as_ref().map(|work| {
+        col()
+            .key("mods/versions/work")
+            .px(space::LG)
+            .py(space::XS)
+            .gap(space::XXS)
+            .child(
+                label(work.label())
+                    .font(text::SMALL)
+                    .color(p.muted)
+                    .truncate(),
+            )
+            .child(progress(work.fraction(), p))
+    });
+    if listed.is_empty() {
+        let empty = if mods.registry == Registry::Asking {
+            col().px(space::LG).py(space::SM).child(
+                label("Checking textures.gg…")
+                    .font(text::BODY)
+                    .color(p.muted),
+            )
+        } else {
+            row()
+                .px(space::LG)
+                .py(space::SM)
+                .gap(space::XS)
+                .items_center()
+                .child(
+                    label("No tgg-melee versions found.")
+                        .font(text::BODY)
+                        .color(p.muted),
+                )
+                .child(
+                    text_action("Check again", false, p)
+                        .key("mods/versions/check")
+                        .on_press(actions::fetch),
+                )
+        };
+        return col().key("mods/versions").children(working).child(empty);
     }
-    let rows = versions(mods)
+    let rows = listed
         .into_iter()
         .enumerate()
         .map(|(index, version)| version_row(mods, &version, index == 0, p));
-    let list = col()
-        .max_h(LIST_HEIGHT)
-        .scroll(ScrollSpec {
-            stick_bottom: false,
-        })
-        .child(col().children(rows.flat_map(|row| [row, rule(p)])));
-    let parts = Dialog {
-        title: "tgg-melee versions".into(),
-        line: "Keep an older version while your mods catch up with a new one; your mods stay installed whichever you use.".into(),
-        body: Some(list),
-        buttons: vec![spacer(), button("Done", ButtonKind::Secondary, p).key("mods/versions/done").on_press(actions::hide_versions)],
-    };
-    Some(dialog(
-        "mods/versions",
-        "dialog",
-        DialogWidth::Narrow,
-        parts,
-        actions::hide_versions,
-        p,
-    ))
+    col()
+        .key("mods/versions")
+        .children(working)
+        .children(rows.flat_map(|row| [row, rule(p)]))
 }
 
 /// Every version: those textures.gg offers, newest first, then any

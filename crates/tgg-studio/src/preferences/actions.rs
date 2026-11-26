@@ -7,6 +7,7 @@ use rune::{FileDialogOptions, Tx};
 /// editor's field showing when the one kept is none of them.
 pub fn open(app: &mut App) {
     crate::mods::actions::read_disk(app);
+    app.mods.versions = false;
     let kept = app.settings.external_editor.clone();
     let apps = tgg_app::image_apps::image_apps();
     let preferences = &mut app.preferences;
@@ -15,6 +16,7 @@ pub fn open(app: &mut App) {
         .is_some_and(|command| !apps.iter().any(|known| known.command == *command));
     preferences.editor.text = kept.unwrap_or_default();
     preferences.apps = apps;
+    preferences.menu = None;
     preferences.open = true;
 }
 
@@ -28,6 +30,8 @@ pub fn close(app: &mut App) {
             app.change_settings(move |settings| settings.external_editor = command.clone());
         }
     }
+    app.mods.versions = false;
+    app.preferences.menu = None;
     app.preferences.open = false;
 }
 

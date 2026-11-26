@@ -130,9 +130,9 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
     }
     if let Some(minor_only) = Status::of_missing(plan) {
         let lead = if minor_only {
-            "A few of the codes its console ran have no mod, but they rarely change a replay: it likely plays as it was."
+            "A few console codes from this replay have no mod yet, though they rarely affect playback."
         } else {
-            "Some of what its game ran can't be had, so it may not play as it was:"
+            "Some mods from this replay aren't available, so playback may differ:"
         };
         let rows = plan
             .missing
@@ -192,12 +192,11 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
                 0
             };
         format!(
-            "It plays with the mods its game had, apart from your own. Yours stay as they are. {} to download.",
+            "Plays with the replay's own mods without changing yours. {} to download.",
             size_text(size)
         )
     } else {
-        "It plays with the mods its game had, apart from your own. Yours stay as they are."
-            .to_owned()
+        "Plays with the replay's own mods without changing yours.".to_owned()
     };
     let parts = Dialog {
         title: "Watch this replay".into(),

@@ -21,7 +21,7 @@ pub fn foot(app: &App, p: &Palette) -> El {
     );
     // Signed out, the person glyph stands where the face would be.
     let mark = who.map_or_else(
-        || crate::ui::person(p.faint),
+        || crate::ui::person(p.sidebar_icon),
         |signed| avatar(&super::shown_name(&signed.account), p),
     );
     let account = row()
@@ -49,7 +49,13 @@ pub fn foot(app: &App, p: &Palette) -> El {
         .child(
             label(name)
                 .font(text::BODY)
-                .color(if who.is_some() { p.ink } else { p.muted })
+                .color(
+                    if who.is_some() || app.nav.place == crate::nav::Place::Profile {
+                        p.ink
+                    } else {
+                        p.sidebar_label
+                    },
+                )
                 .truncate(),
         );
     let settings = icon_button(settings_glyph(p), "Settings", p)

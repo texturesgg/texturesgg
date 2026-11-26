@@ -2,7 +2,7 @@
 //! opening a skin's sheet, and turning a skin on in tgg-melee or writing it
 //! into the player's Melee disc.
 
-use super::{Kind, Melee, Roster, Sheet, Subject, Tab};
+use super::{BrowseSort, Kind, Melee, Menu, Roster, Sheet, Subject, Tab};
 use crate::library::site::{self, Pack, Then};
 use crate::stage::actions as stage;
 use crate::state::App;
@@ -76,7 +76,7 @@ pub fn states_read(
 pub fn opened(app: &mut App) {
     crate::library::actions::request_renders(app);
     crate::library::port::ask_all(app);
-    if app.melee.tab == Tab::Browse && app.persist {
+    if app.melee.tab == Tab::Browse && (app.persist || app.library_page.browse.generation > 0) {
         site::load(app);
     }
 }
@@ -84,12 +84,90 @@ pub fn opened(app: &mut App) {
 pub fn show_tab(app: &mut App, tab: Tab) {
     app.melee.tab = tab;
     app.melee.sheet = None;
+    app.melee.menu = None;
     opened(app);
 }
 
 /// Show only skins of `kind`, or every kind when it's none.
 pub fn show_kind(app: &mut App, kind: Option<Kind>) {
     app.melee.kind = kind;
+    app.melee.menu = None;
+    if app.melee.tab == Tab::Browse {
+        // Drop a selected target if it belongs to a different category.
+        if let (Some(category), Some(slug)) = (
+            kind.and_then(Kind::api_category),
+            app.melee.target.as_deref(),
+        ) {
+            let matches = app
+                .library_page
+                .browse
+                .targets
+                .iter()
+                .find(|target| target.slug == slug)
+                .is_none_or(|target| target.category == category);
+            if !matches {
+                app.melee.target = None;
+            }
+        }
+        requery_browse(app);
+    }
+}
+
+pub fn set_sort(app: &mut App, sort: BrowseSort) {
+    app.melee.sort = sort;
+    app.melee.menu = None;
+    requery_browse(app);
+}
+
+pub fn set_target(app: &mut App, target: Option<String>) {
+    app.melee.target = target;
+    app.melee.menu = None;
+    requery_browse(app);
+}
+
+pub fn submit_search(app: &mut App) {
+    if app.melee.tab == Tab::Browse {
+        requery_browse(app);
+    }
+}
+
+pub fn load_more(app: &mut App) {
+    site::load_more(app);
+}
+
+pub fn clear_browse_filters(app: &mut App) {
+    app.melee.kind = None;
+    app.melee.target = None;
+    app.melee.search.text.clear();
+    app.melee.menu = None;
+    requery_browse(app);
+}
+
+pub fn toggle_menu(app: &mut App, menu: Menu) {
+    app.melee.menu = (app.melee.menu != Some(menu)).then_some(menu);
+}
+
+pub fn close_menu(app: &mut App) {
+    app.melee.menu = None;
+}
+
+/// Open the active Browse filter/search view on textures.gg in the browser.
+pub fn open_browse_on_site(app: &mut App, tx: &mut Tx) {
+    let url = site::browse_web_url(
+        app.melee.sort,
+        app.melee.kind,
+        app.melee.target.as_deref(),
+        &app.melee.search.text,
+    );
+    if let Err(error) = tx.open_url(&url) {
+        app.tell(format!("Couldn't open textures.gg: {error}"), true);
+    }
+}
+
+fn requery_browse(app: &mut App) {
+    if app.persist || app.library_page.browse.generation > 0 {
+        site::query(app);
+    }
 }
 
 /// Open the sheet of the player's skin `id`.
@@ -192,10 +270,13 @@ pub fn choose_costume(app: &mut App, slot: MeleeSlot) {
     crate::library::port::ask(app, skins);
 }
 
-/// Back to the skins: a sheet or the picker closes, then the stage. Whether
-/// there was a level to go up.
+/// Back to the skins: a menu, a sheet or the picker closes, then the stage.
+/// Whether there was a level to go up.
 pub fn back(app: &mut App) -> bool {
-    if app.melee.sheet.take().is_some() || std::mem::take(&mut app.melee.making) {
+    if app.melee.menu.take().is_some()
+        || app.melee.sheet.take().is_some()
+        || std::mem::take(&mut app.melee.making)
+    {
         return true;
     }
     if app.melee.subject.take().is_none() {

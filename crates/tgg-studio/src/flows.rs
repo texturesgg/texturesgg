@@ -110,6 +110,45 @@ fn the_sidebar_hides_whole_and_its_toggle_stays_put() {
 }
 
 #[test]
+fn the_sidebar_toggle_clears_titlebar_inset_and_collapses_in_fullscreen() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    let chrome = rune::Chrome {
+        full_size_content: true,
+        traffic_lights: Some((
+            crate::TRAFFIC_LIGHT_X,
+            ((crate::ui::tokens::size::TOP_BAR - rune::Chrome::TRAFFIC_LIGHT) / 2.0).round(),
+        )),
+        drag_regions: true,
+    };
+    let inset = chrome.titlebar_inset();
+    rt.set_titlebar_inset(inset);
+    settle(&mut rt);
+    let windowed = rt.presented("shell/toggle").expect("the toggle shows").0;
+    assert!(
+        (windowed[0] - (inset + crate::ui::tokens::space::XS)).abs() < 0.5,
+        "toggle x {} should clear traffic lights inset {inset}",
+        windowed[0]
+    );
+    let light_midline = chrome.traffic_light_rects().expect("traffic lights")[0][1]
+        + rune::Chrome::TRAFFIC_LIGHT / 2.0;
+    let toggle_midline = windowed[1] + windowed[3] / 2.0;
+    assert!(
+        (toggle_midline - light_midline).abs() < 0.5,
+        "toggle midline {toggle_midline} should match traffic lights {light_midline}"
+    );
+    // Entering full screen drops the titlebar inset to 0.
+    rt.set_titlebar_inset(0.0);
+    settle(&mut rt);
+    let fullscreen = rt.presented("shell/toggle").expect("the toggle shows").0;
+    assert!(
+        (fullscreen[0] - crate::ui::tokens::space::XS).abs() < 0.5,
+        "toggle x {} should collapse to leading edge in full screen",
+        fullscreen[0]
+    );
+}
+
+#[test]
 fn ctrl_backslash_shows_and_hides_the_sidebar() {
     let (_folder, iso) = melee_iso();
     let (mut rt, _data) = runtime(game_at(&iso));
@@ -2139,6 +2178,45 @@ fn versions_install_switch_and_remove_and_an_installed_newer_one_is_still_an_upd
 }
 
 #[test]
+fn settings_versions_opens_inline_without_stacking_dialogs() {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let (mut rt, _disc, _data) = with_port(net.clone());
+    net.publish_port("0.6.0");
+    rt.update(|app, _| crate::mods::actions::fetch(app));
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered
+    });
+    tap(&mut rt, "sidebar/settings");
+    settle(&mut rt);
+    assert!(rt.find("settings").is_some());
+    assert!(rt.find("settings/versions").is_some());
+    assert!(rt.find("mods/versions/scrim").is_none());
+
+    tap(&mut rt, "settings/versions");
+    settle(&mut rt);
+    // Single Settings dialog swaps inline to Versions: no second modal scrim,
+    // and Versions controls are directly interactive.
+    assert!(rt.find("settings").is_some());
+    assert!(rt.find("mods/versions/scrim").is_none());
+    assert!(rt.find("settings/versions").is_none());
+    assert!(rt.find("mods/versions/0.6.0/install").is_some());
+
+    tap(&mut rt, "mods/versions/back");
+    settle(&mut rt);
+    assert!(rt.find("settings").is_some());
+    assert!(rt.find("settings/versions").is_some());
+    assert!(rt.find("mods/versions/0.6.0/install").is_none());
+
+    tap(&mut rt, "settings/versions");
+    settle(&mut rt);
+    tap(&mut rt, "mods/versions/done");
+    settle(&mut rt);
+    assert!(!rt.state.preferences.open);
+    assert!(!rt.state.mods.versions);
+    assert!(rt.find("settings").is_none());
+}
+
+#[test]
 fn a_newer_tgg_melee_is_offered_and_the_older_one_stays_to_go_back_to() {
     let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
     let (mut rt, _disc, _data) = with_port(net.clone());
@@ -2794,4 +2872,215 @@ fn signed_out_the_account_row_signs_in_instead() {
     tap(&mut rt, "sidebar/account");
     assert!(rt.state.signin.login.is_some(), "the sign-in dialog opens");
     assert_eq!(rt.state.nav.place, Place::Play);
+}
+
+struct BrowseNet {
+    requests: std::sync::Mutex<Vec<String>>,
+}
+
+impl BrowseNet {
+    fn new() -> Self {
+        Self {
+            requests: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn urls(&self) -> Vec<String> {
+        self.requests.lock().unwrap().clone()
+    }
+}
+
+impl tgg_mod::Net for BrowseNet {
+    fn get(&self, url: &str, _limit: u64) -> Result<Vec<u8>, tgg_mod::NetError> {
+        self.requests.lock().unwrap().push(url.to_owned());
+        if url.ends_with("/api/games/melee/targets") {
+            return Ok(br#"[
+                {"name":"Fox","slug":"fox","category":"character","packCount":42},
+                {"name":"Falco","slug":"falco","category":"character","packCount":30},
+                {"name":"Battlefield","slug":"battlefield","category":"stage","packCount":18}
+            ]"#
+            .to_vec());
+        }
+        if url.contains("search=nothing-here") {
+            return Ok(br#"{"items":[],"page":1,"pageSize":24,"total":0,"totalPages":0}"#.to_vec());
+        }
+        if url.contains("target=fox") {
+            return Ok(br#"{
+                "items":[
+                    {"id":"fox-1","title":"Neon Fox","slug":"neon-fox","targetName":"Fox","targetSlug":"fox","targetCategory":"character","creatorName":"jayson"}
+                ],
+                "page":1,"pageSize":24,"total":1,"totalPages":1
+            }"#
+            .to_vec());
+        }
+        if url.contains("category=stage") {
+            return Ok(br#"{
+                "items":[
+                    {"id":"bf-1","title":"Night Battlefield","slug":"night-bf","targetName":"Battlefield","targetSlug":"battlefield","targetCategory":"stage","creatorName":"saavy"}
+                ],
+                "page":1,"pageSize":24,"total":1,"totalPages":1
+            }"#
+            .to_vec());
+        }
+        if url.contains("page=2") {
+            return Ok(br#"{
+                "items":[
+                    {"id":"p3","title":"Third Skin","slug":"third-skin","targetName":"Falco","targetSlug":"falco","targetCategory":"character","creatorName":"alice"}
+                ],
+                "page":2,"pageSize":24,"total":3,"totalPages":2
+            }"#
+            .to_vec());
+        }
+        Ok(br#"{
+            "items":[
+                {"id":"p1","title":"First Skin","slug":"first-skin","targetName":"Fox","targetSlug":"fox","targetCategory":"character","creatorName":"alice"},
+                {"id":"p2","title":"Second Skin","slug":"second-skin","targetName":"Battlefield","targetSlug":"battlefield","targetCategory":"stage","creatorName":"bob"}
+            ],
+            "page":1,"pageSize":24,"total":3,"totalPages":2
+        }"#
+        .to_vec())
+    }
+
+    fn api_url(&self) -> &str {
+        "https://api.test"
+    }
+
+    fn releases_url(&self) -> &str {
+        "https://releases.test"
+    }
+
+    fn meet_url(&self) -> &str {
+        "https://meet.test"
+    }
+}
+
+#[test]
+fn skins_browse_queries_server_for_pagination_sort_filters_and_search() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    let net = std::sync::Arc::new(BrowseNet::new());
+    rt.state.mods.net = net.clone();
+    rt.state.jobs.inline = true;
+
+    tap(&mut rt, Place::Skins.key());
+    rt.update(|app, _| crate::library::site::load(app));
+    poll(&mut rt);
+    settle(&mut rt);
+
+    // Page 1 loaded with targets, showing 2 of 3 skins and a Load more button.
+    assert!(rt.find("skins/site/p1").is_some());
+    assert!(rt.find("skins/site/p2").is_some());
+    assert!(rt.find("skins/site/p3").is_none());
+    assert!(rt.find("skins/browse/more").is_some());
+    assert!(rt.find("skins/target").is_some());
+    assert!(rt.find("skins/sort").is_some());
+    assert!(rt.find("skins/browse/site").is_some());
+
+    // Load more fetches page 2 and appends without dropping page 1.
+    tap(&mut rt, "skins/browse/more");
+    poll(&mut rt);
+    settle(&mut rt);
+    assert!(rt.find("skins/site/p1").is_some());
+    assert!(rt.find("skins/site/p2").is_some());
+    assert!(rt.find("skins/site/p3").is_some());
+    assert!(
+        rt.find("skins/browse/more").is_none(),
+        "Load more hides once the last page is loaded"
+    );
+
+    // Sort picker triggers a fresh page-1 query with sortBy=newest.
+    tap(&mut rt, "skins/sort");
+    rt.frame(FRAME);
+    tap(&mut rt, "skins/sort/newest");
+    poll(&mut rt);
+    settle(&mut rt);
+    assert!(
+        net.urls()
+            .iter()
+            .any(|u| u.contains("sortBy=newest&page=1")),
+        "expected sortBy=newest query in {:?}",
+        net.urls()
+    );
+
+    // Target picker filters server-side by fighter slug.
+    tap(&mut rt, "skins/target");
+    rt.frame(FRAME);
+    tap(&mut rt, "skins/target/fox");
+    poll(&mut rt);
+    settle(&mut rt);
+    assert!(rt.find("skins/site/fox-1").is_some());
+    assert!(
+        net.urls().iter().any(|u| u.contains("target=fox")),
+        "expected target=fox query"
+    );
+
+    // Switching kind to Stages clears the incompatible Fox target and queries category=stage.
+    tap(&mut rt, "skins/kind/Stages");
+    poll(&mut rt);
+    settle(&mut rt);
+    assert_eq!(rt.state.melee.target, None);
+    assert!(rt.find("skins/site/bf-1").is_some());
+    assert!(
+        net.urls()
+            .iter()
+            .any(|u| u.contains("category=stage") && !u.contains("target=fox")),
+        "switching kind should drop incompatible target"
+    );
+
+    // Server-side search with no matches offers Clear filters, which resets and reloads.
+    rt.update(|app, _| {
+        app.melee.search.text = "nothing-here".to_owned();
+        crate::melee::actions::submit_search(app);
+    });
+    poll(&mut rt);
+    settle(&mut rt);
+    assert!(rt.find("skins/browse/empty").is_some());
+    assert!(rt.find("skins/browse/clear").is_some());
+
+    tap(&mut rt, "skins/browse/clear");
+    poll(&mut rt);
+    settle(&mut rt);
+    assert_eq!(rt.state.melee.kind, None);
+    assert_eq!(rt.state.melee.target, None);
+    assert!(rt.state.melee.search.text.is_empty());
+    assert!(rt.find("skins/site/p1").is_some());
+}
+
+#[test]
+fn skins_browse_discards_stale_responses_from_older_queries() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    let net = std::sync::Arc::new(BrowseNet::new());
+    rt.state.mods.net = net;
+    rt.state.jobs.inline = true;
+
+    tap(&mut rt, Place::Skins.key());
+    rt.update(|app, _| crate::library::site::load(app));
+    poll(&mut rt);
+    settle(&mut rt);
+    let current_gen = rt.state.library_page.browse.generation;
+    assert!(current_gen >= 1);
+
+    let stale = crate::library::site::Done::Listed {
+        generation: current_gen - 1,
+        append: false,
+        result: Ok(crate::library::site::ListedPage {
+            items: Vec::new(),
+            page: 1,
+            total: 0,
+            total_pages: 0,
+        }),
+    };
+    let changed = crate::library::site::done(&mut rt.state, stale);
+    assert!(!changed, "stale response must be ignored");
+    assert!(
+        rt.state
+            .library_page
+            .browse
+            .items
+            .as_ref()
+            .and_then(|r| r.as_ref().ok())
+            .is_some_and(|items| items.len() == 2),
+        "existing page stays intact"
+    );
 }

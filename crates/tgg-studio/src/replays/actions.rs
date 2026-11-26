@@ -209,7 +209,10 @@ pub fn done(app: &mut App, done: Done) -> bool {
                 Err(tgg_mod::Error::Cancelled) => {
                     app.tell("Stopped getting the replay's mods.", false)
                 }
-                Err(error) => app.tell(format!("Couldn't get the replay's mods: {error}."), true),
+                Err(error) => app.tell(
+                    format!("Couldn't download the replay's mods: {error}."),
+                    true,
+                ),
             }
         }
         Done::Checked { path, result } => {
