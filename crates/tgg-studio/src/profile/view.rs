@@ -116,15 +116,15 @@ fn skins(app: &App, p: &Palette) -> El {
     let body = if made.is_empty() {
         col()
             .key("profile/skins/empty")
-            .gap(space::XS)
+            .gap(space::SM)
             .child(
                 label("Skins you make and save show here.")
                     .font(text::BODY)
                     .color(p.muted),
             )
             .child(
-                row().ml(-TEXT_ACTION_INSET).child(
-                    text_action("Make a skin", false, p)
+                row().child(
+                    button_small("Make a skin", ButtonKind::Secondary, p)
                         .key("profile/skins/make")
                         .on_press(crate::melee::actions::make),
                 ),
@@ -153,7 +153,7 @@ fn mods(app: &App, p: &Palette) -> El {
     let body = if making.is_empty() {
         col()
             .key("profile/mods/empty")
-            .gap(space::XS)
+            .gap(space::SM)
             .child(
                 label("Mods you start with Start a mod, and run with tgg mod dev, show here.")
                     .font(text::BODY)
@@ -161,8 +161,8 @@ fn mods(app: &App, p: &Palette) -> El {
                     .wrap(),
             )
             .child(
-                row().ml(-TEXT_ACTION_INSET).child(
-                    text_action("Start one on Mods", false, p)
+                row().child(
+                    button_small("Start one on Mods", ButtonKind::Secondary, p)
                         .key("profile/mods/start")
                         .on_press(|app: &mut App| nav::go(app, Place::Mods)),
                 ),

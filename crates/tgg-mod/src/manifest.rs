@@ -267,6 +267,8 @@ pub const TAGS: &[&str] = &[
     "netplay",
     "replays",
     "training",
+    "mode",
+    "hud",
     "visual",
     "audio",
     "quality-of-life",
@@ -520,5 +522,19 @@ mod tests {
         manifest.target = None;
         manifest.script = true;
         assert_eq!(manifest.kind(), ModKind::Script);
+    }
+
+    #[test]
+    fn check_listing_accepts_mode_and_hud_tags() {
+        let mut manifest =
+            Manifest::new("me.x".parse().unwrap(), "X".into(), Version::new(1, 0, 0));
+        manifest.tags = vec!["mode".into(), "hud".into()];
+        assert!(manifest.check_listing().is_ok());
+
+        manifest.tags = vec!["unknown-tag".into()];
+        assert!(matches!(
+            manifest.check_listing(),
+            Err(ManifestError::Tag(tag)) if tag == "unknown-tag"
+        ));
     }
 }

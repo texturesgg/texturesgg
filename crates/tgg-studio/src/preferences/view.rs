@@ -59,9 +59,12 @@ fn setting(key: &str, name: &str, line: impl Into<String>, control: El, p: &Pale
 /// tgg-melee's disc: the game it plays, as the game shipped.
 fn disc(app: &App, p: &Palette) -> El {
     let line = match &app.mods.disc {
-        Disc::Found(_) => "The game tgg-melee plays, as it shipped.",
-        Disc::Missing => "tgg-melee needs a Melee NTSC 1.02 disc, and none was found.",
-        Disc::Unknown | Disc::Looking => "Looking for your disc…",
+        Disc::Found(path) => match path.file_name().and_then(|name| name.to_str()) {
+            Some(name) => format!("{name}. The game tgg-melee plays, as it shipped."),
+            None => "The game tgg-melee plays, as it shipped.".to_owned(),
+        },
+        Disc::Missing => "tgg-melee needs a Melee NTSC 1.02 disc, and none was found.".to_owned(),
+        Disc::Unknown | Disc::Looking => "Looking for your disc…".to_owned(),
     };
     setting(
         "settings/disc",
@@ -76,10 +79,20 @@ fn disc(app: &App, p: &Palette) -> El {
 
 /// Slippi's ISO: where "Also in Slippi" writes a skin, and choosing another.
 fn slippi(app: &App, p: &Palette) -> El {
-    let line = if app.game.is_some() {
-        "Also in Slippi writes a skin into this disc, so Slippi plays it too."
+    let line = if let Some(game) = &app.game {
+        match game
+            .game()
+            .path()
+            .file_name()
+            .and_then(|name| name.to_str())
+        {
+            Some(name) => format!("{name}. Also in Slippi writes skins into this disc."),
+            None => {
+                "Also in Slippi writes a skin into this disc, so Slippi plays it too.".to_owned()
+            }
+        }
     } else {
-        "Also in Slippi writes a skin into this disc."
+        "Also in Slippi writes a skin into this disc.".to_owned()
     };
     setting(
         "settings/game",

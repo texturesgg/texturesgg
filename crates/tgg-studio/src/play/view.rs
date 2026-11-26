@@ -56,8 +56,6 @@ const LIVE_PULSE: LoopSpec = LoopSpec::opacity(1.8, 0.0, 0.3, 1.0);
 const BUSY: f32 = 0.4;
 /// The width of the last matches, beside the queues.
 const MATCHES: f32 = 384.0;
-/// The won or lost mark at a match row's start.
-const RESULT_MARK: f32 = 3.0;
 /// How many of a queue's mods are named before "+ N more".
 const NAMED_MODS: usize = 3;
 /// A fighter's picture in a match row.
@@ -707,17 +705,16 @@ fn match_row(app: &App, item: &crate::replays::Item, index: usize, p: &Palette) 
         }));
     let detail = detail_of(app, info);
     let path = item.path.clone();
-    // Green for a win, red for a loss, nothing when the replay doesn't say
+    // Green for a win, red for a loss, faint when the replay doesn't say
     // which player was this one.
     let won = actions::player_of(app, info).map(|me| info.winner == Some(me.port));
-    let mark = el()
-        .w(RESULT_MARK)
-        .h(FIGHTER)
-        .radius(RESULT_MARK / 2.0)
+    let outcome_dot = el()
+        .size(LIVE_DOT, LIVE_DOT)
+        .radius(LIVE_DOT / 2.0)
         .fill(match won {
             Some(true) => p.success,
             Some(false) => p.danger,
-            None => p.line,
+            None => p.faint,
         });
     list_row(p)
         .key(format!("play/match/{index}"))
@@ -725,7 +722,6 @@ fn match_row(app: &App, item: &crate::replays::Item, index: usize, p: &Palette) 
         .role("button")
         .focusable(true)
         .on_press(move |app: &mut App| crate::replays::actions::play(app, &path))
-        .child(mark)
         .child(fighters)
         .child(
             col()
@@ -733,10 +729,17 @@ fn match_row(app: &App, item: &crate::replays::Item, index: usize, p: &Palette) 
                 .min_w(0.0)
                 .gap(space::TIGHT)
                 .child(
-                    label(result(app, info))
-                        .font(text::STRONG)
-                        .color(p.ink)
-                        .truncate(),
+                    row()
+                        .gap(space::XS)
+                        .items_center()
+                        .child(outcome_dot)
+                        .child(
+                            label(result(app, info))
+                                .font(text::STRONG)
+                                .color(p.ink)
+                                .truncate()
+                                .min_w(0.0),
+                        ),
                 )
                 .children(
                     (!detail.is_empty())

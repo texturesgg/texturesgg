@@ -7,7 +7,8 @@ use crate::mods::{Disc, Registry, Work, size_text};
 use crate::state::App;
 use crate::ui::tokens::{Palette, radius, size, space, text};
 use crate::ui::{
-    ButtonKind, Icon, button, button_main, icon, page_head, progress, text_action, title_bar,
+    ButtonKind, Icon, button, button_main, icon, page_head, progress, spacer, text_action,
+    title_bar,
 };
 use rune::{El, ScrollSpec, col, el, row, text as label};
 
@@ -329,14 +330,16 @@ fn pick(link: &str, set: &tgg_mod::Set, on: bool, enabled: bool, p: &Palette) ->
         )
         .child(
             col()
+                .grow(1.0)
                 .gap(space::TIGHT)
                 .children((!set.description.is_empty()).then(|| {
                     label(set.description.clone())
                         .font(text::SMALL)
                         .color(p.muted)
                         .wrap()
-                        .max_lines(2)
+                        .max_lines(3)
                 }))
+                .child(spacer())
                 .child(label(mods).font(text::SMALL).color(p.faint)),
         )
 }
