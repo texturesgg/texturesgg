@@ -78,10 +78,11 @@ pub fn view(app: &App, cx: &mut Cx<App>) -> El {
         .children(newmod::view::view(app, &p))
         .children(crate::sets::view::trust(app, &p))
         // Play's set picker's menu, over Settings, and its friend sheet;
-        // Mods' menus.
+        // Mods' and Skins' menus.
         .children(play::view::menu(app, &p))
         .children(play::view::friend(app, &p))
         .children(mods::view::menu(app, &p))
+        .children(melee::view::menu(app, &p))
 }
 
 /// Where the sidebar's button sits, from the window's top left: past macOS's

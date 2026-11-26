@@ -51,6 +51,9 @@ impl Kind {
         Kind::Menus,
     ];
 
+    /// The kinds textures.gg's `/api/packs` `category` parameter supports.
+    pub const BROWSE: [Kind; 4] = [Kind::Fighters, Kind::Stages, Kind::Menus, Kind::Effects];
+
     pub fn label(self) -> &'static str {
         match self {
             Kind::Fighters => "Fighters",
@@ -60,6 +63,81 @@ impl Kind {
             Kind::Menus => "Menus",
         }
     }
+
+    /// The `/api/packs` `category` query value for this kind.
+    pub fn api_category(self) -> Option<&'static str> {
+        match self {
+            Kind::Fighters => Some("character"),
+            Kind::Stages => Some("stage"),
+            Kind::Effects => Some("audio"),
+            Kind::Menus => Some("ui"),
+            Kind::Hud => None,
+        }
+    }
+
+    /// The textures.gg web Browse `type` query value for this kind.
+    pub fn web_type(self) -> Option<&'static str> {
+        match self {
+            Kind::Fighters => Some("character"),
+            Kind::Stages => Some("stage"),
+            Kind::Menus => Some("ui"),
+            Kind::Effects | Kind::Hud => None,
+        }
+    }
+}
+
+/// Sort order for Skins Browse (`GET /api/packs?sortBy=...`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BrowseSort {
+    #[default]
+    Hot,
+    Newest,
+    Top,
+    Downloads,
+}
+
+impl BrowseSort {
+    pub const ALL: [BrowseSort; 4] = [
+        BrowseSort::Hot,
+        BrowseSort::Newest,
+        BrowseSort::Top,
+        BrowseSort::Downloads,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            BrowseSort::Hot => "Hot",
+            BrowseSort::Newest => "Newest",
+            BrowseSort::Top => "Top",
+            BrowseSort::Downloads => "Downloads",
+        }
+    }
+
+    pub fn api_value(self) -> &'static str {
+        match self {
+            BrowseSort::Hot => "hot",
+            BrowseSort::Newest => "newest",
+            BrowseSort::Top => "top",
+            BrowseSort::Downloads => "downloads",
+        }
+    }
+
+    /// The textures.gg web Browse `sort` query value (`hot` is default).
+    pub fn web_value(self) -> Option<&'static str> {
+        match self {
+            BrowseSort::Hot => None,
+            BrowseSort::Newest => Some("new"),
+            BrowseSort::Top => Some("top"),
+            BrowseSort::Downloads => Some("downloads"),
+        }
+    }
+}
+
+/// Which Browse filter select menu is open.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Menu {
+    Sort,
+    Target,
 }
 
 /// The two halves of the game's roster, for Make a skin's picker.
@@ -85,6 +163,12 @@ pub struct Melee {
     pub tab: Tab,
     /// Only skins of this kind show; all when none.
     pub kind: Option<Kind>,
+    /// Browse sort order for `/api/packs`.
+    pub sort: BrowseSort,
+    /// Selected fighter or stage target slug for Browse (`?target=<slug>`).
+    pub target: Option<String>,
+    /// Which Browse filter select menu is open.
+    pub menu: Option<Menu>,
     /// What the player looks for by name.
     pub search: TextEdit,
     /// The skin's sheet, or Make a skin's picker.

@@ -215,6 +215,8 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
     // Play opens its queues and replays, and keeps its clock and the running
     // game's log read while it shows.
     crate::play::actions::tick(app, tx);
+    // Debounced server-side search on Skins Browse.
+    crate::library::site::tick(app);
     if let Some(picked) = app.stage.picked.take() {
         crate::editor::actions::select_picked(app, &picked, tx);
         changed = true;
