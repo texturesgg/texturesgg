@@ -735,6 +735,10 @@ fn skins_on(app: &mut App, tab: melee::Tab) {
     app.jobs.inline = true;
     nav::actions::go(app, nav::Place::Skins);
     melee::actions::show_tab(app, tab);
+    // A headless run doesn't ask the site on its own; a scene does, for a look.
+    if tab == melee::Tab::Browse {
+        library::site::load(app);
+    }
     poll_inline(app);
     app.jobs.inline = false;
 }
