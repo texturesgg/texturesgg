@@ -326,8 +326,10 @@ fn picker(app: &App, p: &Palette) -> El {
         }))
 }
 
-/// Find a match, Play with a friend, Play offline, all one height; while a
-/// game runs, what it's doing instead of Find a match, with Cancel.
+/// Find a match, Play with a friend, Play offline, all one height. While a
+/// game runs, what it's doing instead of Find a match, with Cancel, and only
+/// Play with a friend for a room (the sheet with its code): another game
+/// can't start beside it.
 fn buttons(app: &App, p: &Palette) -> El {
     let main = match &app.sets.session {
         Some(session) => live(app, session, p),
@@ -339,22 +341,28 @@ fn buttons(app: &App, p: &Palette) -> El {
             .key("play/find")
             .on_press(actions::find),
     };
+    let running = app.mods.playing.is_some() || app.sets.session.is_some();
+    let room = app
+        .sets
+        .session
+        .as_ref()
+        .is_some_and(|session| matches!(session.how, How::Host | How::Join(_)));
     // In a narrow window they wrap rather than run under the fighter.
     row()
         .flex_wrap()
         .gap(space::XS)
         .items_center()
         .child(main)
-        .child(
+        .children((!running || room).then(|| {
             button_main("Play with a friend", ButtonKind::Secondary, p)
                 .key("play/friend")
-                .on_press(actions::open_friend),
-        )
-        .child(
+                .on_press(actions::open_friend)
+        }))
+        .children((!running).then(|| {
             button_main("Play offline", ButtonKind::Secondary, p)
                 .key("play/offline")
-                .on_press(actions::play_offline),
-        )
+                .on_press(actions::play_offline)
+        }))
 }
 
 /// The main button while a game runs: what it's doing, how long it has been

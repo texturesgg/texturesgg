@@ -882,12 +882,12 @@ pub fn plan(
     let mut out: Vec<SetMod> = Vec::new();
     for w in &wanted {
         let skipped = if conflicts.contains(&w.id) {
-            Some("the sets it comes from take versions no release has in common".to_owned())
+            Some("The sets it comes from don't share a version of it.".to_owned())
         } else {
             plan.missing.iter().find_map(|missing| {
                 missing_id(missing)
                     .is_some_and(|id| *id == w.id)
-                    .then(|| missing.to_string())
+                    .then(|| skipped_why(missing))
             })
         };
         let found = loaded(&w.id);
@@ -897,7 +897,7 @@ pub fn plan(
             version: found.map(|(_, version, _)| version.clone()),
             class: found.map(|(.., class)| *class),
             skipped: if found.is_none() {
-                skipped.or_else(|| Some("textures.gg doesn't have it".into()))
+                skipped.or_else(|| Some("textures.gg doesn't have it.".into()))
             } else {
                 None
             },
@@ -939,6 +939,19 @@ fn missing_id(missing: &crate::profile::Missing) -> Option<&ModId> {
         | Missing::Unapproved { id, .. }
         | Missing::Withdrawn { id, .. } => Some(id),
         Missing::NoModFor { .. } => None,
+    }
+}
+
+/// Why a set's mod is skipped, as a sentence that follows its name.
+fn skipped_why(missing: &crate::profile::Missing) -> String {
+    use crate::profile::Missing;
+    match missing {
+        Missing::NotBuilt { .. } => "It isn't built for your tgg-melee yet.".to_owned(),
+        Missing::Unapproved { .. } => "It isn't approved yet.".to_owned(),
+        Missing::Withdrawn { reason, .. } => format!("textures.gg withdrew it ({reason})."),
+        Missing::Unknown { .. } | Missing::NoModFor { .. } => {
+            "textures.gg doesn't have it.".to_owned()
+        }
     }
 }
 

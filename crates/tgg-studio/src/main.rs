@@ -562,7 +562,10 @@ const SCENES: &[Scene] = &[
                 path,
                 plan,
                 remember: false,
-                notices: vec!["Playing without Turbo: withdrawn (crashes on Windows)".to_owned()],
+                notices: vec![
+                    "Playing without Turbo. textures.gg withdrew it (crashes on Windows)."
+                        .to_owned(),
+                ],
             });
         }
         app.jobs.inline = false;
@@ -1273,14 +1276,14 @@ fn notices_scene(app: &mut App) {
     };
     let plan = std::sync::Arc::make_mut(plan);
     plan.notices
-        .push("Competitive changed: added Prevent wobbling".to_owned());
+        .push("textures.gg took Weekend down, so its mods are now part of Friday night".to_owned());
     if let Ok(id) = "tgg.turbo".parse() {
         plan.mods.push(tgg_mod::sets::SetMod {
             id,
             group: tgg_mod::sets::Group::Added,
             version: None,
             class: None,
-            skipped: Some("withdrawn (crashes on Windows)".to_owned()),
+            skipped: Some("textures.gg withdrew it (crashes on Windows).".to_owned()),
         });
     }
 }

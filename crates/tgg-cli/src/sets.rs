@@ -363,7 +363,7 @@ pub fn run_set(api: &str, key: &str, yes: bool, verbose: bool) -> Result<()> {
     }
     for m in plan.skipped() {
         println!(
-            "Playing without {}: {}",
+            "Playing without {}. {}",
             m.id,
             m.skipped.as_deref().unwrap_or_default()
         );

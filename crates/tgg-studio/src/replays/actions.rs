@@ -218,7 +218,7 @@ pub fn done(app: &mut App, done: Done) -> bool {
             let notices = match result {
                 Ok(notices) => notices
                     .iter()
-                    .map(|notice| withdrawal_words(app, notice))
+                    .map(|notice| crate::sets::actions::withdrawn_words(app, notice))
                     .collect::<Vec<String>>(),
                 Err(error) => {
                     // Never blocks watching: say it couldn't be checked.
@@ -368,23 +368,6 @@ fn play_checked(app: &mut App, path: &Path, plan: ProfilePlan) {
         remember: false,
         notices: Vec::new(),
     });
-}
-
-/// A withdrawal in the player's words. The mod is named as textures.gg
-/// names it.
-fn withdrawal_words(app: &App, notice: &tgg_mod::WithdrawNotice) -> String {
-    let name = crate::sets::actions::mod_name(app, &notice.id);
-    match notice.action {
-        tgg_mod::WithdrawAction::TurnedOff => {
-            format!("Playing without {name}: withdrawn ({})", notice.reason)
-        }
-        tgg_mod::WithdrawAction::Warned => {
-            format!("{name} was withdrawn ({}). It's still on.", notice.reason)
-        }
-        tgg_mod::WithdrawAction::TurnedOn => {
-            format!("{name} is back on. textures.gg restored it.")
-        }
-    }
 }
 
 /// Ask for a replay file with the system's dialog, then watch it as one the
