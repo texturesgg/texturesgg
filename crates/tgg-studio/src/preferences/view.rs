@@ -22,24 +22,41 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
     if !app.preferences.open {
         return None;
     }
-    let body = col().children([
-        disc(app, p),
-        slippi(app, p),
-        tgg_melee(app, p),
-        image_editor(app, p),
-        updates(app, p),
-        report(p),
-    ]);
-    let parts = Dialog {
-        title: "Settings".into(),
-        line: "Kept as you change them.".into(),
-        body: Some(body),
-        buttons: vec![
-            spacer(),
-            button("Done", ButtonKind::Secondary, p)
-                .key("settings/done")
-                .on_press(actions::close),
-        ],
+    let parts = if app.mods.versions {
+        Dialog {
+            title: "tgg-melee versions".into(),
+            line: "Keep an older version if your mods haven't updated yet. Your mods stay installed either way.".into(),
+            body: Some(crate::mods::versions::body(app, p)),
+            buttons: vec![
+                button("Back", ButtonKind::Secondary, p)
+                    .key("mods/versions/back")
+                    .on_press(crate::mods::actions::hide_versions),
+                spacer(),
+                button("Done", ButtonKind::Secondary, p)
+                    .key("mods/versions/done")
+                    .on_press(actions::close),
+            ],
+        }
+    } else {
+        let body = col().children([
+            disc(app, p),
+            slippi(app, p),
+            tgg_melee(app, p),
+            image_editor(app, p),
+            updates(app, p),
+            report(p),
+        ]);
+        Dialog {
+            title: "Settings".into(),
+            line: "Kept as you change them.".into(),
+            body: Some(body),
+            buttons: vec![
+                spacer(),
+                button("Done", ButtonKind::Secondary, p)
+                    .key("settings/done")
+                    .on_press(actions::close),
+            ],
+        }
     };
     Some(dialog(
         "settings",
@@ -116,7 +133,7 @@ fn tgg_melee(app: &App, p: &Palette) -> El {
         .gap(space::XXS)
         .items_center()
         .child(
-            text_action("Versions…", false, p)
+            text_action("Versions", false, p)
                 .key("settings/versions")
                 .on_press(|app: &mut App| crate::mods::actions::show_versions(app, true)),
         )
@@ -189,7 +206,7 @@ fn editor_value(app: &App) -> String {
 
 /// The open select's menu, at the window's root over Settings.
 pub fn menu(app: &App, p: &Palette) -> Option<El> {
-    if !app.preferences.open {
+    if !app.preferences.open || app.mods.versions {
         return None;
     }
     match app.preferences.menu? {

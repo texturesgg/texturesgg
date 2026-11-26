@@ -69,7 +69,6 @@ pub fn view(app: &App, cx: &mut Cx<App>) -> El {
         .children(editor::view::prompt(app, &p))
         .children(mods::review::view(app, &p))
         .children(mods::sheet::view(app, &p))
-        .children(mods::versions::view(app, &p))
         .children(preferences::view::view(app, &p))
         // A select's menu, over Settings.
         .children(preferences::view::menu(app, &p))

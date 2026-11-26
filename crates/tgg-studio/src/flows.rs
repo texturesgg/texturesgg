@@ -2178,6 +2178,45 @@ fn versions_install_switch_and_remove_and_an_installed_newer_one_is_still_an_upd
 }
 
 #[test]
+fn settings_versions_opens_inline_without_stacking_dialogs() {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let (mut rt, _disc, _data) = with_port(net.clone());
+    net.publish_port("0.6.0");
+    rt.update(|app, _| crate::mods::actions::fetch(app));
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered
+    });
+    tap(&mut rt, "sidebar/settings");
+    settle(&mut rt);
+    assert!(rt.find("settings").is_some());
+    assert!(rt.find("settings/versions").is_some());
+    assert!(rt.find("mods/versions/scrim").is_none());
+
+    tap(&mut rt, "settings/versions");
+    settle(&mut rt);
+    // Single Settings dialog swaps inline to Versions: no second modal scrim,
+    // and Versions controls are directly interactive.
+    assert!(rt.find("settings").is_some());
+    assert!(rt.find("mods/versions/scrim").is_none());
+    assert!(rt.find("settings/versions").is_none());
+    assert!(rt.find("mods/versions/0.6.0/install").is_some());
+
+    tap(&mut rt, "mods/versions/back");
+    settle(&mut rt);
+    assert!(rt.find("settings").is_some());
+    assert!(rt.find("settings/versions").is_some());
+    assert!(rt.find("mods/versions/0.6.0/install").is_none());
+
+    tap(&mut rt, "settings/versions");
+    settle(&mut rt);
+    tap(&mut rt, "mods/versions/done");
+    settle(&mut rt);
+    assert!(!rt.state.preferences.open);
+    assert!(!rt.state.mods.versions);
+    assert!(rt.find("settings").is_none());
+}
+
+#[test]
 fn a_newer_tgg_melee_is_offered_and_the_older_one_stays_to_go_back_to() {
     let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
     let (mut rt, _disc, _data) = with_port(net.clone());
