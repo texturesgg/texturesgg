@@ -32,11 +32,18 @@ pub fn view(app: &App, p: &Palette) -> El {
                 actions::scan(app);
             })
     };
-    let head = row()
-        .items_center()
-        .child(filters(replays, p))
-        .child(spacer())
-        .child(row().mr(-TEXT_ACTION_INSET).child(refresh));
+    let head = if replays.scanned && replays.items.is_empty() {
+        row()
+            .items_center()
+            .child(spacer())
+            .child(row().mr(-TEXT_ACTION_INSET).child(refresh))
+    } else {
+        row()
+            .items_center()
+            .child(filters(replays, p))
+            .child(spacer())
+            .child(row().mr(-TEXT_ACTION_INSET).child(refresh))
+    };
     let shown = replays.shown();
     let body: Vec<El> = if !replays.scanned {
         (0..PLACEHOLDERS)

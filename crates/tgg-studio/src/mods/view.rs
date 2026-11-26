@@ -229,17 +229,26 @@ fn working(work: &super::Work, p: &Palette) -> El {
     .key("mods/work")
 }
 
-/// The filter chips: All, Rules, Training, Online modes, On screen.
+/// The filter chips: All, Rules, Training, Replays, On screen, Online modes.
+/// Categories with no matching mods stay hidden once the registry has answered,
+/// unless currently picked.
 fn filters(mods: &Mods, p: &Palette) -> El {
+    let loaded = !mods.listings.is_empty() || mods.catalog.is_some();
     row()
         .gap(space::SNUG)
         .flex_wrap()
-        .children(super::Filter::ALL.map(|filter| {
-            chip(filter.label(), mods.filter == filter, p)
-                .key(format!("mods/filter/{}", filter.label()))
-                .role("radio")
-                .checked(mods.filter == filter)
-                .on_press(move |app: &mut App| actions::set_filter(app, filter))
+        .children(super::Filter::ALL.into_iter().filter_map(|filter| {
+            let show = !loaded
+                || filter == super::Filter::All
+                || filter == mods.filter
+                || mods.filter_count(filter) > 0;
+            show.then(|| {
+                chip(filter.label(), mods.filter == filter, p)
+                    .key(format!("mods/filter/{}", filter.label()))
+                    .role("radio")
+                    .checked(mods.filter == filter)
+                    .on_press(move |app: &mut App| actions::set_filter(app, filter))
+            })
         }))
 }
 

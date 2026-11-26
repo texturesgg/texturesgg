@@ -192,18 +192,20 @@ pub enum Filter {
     All,
     Rules,
     Training,
-    OnlineModes,
+    Replays,
     OnScreen,
+    OnlineModes,
 }
 
 impl Filter {
     /// Every filter, in the order the chips show.
-    pub const ALL: [Filter; 5] = [
+    pub const ALL: [Filter; 6] = [
         Filter::All,
         Filter::Rules,
         Filter::Training,
-        Filter::OnlineModes,
+        Filter::Replays,
         Filter::OnScreen,
+        Filter::OnlineModes,
     ];
 
     pub fn label(self) -> &'static str {
@@ -211,24 +213,26 @@ impl Filter {
             Filter::All => "All",
             Filter::Rules => "Rules",
             Filter::Training => "Training",
-            Filter::OnlineModes => "Online modes",
+            Filter::Replays => "Replays",
             Filter::OnScreen => "On screen",
+            Filter::OnlineModes => "Online modes",
         }
     }
 
     /// Whether a mod tagged `tags` shows under it. The registry's tags are
     /// the only thing each mod says about itself that these can read:
     /// `competitive` changes how a match plays, `training` drills it,
-    /// `netplay` is what online play is built on, and `visual` is what only
-    /// your screen shows.
+    /// `replays` records or plays back matches, `hud` and `visual` show on
+    /// your screen, and `mode` is a standalone game mode.
     pub fn shows(self, tags: &[String]) -> bool {
         let has = |tag: &str| tags.iter().any(|have| have == tag);
         match self {
             Filter::All => true,
             Filter::Rules => has("competitive"),
             Filter::Training => has("training"),
-            Filter::OnlineModes => has("netplay"),
-            Filter::OnScreen => has("visual"),
+            Filter::Replays => has("replays"),
+            Filter::OnScreen => has("hud") || has("visual"),
+            Filter::OnlineModes => has("mode"),
         }
     }
 }
@@ -357,6 +361,22 @@ impl Mods {
                 .get(id)
                 .map_or(&[], |summary| summary.tags.as_slice())
         })
+    }
+
+    /// How many offered or listed mods match `filter`.
+    pub fn filter_count(&self, filter: Filter) -> usize {
+        let offered = self.offered();
+        let built = offered
+            .iter()
+            .filter(|entry| filter.shows(self.tags(&entry.manifest.id)))
+            .count();
+        let unbuilt = self
+            .listings
+            .values()
+            .filter(|summary| !offered.iter().any(|entry| entry.manifest.id == summary.id))
+            .filter(|summary| filter.shows(&summary.tags))
+            .count();
+        built + unbuilt
     }
 
     /// The mods the registry lists that aren't built for this tgg-melee yet,
@@ -630,7 +650,7 @@ pub fn size_text(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::size_text;
+    use super::{Filter, size_text};
 
     #[test]
     fn sizes_read_as_a_player_reads_them() {
@@ -638,6 +658,21 @@ mod tests {
         assert_eq!(size_text(840_000), "840 KB");
         assert_eq!(size_text(12_400_000), "12.4 MB");
         assert_eq!(size_text(2_500_000_000), "2.50 GB");
+    }
+
+    #[test]
+    fn filters_match_the_aligned_manifest_tags() {
+        let tags = |items: &[&str]| items.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert!(Filter::Rules.shows(&tags(&["competitive"])));
+        assert!(Filter::Training.shows(&tags(&["training"])));
+        assert!(Filter::Replays.shows(&tags(&["replays"])));
+        assert!(Filter::OnScreen.shows(&tags(&["hud"])));
+        assert!(Filter::OnScreen.shows(&tags(&["visual"])));
+        assert!(Filter::OnlineModes.shows(&tags(&["mode"])));
+        assert!(
+            !Filter::OnlineModes.shows(&tags(&["netplay"])),
+            "netplay plumbing isn't a standalone online mode"
+        );
     }
 }
 
