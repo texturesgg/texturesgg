@@ -2,10 +2,10 @@ name: Release
 
 # A tag `app-v<version>` (the version in crates/tgg-studio/Cargo.toml)
 # builds the app for macOS, Linux and Windows, publishes a GitHub release
-# with all three, and points the app's update check and textures.gg's
-# download page at it (studio/latest.json, scripts/studio-latest.sh). A pull
-# request that changes the packaging builds the packages, unsigned, without
-# publishing.
+# with all three, mirrors the durable packages to R2 (vgskins-assets/studio/<version>/),
+# and points the app's update check and textures.gg's download page at it
+# (studio/latest.json, scripts/studio-latest.sh). A pull request that changes
+# the packaging builds the packages, unsigned, without publishing.
 #
 # Secrets, in the `release` environment:
 #   MACOS_CERTIFICATE_P12, MACOS_CERTIFICATE_PASSWORD
@@ -30,14 +30,17 @@ on:
 permissions:
   contents: read
 
+env:
+  CI_STAGE: _ci/app-${{ github.run_id }}-${{ github.run_attempt }}
+
 jobs:
   linux:
     name: Linux package
     # The oldest supported runner, so the binary needs only an older glibc.
     runs-on: blacksmith-8vcpu-ubuntu-2204
+    environment: ${{ startsWith(github.ref, 'refs/tags/') && 'release' || '' }}
     steps:
       - uses: actions/checkout@v7
-
       - name: Install the app's Linux dependencies
         run: |
           sudo apt-get update -qq
@@ -56,11 +59,15 @@ jobs:
 
       - run: scripts/package-linux.sh
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: linux
-          path: target/package/*.tar.gz
-          if-no-files-found: error
+      - name: Stage package in R2
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          tar -cf pkg.tar -C target/package .
+          npx --yes wrangler@4.146.0 r2 object put "vgskins-assets/$CI_STAGE/linux.tar" \
+            --file pkg.tar --content-type application/x-tar --cache-control "no-store" --remote
 
   macos:
     name: macOS package
@@ -119,15 +126,20 @@ jobs:
 
       - run: scripts/package-macos.sh
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos
-          path: target/package/*.dmg
-          if-no-files-found: error
+      - name: Stage package in R2
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          tar -cf pkg.tar -C target/package .
+          npx --yes wrangler@4.146.0 r2 object put "vgskins-assets/$CI_STAGE/macos.tar" \
+            --file pkg.tar --content-type application/x-tar --cache-control "no-store" --remote
 
   windows:
     name: Windows package
     runs-on: blacksmith-4vcpu-windows-2025
+    environment: ${{ startsWith(github.ref, 'refs/tags/') && 'release' || '' }}
     defaults:
       run:
         shell: bash
@@ -144,13 +156,15 @@ jobs:
 
       - run: scripts/package-windows.sh
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows
-          path: |
-            target/package/*-setup.exe
-            target/package/*.zip
-          if-no-files-found: error
+      - name: Stage package in R2
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          tar -cf pkg.tar -C target/package .
+          npx --yes wrangler@4.146.0 r2 object put "vgskins-assets/$CI_STAGE/windows.tar" \
+            --file pkg.tar --content-type application/x-tar --cache-control "no-store" --remote
 
   publish:
     name: Publish
@@ -164,10 +178,18 @@ jobs:
       # For scripts/studio-latest.sh.
       - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
-        with:
-          path: packages
-          merge-multiple: true
+      - name: Fetch staged packages from R2
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -eu
+          mkdir -p packages
+          for plat in linux macos windows; do
+            npx --yes wrangler@4.146.0 r2 object get "vgskins-assets/$CI_STAGE/$plat.tar" \
+              --file "$plat.tar" --remote
+            tar -xf "$plat.tar" -C packages
+          done
 
       - name: Create the GitHub release
         env:
@@ -181,16 +203,47 @@ jobs:
               --title "textures.gg ${GITHUB_REF_NAME#app-v}" --generate-notes
           fi
 
-      # Last, so neither the app nor the download page hears of a version
-      # whose files aren't up yet. (tgg-editor's own check, editor/latest.json,
-      # is left alone: the site tells its players about tgg-studio.)
-      - name: Point the update check and the download page at it
+      # Mirror durable packages to R2, then update studio/latest.json last so
+      # neither the app nor the download page hears of a version whose files
+      # aren't up yet.
+      - name: Mirror packages and point the update check and download page at it
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
+          set -eu
+          v="${GITHUB_REF_NAME#app-v}"
+          shopt -s nullglob
+          for f in packages/*; do
+            case "$f" in
+              *.tar.gz) ct=application/gzip ;;
+              *.zip) ct=application/zip ;;
+              *.dmg) ct=application/x-apple-diskimage ;;
+              *.exe) ct=application/vnd.microsoft.portable-executable ;;
+              *) ct=application/octet-stream ;;
+            esac
+            npx --yes wrangler@4.146.0 r2 object put "vgskins-assets/studio/$v/$(basename "$f")" \
+              --file "$f" --content-type "$ct" \
+              --cache-control "public, max-age=31536000, immutable" --remote
+          done
           scripts/studio-latest.sh packages "$GITHUB_REF_NAME" "$GITHUB_REPOSITORY" >latest.json
           cat latest.json
           npx --yes wrangler@4.146.0 r2 object put vgskins-assets/studio/latest.json \
             --file latest.json --content-type application/json \
             --cache-control "public, max-age=300" --remote
+
+  cleanup:
+    name: Clean up staging
+    needs: [linux, macos, windows, publish]
+    if: always() && startsWith(github.ref, 'refs/tags/')
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    environment: release
+    steps:
+      - name: Remove temporary R2 staging objects
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          for plat in linux macos windows; do
+            npx --yes wrangler@4.146.0 r2 object delete "vgskins-assets/$CI_STAGE/$plat.tar" --remote || true
+          done
