@@ -10,8 +10,11 @@ pub const DEFAULT_API: &str = "https://api.textures.gg";
 /// Where tgg-melee releases are published, unless `TGG_RELEASES` names
 /// another mirror (a URL, or a folder laid out the same way).
 pub const DEFAULT_RELEASES: &str = "https://dl.textures.gg/tgg-melee";
+/// The meeting point matchmaking runs through, unless `TGG_MEET_URL` (the
+/// game's own setting, a `ws://` or `wss://` URL) names another.
+pub const DEFAULT_MEET: &str = "https://meet.textures.gg/v1";
 
-/// Where the registry and port releases come from.
+/// Where the registry, port releases and matchmaking queues come from.
 pub trait Net: Send + Sync {
     /// The body at `url`, refusing one longer than `limit` bytes.
     fn get(&self, url: &str, limit: u64) -> Result<Vec<u8>, NetError>;
@@ -39,6 +42,9 @@ pub trait Net: Send + Sync {
 
     /// The release mirror's base URL (or folder), without a trailing `/`.
     fn releases_url(&self) -> &str;
+
+    /// The meeting point's base URL over HTTP, without a trailing `/`.
+    fn meet_url(&self) -> &str;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -63,25 +69,26 @@ pub enum NetError {
 pub struct HttpNet {
     api: String,
     releases: String,
+    meet: String,
     agent: ureq::Agent,
     token: Option<String>,
 }
 
 impl HttpNet {
-    /// textures.gg and its mirror, or the ones `TGG_API` and `TGG_RELEASES`
-    /// name. `user_agent` names the program, such as `tgg/0.4.0`.
+    /// textures.gg, its mirror and its meeting point, or the ones `TGG_API`,
+    /// `TGG_RELEASES` and `TGG_MEET_URL` name. `user_agent` names the
+    /// program, such as `tgg/0.4.0`.
     pub fn new(user_agent: &str) -> Self {
-        let var = |name: &str, default: &str| {
-            std::env::var(name)
-                .ok()
-                .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| default.to_owned())
-        };
-        Self::with_urls(
+        let var = |name: &str| std::env::var(name).ok().filter(|value| !value.is_empty());
+        let mut net = Self::with_urls(
             user_agent,
-            &var("TGG_API", DEFAULT_API),
-            &var("TGG_RELEASES", DEFAULT_RELEASES),
-        )
+            &var("TGG_API").unwrap_or_else(|| DEFAULT_API.to_owned()),
+            &var("TGG_RELEASES").unwrap_or_else(|| DEFAULT_RELEASES.to_owned()),
+        );
+        if let Some(meet) = var("TGG_MEET_URL") {
+            net.meet = meet_over_http(&meet);
+        }
+        net
     }
 
     pub fn with_urls(user_agent: &str, api: &str, releases: &str) -> Self {
@@ -93,6 +100,7 @@ impl HttpNet {
         Self {
             api: api.trim_end_matches('/').to_owned(),
             releases: releases.trim_end_matches('/').to_owned(),
+            meet: DEFAULT_MEET.to_owned(),
             agent,
             token: None,
         }
@@ -217,5 +225,22 @@ impl Net for HttpNet {
 
     fn releases_url(&self) -> &str {
         &self.releases
+    }
+
+    fn meet_url(&self) -> &str {
+        &self.meet
+    }
+}
+
+/// The meeting point at `url` as the game names it (`wss://…/v1`), over
+/// HTTP(S), without a trailing `/`.
+fn meet_over_http(url: &str) -> String {
+    let url = url.trim_end_matches('/');
+    if let Some(rest) = url.strip_prefix("wss://") {
+        format!("https://{rest}")
+    } else if let Some(rest) = url.strip_prefix("ws://") {
+        format!("http://{rest}")
+    } else {
+        url.to_owned()
     }
 }

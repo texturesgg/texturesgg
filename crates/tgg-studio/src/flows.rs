@@ -1721,6 +1721,64 @@ fn find_a_match_starts_the_set_and_cancel_ends_it() {
     assert!(rt.find("play/find").is_some(), "Find a match is back");
 }
 
+#[cfg_attr(windows, ignore = "the fake game is a shell script")]
+#[test]
+fn play_lists_the_meeting_points_queues_and_join_searches_with_its_mods() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    jobs_until(&mut rt, |app| app.sets.active().is_some());
+    rt.update(|app, _| app.signin.who = Some(crate::signed_in("ciao")));
+    open_place(&mut rt, Place::Play);
+    jobs_until(&mut rt, |app| app.play.queues.is_some());
+    assert!(
+        rt.find("play/queue/competitive").is_some(),
+        "the standing queue is listed: {:?}",
+        rt.state.play.queues
+    );
+
+    tap(&mut rt, "play/queue/competitive/join");
+    jobs_until(&mut rt, |app| app.mods.playing.is_some());
+    assert_eq!(
+        rt.state
+            .sets
+            .session
+            .as_ref()
+            .map(|session| session.name.as_str()),
+        Some("Competitive"),
+        "the session is the queue's"
+    );
+    let port = rt.state.mods.port().expect("tgg-melee").executable();
+    let written = port.with_file_name(format!(
+        "{}.env",
+        port.file_name().expect("a file name").to_string_lossy()
+    ));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !written.is_file() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the game wrote its environment"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let env = std::fs::read_to_string(&written).expect("the game's environment");
+    assert!(
+        env.lines().any(|line| line == "TGG_DIRECT_CONNECT=search"),
+        "the game searches: {env}"
+    );
+    let mods_dir = env
+        .lines()
+        .find_map(|line| line.strip_prefix("TGG_MODS_DIR="))
+        .expect("the game is given its mods");
+    let loaded = tgg_mod::local(std::path::Path::new(mods_dir), None).expect("its mods read");
+    let legal = "tgg.legal-stages".parse().expect("an id");
+    assert_eq!(
+        loaded.get(&legal).map(|m| m.manifest.version.to_string()),
+        Some("0.1.1".to_owned()),
+        "it loads the queue's mods at the queue's versions"
+    );
+    tap(&mut rt, "play/session");
+    jobs_until(&mut rt, |app| app.mods.playing.is_none());
+}
+
 #[test]
 fn offline_mods_says_so_and_keeps_what_is_installed() {
     let net = std::sync::Arc::new(tgg_mod::FakeNet::new());

@@ -567,7 +567,11 @@ const SCENES: &[Scene] = &[
         }
         app.jobs.inline = false;
     }),
-    ("no-sidebar", |app| app.nav.sidebar = false),
+    ("no-sidebar", |app| {
+        play_scene(app);
+        play_queues(app, false);
+        app.nav.sidebar = false;
+    }),
 ];
 
 fn main() {
@@ -944,10 +948,10 @@ fn show_scene_sets(app: &mut App, net: &dyn tgg_mod::Net, active: &str, chosen: 
 }
 
 /// For scenes: Play with tgg-melee and Competitive installed, Friday night
-/// building on Competitive, a signed-in player and three last matches.
-/// FakeNet has no queue endpoint, and a scene runs no frames, so the jobs
-/// Mods starts are run here and their answers taken before the scene sets
-/// what the shot shows.
+/// building on Competitive, a signed-in player and three last matches. A
+/// scene runs no frames, so the jobs Mods starts are run here and their
+/// answers taken before the scene sets what the shot shows (its queues
+/// too, by [`play_queues`]).
 fn play_scene(app: &mut App) {
     use tgg_mod::sets;
     app.jobs.inline = true;
@@ -1048,8 +1052,8 @@ fn play_queue(
     label: &str,
     searching: u32,
     mods: Vec<tgg_mod::sets::QueueMod>,
-) -> crate::play::Queue {
-    crate::play::Queue {
+) -> tgg_mod::Queue {
+    tgg_mod::Queue {
         kind: kind.to_owned(),
         label: label.to_owned(),
         searching,

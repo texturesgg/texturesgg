@@ -7,49 +7,18 @@
 //! its code.
 //!
 //! Everything the page shows comes from the sets engine (`crate::sets`),
-//! the replays the app already reads, and `GET /v1/queues`. `actions`
-//! changes it; `view` draws it. The queues are read once each time Play
-//! opens; what a running game says is read about once a second while it
-//! runs: the room report the game appends to ([`Room`]) for the sheet, and
-//! its log for who Find a match found.
+//! the replays the app already reads, and the meeting point's queues
+//! ([`tgg_mod::queues`]). `actions` changes it; `view` draws it. The queues
+//! are read once each time Play opens; what a running game says is read
+//! about once a second while it runs: the room report the game appends to
+//! ([`Room`]) for the sheet, and its log for who Find a match found.
 
 pub mod actions;
 pub mod view;
 
 use std::time::Instant;
+use tgg_mod::Queue;
 use tgg_mod::sets::{QueueMod, SetPlan};
-
-/// The queues the meeting point lists, as it sends them.
-#[derive(Clone, Debug, serde::Deserialize)]
-pub struct Listing {
-    #[serde(default)]
-    pub queues: Vec<Queue>,
-}
-
-/// A queue someone is searching in. `kind` is `standing` for one textures.gg
-/// keeps open, `player` for one a player's own set made.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
-pub struct Queue {
-    #[serde(default)]
-    pub kind: String,
-    #[serde(default)]
-    pub label: String,
-    #[serde(default)]
-    pub searching: u32,
-    /// The mods that have to match to meet here.
-    #[serde(default)]
-    pub mods: Vec<QueueMod>,
-    /// The textures.gg set a standing queue comes from.
-    #[serde(default)]
-    pub set: Option<String>,
-}
-
-impl Queue {
-    /// One textures.gg keeps open, listed even with nobody in it.
-    pub fn standing(&self) -> bool {
-        self.kind == "standing"
-    }
-}
 
 /// Play's own state: what the meeting point last said, the picker's menu,
 /// the friend sheet, and what the running game's report and log say.

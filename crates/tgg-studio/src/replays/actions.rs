@@ -94,6 +94,10 @@ impl Net for Kept {
     fn releases_url(&self) -> &str {
         self.0.releases_url()
     }
+
+    fn meet_url(&self) -> &str {
+        self.0.meet_url()
+    }
 }
 
 /// Plan every replay that could be read: what each needs to play, asking

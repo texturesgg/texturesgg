@@ -5,7 +5,7 @@
 //! report about once a second, asking for the next second's frame so the
 //! clock keeps up.
 
-use super::{Done, Listing, Log, Queue, Room, read_log, read_report};
+use super::{Done, Log, Queue, Room, read_log, read_report};
 use crate::jobs::Done as Job;
 use crate::nav::Place;
 use crate::sets::How;
@@ -13,10 +13,6 @@ use crate::state::App;
 use std::time::{Duration, Instant};
 use tgg_mod::ReplayInfo;
 
-/// The meeting point's queues: the standing ones, and the players' own.
-const QUEUES_URL: &str = "https://meet.textures.gg/v1/queues?limit=20";
-/// How much of its answer Play reads.
-const QUEUES_MOST: u64 = 256 * 1024;
 /// How often the running game's log and room report are read.
 const LOG_EVERY: Duration = Duration::from_millis(900);
 /// How Play's fighter is seen: turned from facing straight out, in radians,
@@ -41,14 +37,7 @@ pub fn read_queues(app: &mut App) {
     app.play.queues = None;
     let net = app.mods.net.clone();
     app.jobs.spawn("queues", move || {
-        let result = net
-            .get(QUEUES_URL, QUEUES_MOST)
-            .map_err(|error| error.to_string())
-            .and_then(|body| {
-                serde_json::from_slice::<Listing>(&body)
-                    .map(|listing| listing.queues)
-                    .map_err(|error| error.to_string())
-            });
+        let result = tgg_mod::queues(&*net).map_err(|error| error.to_string());
         Job::Play(Box::new(Done::Queues(result)))
     });
 }

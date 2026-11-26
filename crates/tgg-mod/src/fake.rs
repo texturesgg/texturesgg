@@ -1,6 +1,6 @@
-//! [`FakeNet`]: a registry and release mirror in memory, for tests and the
-//! app's flow tests, so they can drive installing, updating, turning mods
-//! on and off and uninstalling with no network.
+//! [`FakeNet`]: a registry, release mirror and meeting point in memory, for
+//! tests and the app's flow tests, so they can drive installing, updating,
+//! turning mods on and off, uninstalling and joining queues with no network.
 
 use crate::catalog::{self, Catalog, CatalogEntry, PackageRef, WithdrawMode, Withdrawn};
 use crate::manifest::Manifest;
@@ -8,9 +8,11 @@ use crate::net::{Net, NetError};
 use crate::package::{self, Package};
 use crate::ports::{self, PortRelease, ReleaseFile, ReleaseFiles, Toolchain};
 use crate::profile::{SlippiCode, SlippiIgnore, SlippiMapping};
+use crate::queues::{Listing, Queue};
 use crate::registry::{
     Image, ModDetails, ModPage, ModRelease, ModSummary, Publisher, Set, SetMod, System,
 };
+use crate::sets::QueueMod;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
@@ -41,6 +43,8 @@ use std::sync::Mutex;
 /// - tgg-melee [`FakeNet::PORT_VERSION`] for this system, whose game is a
 ///   shell script that runs for `$TGG_FAKE_GAME_SECONDS` (default 30)
 ///   seconds, so it launches on Linux and macOS.
+/// - the meeting point's queues ([`FakeNet::MEET`]`/queues`): Competitive's
+///   standing queue, its mods at their newest versions, nobody searching.
 ///
 /// The `publish_*` methods add to it as a test goes, and
 /// [`FakeNet::set_offline`] makes every request fail as if there were no
@@ -66,6 +70,7 @@ struct State {
     /// Each mod's package downloads, by id.
     installs: BTreeMap<String, u64>,
     mapping: Option<SlippiMapping>,
+    queues: Vec<Queue>,
 }
 
 impl Default for FakeNet {
@@ -77,6 +82,7 @@ impl Default for FakeNet {
 impl FakeNet {
     pub const API: &str = "https://fake.textures.gg";
     pub const RELEASES: &str = "https://fake.textures.gg/tgg-melee";
+    pub const MEET: &str = "https://fake.textures.gg/meet/v1";
     /// The game layout the port release has and the catalog serves.
     pub const LAYOUT: &str = "fa4efa4efa4efa4e";
     pub const PORT_VERSION: &str = "0.5.0";
@@ -163,6 +169,22 @@ impl FakeNet {
         ));
         net.publish_port(Self::PORT_VERSION);
         net.publish_mapping(slippi_mapping());
+        let mut mods: Vec<QueueMod> = Vec::new();
+        for (id, _, version, _) in &competitive {
+            let id = id.parse().expect("a fake mod id");
+            let version = version.parse().expect("a fake version");
+            match mods.iter_mut().find(|m| m.id == id) {
+                Some(listed) => listed.version = version,
+                None => mods.push(QueueMod { id, version }),
+            }
+        }
+        net.publish_queue(Queue {
+            kind: "standing".into(),
+            label: "Competitive".into(),
+            searching: 0,
+            mods,
+            set: Some("competitive".into()),
+        });
         net
     }
 
@@ -193,6 +215,13 @@ impl FakeNet {
     /// Serve `mapping` as the registry's Slippi mapping.
     pub fn publish_mapping(&self, mapping: SlippiMapping) {
         self.state().mapping = Some(mapping);
+    }
+
+    /// List `queue` on the meeting point, replacing one of the same label.
+    pub fn publish_queue(&self, queue: Queue) {
+        let mut state = self.state();
+        state.queues.retain(|listed| listed.label != queue.label);
+        state.queues.push(queue);
     }
 
     /// Give every release of the mod `id` the publisher `publisher`.
@@ -764,6 +793,13 @@ impl Net for FakeNet {
                 Some(body) => body,
                 None => return Err(NetError::NotFound { url: url.into() }),
             }
+        } else if url.split_once('?').map_or(url, |(path, _)| path)
+            == format!("{}/queues", Self::MEET)
+        {
+            let listing = Listing {
+                queues: state.queues.clone(),
+            };
+            serde_json::to_vec_pretty(&listing).expect("queues serialize")
         } else if url == format!("{}/latest.json", Self::RELEASES) {
             match &state.latest {
                 Some(version) => format!("{{\"version\": \"{version}\"}}").into_bytes(),
@@ -814,6 +850,10 @@ impl Net for FakeNet {
 
     fn releases_url(&self) -> &str {
         Self::RELEASES
+    }
+
+    fn meet_url(&self) -> &str {
+        Self::MEET
     }
 }
 

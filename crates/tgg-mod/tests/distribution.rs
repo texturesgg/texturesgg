@@ -753,6 +753,10 @@ impl Net for Empty {
     fn releases_url(&self) -> &str {
         "https://empty.textures.gg/tgg-melee"
     }
+
+    fn meet_url(&self) -> &str {
+        "https://empty.textures.gg/meet/v1"
+    }
 }
 
 #[test]

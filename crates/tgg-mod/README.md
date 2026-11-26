@@ -48,10 +48,11 @@ How a player gets the game and its mods, for the app and the `tgg` command to bu
 a player; long work takes a progress callback and a cancel flag.
 
 - **Fetching.** The `Net` trait: `HttpNet` over HTTPS (or a mirror folder), and `FakeNet`, a
-  registry and release mirror in memory for tests.
+  registry, release mirror and meeting point in memory for tests.
 - **Ports.** tgg-melee releases from the mirror, installed ports (one current), launching the
   game, and the pid file that tells every tgg the game is running.
 - **Registry.** The textures.gg registry's sets and its catalog for one game layout.
+- **Queues.** The matchmaking queues the meeting point lists, and the mods each needs.
 - **Plans.** What installing a set, some mods, or the updates will do, resolved against one
   catalog snapshot with no network; applying one downloads each package, checks its SHA-256
   and installs it atomically.

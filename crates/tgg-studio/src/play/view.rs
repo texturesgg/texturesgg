@@ -556,7 +556,7 @@ fn below(app: &App, p: &Palette) -> El {
 
 fn queues(app: &App, p: &Palette) -> Vec<El> {
     let queues = match &app.play.queues {
-        None => return Vec::new(),
+        None => return vec![faint("Asking textures.gg what's open…", p)],
         Some(Err(_)) => {
             return vec![quiet("Couldn't read what's open right now.", p)];
         }
