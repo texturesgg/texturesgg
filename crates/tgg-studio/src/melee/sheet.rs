@@ -62,9 +62,7 @@ fn sheet(app: &App, p: &Palette) -> Option<El> {
             crate::library::port::verdict(app, skin.id, slot)
         })
         .and_then(|verdict| match verdict {
-            tgg_mod::Verdict::Counts(_) => {
-                Some("Disabled in netplay so matches stay in sync.")
-            }
+            tgg_mod::Verdict::Counts(_) => Some("Disabled in netplay so matches stay in sync."),
             _ => None,
         });
     let fetching = app

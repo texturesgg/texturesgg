@@ -179,11 +179,8 @@ fn body(app: &App, p: &Palette) -> Option<El> {
                 section("Releases", toggle, rows, p).key("mods/details/releases")
             }))
             .children(
-                (mods.details.get(id).is_some_and(Option::is_none)).then(|| {
-                    label("Loading details…")
-                        .font(text::SMALL)
-                        .color(p.faint)
-                }),
+                (mods.details.get(id).is_some_and(Option::is_none))
+                    .then(|| label("Loading details…").font(text::SMALL).color(p.faint)),
             ),
     )
 }
@@ -511,12 +508,10 @@ fn actions_for(app: &App, p: &Palette) -> El {
                         .on_press(move |app: &mut App| actions::remove(app, &removed)),
                 )
         }
-        None if mods.port().is_none() => {
-            label("Install tgg-melee first to install this mod.")
-                .font(text::SMALL)
-                .color(p.muted)
-                .wrap()
-        }
+        None if mods.port().is_none() => label("Install tgg-melee first to install this mod.")
+            .font(text::SMALL)
+            .color(p.muted)
+            .wrap(),
         None if mods.newest(&id).is_none() => {
             label("Not built for this tgg-melee yet; it installs once it is.")
                 .key("mods/details/unbuilt")

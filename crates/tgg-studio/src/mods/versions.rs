@@ -50,10 +50,7 @@ pub fn body(app: &App, p: &Palette) -> El {
                         .on_press(actions::fetch),
                 )
         };
-        return col()
-            .key("mods/versions")
-            .children(working)
-            .child(empty);
+        return col().key("mods/versions").children(working).child(empty);
     }
     let rows = listed
         .into_iter()
