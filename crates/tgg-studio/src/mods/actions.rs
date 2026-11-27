@@ -1,7 +1,7 @@
 //! What the player does on the Mods page, and what comes back from its jobs.
 
 use super::{
-    Disc, Done, Fallback, Filter, Menu, NewSet, Playing, Registry, Reload, Review, Sort, Work,
+    Disc, Done, Fallback, Filter, Menu, NewSet, Playing, Registry, Reload, Review, Sort, Tab, Work,
 };
 use crate::jobs::Done as Job;
 use crate::state::App;
@@ -266,8 +266,19 @@ pub fn set_filter(app: &mut App, filter: Filter) {
     app.mods.filter = filter;
 }
 
+/// Switch between the Mods catalog and Sets tabs.
+pub fn show_tab(app: &mut App, tab: Tab) {
+    app.mods.tab = tab;
+    app.mods.menu = None;
+    if tab == Tab::Sets {
+        app.mods.selected = None;
+        ensure_plan(app);
+    }
+}
+
 /// Show the mod `id`'s details: from a link, or You's mods.
 pub fn show_mod(app: &mut App, id: &ModId) {
+    app.mods.tab = Tab::Mods;
     app.mods.filter = Filter::All;
     if app.mods.selected.as_ref() != Some(id) {
         select(app, id);

@@ -188,7 +188,7 @@ fn picker(app: &App, set: &MySet, p: &Palette) -> El {
 }
 
 /// What the set is, under its name.
-fn kind(app: &App, set: &MySet) -> String {
+pub(super) fn kind(app: &App, set: &MySet) -> String {
     if set.is_installed() {
         "Your mods folder".to_owned()
     } else if set.locked {

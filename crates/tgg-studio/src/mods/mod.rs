@@ -16,6 +16,7 @@ pub mod actions;
 pub mod details;
 pub mod panel;
 pub mod review;
+pub mod sets_view;
 pub mod sheet;
 pub mod versions;
 pub mod view;
@@ -65,6 +66,8 @@ pub struct Mods {
     /// The set the page shows on the right; the active one until another is
     /// picked.
     pub chosen_set: Option<String>,
+    /// Which tab of Mods is showing (Mods catalog or Sets).
+    pub tab: Tab,
     /// Which of the mods across the page's list show.
     pub filter: Filter,
     /// The order the list shows them in.
@@ -174,6 +177,14 @@ impl Sort {
     }
 }
 
+/// Which tab of the Mods page is showing.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Tab {
+    #[default]
+    Mods,
+    Sets,
+}
+
 /// A menu the Mods page opens.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Menu {
@@ -254,6 +265,7 @@ impl Default for Mods {
             disc: Disc::Unknown,
             playing: None,
             chosen_set: None,
+            tab: Tab::default(),
             filter: Filter::default(),
             sort: Sort::default(),
             menu: None,

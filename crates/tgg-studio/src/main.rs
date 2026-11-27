@@ -252,6 +252,15 @@ const SCENES: &[Scene] = &[
         add_scene_set(app, &*net, "replays");
         show_scene_sets(app, &*net, "competitive", "competitive");
     }),
+    // The Sets tab inside Mods: Competitive and My Competitive in Your sets,
+    // Replays available to add from textures.gg, Competitive shown on the right.
+    ("mods-sets", |app| {
+        let net = mods_scene(app, true);
+        add_scene_set(app, &*net, "competitive");
+        make_scene_set(app, &*net, "My Competitive", &["competitive"], &[], &[]);
+        show_scene_sets(app, &*net, "competitive", "competitive");
+        mods::actions::show_tab(app, mods::Tab::Sets);
+    }),
     // Play before tgg-melee is installed: one line saying what to set up.
     ("play-new", |app| {
         mods_scene(app, false);
