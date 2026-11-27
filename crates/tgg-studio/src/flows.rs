@@ -1573,6 +1573,44 @@ fn mods_lists_every_mod_and_the_filters_keep_their_tags() {
 }
 
 #[test]
+fn sets_tab_lists_official_and_local_sets_and_adds_one() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    tap(&mut rt, "mods/tab/sets");
+    settle(&mut rt);
+    assert_eq!(rt.state.mods.tab, crate::mods::Tab::Sets);
+    assert!(
+        rt.find("mods/sets/official/competitive/add").is_some()
+            && rt.find("mods/sets/official/replays/add").is_some(),
+        "official sets from textures.gg are browsable and addable"
+    );
+    tap(&mut rt, "mods/sets/official/competitive/add");
+    jobs_until(&mut rt, |app| {
+        app.sets.list.iter().any(|set| set.key == "competitive")
+    });
+    settle(&mut rt);
+    assert!(
+        rt.find("mods/sets/mine/competitive").is_some(),
+        "the added set appears under Your sets"
+    );
+    assert!(
+        rt.find("mods/sets/official/competitive/added").is_some(),
+        "the official row switches from Add set to Added"
+    );
+    assert_eq!(rt.state.mods.chosen_set.as_deref(), Some("competitive"));
+    tap(&mut rt, "mods/sets/mine/competitive/use");
+    jobs_until(&mut rt, |app| app.sets.active == "competitive");
+    settle(&mut rt);
+    assert!(
+        rt.find("mods/sets/mine/competitive/using").is_some(),
+        "activating a set marks it Using"
+    );
+    tap(&mut rt, "mods/tab/mods");
+    settle(&mut rt);
+    assert_eq!(rt.state.mods.tab, crate::mods::Tab::Mods);
+    assert!(rt.find("mods/catalog/tgg.netplay").is_some());
+}
+
+#[test]
 fn a_textures_gg_set_arrives_locked_and_makes_your_own() {
     let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
     rt.update(|app, _| crate::mods::actions::add_set(app, "competitive"));

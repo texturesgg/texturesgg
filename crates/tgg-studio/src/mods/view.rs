@@ -4,14 +4,14 @@
 //! details where the panel was; Add puts the mod in the set showing (or in
 //! the mods folder, for Installed mods), and Added takes it back out.
 
-use super::{Menu, Mods, Registry, Sort, actions, count_text, current_set, size_text};
+use super::{Menu, Mods, Registry, Sort, Tab, actions, count_text, current_set, size_text};
 use crate::nav::Place;
 use crate::state::App;
 use crate::ui::tokens::{Palette, size, space, text};
 use crate::ui::{
-    ButtonKind, Icon, button, button_done, button_off, callout, chip, icon, icon_tile, list_row,
-    progress, search_box, search_field, select, select_item, select_menu, select_rule, skeleton,
-    text_action,
+    ButtonKind, Icon, button, button_done, button_off, button_small, callout, chip, icon,
+    icon_tile, list_row, progress, search_box, search_field, select, select_item, select_menu,
+    select_rule, skeleton, spacer, tab, text_action,
 };
 use rune::{El, ScrollSpec, col, row, text as label};
 use tgg_mod::sets::Group;
@@ -37,10 +37,11 @@ pub fn view(app: &App, p: &Palette) -> El {
         .min_w(0.0)
         .min_h(0.0)
         .gap(space::SM)
+        .child(tabs(app, p))
         .children(notices(app, p))
         .children(first_run(mods, p))
         .children((!wide).then(|| super::panel::bar(app, p)))
-        .child(browse(app, p))
+        .children((mods.tab == Tab::Mods).then(|| browse(app, p)))
         .child(
             // Out past the search's edges by a row's inset, so a row's
             // words line up with the search and only its wash reaches out.
@@ -52,7 +53,10 @@ pub fn view(app: &App, p: &Palette) -> El {
                 .scroll(ScrollSpec {
                     stick_bottom: false,
                 })
-                .child(col().pb(space::XL).child(all(app, p))),
+                .child(col().pb(space::XL).child(match mods.tab {
+                    Tab::Mods => all(app, p),
+                    Tab::Sets => super::sets_view::view(app, p),
+                })),
         );
     let side = wide.then(|| {
         if mods.selected.is_some() {
@@ -70,6 +74,34 @@ pub fn view(app: &App, p: &Palette) -> El {
         .min_h(0.0)
         .child(left)
         .children(side)
+}
+
+/// Mods and Sets tabs over the list, with New set on the right when Sets is active.
+fn tabs(app: &App, p: &Palette) -> El {
+    let mods = &app.mods;
+    let tab_for = |name: &str, count: usize, which: Tab, key: &str| {
+        tab(name, count, mods.tab == which, p)
+            .key(key.to_owned())
+            .on_press(move |app: &mut App| actions::show_tab(app, which))
+    };
+    let new_set = (mods.tab == Tab::Sets).then(|| {
+        button_small("New set", ButtonKind::Secondary, p)
+            .key("mods/sets/new-set")
+            .on_press(actions::open_new_set)
+    });
+    row()
+        .flex_wrap()
+        .items_center()
+        .gap(space::LG)
+        .child(tab_for("Mods", mods.total(), Tab::Mods, "mods/tab/mods"))
+        .child(tab_for(
+            "Sets",
+            super::sets_view::tab_count(app),
+            Tab::Sets,
+            "mods/tab/sets",
+        ))
+        .child(spacer())
+        .children(new_set)
 }
 
 /// The top bar's end on Mods: Start a mod, once there's a tgg-melee to make
@@ -531,6 +563,14 @@ fn sets_menu(app: &App, p: &Palette) -> Vec<El> {
         })
         .collect();
     items.push(select_rule(p));
+    items.push(
+        select_item("Browse sets", false, p)
+            .key("mods/browse-sets")
+            .on_press(|app: &mut App| {
+                actions::close_menu(app);
+                actions::show_tab(app, Tab::Sets);
+            }),
+    );
     items.push(
         select_item("New set", false, p)
             .key("mods/new-set")
