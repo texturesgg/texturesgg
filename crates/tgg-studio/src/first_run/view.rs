@@ -1,9 +1,9 @@
 //! First run's screen: one column, four numbered steps, and the one button.
-//! No sidebar and nothing else: until the player has a disc and tgg-melee,
-//! this is the app.
+//! No sidebar and nothing else: until the player finishes setup once, this is
+//! the app.
 
-use super::{FirstRun, LINKS, Picks, Stage, actions};
-use crate::mods::{Disc, Registry, Work, size_text};
+use super::{DEFAULT_SET, Stage, actions};
+use crate::mods::{Disc, Registry, Work, disc_warning, mod_count, size_text};
 use crate::state::App;
 use crate::ui::tokens::{Palette, radius, size, space, text};
 use crate::ui::{
@@ -20,22 +20,26 @@ const MARK: f32 = 22.0;
 const TOP: f32 = space::XXL + space::XL;
 /// What dims the steps that need a disc.
 const DIMMED: f32 = 0.4;
-/// A choice's shortest height, so the three line up.
-const PICK_MIN_H: f32 = 92.0;
 
 pub fn view(app: &App, p: &Palette) -> El {
     let first_run = app.first_run.as_ref();
     let stage = first_run.map_or(Stage::Done, |first| first.stage);
     let done = stage == Stage::Done;
     let has_disc = disc_found(app);
-    let picked = first_run.map_or(0, |first| first.picks.count());
+    let use_default = first_run.is_none_or(|first| first.use_default_set);
+    let has_port = app.mods.port().is_some();
+    let has_update = app.mods.port_update().is_some();
 
     let line = if done {
-        "Everything is installed."
+        "Everything is set up."
     } else if !has_disc {
         "Start with your Melee disc."
+    } else if has_port && !has_update {
+        "Confirm your starting set to get started."
+    } else if has_update {
+        "Confirm your starting set, then update tgg-melee."
     } else {
-        "Pick your starting mods, then download."
+        "Confirm your starting set, then download."
     };
     let mut body = col()
         .w(COLUMN)
@@ -67,13 +71,13 @@ pub fn view(app: &App, p: &Palette) -> El {
                 .gap(space::TIGHT)
                 .child(disc_row(app, p))
                 .child(game_row(app, stage, has_disc, p))
-                .child(mods_row(app, first_run, stage, has_disc, p))
+                .child(mods_row(app, use_default, stage, has_disc, p))
                 .child(sign_in_row(app, has_disc, p)),
         )
         .child(
             row()
                 .pl(MARK + space::MD)
-                .child(main_button(app, stage, has_disc, picked, p)),
+                .child(main_button(app, stage, has_disc, use_default, p)),
         );
     col()
         .key("first-run")
@@ -94,9 +98,13 @@ pub fn view(app: &App, p: &Palette) -> El {
         )
 }
 
-/// Your Melee disc: found, or why not and a way to choose it.
+/// Your Melee disc: found (with a warning if counted files are modified), or
+/// why not and a way to choose it.
 fn disc_row(app: &App, p: &Palette) -> El {
     let found = disc_found(app);
+    let warning = found
+        .then(|| disc_warning(&app.mods.disc_modified))
+        .flatten();
     let body = col()
         .gap(space::SNUG)
         .child(step_title("Your Melee disc", p))
@@ -109,7 +117,14 @@ fn disc_row(app: &App, p: &Palette) -> El {
             .font(text::BODY)
             .color(p.muted)
             .wrap(),
-        );
+        )
+        .children(warning.map(|text| {
+            label(text)
+                .key("first-run/disc-warning")
+                .font(text::SMALL)
+                .color(p.accent_text)
+                .wrap()
+        }));
     let control = if found {
         Some(
             text_action("Choose another", false, p)
@@ -126,9 +141,12 @@ fn disc_row(app: &App, p: &Palette) -> El {
     step_row(1, found, body, control, false, p)
 }
 
-/// The game: what tgg-melee is and its size, or the download while it runs.
+/// The game: already installed, update available, what tgg-melee is and its
+/// size, or the download while it runs.
 fn game_row(app: &App, stage: Stage, has_disc: bool, p: &Palette) -> El {
-    let installed = app.mods.port().is_some() || stage == Stage::Done;
+    let current = app.mods.port();
+    let update = app.mods.port_update();
+    let installed_up_to_date = (current.is_some() && update.is_none()) || stage == Stage::Done;
     let mut control = None;
     let mut body = col()
         .w_full()
@@ -142,12 +160,37 @@ fn game_row(app: &App, stage: Stage, has_disc: bool, p: &Palette) -> El {
         } else {
             body = body.child(label("Downloading.").font(text::BODY).color(p.muted));
         }
+    } else if let (Some(port), Some(next)) = (current, update) {
+        let words = if app.mods.has_port(&next.version) {
+            format!(
+                "You have tgg-melee {}. Version {} is already installed and ready to use.",
+                port.version, next.version
+            )
+        } else {
+            format!(
+                "You have tgg-melee {}. Version {} is out ({}).",
+                port.version,
+                next.version,
+                size_text(next.size())
+            )
+        };
+        body = body.child(
+            label(words)
+                .key("first-run/port-update")
+                .font(text::BODY)
+                .color(p.muted)
+                .wrap(),
+        );
+    } else if let Some(port) = current {
+        body = body.child(
+            label(format!("tgg-melee {} is already installed.", port.version))
+                .key("first-run/port-installed")
+                .font(text::BODY)
+                .color(p.muted)
+                .wrap(),
+        );
     } else {
-        let release = app
-            .mods
-            .releases
-            .first()
-            .or_else(|| app.mods.port().map(|port| &port.release));
+        let release = app.mods.releases.first();
         let words = release.map_or_else(
             || "tgg-melee runs Melee on your computer, with mods and skins.".to_owned(),
             |release| {
@@ -182,74 +225,65 @@ fn game_row(app: &App, stage: Stage, has_disc: bool, p: &Palette) -> El {
             }
         }
     }
-    step_row(2, installed, body, control, !has_disc, p)
+    step_row(2, installed_up_to_date, body, control, !has_disc, p)
 }
 
-/// The mods to start with: three choices before setup, what they made after.
-fn mods_row(
-    app: &App,
-    first_run: Option<&FirstRun>,
-    stage: Stage,
-    has_disc: bool,
-    p: &Palette,
-) -> El {
-    let picks = first_run.map_or_else(Picks::default, |first| first.picks);
+/// The mods to start with: the single recommended default set pre-checked, or
+/// unchecked for plain Melee.
+fn mods_row(app: &App, use_default: bool, stage: Stage, has_disc: bool, p: &Palette) -> El {
+    let default_set = app.mods.sets.iter().find(|set| set.name == DEFAULT_SET);
+    let title = default_set.map_or("Competitive", |set| set.title.as_str());
     let mut body = col()
         .w_full()
         .gap(space::SNUG)
         .child(step_title("Mods to start with", p));
     match stage {
         Stage::Ready => {
-            body = body.child(
-                label("Pick any to install. You can change your sets later on Mods.")
-                    .font(text::BODY)
-                    .color(p.muted)
-                    .wrap(),
-            );
-            let offered: Vec<_> = LINKS
-                .into_iter()
-                .filter_map(|link| {
-                    app.mods
-                        .sets
-                        .iter()
-                        .find(|set| set.name == link)
-                        .map(|set| (link, set))
-                })
-                .collect();
-            body = if offered.is_empty() {
-                body.child(
-                    label("Loading sets from textures.gg…")
-                        .font(text::SMALL)
-                        .color(p.faint),
+            body = body
+                .child(
+                    label("Turn it off if you want plain Melee. You can change your sets later on Mods.")
+                        .font(text::BODY)
+                        .color(p.muted)
+                        .wrap(),
                 )
-            } else {
-                body.child(
-                    row().w_full().gap(space::XS).children(
-                        offered
-                            .into_iter()
-                            .map(|(link, set)| pick(link, set, picks.on(link), has_disc, p)),
-                    ),
-                )
-            };
+                .child(default_set_card(
+                    title,
+                    default_set.map(|set| set.mods.len()),
+                    use_default,
+                    has_disc,
+                    p,
+                ));
         }
         Stage::Downloading => {
-            body = body.child(picked_label(app, &picks, p));
+            body = body.child(
+                label(if use_default {
+                    title.to_owned()
+                } else {
+                    "Plain Melee (no mods)".to_owned()
+                })
+                .font(text::BODY)
+                .color(if use_default { p.muted } else { p.faint })
+                .wrap(),
+            );
         }
         Stage::SettingUp => {
-            body = body.child(label("Making your sets.").font(text::BODY).color(p.muted));
+            body = body.child(
+                label(if use_default {
+                    format!("Setting up {title}.")
+                } else {
+                    "Setting up plain Melee.".to_owned()
+                })
+                .font(text::BODY)
+                .color(p.muted),
+            );
         }
         Stage::Done => {
-            let count = picks.count();
             body = body.child(
-                label(if count == 0 {
-                    "None. Add some on Mods when you want them.".to_owned()
-                } else if count == 1 {
-                    format!("{}. It's the set Play starts.", picked_titles(app, &picks))
+                label(if use_default {
+                    format!("{title}. It's the set Play starts.")
                 } else {
-                    format!(
-                        "{}, in one set called My set. It's the set Play starts.",
-                        picked_titles(app, &picks)
-                    )
+                    "Plain Melee with no mods. Add mods or sets on Mods whenever you want."
+                        .to_owned()
                 })
                 .font(text::BODY)
                 .color(p.muted)
@@ -258,6 +292,46 @@ fn mods_row(
         }
     }
     step_row(3, stage == Stage::Done, body, None, !has_disc, p)
+}
+
+/// The single pre-checked default set card: Competitive, covering online
+/// matchmaking, tournament rules, replays, and solo practice drills/trainers.
+fn default_set_card(title: &str, mods: Option<usize>, on: bool, enabled: bool, p: &Palette) -> El {
+    col()
+        .key(format!("first-run/pick/{DEFAULT_SET}"))
+        .w_full()
+        .gap(space::TIGHT)
+        .padding(space::SM)
+        .radius(radius::CARD)
+        .fill(if on { p.selected } else { p.surface })
+        .border(
+            if on { size::LINE_STRONG } else { size::LINE },
+            if on { p.accent } else { p.line },
+        )
+        .cursor(rune::Cursor::Pointer)
+        .role("checkbox")
+        .checked(on)
+        .disabled(!enabled)
+        .label(title.to_owned())
+        .focusable(true)
+        .on_press(actions::toggle_default_set)
+        .child(
+            row()
+                .gap(space::XS)
+                .items_center()
+                .child(label(title.to_owned()).font(text::STRONG).color(p.ink))
+                .children(mods.map(|n| label(mod_count(n)).font(text::SMALL).color(p.faint)))
+                .child(spacer())
+                .children(on.then(|| icon(Icon::Check, p.accent))),
+        )
+        .child(
+            label(
+                "Online matchmaking, UCF and tournament rules, replays, and solo practice drills and trainers.",
+            )
+            .font(text::SMALL)
+            .color(p.muted)
+            .wrap(),
+        )
 }
 
 /// Signing in, optional and only needed to find matches.
@@ -288,64 +362,9 @@ fn sign_in_row(app: &App, has_disc: bool, p: &Palette) -> El {
     step_row(4, done, body, control, !has_disc, p)
 }
 
-/// One choice among the mods to start with: its name, what it does, and how
-/// many mods it has.
-fn pick(link: &str, set: &tgg_mod::Set, on: bool, enabled: bool, p: &Palette) -> El {
-    let link = link.to_owned();
-    let title = set.title.clone();
-    let mods = count(set.mods.len());
-    col()
-        .key(format!("first-run/pick/{}", set.name))
-        .grow(1.0)
-        .min_w(0.0)
-        .min_h(PICK_MIN_H)
-        .gap(space::TIGHT)
-        .padding(space::SM)
-        .radius(radius::CARD)
-        .fill(if on { p.selected } else { p.surface })
-        .border(
-            if on { size::LINE_STRONG } else { size::LINE },
-            if on { p.accent } else { p.line },
-        )
-        .cursor(rune::Cursor::Pointer)
-        .role("checkbox")
-        .checked(on)
-        .disabled(!enabled)
-        .label(title.clone())
-        .focusable(true)
-        .on_press(move |app: &mut App| actions::toggle(app, &link))
-        .child(
-            row()
-                .gap(space::XS)
-                .items_center()
-                .child(
-                    label(title)
-                        .font(text::STRONG)
-                        .color(p.ink)
-                        .grow(1.0)
-                        .min_w(0.0)
-                        .truncate(),
-                )
-                .children(on.then(|| icon(Icon::Check, p.accent))),
-        )
-        .child(
-            col()
-                .grow(1.0)
-                .gap(space::TIGHT)
-                .children((!set.description.is_empty()).then(|| {
-                    label(set.description.clone())
-                        .font(text::SMALL)
-                        .color(p.muted)
-                        .wrap()
-                        .max_lines(3)
-                }))
-                .child(spacer())
-                .child(label(mods).font(text::SMALL).color(p.faint)),
-        )
-}
-
-/// The one button: Download and set up, Download the game, Cancel, or Play.
-fn main_button(app: &App, stage: Stage, has_disc: bool, picked: usize, p: &Palette) -> El {
+/// The one button: adapts to whether tgg-melee is installed, updatable, or
+/// needs a fresh download, and whether the default set is checked.
+fn main_button(app: &App, stage: Stage, has_disc: bool, use_default: bool, p: &Palette) -> El {
     match stage {
         Stage::Done => button_main("Play", ButtonKind::Primary, p)
             .key("first-run/play")
@@ -357,17 +376,27 @@ fn main_button(app: &App, stage: Stage, has_disc: bool, picked: usize, p: &Palet
             .disabled(true)
             .opacity(DIMMED),
         Stage::Ready => {
-            let ready = has_disc && (app.mods.port().is_some() || !app.mods.releases.is_empty());
-            let button = button_main(
-                if picked == 0 {
-                    "Download the game"
+            let has_port = app.mods.port().is_some();
+            let has_update = app.mods.port_update().is_some();
+            let ready = has_disc && (has_port || !app.mods.releases.is_empty());
+            let title = if has_port && !has_update {
+                if use_default {
+                    "Set up Competitive"
                 } else {
-                    "Download and set up"
-                },
-                ButtonKind::Primary,
-                p,
-            )
-            .key("first-run/download");
+                    "Continue"
+                }
+            } else if has_update {
+                if use_default {
+                    "Update and set up"
+                } else {
+                    "Update tgg-melee"
+                }
+            } else if use_default {
+                "Download and set up"
+            } else {
+                "Download the game"
+            };
+            let button = button_main(title, ButtonKind::Primary, p).key("first-run/download");
             if ready {
                 button.on_press(actions::download)
             } else {
@@ -440,53 +469,8 @@ fn downloading(work: &Work) -> String {
     }
 }
 
-/// The picks by the names textures.gg gives them.
-fn picked_titles(app: &App, picks: &Picks) -> String {
-    picks
-        .links()
-        .iter()
-        .map(|link| {
-            app.mods
-                .sets
-                .iter()
-                .find(|set| set.name == *link)
-                .map_or_else(|| title_of(link), |set| set.title.clone())
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn picked_label(app: &App, picks: &Picks, p: &Palette) -> El {
-    label(if picks.count() == 0 {
-        "None".to_owned()
-    } else {
-        picked_titles(app, picks)
-    })
-    .font(text::BODY)
-    .color(if picks.count() == 0 { p.faint } else { p.muted })
-    .wrap()
-}
-
-fn title_of(link: &str) -> String {
-    match link {
-        "competitive" => "Competitive".to_owned(),
-        "practice" => "Practice".to_owned(),
-        "replays" => "Replays".to_owned(),
-        other => other.to_owned(),
-    }
-}
-
-/// "1 mod", "3 mods".
-fn count(n: usize) -> String {
-    if n == 1 {
-        "1 mod".to_owned()
-    } else {
-        format!("{n} mods")
-    }
-}
-
-/// The band across the top: on macOS it moves the window, as the title row
-/// does once there is a game.
+/// The band across the top: on macOS and Windows it drags the window, as the
+/// title row does once there is a game.
 fn title_band() -> El {
     title_bar(row())
         .h(size::TOP_BAR)

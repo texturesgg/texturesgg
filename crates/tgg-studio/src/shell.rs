@@ -21,8 +21,11 @@ use rune::{Cx, El, col, el, row, text as label};
 pub fn view(app: &App, cx: &mut Cx<App>) -> El {
     // Dark only for launch.
     let p = Palette::gallery();
-    let inset = cx.titlebar_inset();
-    // First run takes the whole window until there's a disc and tgg-melee;
+    cx.caption_color(p.ink);
+    let insets = cx.chrome_insets();
+    let inset = insets.leading.max(cx.titlebar_inset());
+    let trailing = insets.trailing;
+    // First run takes the whole window until the player finishes setup once;
     // signing in is still asked in its dialog over it.
     if app.first_run.is_some() {
         return col()
@@ -31,6 +34,8 @@ pub fn view(app: &App, cx: &mut Cx<App>) -> El {
             .child(first_run::view::view(app, &p))
             .children(signin::view::sign_in(app, &p));
     }
+    let right_pane = mods::details::shown(app) || replays::details::shown(app);
+    let top_trailing = if right_pane { 0.0 } else { trailing };
     // No fill of its own: the sidebar and the content each fill theirs, so
     // where the window is see-through the sidebar's glass shows.
     row()
@@ -52,7 +57,7 @@ pub fn view(app: &App, cx: &mut Cx<App>) -> El {
                 .min_w(0.0)
                 .h_full()
                 .fill(p.bg)
-                .child(top_bar(app, inset, &p))
+                .child(top_bar(app, inset, top_trailing, &p))
                 .child(place(app, &p)),
         )
         // Over both, so it stays put while the sidebar slides away under it.
@@ -61,8 +66,8 @@ pub fn view(app: &App, cx: &mut Cx<App>) -> El {
             toggle(app, &p).absolute(x, y)
         })
         // A mod's details, the whole window tall at its right, as the sidebar is at its left.
-        .child(mods::details::view(app, &p))
-        .child(replays::details::view(app, &p))
+        .child(mods::details::view(app, trailing, &p))
+        .child(replays::details::view(app, trailing, &p))
         .children(notice(app, &p))
         // Dialogs, over everything.
         .children(library::review::view(app, &p))
@@ -150,6 +155,7 @@ fn sidebar(app: &App, inset: f32, p: &Palette) -> El {
         )
         .child(col().gap(space::TIGHT).children(places))
         .child(spacer())
+        .children(sidebar_port_update(app, p))
         .child(signin::view::foot(app, p));
     let base = col()
         .key("shell/sidebar")
@@ -179,10 +185,11 @@ fn sidebar(app: &App, inset: f32, p: &Palette) -> El {
 
 /// The top bar: the place's name (or where the player is under it), clear of
 /// the sidebar's button while the sidebar is hidden, and at its end the
-/// place's search and its one action. Only the name springs as the sidebar
-/// slides; the end stays at the window's edge. Its empty stretch moves the
-/// window on macOS.
-fn top_bar(app: &App, inset: f32, p: &Palette) -> El {
+/// place's search and its one action (clear of Windows caption buttons via
+/// `trailing` when no right-edge details pane is open). Only the name springs
+/// as the sidebar slides; the end stays at the window's edge. Its empty
+/// stretch moves the window on macOS and Windows.
+fn top_bar(app: &App, inset: f32, trailing: f32, p: &Palette) -> El {
     let start = if app.nav.sidebar {
         space::PAGE
     } else {
@@ -198,7 +205,7 @@ fn top_bar(app: &App, inset: f32, p: &Palette) -> El {
         .key("shell/title")
         .h(size::TOP_BAR)
         .pl(start)
-        .pr(space::PAGE - space::XXS)
+        .pr(trailing + space::PAGE - space::XXS)
         .gap(space::SM)
         .items_center()
         .child(row().motion(motion::SIDEBAR).child(name))
@@ -321,6 +328,56 @@ fn notice(app: &App, p: &Palette) -> Option<El> {
                     .on_press(|app: &mut App| app.notice = None),
             )
             .absolute(left, top),
+    )
+}
+
+/// Subtle sidebar indicator when a newer tgg-melee is out, or status while
+/// updating. Mirrors Hex's sidebar update row.
+fn sidebar_port_update(app: &App, p: &Palette) -> Option<El> {
+    if app.mods.work.as_ref().is_some_and(|work| work.port) {
+        return Some(
+            row()
+                .key("sidebar/port-update")
+                .w_full()
+                .h(size::ROW)
+                .px(space::SM)
+                .gap(space::XS)
+                .items_center()
+                .child(dot(p.accent))
+                .child(
+                    label("Updating tgg-melee…")
+                        .font(text::SMALL)
+                        .color(p.muted)
+                        .truncate()
+                        .min_w(0.0),
+                ),
+        );
+    }
+    let release = app.mods.port_update()?;
+    let words = format!("Update tgg-melee {}", release.version);
+    Some(
+        row()
+            .key("sidebar/port-update")
+            .w_full()
+            .h(size::ROW)
+            .px(space::SM)
+            .gap(space::XS)
+            .items_center()
+            .radius(radius::CONTROL)
+            .hover(p.hover)
+            .cursor(rune::Cursor::Pointer)
+            .role("button")
+            .focusable(true)
+            .label(words.clone())
+            .on_press(mods::actions::install_port)
+            .child(dot(p.accent))
+            .child(
+                label(words)
+                    .font(text::SMALL)
+                    .color(p.muted)
+                    .truncate()
+                    .min_w(0.0),
+            ),
     )
 }
 

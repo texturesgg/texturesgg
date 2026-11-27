@@ -28,6 +28,9 @@ pub fn read(app: &mut App) {
 /// counted mods resolved like a profile, for its queue. The plan it had
 /// stays until the new one's ready, so what shows it doesn't blink out.
 pub fn plan(app: &mut App, key: &str) {
+    if key == sets::VANILLA {
+        return;
+    }
     let Some(set) = app.sets.get(key).cloned() else {
         return;
     };
@@ -67,7 +70,7 @@ pub fn activate(app: &mut App, key: &str) {
         return;
     }
     app.sets.active = key.to_owned();
-    if !app.sets.plans.contains_key(key) {
+    if key != sets::VANILLA && !app.sets.plans.contains_key(key) {
         plan(app, key);
     }
 }
@@ -122,6 +125,30 @@ pub fn launch(app: &mut App, how: How) {
                 .map_err(|error| error.to_string());
             Job::Sets(Box::new(Done::ReadyToPrepare { how, result }))
         });
+        return;
+    }
+    if app.sets.is_vanilla() {
+        let (Some(port), Disc::Found(disc)) = (app.mods.port(), &app.mods.disc) else {
+            return;
+        };
+        let vanilla = sets::vanilla_mods_dir(&app.data.tgg);
+        if let Err(error) = std::fs::create_dir_all(&vanilla) {
+            app.tell(
+                format!("Couldn't prepare an empty mods folder: {error}."),
+                true,
+            );
+            return;
+        }
+        let log = game_log(app);
+        let running = tgg_mod::ports::launch_with_env(
+            port,
+            disc,
+            &vanilla,
+            std::iter::empty::<&str>(),
+            &how.env(&room_report(app)),
+            Some(&log),
+        );
+        started(app, how, sets::VANILLA_NAME.to_owned(), running);
         return;
     }
     let Some(set) = app.sets.active().cloned() else {
@@ -412,6 +439,9 @@ pub fn done(app: &mut App, done: Done) -> bool {
 /// sets it builds on, and each mod it plays without and why. For
 /// Installed mods, what the last check of withdrawals turned off.
 pub fn notices(app: &App, key: &str) -> Vec<String> {
+    if key == sets::VANILLA {
+        return Vec::new();
+    }
     let set_is_installed = app.sets.get(key).is_some_and(MySet::is_installed);
     if set_is_installed {
         return app.sets.said.clone();

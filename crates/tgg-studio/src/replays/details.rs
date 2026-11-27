@@ -26,12 +26,12 @@ pub fn shown(app: &App) -> bool {
 /// while it shows) over the replay's details; narrowing to nothing on the
 /// default spring when no replay is chosen, its content pinned to the
 /// window's edge so it slides.
-pub fn view(app: &App, p: &Palette) -> El {
+pub fn view(app: &App, trailing: f32, p: &Palette) -> El {
     let shown = shown(app);
     let head = title_bar(row())
         .h(size::TOP_BAR)
         .pl(space::MD)
-        .pr(space::XS)
+        .pr(trailing + space::XS)
         .gap(space::XS)
         .items_center()
         .child(label("Replay").font(text::LABEL).color(p.faint))

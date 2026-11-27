@@ -192,6 +192,9 @@ pub fn setup(app: &mut crate::state::App, waker: Waker) {
         // Who's signed in, as the site says now; a snapshot keeps its scene's.
         if !crate::snapshot() {
             crate::signin::actions::check(app);
+            if app.mods.registry == crate::mods::Registry::NotAsked {
+                crate::mods::actions::fetch(app);
+            }
         }
         if app.settings.check_for_updates.unwrap_or(true) {
             app.jobs.spawn("update check", || {

@@ -61,6 +61,9 @@ pub struct Mods {
     pub review: Option<Review>,
     /// The disc tgg-melee plays.
     pub disc: Disc,
+    /// Vanilla files modified on the chosen disc with no clean copy cached
+    /// (e.g. `PlFc.dat`), which tgg-melee hashes into netplay mod-set IDs.
+    pub disc_modified: Vec<String>,
     /// The game, while it runs.
     pub playing: Option<Playing>,
     /// The set the page shows on the right; the active one until another is
@@ -131,19 +134,18 @@ pub struct NewSet {
 }
 
 impl NewSet {
-    /// The sheet opened afresh: Online play built on, when textures.gg has
-    /// it.
+    /// The sheet opened afresh: Online play if textures.gg still lists it,
+    /// else Competitive if buildable, else an empty custom set.
     pub fn opened(sets: &[tgg_mod::Set]) -> Self {
-        let online = sets
-            .iter()
-            .any(|set| set.name == tgg_mod::sets::ONLINE_PLAY);
+        let default = [tgg_mod::sets::ONLINE_PLAY, crate::first_run::DEFAULT_SET]
+            .into_iter()
+            .find(|link| {
+                sets.iter()
+                    .any(|set| set.name == *link && set.can_build_on())
+            });
         Self {
             name: TextEdit::default(),
-            builds_on: if online {
-                vec![tgg_mod::sets::ONLINE_PLAY.to_owned()]
-            } else {
-                Vec::new()
-            },
+            builds_on: default.into_iter().map(str::to_owned).collect(),
         }
     }
 
@@ -263,6 +265,7 @@ impl Default for Mods {
             work: None,
             review: None,
             disc: Disc::Unknown,
+            disc_modified: Vec::new(),
             playing: None,
             chosen_set: None,
             tab: Tab::default(),
@@ -529,6 +532,8 @@ pub struct Work {
     /// The one mod it updates, when that's all it does: its progress shows
     /// in that mod's row, not above the page.
     pub target: Option<ModId>,
+    /// True when this work is installing or updating tgg-melee itself.
+    pub port: bool,
 }
 
 impl Work {
@@ -602,8 +607,14 @@ pub enum Done {
     },
     PortInstalled(Result<PortInstall, Error>),
     Applied(Result<Applied, Error>),
-    /// The disc of the player's it found, if any.
-    Disc(Option<PathBuf>),
+    /// The disc of the player's it found, if any, and any modified counted
+    /// files on it without a cached clean copy.
+    Disc(Option<PathBuf>, Vec<String>),
+    /// Modified counted files finished checking for a chosen disc.
+    DiscChecked {
+        path: PathBuf,
+        modified: Vec<String>,
+    },
     /// The game ended: why, when it didn't end well.
     GameEnded(Result<(), String>),
     /// The registry's page for a mod.
@@ -636,6 +647,28 @@ pub fn current_set(app: &App) -> Option<&tgg_mod::sets::MySet> {
             .active()
             .filter(|set| !set.is_installed() || !set.lines.is_empty())
     })
+}
+
+/// A concise warning when the chosen Melee disc has modified counted files
+/// without a cached clean copy, which tgg-melee hashes into netplay mod-set IDs.
+pub fn disc_warning(modified: &[String]) -> Option<String> {
+    match modified {
+        [] => None,
+        [one] => Some(format!(
+            "This disc has a modified file ({one}). That can split your online queues and cause mod mismatches with friends."
+        )),
+        [a, b] => Some(format!(
+            "This disc has modified files ({a} and {b}). That can split your online queues and cause mod mismatches with friends."
+        )),
+        [a, b, c] => Some(format!(
+            "This disc has modified files ({a}, {b}, and {c}). That can split your online queues and cause mod mismatches with friends."
+        )),
+        [a, b, rest @ ..] => Some(format!(
+            "This disc has {} modified files ({a}, {b}, and {} more). That can split your online queues and cause mod mismatches with friends.",
+            modified.len(),
+            rest.len()
+        )),
+    }
 }
 
 /// "1 mod", "8 mods".

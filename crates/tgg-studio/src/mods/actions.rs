@@ -551,12 +551,6 @@ pub fn create_new_set(app: &mut App) {
         return;
     }
     let links = sheet.builds_on.clone();
-    let online = app
-        .mods
-        .sets
-        .iter()
-        .any(|set| set.name == sets::ONLINE_PLAY);
-    let say = (!online).then(|| "textures.gg has no Online play set yet".to_owned());
     let net = app.mods.net.clone();
     change(app, "new set", move |data, local| {
         let mut mine = sets::new(data, &name).map_err(|error| error.to_string())?;
@@ -564,7 +558,7 @@ pub fn create_new_set(app: &mut App) {
             mine = sets::build_on(&*net, data, local, &mine.key, link)
                 .map_err(|error| error.to_string())?;
         }
-        Ok((say, Some(mine.key)))
+        Ok((None, Some(mine.key)))
     });
 }
 
@@ -716,7 +710,15 @@ pub fn done(app: &mut App, done: Done) -> bool {
             read_disk(app);
             replan(app);
         }
-        Done::Disc(found) => app.mods.disc = found.map_or(Disc::Missing, Disc::Found),
+        Done::Disc(found, modified) => {
+            app.mods.disc = found.map_or(Disc::Missing, Disc::Found);
+            app.mods.disc_modified = modified;
+        }
+        Done::DiscChecked { path, modified } => {
+            if app.mods.disc == Disc::Found(path) {
+                app.mods.disc_modified = modified;
+            }
+        }
         Done::SetChanged(reload) => {
             let Reload { list, result } = *reload;
             match list {
@@ -963,6 +965,9 @@ fn install_release(app: &mut App, release: tgg_mod::PortRelease) {
     }
     let (net, ports) = (app.mods.net.clone(), app.data.ports.clone());
     let work = start(app, format!("Installing tgg-melee {}", release.version));
+    if let Some(active) = &mut app.mods.work {
+        active.port = true;
+    }
     app.jobs.spawn("tgg-melee install", move || {
         let report = reporter(&work);
         Job::Mods(Box::new(Done::PortInstalled(tgg_mod::install_port(
@@ -1081,11 +1086,13 @@ pub fn remove(app: &mut App, id: &ModId) {
 }
 
 /// Find the disc tgg-melee plays: the one the player chose for it, else
-/// their Slippi ISO, else any Melee in their game folders. Skins in it don't
-/// matter: tgg-melee plays the game as it shipped from any copy. Outside
-/// tests only, where the player's folders are looked through.
+/// their Slippi ISO, else any Melee in their game folders (preferring a
+/// clean disc). Also checks for modified counted files without a cached
+/// clean copy. Outside tests only, where the player's folders are looked
+/// through.
 pub fn find_disc(app: &mut App) {
     app.mods.disc = Disc::Looking;
+    app.mods.disc_modified.clear();
     let chosen: Vec<PathBuf> = app
         .settings
         .play_iso
@@ -1098,21 +1105,35 @@ pub fn find_disc(app: &mut App) {
         )
         .collect();
     let everywhere = app.persist;
+    let clean = clean_dir(app);
     app.jobs.spawn("disc", move || {
         let found = chosen
             .into_iter()
-            .find(|path| tgg_app::Game::open(path).is_ok())
+            .find_map(|path| tgg_app::Game::open(&path).ok().map(|game| (path, game)))
             .or_else(|| {
                 everywhere
                     .then(|| {
-                        tgg_app::discover_games()
-                            .into_iter()
-                            .next()
-                            .map(|game| game.path)
+                        let discovered = tgg_app::discover_games();
+                        // Prefer a disc with no modified files over a modded one.
+                        let preferred = discovered
+                            .iter()
+                            .find(|game| game.changed == 0)
+                            .or_else(|| discovered.first())
+                            .map(|game| game.path.clone())?;
+                        tgg_app::Game::open(&preferred)
+                            .ok()
+                            .map(|game| (preferred, game))
                     })
                     .flatten()
             });
-        Job::Mods(Box::new(Done::Disc(found)))
+        let (path, modified) = match found {
+            Some((path, game)) => {
+                let modified = game.modified_counted_files(clean.as_deref());
+                (Some(path), modified)
+            }
+            None => (None, Vec::new()),
+        };
+        Job::Mods(Box::new(Done::Disc(path, modified)))
     });
 }
 
@@ -1133,13 +1154,24 @@ pub fn choose_disc(_: &mut App, tx: &mut Tx) {
 /// Play the disc at `path`, if it's Melee NTSC 1.02, and remember it.
 pub fn use_disc(app: &mut App, path: PathBuf) {
     match tgg_app::Game::open(&path) {
-        Ok(_) => {
+        Ok(game) => {
             let remembered = path.clone();
             app.change_settings(move |settings| settings.play_iso = Some(remembered.clone()));
-            app.mods.disc = Disc::Found(path);
+            app.mods.disc = Disc::Found(path.clone());
+            app.mods.disc_modified.clear();
+            let clean = clean_dir(app);
+            app.jobs.spawn("check disc", move || {
+                let modified = game.modified_counted_files(clean.as_deref());
+                Job::Mods(Box::new(Done::DiscChecked { path, modified }))
+            });
         }
         Err(error) => app.tell(capitalized(&error.to_string()), true),
     }
+}
+
+/// `<game_data_dir>/clean`, where tgg-melee caches clean vanilla copies.
+fn clean_dir(app: &App) -> Option<PathBuf> {
+    app.data.skins.parent().map(|dir| dir.join("clean"))
 }
 
 /// Watch the game `running` until it ends or Stop ends it: Play becomes
@@ -1218,6 +1250,7 @@ fn start(app: &mut App, doing: String) -> Arc<Shared> {
         progress: shared.progress.clone(),
         cancel: shared.cancel.clone(),
         target: None,
+        port: false,
     });
     shared
 }

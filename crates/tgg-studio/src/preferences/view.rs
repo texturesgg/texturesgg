@@ -76,10 +76,20 @@ fn setting(key: &str, name: &str, line: impl Into<String>, control: El, p: &Pale
 /// tgg-melee's disc: the game it plays, as the game shipped.
 fn disc(app: &App, p: &Palette) -> El {
     let line = match &app.mods.disc {
-        Disc::Found(path) => match path.file_name().and_then(|name| name.to_str()) {
-            Some(name) => format!("{name}. Clean Melee disc used by tgg-melee."),
-            None => "Clean Melee NTSC 1.02 disc used by tgg-melee.".to_owned(),
-        },
+        Disc::Found(path) => {
+            let name = path.file_name().and_then(|name| name.to_str());
+            if let Some(warning) = crate::mods::disc_warning(&app.mods.disc_modified) {
+                match name {
+                    Some(name) => format!("{name}. {warning}"),
+                    None => warning,
+                }
+            } else {
+                match name {
+                    Some(name) => format!("{name}. Clean Melee disc used by tgg-melee."),
+                    None => "Clean Melee NTSC 1.02 disc used by tgg-melee.".to_owned(),
+                }
+            }
+        }
         Disc::Missing => "No Melee NTSC 1.02 disc found.".to_owned(),
         Disc::Unknown | Disc::Looking => "Looking for your disc…".to_owned(),
     };

@@ -71,6 +71,8 @@ pub fn view(app: &App, p: &Palette) -> El {
     let body = match needs_setup(app) {
         Some(words) => body.child(quiet(words, p).key("play/setup")),
         None => body
+            .children(port_update_banner(app, p))
+            .children(disc_warning_banner(app, p))
             .children(notices(app, p))
             .child(hero(app, p))
             .child(below(app, p)),
@@ -160,6 +162,84 @@ fn faint(words: &str, p: &Palette) -> El {
         .wrap()
 }
 
+/// A prominent callout at the top of Play when a newer tgg-melee is out, or
+/// inline progress while tgg-melee is updating.
+fn port_update_banner(app: &App, p: &Palette) -> Option<El> {
+    if let Some(work) = app.mods.work.as_ref().filter(|work| work.port) {
+        let body = col()
+            .gap(space::SNUG)
+            .child(label(work.label()).font(text::STRONG).color(p.ink))
+            .child(
+                col()
+                    .w(size::INLINE_PROGRESS)
+                    .child(progress(work.fraction(), p).key("play/port-update/progress")),
+            );
+        let cancel = text_action("Cancel", false, p)
+            .key("play/port-update/cancel")
+            .on_press(crate::mods::actions::cancel_work);
+        return Some(callout(body, Some(cancel), p).key("play/port-update"));
+    }
+    let release = app.mods.port_update()?;
+    let words = if app.mods.has_port(&release.version) {
+        format!(
+            "tgg-melee {} is installed and ready to use.",
+            release.version
+        )
+    } else {
+        format!(
+            "tgg-melee {} is out ({}).",
+            release.version,
+            crate::mods::size_text(release.size())
+        )
+    };
+    let body = row()
+        .gap(space::XS)
+        .items_center()
+        .child(
+            el().size(LIVE_DOT, LIVE_DOT)
+                .radius(LIVE_DOT / 2.0)
+                .fill(p.accent),
+        )
+        .child(
+            label(words)
+                .font(text::BODY)
+                .color(p.ink)
+                .wrap()
+                .grow(1.0)
+                .min_w(0.0),
+        );
+    let action = button_small("Update tgg-melee", ButtonKind::Primary, p)
+        .key("play/port-update/install")
+        .on_press(crate::mods::actions::install_port);
+    Some(callout(body, Some(action), p).key("play/port-update"))
+}
+
+/// A callout when the chosen Melee disc has modified counted files without a
+/// cached clean copy, which affects online matchmaking and direct connect.
+fn disc_warning_banner(app: &App, p: &Palette) -> Option<El> {
+    let words = crate::mods::disc_warning(&app.mods.disc_modified)?;
+    let body = row()
+        .gap(space::XS)
+        .items_center()
+        .child(
+            el().size(LIVE_DOT, LIVE_DOT)
+                .radius(LIVE_DOT / 2.0)
+                .fill(p.accent),
+        )
+        .child(
+            label(words)
+                .font(text::BODY)
+                .color(p.ink)
+                .wrap()
+                .grow(1.0)
+                .min_w(0.0),
+        );
+    let action = button_small("Choose another", ButtonKind::Secondary, p)
+        .key("play/disc-warning/choose")
+        .on_press_tx(crate::mods::actions::choose_disc);
+    Some(callout(body, Some(action), p).key("play/disc-warning"))
+}
+
 /// What the set says it plays without, above the card: each its own slim
 /// callout. They never block playing.
 fn notices(app: &App, p: &Palette) -> Vec<El> {
@@ -241,6 +321,18 @@ fn spotlight(app: &App, side: f32, p: &Palette) -> El {
 /// Under the buttons, what Find a match does with this set: which players
 /// it pairs the player with, by the gameplay mods they run.
 fn explainer(app: &App, p: &Palette) -> Option<El> {
+    if app.sets.is_vanilla() {
+        return Some(
+            label(
+                "Plain Melee with no mods. Pick a set like Competitive to play online, or join a queue below.",
+            )
+            .key("play/explainer")
+            .font(text::SMALL)
+            .color(p.muted)
+            .wrap()
+            .max_w(EXPLAINER),
+        );
+    }
     let plan = app.sets.plan(&app.sets.active)?;
     let mods = gameplay(plan);
     let queues = actions::queues_of(app);
@@ -281,14 +373,19 @@ fn explainer(app: &App, p: &Palette) -> Option<El> {
 /// picker: its name, and under it what it plays (the sets it builds on, then
 /// its own mods).
 fn picker(app: &App, p: &Palette) -> El {
-    let set = app.sets.active();
-    let name = set.map_or_else(
-        || tgg_mod::sets::INSTALLED_NAME.to_owned(),
-        |set| set.name.clone(),
-    );
-    let summary = set
-        .map(|set| crate::sets::summary(app, set))
-        .unwrap_or_default();
+    let (name, summary) = if app.sets.is_vanilla() {
+        (tgg_mod::sets::VANILLA_NAME.to_owned(), "No mods".to_owned())
+    } else {
+        let set = app.sets.active();
+        let name = set.map_or_else(
+            || tgg_mod::sets::INSTALLED_NAME.to_owned(),
+            |set| set.name.clone(),
+        );
+        let summary = set
+            .map(|set| crate::sets::summary(app, set))
+            .unwrap_or_default();
+        (name, summary)
+    };
     col()
         .key("play/set")
         .min_w(0.0)
@@ -331,9 +428,16 @@ fn picker(app: &App, p: &Palette) -> El {
 /// Play with a friend for a room (the sheet with its code): another game
 /// can't start beside it.
 fn buttons(app: &App, p: &Palette) -> El {
+    let vanilla = app.sets.is_vanilla();
     let main = match &app.sets.session {
         Some(session) => live(app, session, p),
         None if app.mods.playing.is_some() => running(p),
+        None if vanilla && app.sets.busy() => button_main("Play offline", ButtonKind::Primary, p)
+            .disabled(true)
+            .opacity(BUSY),
+        None if vanilla => button_main("Play offline", ButtonKind::Primary, p)
+            .key("play/offline")
+            .on_press(actions::play_offline),
         None if app.sets.busy() => button_main("Find a match", ButtonKind::Primary, p)
             .disabled(true)
             .opacity(BUSY),
@@ -353,12 +457,12 @@ fn buttons(app: &App, p: &Palette) -> El {
         .gap(space::XS)
         .items_center()
         .child(main)
-        .children((!running || room).then(|| {
+        .children(((!running && !vanilla) || room).then(|| {
             button_main("Play with a friend", ButtonKind::Secondary, p)
                 .key("play/friend")
                 .on_press(actions::open_friend)
         }))
-        .children((!running).then(|| {
+        .children((!running && !vanilla).then(|| {
             button_main("Play offline", ButtonKind::Secondary, p)
                 .key("play/offline")
                 .on_press(actions::play_offline)
@@ -432,6 +536,9 @@ fn searching_in(app: &App, session: &Session) -> String {
 /// The queue the card's line and pill name: the one in the list whose mods
 /// are the set's gameplay mods.
 fn line_queue(app: &App) -> Option<&Queue> {
+    if app.sets.is_vanilla() {
+        return None;
+    }
     let queues = actions::queues_of(app)?;
     let plan = app.sets.plan(&app.sets.active)?;
     matching(queues, &gameplay(plan)).and_then(|index| queues.get(index))
@@ -440,6 +547,9 @@ fn line_queue(app: &App) -> Option<&Queue> {
 /// Where the queue the card covers sits in `queues`, so the list doesn't
 /// repeat it.
 fn covered_queue(app: &App, queues: &[Queue]) -> Option<usize> {
+    if app.sets.is_vanilla() {
+        return None;
+    }
     let plan = app.sets.plan(&app.sets.active)?;
     matching(queues, &gameplay(plan))
 }
@@ -450,6 +560,24 @@ fn covered_queue(app: &App, queues: &[Queue]) -> Option<usize> {
 fn status(app: &App, p: &Palette) -> Option<El> {
     if app.sets.launching.is_some() {
         return None;
+    }
+    if app.sets.is_vanilla() {
+        let dot = el()
+            .size(LIVE_DOT, LIVE_DOT)
+            .radius(LIVE_DOT / 2.0)
+            .fill(p.faint);
+        return Some(
+            row()
+                .key("play/status")
+                .gap(space::XS)
+                .items_center()
+                .child(dot)
+                .child(
+                    label("No mods · offline only")
+                        .font(text::LABEL)
+                        .color(p.muted),
+                ),
+        );
     }
     let queues = actions::queues_of(app)?;
     let plan = app.sets.plan(&app.sets.active)?;
@@ -829,6 +957,11 @@ pub fn menu(app: &App, p: &Palette) -> Option<El> {
                 .on_press(move |app: &mut App| actions::choose(app, &key))
         })
         .collect();
+    items.push(
+        select_item("Vanilla (no mods)", app.sets.is_vanilla(), p)
+            .key("play/set/vanilla")
+            .on_press(|app: &mut App| actions::choose(app, tgg_mod::sets::VANILLA)),
+    );
     items.push(select_rule(p));
     items.push(
         select_item("Change sets on Mods", false, p)

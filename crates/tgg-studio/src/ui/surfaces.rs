@@ -286,12 +286,12 @@ pub fn callout(words: El, action: Option<El>, p: &Palette) -> El {
         .children(action)
 }
 
-/// A row standing in for the title bar: on macOS, where the window draws
-/// none under its traffic lights, pressing its background moves the
-/// window. Linux and Windows keep the system's title bar, so the row is
-/// only a row there.
+/// A row standing in for the title bar: on macOS and Windows, where Rune
+/// extends content into the title bar under the native traffic lights or
+/// Win11 caption buttons, pressing its background moves the window. Linux
+/// keeps the system's title bar, so the row is only a row there.
 pub fn title_bar(element: El) -> El {
-    if cfg!(target_os = "macos") {
+    if cfg!(any(target_os = "macos", target_os = "windows")) {
         element.window_drag()
     } else {
         element
