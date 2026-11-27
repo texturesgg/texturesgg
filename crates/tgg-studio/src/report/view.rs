@@ -38,17 +38,12 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
             p.danger,
         ),
     };
-    let body = col()
-        .px(space::LG)
-        .py(space::MD)
-        .gap(space::XS)
-        .child(lines)
-        .child(
-            label(status)
-                .key("report/status")
-                .font(text::SMALL)
-                .color(color),
-        );
+    let body = col().py(space::MD).gap(space::XS).child(lines).child(
+        label(status)
+            .key("report/status")
+            .font(text::SMALL)
+            .color(color),
+    );
     let send_words = if matches!(report.progress, Progress::Sent(_)) {
         "Done"
     } else {

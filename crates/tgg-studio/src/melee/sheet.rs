@@ -240,7 +240,6 @@ fn picker(app: &App, p: &Palette) -> Option<El> {
     };
     let body = col()
         .key("skins/picker/body")
-        .px(space::LG)
         .pb(space::MD)
         .gap(space::MD)
         .child(tabs)

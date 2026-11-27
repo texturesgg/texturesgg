@@ -15,7 +15,6 @@ pub fn body(app: &App, p: &Palette) -> El {
     let working = mods.work.as_ref().map(|work| {
         col()
             .key("mods/versions/work")
-            .px(space::LG)
             .py(space::XS)
             .gap(space::XXS)
             .child(
@@ -28,14 +27,13 @@ pub fn body(app: &App, p: &Palette) -> El {
     });
     if listed.is_empty() {
         let empty = if mods.registry == Registry::Asking {
-            col().px(space::LG).py(space::SM).child(
+            col().py(space::SM).child(
                 label("Checking textures.gg…")
                     .font(text::BODY)
                     .color(p.muted),
             )
         } else {
             row()
-                .px(space::LG)
                 .py(space::SM)
                 .gap(space::XS)
                 .items_center()
@@ -118,7 +116,6 @@ fn version_row(mods: &Mods, version: &str, newest: bool, p: &Palette) -> El {
     };
     row()
         .key(format!("mods/versions/{version}"))
-        .px(space::LG)
         .py(space::XS)
         .gap(space::SM)
         .items_center()

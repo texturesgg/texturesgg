@@ -8,7 +8,7 @@ use crate::ui::tokens::{Palette, space, text};
 use crate::ui::{
     ButtonKind, Dialog, DialogWidth, button, button_off, dialog, setting_row, switch, text_field,
 };
-use rune::{El, col, row, text as label};
+use rune::{El, col, text as label};
 use tgg_mod::Set;
 use tgg_mod::sets::{self, MySet};
 
@@ -33,18 +33,15 @@ fn new_set(app: &App, p: &Palette) -> Option<El> {
         .pb(space::SM)
         .gap(space::XS)
         .child(
-            col().px(space::LG).child(
-                text_field(&sheet.name, "Friday night", p)
-                    .key("mods/new-set/name")
-                    .w_full()
-                    .on_edit(|app: &mut App| &mut app.mods.new_set.as_mut().expect("open").name),
-            ),
+            text_field(&sheet.name, "Friday night", p)
+                .key("mods/new-set/name")
+                .w_full()
+                .on_edit(|app: &mut App| &mut app.mods.new_set.as_mut().expect("open").name),
         )
         .child(
             label("Build on")
                 .font(text::LABEL)
                 .color(p.faint)
-                .px(space::LG)
                 .pt(space::SM),
         );
     if !online {
@@ -53,8 +50,7 @@ fn new_set(app: &App, p: &Palette) -> Option<El> {
                 .key("mods/new-set/no-online")
                 .font(text::SMALL)
                 .color(p.muted)
-                .wrap()
-                .px(space::LG),
+                .wrap(),
         );
     }
     let choices: Vec<El> = app
@@ -71,8 +67,7 @@ fn new_set(app: &App, p: &Palette) -> Option<El> {
                 .key("mods/new-set/none")
                 .font(text::SMALL)
                 .color(p.muted)
-                .wrap()
-                .px(space::LG),
+                .wrap(),
         );
     }
     let create = if sheet.named() {
@@ -125,7 +120,6 @@ fn rename(app: &App, p: &Palette) -> Option<El> {
         .key("mods/rename/body")
         .pt(space::XS)
         .pb(space::SM)
-        .px(space::LG)
         .child(
             text_field(name, "Friday night", p)
                 .key("mods/rename/name")
@@ -173,8 +167,7 @@ fn build_on(app: &App, p: &Palette) -> Option<El> {
                 .key("mods/build-on/full")
                 .font(text::SMALL)
                 .color(p.muted)
-                .wrap()
-                .px(space::LG),
+                .wrap(),
         );
     }
     Some(dialog(
@@ -225,13 +218,11 @@ fn candidates(app: &App, set: &MySet, p: &Palette) -> Vec<El> {
         .collect();
     if rows.is_empty() {
         return vec![
-            row().px(space::LG).child(
-                label("textures.gg has no other set to build on yet.")
-                    .key("mods/build-on/none")
-                    .font(text::SMALL)
-                    .color(p.muted)
-                    .wrap(),
-            ),
+            label("textures.gg has no other set to build on yet.")
+                .key("mods/build-on/none")
+                .font(text::SMALL)
+                .color(p.muted)
+                .wrap(),
         ];
     }
     rows

@@ -69,7 +69,6 @@ fn items<'a>(app: &'a App, review: &'a Review, p: &'a Palette) -> impl Iterator<
             .children(colors(app, index, item.slot, p));
         col()
             .key(format!("review/item/{index}"))
-            .px(space::LG)
             .py(space::SM)
             .gap(space::XXS)
             .child(
@@ -114,7 +113,6 @@ fn rejected<'a>(review: &'a Review, p: &'a Palette) -> impl Iterator<Item = El> 
         .map(move |(index, rejected)| {
             col()
                 .key(format!("review/rejected/{index}"))
-                .px(space::LG)
                 .py(space::SM)
                 .gap(space::TIGHT)
                 .child(

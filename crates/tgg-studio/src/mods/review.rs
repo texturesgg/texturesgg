@@ -110,13 +110,9 @@ fn line(review: &Review) -> String {
 fn section(label_text: Option<String>, rows: Vec<El>, p: &Palette) -> El {
     col()
         .pt(space::XS)
-        .children(label_text.map(|words| {
-            label(words)
-                .font(text::LABEL)
-                .color(p.faint)
-                .px(space::LG)
-                .py(space::XXS)
-        }))
+        .children(
+            label_text.map(|words| label(words).font(text::LABEL).color(p.faint).py(space::XXS)),
+        )
         .children(rows)
 }
 
@@ -149,7 +145,6 @@ fn step_row(step: &Step, p: &Palette) -> El {
     let quiet = step.action == Action::Keep;
     row()
         .key(format!("mods/review/{}", step.id))
-        .px(space::LG)
         .py(space::XS)
         .gap(space::SM)
         .items_center()
@@ -188,7 +183,6 @@ fn problems<'a>(plan: &'a Plan, p: &'a Palette) -> impl Iterator<Item = El> + 'a
             }
             label(words)
                 .key(format!("mods/review/problem/{index}"))
-                .px(space::LG)
                 .py(space::XS)
                 .font(text::SMALL)
                 .color(p.danger)

@@ -172,6 +172,7 @@ pub fn dialog<S: 'static>(
         DialogWidth::Sheet => size::SHEET,
     };
     let (y, blur) = elevation::DIALOG;
+    let has_head = !parts.title.is_empty() || !parts.line.is_empty();
     let mut dialog = col()
         .key(key)
         .w(width)
@@ -186,22 +187,32 @@ pub fn dialog<S: 'static>(
         .transition(motion::enter())
         .role(role)
         .label(parts.title.clone())
-        .modal(true, dismiss)
-        .child(
+        .modal(true, dismiss);
+    if has_head {
+        dialog = dialog.child(
             col()
                 .px(space::LG)
                 .pt(space::LG)
                 .pb(space::SM)
                 .gap(space::XXS)
-                .child(text(parts.title).font(type_::H3).color(p.ink))
+                .children(
+                    (!parts.title.is_empty())
+                        .then(|| text(parts.title).font(type_::H3).color(p.ink)),
+                )
                 .children(
                     (!parts.line.is_empty())
                         .then(|| text(parts.line).font(type_::BODY).color(p.muted).wrap()),
                 ),
         );
+    }
     if let Some(body) = parts.body {
         // What's in it scrolls when it's taller than the dialog may be, so
-        // the head and the buttons always show.
+        // the head and the buttons always show. Inset lives here so every
+        // dialog body aligns with the head and buttons by default.
+        let mut inner = col().px(space::LG).child(body);
+        if !has_head {
+            inner = inner.pt(space::LG);
+        }
         let body = col()
             .key(format!("{key}/body"))
             .shrink()
@@ -209,7 +220,7 @@ pub fn dialog<S: 'static>(
             .scroll(ScrollSpec {
                 stick_bottom: false,
             })
-            .child(body);
+            .child(inner);
         dialog = dialog.child(body);
     }
     dialog = dialog.child(
@@ -244,7 +255,6 @@ pub fn setting_row(name: &str, line: impl Into<String>, control: El, p: &Palette
 /// with what's entered, in the danger color.
 pub fn setting_row_with(name: &str, line: El, control: El, p: &Palette) -> El {
     row()
-        .px(space::LG)
         .py(space::SM)
         .gap(space::MD)
         .items_center()

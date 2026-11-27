@@ -23,7 +23,7 @@ pub fn trust(app: &App, p: &Palette) -> Option<El> {
         label(words).font(text::BODY).color(p.ink).wrap()
     });
     let remember = trust.remember;
-    let body = col().px(space::LG).gap(space::SM).children(lines).child(
+    let body = col().gap(space::SM).children(lines).child(
         row()
             .gap(space::SM)
             .items_center()

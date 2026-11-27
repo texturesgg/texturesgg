@@ -25,7 +25,6 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
         sections.push(
             col()
                 .key("replays/review/notices")
-                .px(space::LG)
                 .py(space::SM)
                 .gap(space::XXS)
                 .children(
@@ -70,7 +69,6 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
             };
             row()
                 .key(format!("replays/review/mod/{}", m.id))
-                .px(space::LG)
                 .py(space::XS)
                 .gap(space::SM)
                 .items_center()
@@ -103,7 +101,6 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
         sections.push(
             col()
                 .key("replays/review/trust")
-                .px(space::LG)
                 .py(space::SM)
                 .gap(space::XS)
                 .child(
@@ -142,7 +139,6 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
                 label(capitalized(&missing.to_string()))
                     .font(text::SMALL)
                     .color(p.danger)
-                    .px(space::LG)
                     .wrap()
             });
         sections.push(
@@ -150,13 +146,7 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
                 .key("replays/review/missing")
                 .py(space::SM)
                 .gap(space::XXS)
-                .child(
-                    label(lead)
-                        .font(text::SMALL)
-                        .color(p.muted)
-                        .px(space::LG)
-                        .wrap(),
-                )
+                .child(label(lead).font(text::SMALL).color(p.muted).wrap())
                 .children(rows),
         );
     }
@@ -231,7 +221,6 @@ fn note(words: String, p: &Palette) -> El {
     label(words)
         .font(text::SMALL)
         .color(p.muted)
-        .px(space::LG)
         .py(space::SM)
         .wrap()
 }
@@ -241,13 +230,7 @@ fn section(name: String, rows: Vec<El>, p: &Palette) -> El {
     col()
         .pt(space::XS)
         .pb(space::XS)
-        .child(
-            label(name)
-                .font(text::LABEL)
-                .color(p.faint)
-                .px(space::LG)
-                .py(space::XXS),
-        )
+        .child(label(name).font(text::LABEL).color(p.faint).py(space::XXS))
         .children(rows)
 }
 
