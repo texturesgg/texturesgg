@@ -141,7 +141,7 @@ fn tgg_melee(app: &App, p: &Palette) -> El {
         ("Updating tgg-melee…".to_owned(), p.muted)
     } else if asking {
         ("Checking textures.gg for updates…".to_owned(), p.muted)
-    } else if let Some(ref release) = update {
+    } else if let Some(release) = &update {
         let text = match app.mods.port() {
             Some(port) => format!(
                 "You have tgg-melee {}. {} is available.",
