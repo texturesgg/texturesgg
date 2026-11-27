@@ -880,7 +880,6 @@ pub fn friend(app: &App, p: &Palette) -> Option<El> {
                 .on_press(actions::join)
         });
     let body = col()
-        .px(space::LG)
         .pb(space::SM)
         .gap(space::MD)
         .child(room)

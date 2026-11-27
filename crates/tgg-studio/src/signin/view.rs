@@ -92,7 +92,6 @@ pub fn sign_in(app: &App, p: &Palette) -> Option<El> {
     };
     let body =
         col()
-            .px(space::LG)
             .py(space::MD)
             .gap(space::SM)
             .child(row().gap(space::SM).items_center().child(code).children(

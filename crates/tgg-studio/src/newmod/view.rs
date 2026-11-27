@@ -35,7 +35,6 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
 fn form_parts(new_mod: &NewMod, p: &Palette) -> Dialog {
     let mut body = col()
         .key("newmod/body")
-        .px(space::LG)
         .pt(space::XS)
         .pb(space::SM)
         .gap(space::SM)
@@ -210,7 +209,6 @@ fn created_parts(new_mod: &NewMod, created: &CreatedMod, p: &Palette) -> Dialog 
     };
     let body = col()
         .key("newmod/created")
-        .px(space::LG)
         .pt(space::XS)
         .pb(space::SM)
         .gap(space::SM)
