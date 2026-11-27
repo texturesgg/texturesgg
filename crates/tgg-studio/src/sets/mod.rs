@@ -38,6 +38,9 @@ pub struct Sets {
     pub trust: Option<Trust>,
     /// How the game that's running was started, while it runs.
     pub session: Option<Session>,
+    /// Next launch queued once the currently running game finishes quitting
+    /// (used for switching mod sets seamlessly while `tgg-melee` is running).
+    pub relaunch: Option<How>,
     /// Why the sets couldn't be read.
     pub problem: Option<String>,
     /// What the last check of withdrawals before Installed mods' game
@@ -182,6 +185,8 @@ pub struct Session {
     pub how: How,
     /// The set's name, or the queue's.
     pub name: String,
+    /// The set key that was launched (`""` for ad-hoc queue launches).
+    pub set_key: String,
 }
 
 /// What a set job found.

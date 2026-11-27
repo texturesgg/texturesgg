@@ -6,7 +6,7 @@
 //! The set picker's menu and the friend sheet sit over the page.
 
 use super::actions;
-use super::{Queue, QueueMod, gameplay, matching, searching};
+use super::{PendingAction, Queue, QueueMod, gameplay, matching, searching};
 use crate::companion::{Activity, LiveState, Online, OnlineState, RoomInfo};
 use crate::jobs::renders::RenderKey;
 use crate::mods::Disc;
@@ -600,6 +600,13 @@ fn running_buttons(
                 Activity::Menu => format!("Playing {}", session.name),
             };
             let in_match = matches!(live.activity, Activity::Match | Activity::Training);
+            let set_changed = !session.set_key.is_empty() && session.set_key != app.sets.active;
+            let active_name = app
+                .sets
+                .active()
+                .map(|s| s.name.clone())
+                .unwrap_or_else(|| tgg_mod::sets::VANILLA_NAME.to_owned());
+            let switch_label = format!("Switch to {active_name}");
             row()
                 .flex_wrap()
                 .gap(space::XS)
@@ -611,12 +618,17 @@ fn running_buttons(
                     actions::focus_game,
                     p,
                 ))
-                .children((!vanilla && !in_match).then(|| {
+                .children(set_changed.then(|| {
+                    button_main(&switch_label, ButtonKind::Primary, p)
+                        .key("play/switch-set")
+                        .on_press(actions::switch_set)
+                }))
+                .children((!vanilla && !in_match && !set_changed).then(|| {
                     button_main("Find a match", ButtonKind::Secondary, p)
                         .key("play/find")
                         .on_press(actions::find)
                 }))
-                .children((!vanilla && !in_match).then(|| {
+                .children((!vanilla && !in_match && !set_changed).then(|| {
                     button_main("Play with a friend", ButtonKind::Secondary, p)
                         .key("play/friend")
                         .on_press(actions::open_friend)
@@ -1116,20 +1128,8 @@ pub fn friend(app: &App, p: &Palette) -> Option<El> {
         .as_ref()
         .is_some_and(|s| s.online.state.is_room() || s.online.state.is_queue());
     let busy = app.sets.busy() || (app.mods.playing.is_some() && live_state.is_none());
-    let room: El = match (&app.sets.session, live_state.as_ref()) {
-        (Some(session), Some(live))
-            if live.online.state.is_room()
-                || live.online.state == OnlineState::SigningIn
-                || live.online.state == OnlineState::Connecting
-                || live.online.state == OnlineState::Ended =>
-        {
-            room_state(&live.online, &session.how, p).key("play/friend/room")
-        }
-        (Some(session), None) if matches!(session.how, How::Host | How::Join(_)) => {
-            room_state(&Online::default(), &session.how, p).key("play/friend/room")
-        }
-        _ if busy || in_room_or_queue => button_off("Host a room", p),
-        _ => col()
+    let host_button = || {
+        col()
             .gap(space::XS)
             .child(
                 row().child(
@@ -1138,7 +1138,27 @@ pub fn friend(app: &App, p: &Palette) -> Option<El> {
                         .on_press(actions::host),
                 ),
             )
-            .child(faint("You get a code and a link to share.", p)),
+            .child(faint("You get a code and a link to share.", p))
+    };
+    let room: El = match (&app.sets.session, live_state.as_ref()) {
+        (Some(session), Some(live))
+            if live.online.state.is_room()
+                || ((live.online.state == OnlineState::SigningIn
+                    || live.online.state == OnlineState::Connecting)
+                    && (matches!(session.how, How::Host | How::Join(_))
+                        || !live.online.room.code.is_empty())) =>
+        {
+            room_state(&live.online, &session.how, p).key("play/friend/room")
+        }
+        (Some(session), Some(live)) if live.online.state == OnlineState::Ended => col()
+            .gap(space::SM)
+            .child(room_state(&live.online, &session.how, p).key("play/friend/room"))
+            .child(host_button()),
+        (Some(session), None) if matches!(session.how, How::Host | How::Join(_)) => {
+            room_state(&Online::default(), &session.how, p).key("play/friend/room")
+        }
+        _ if busy || in_room_or_queue => button_off("Host a room", p),
+        _ => host_button(),
     };
     let empty = app.play.join.text.trim().is_empty();
     let join = row()
@@ -1179,6 +1199,62 @@ pub fn friend(app: &App, p: &Palette) -> Option<El> {
             ],
         },
         actions::close_friend,
+        p,
+    ))
+}
+
+/// Confirmation dialog shown when the user tries to search, host, join a room,
+/// or switch mod sets while `tgg-melee` is in an active match.
+pub fn confirm(app: &App, p: &Palette) -> Option<El> {
+    let action = app.play.confirm.as_ref()?;
+    let active_name = app
+        .sets
+        .active()
+        .map(|s| s.name.clone())
+        .unwrap_or_else(|| tgg_mod::sets::VANILLA_NAME.to_owned());
+    let (title, line, cta) = match action {
+        PendingAction::Find => (
+            "Leave current match?",
+            "Leaving will end your current match and start searching for a new opponent."
+                .to_owned(),
+            "Leave & find match".to_owned(),
+        ),
+        PendingAction::Host => (
+            "Leave current match?",
+            "Leaving will end your current match and open a new friend room.".to_owned(),
+            "Leave & host".to_owned(),
+        ),
+        PendingAction::Join(code) => (
+            "Leave current match?",
+            format!("Leaving will end your current match and join room {code}."),
+            format!("Leave & join {code}"),
+        ),
+        PendingAction::SwitchSet => (
+            "Leave current match?",
+            format!(
+                "Switching to {active_name} will close the running game and restart with the new set."
+            ),
+            format!("Switch to {active_name}"),
+        ),
+    };
+    Some(dialog(
+        "play/confirm/sheet",
+        "alertdialog",
+        DialogWidth::Narrow,
+        Dialog {
+            title: title.to_owned(),
+            line,
+            body: None,
+            buttons: vec![
+                button("Keep playing", ButtonKind::Secondary, p)
+                    .key("play/confirm/cancel")
+                    .on_press(actions::cancel_confirm),
+                button(&cta, ButtonKind::Primary, p)
+                    .key("play/confirm/ok")
+                    .on_press(actions::confirm_leave),
+            ],
+        },
+        actions::cancel_confirm,
         p,
     ))
 }

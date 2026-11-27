@@ -5,8 +5,8 @@
 //! report about once a second, asking for the next second's frame so the
 //! clock keeps up.
 
-use super::{Done, Queue};
-use crate::companion::{Command, OnlineState};
+use super::{Done, PendingAction, Queue};
+use crate::companion::{Activity, Command, LiveState, OnlineState};
 use crate::jobs::Done as Job;
 use crate::nav::Place;
 use crate::sets::How;
@@ -52,21 +52,32 @@ pub fn done(app: &mut App, done: Done) -> bool {
 }
 
 /// Before each frame, while Play shows: open it the first time, keep the
-/// card's fighter asked for, surface any refused companion command, and keep
-/// the live queue timer ticking while actually searching.
+/// card's fighter asked for, surface any refused companion command, dispatch
+/// any queued post-leave action once back in menus, and keep the live queue
+/// timer ticking while actually searching.
 pub fn tick(app: &mut App, tx: &mut rune::Tx) {
     if let Some(ack) = app
         .companion
-        .as_ref()
+        .as_deref()
         .and_then(crate::companion::Companion::take_error_ack)
     {
         let msg = match ack.reason.as_str() {
             "in-match" => "Finish or leave the current match first.".to_owned(),
             "busy" => "Leave the current online session in-game first.".to_owned(),
+            "invalid" => "Room codes are 4 letters (no I, L, or O).".to_owned(),
             "unsupported" => "The running game doesn't have online mods loaded.".to_owned(),
             _ => "Couldn't complete that action in the running game.".to_owned(),
         };
         app.tell(msg, true);
+    }
+    if let Some(live) = app.live_game()
+        && let Some(action) = app.play.after_leave.clone()
+        && live.activity == Activity::Menu
+        && !live.online.state.is_queue()
+        && !live.online.state.is_room()
+    {
+        app.play.after_leave = None;
+        dispatch_in_menus(app, action);
     }
     if app.nav.place != Place::Play {
         return;
@@ -75,31 +86,134 @@ pub fn tick(app: &mut App, tx: &mut rune::Tx) {
         opened(app);
     }
     hero(app);
-    if app
+    let wake = app
         .live_game()
         .is_some_and(|live| live.online.state == OnlineState::Searching)
-    {
+        || app
+            .companion
+            .as_deref()
+            .is_some_and(crate::companion::Companion::is_restarting);
+    if wake {
         tx.wake_after(CLOCK_TICK);
     }
 }
 
+/// Whether the running game was launched from a different mod set than the
+/// currently active one in Studio.
+fn needs_set_switch(app: &App) -> bool {
+    app.sets
+        .session
+        .as_ref()
+        .is_some_and(|s| !s.set_key.is_empty() && s.set_key != app.sets.active)
+}
+
+/// Whether the running game is currently in an active match or training session
+/// where disrupting it should ask for confirmation first.
+fn in_active_match(live: &LiveState) -> bool {
+    matches!(live.activity, Activity::Match | Activity::Training)
+        || matches!(
+            live.online.state,
+            OnlineState::Matched | OnlineState::RoomPlaying
+        )
+}
+
+fn action_how(action: &PendingAction) -> How {
+    match action {
+        PendingAction::Find => How::Search,
+        PendingAction::Host => How::Host,
+        PendingAction::Join(code) => How::Join(code.clone()),
+        PendingAction::SwitchSet => How::Offline,
+    }
+}
+
+/// Send an online command to an already-running game that is idle in menus
+/// (or cleanly restart into the newly selected set if the set changed).
+fn dispatch_in_menus(app: &mut App, action: PendingAction) {
+    if matches!(action, PendingAction::SwitchSet) || needs_set_switch(app) {
+        app.sets.relaunch = Some(action_how(&action));
+        quit_game(app);
+        return;
+    }
+    let Some(companion) = &app.companion else {
+        crate::sets::actions::launch(app, action_how(&action));
+        return;
+    };
+    match action {
+        PendingAction::Find => {
+            companion.send(Command::StartSearch {
+                mode: "vs".to_owned(),
+            });
+            companion.send(Command::Focus);
+        }
+        PendingAction::Host => {
+            companion.send(Command::HostRoom);
+            companion.send(Command::Focus);
+        }
+        PendingAction::Join(code) => {
+            companion.send(Command::JoinRoom { code });
+            companion.send(Command::Focus);
+        }
+        PendingAction::SwitchSet => {}
+    }
+}
+
+/// Route an online or set-switch action through the running game (prompting if
+/// in an active match, switching sets if needed, or launching if not running).
+fn run_or_prompt(app: &mut App, action: PendingAction) {
+    if let Some(live) = app.live_game() {
+        if in_active_match(&live) {
+            app.play.confirm = Some(action);
+            return;
+        }
+        dispatch_in_menus(app, action);
+        return;
+    }
+    if app.sets.session.is_some() {
+        // Running game hasn't finished connecting companion yet; if switching sets, queue it.
+        if matches!(action, PendingAction::SwitchSet) || needs_set_switch(app) {
+            app.sets.relaunch = Some(action_how(&action));
+            quit_game(app);
+        }
+        return;
+    }
+    crate::sets::actions::launch(app, action_how(&action));
+}
+
 /// Find a match: sign in first when signed out; if tgg-melee is already
-/// running and connected, ask it to open Find a match; else launch it.
+/// running, ask it to open Find a match (or switch sets / confirm if in match).
 pub fn find(app: &mut App) {
     if app.signin.who.is_none() {
         crate::signin::actions::begin(app);
         return;
     }
-    if let Some(companion) = &app.companion
-        && companion.snapshot().is_some()
-    {
-        companion.send(Command::StartSearch {
-            mode: "vs".to_owned(),
-        });
-        companion.send(Command::Focus);
+    run_or_prompt(app, PendingAction::Find);
+}
+
+/// Switch the running `tgg-melee` over to the newly chosen active set.
+pub fn switch_set(app: &mut App) {
+    run_or_prompt(app, PendingAction::SwitchSet);
+}
+
+/// Confirm leaving the current match to complete the pending action.
+pub fn confirm_leave(app: &mut App) {
+    let Some(action) = app.play.confirm.take() else {
+        return;
+    };
+    if matches!(action, PendingAction::SwitchSet) || needs_set_switch(app) {
+        app.sets.relaunch = Some(action_how(&action));
+        quit_game(app);
         return;
     }
-    crate::sets::actions::launch(app, How::Search);
+    if let Some(companion) = &app.companion {
+        app.play.after_leave = Some(action);
+        companion.send(Command::LeaveMatch);
+        companion.send(Command::Focus);
+    }
+}
+
+/// Keep playing the current match and dismiss the confirmation dialog.
+pub fn cancel_confirm(app: &mut App) {
+    app.play.confirm = None;
 }
 
 /// Leave the matchmaking queue without closing tgg-melee.
@@ -150,14 +264,7 @@ pub fn close_friend(app: &mut App) {
 
 /// Host a room: if tgg-melee is already running, ask it to host; else launch.
 pub fn host(app: &mut App) {
-    if let Some(companion) = &app.companion
-        && companion.snapshot().is_some()
-    {
-        companion.send(Command::HostRoom);
-        companion.send(Command::Focus);
-        return;
-    }
-    crate::sets::actions::launch(app, How::Host);
+    run_or_prompt(app, PendingAction::Host);
 }
 
 /// Join the room whose code was typed, or whose invite was pasted.
@@ -166,30 +273,14 @@ pub fn join(app: &mut App) {
     if code.is_empty() {
         return;
     }
-    if let Some(companion) = &app.companion
-        && companion.snapshot().is_some()
-    {
-        companion.send(Command::JoinRoom { code });
-        companion.send(Command::Focus);
-        return;
-    }
-    crate::sets::actions::launch(app, How::Join(code));
+    run_or_prompt(app, PendingAction::Join(code));
 }
 
 /// Join the room a `textures-gg://join/<code>` link names, with the active
 /// set, or straight into the already-running game.
 pub fn join_link(app: &mut App, code: &str) {
     app.play.friend = true;
-    if let Some(companion) = &app.companion
-        && companion.snapshot().is_some()
-    {
-        companion.send(Command::JoinRoom {
-            code: code.to_owned(),
-        });
-        companion.send(Command::Focus);
-        return;
-    }
-    crate::sets::actions::launch(app, How::Join(code.to_owned()));
+    run_or_prompt(app, PendingAction::Join(code.to_owned()));
 }
 
 /// Copy the room's code, for pasting to a friend.

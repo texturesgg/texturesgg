@@ -396,6 +396,27 @@ const SCENES: &[Scene] = &[
         app.play.friend = true;
         app.play.join.text = "KFXD".into();
     }),
+    // Confirming leaving an active match to join a friend's room.
+    ("play-confirm-leave", |app| {
+        play_scene(app);
+        play_queues(app, false);
+        app.sets.session = Some(crate::sets::Session {
+            how: crate::sets::How::Offline,
+            name: "Friday night".to_owned(),
+            set_key: app.sets.active.clone(),
+        });
+        app.mods.playing = Some(crate::mods::Playing {
+            stop: Arc::default(),
+        });
+        app.companion_override = Some(crate::companion::LiveState {
+            pid: 1,
+            mod_set_id: String::new(),
+            activity: crate::companion::Activity::Match,
+            online: crate::companion::Online::default(),
+            updated_at: Some(std::time::Instant::now()),
+        });
+        app.play.confirm = Some(crate::play::PendingAction::Join("KFXD".to_owned()));
+    }),
     // What the set says it plays without, above the card.
     ("play-notices", |app| {
         play_scene(app);
@@ -524,6 +545,7 @@ const SCENES: &[Scene] = &[
         app.sets.session = Some(crate::sets::Session {
             how: crate::sets::How::Offline,
             name: "Friday night".into(),
+            set_key: "friday-night".into(),
         });
     }),
     // The launch video's start: a player new to mods, against the live
@@ -1369,9 +1391,22 @@ fn searching_scene(app: &mut App) {
     app.sets.session = Some(crate::sets::Session {
         how: crate::sets::How::Search,
         name: "Friday night".to_owned(),
+        set_key: app.sets.active.clone(),
     });
     app.mods.playing = Some(crate::mods::Playing {
         stop: Arc::default(),
+    });
+    app.companion_override = Some(crate::companion::LiveState {
+        pid: 1,
+        mod_set_id: String::new(),
+        activity: crate::companion::Activity::Menu,
+        online: crate::companion::Online {
+            state: crate::companion::OnlineState::Searching,
+            queue_label: "Competitive".to_owned(),
+            search_ms: 7_000,
+            ..Default::default()
+        },
+        updated_at: Some(std::time::Instant::now()),
     });
 }
 
@@ -1421,6 +1456,7 @@ fn room_scene(app: &mut App, how: crate::sets::How, line: &str) {
     app.sets.session = Some(crate::sets::Session {
         how,
         name: "Friday night".to_owned(),
+        set_key: app.sets.active.clone(),
     });
     app.mods.playing = Some(crate::mods::Playing {
         stop: Arc::default(),

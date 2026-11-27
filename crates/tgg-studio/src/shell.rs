@@ -87,6 +87,7 @@ pub fn view(app: &App, cx: &mut Cx<App>) -> El {
         // Mods' and Skins' menus.
         .children(play::view::menu(app, &p))
         .children(play::view::friend(app, &p))
+        .children(play::view::confirm(app, &p))
         .children(mods::view::menu(app, &p))
         .children(melee::view::menu(app, &p))
 }

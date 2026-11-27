@@ -779,15 +779,36 @@ pub fn done(app: &mut App, done: Done) -> bool {
             }
         }
         Done::GameEnded(result) => {
+            // If `tgg-melee` replaced itself via `tgg_restart_with` (e.g. on
+            // Windows where the original PID exits while the replacement
+            // connects back on the same companion port), keep the session and
+            // companion alive and watch the replacement connection instead.
+            if result.is_ok()
+                && let Some(comp) = app.companion.clone()
+                && comp.has_live_connection()
+            {
+                let stop = Arc::new(AtomicBool::new(false));
+                app.mods.playing = Some(Playing { stop: stop.clone() });
+                app.jobs.spawn("tgg-melee-restarted", move || {
+                    comp.wait_until_disconnected(&stop);
+                    Job::Mods(Box::new(Done::GameEnded(Ok(()))))
+                });
+                return true;
+            }
             app.mods.playing = None;
             app.sets.session = None;
             app.companion = None;
+            app.play.confirm = None;
+            app.play.after_leave = None;
             // A profile game's folder goes once nothing runs on it.
             if let Err(error) = tgg_mod::finish_profile(&app.data.tgg) {
                 tgg_app::log(&format!("finishing profile games: {error}"));
             }
             if let Err(why) = result {
+                app.sets.relaunch = None;
                 app.tell(why, true);
+            } else if let Some(next) = app.sets.relaunch.take() {
+                crate::sets::actions::launch(app, next);
             }
         }
     }

@@ -13,7 +13,11 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+/// How long Studio holds onto the last `GettingMods` state while `tgg-melee`
+/// replaces itself via `tgg_restart_with` and reconnects on the same port.
+const RESTART_GRACE: Duration = Duration::from_secs(12);
 
 /// Live state reported by the running `tgg-melee` process.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -155,6 +159,7 @@ pub struct SigninInfo {
 pub enum Command {
     Focus,
     Quit,
+    LeaveMatch,
     StartSearch { mode: String },
     StopSearch,
     HostRoom,
@@ -167,6 +172,7 @@ impl Command {
         match self {
             Self::Focus => format!("{{\"id\":{id},\"cmd\":\"focus\"}}"),
             Self::Quit => format!("{{\"id\":{id},\"cmd\":\"quit\"}}"),
+            Self::LeaveMatch => format!("{{\"id\":{id},\"cmd\":\"leave_match\"}}"),
             Self::StartSearch { mode } => {
                 format!(
                     "{{\"id\":{id},\"cmd\":\"start_search\",\"mode\":{}}}",
@@ -204,6 +210,7 @@ pub struct Companion {
     writer: Arc<Mutex<Option<TcpStream>>>,
     state: Arc<Mutex<Option<LiveState>>>,
     last_ack: Arc<Mutex<Option<Ack>>>,
+    restarting_until: Arc<Mutex<Option<Instant>>>,
 }
 
 impl Companion {
@@ -220,12 +227,14 @@ impl Companion {
         let writer: Arc<Mutex<Option<TcpStream>>> = Arc::new(Mutex::new(None));
         let state: Arc<Mutex<Option<LiveState>>> = Arc::new(Mutex::new(None));
         let last_ack: Arc<Mutex<Option<Ack>>> = Arc::new(Mutex::new(None));
+        let restarting_until: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
 
         let t_stopped = stopped.clone();
         let t_token = token.clone();
         let t_writer = writer.clone();
         let t_state = state.clone();
         let t_ack = last_ack.clone();
+        let t_restart = restarting_until.clone();
 
         std::thread::Builder::new()
             .name("companion".into())
@@ -241,6 +250,7 @@ impl Companion {
                         &t_writer,
                         &t_state,
                         &t_ack,
+                        &t_restart,
                         waker.as_deref(),
                     );
                 }
@@ -255,6 +265,7 @@ impl Companion {
             writer,
             state,
             last_ack,
+            restarting_until,
         })
     }
 
@@ -266,8 +277,47 @@ impl Companion {
         )
     }
 
-    /// Current live state snapshot, if a game is connected.
+    /// Whether a `tgg_restart_with` handoff is currently within its grace window.
+    pub fn is_restarting(&self) -> bool {
+        let Ok(mut guard) = self.restarting_until.lock() else {
+            return false;
+        };
+        if let Some(deadline) = *guard {
+            if Instant::now() < deadline {
+                return true;
+            }
+            *guard = None;
+            if let Ok(mut s) = self.state.lock()
+                && self.writer.lock().ok().is_none_or(|w| w.is_none())
+            {
+                *s = None;
+            }
+        }
+        false
+    }
+
+    /// True if a `tgg-melee` process is currently connected or mid-restart handoff.
+    pub fn has_live_connection(&self) -> bool {
+        if self.stopped.load(Ordering::Relaxed) {
+            return false;
+        }
+        self.writer.lock().ok().is_some_and(|w| w.is_some()) || self.is_restarting()
+    }
+
+    /// Block on a worker thread until a restarted `tgg-melee` disconnects (or
+    /// the restart grace window expires / `stop` is requested).
+    pub fn wait_until_disconnected(&self, stop: &AtomicBool) {
+        while !stop.load(Ordering::Relaxed) && self.has_live_connection() {
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        if stop.load(Ordering::Relaxed) {
+            let _ = self.send(Command::Quit);
+        }
+    }
+
+    /// Current live state snapshot, if a game is connected (or mid-restart handoff).
     pub fn snapshot(&self) -> Option<LiveState> {
+        let _ = self.is_restarting();
         self.state.lock().ok()?.clone()
     }
 
@@ -297,6 +347,9 @@ impl Companion {
     /// Shut down the server and drop any active connection.
     pub fn stop(&self) {
         self.stopped.store(true, Ordering::Relaxed);
+        if let Ok(mut guard) = self.restarting_until.lock() {
+            *guard = None;
+        }
         if let Ok(mut guard) = self.writer.lock() {
             *guard = None;
         }
@@ -376,6 +429,7 @@ struct WireRoom {
     max: u32,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_client(
     stream: TcpStream,
     expected_token: &str,
@@ -383,6 +437,7 @@ fn handle_client(
     writer: &Mutex<Option<TcpStream>>,
     state: &Mutex<Option<LiveState>>,
     last_ack: &Mutex<Option<Ack>>,
+    restarting_until: &Mutex<Option<Instant>>,
     waker: Option<&(dyn Fn() + Send + Sync)>,
 ) {
     let _ = stream.set_nodelay(true);
@@ -392,6 +447,7 @@ fn handle_client(
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
     let mut authed = false;
+    let mut restarting = false;
     let mut pid = 0u32;
 
     loop {
@@ -410,6 +466,9 @@ fn handle_client(
             if msg.kind == "hello" && msg.token == expected_token {
                 authed = true;
                 pid = msg.pid;
+                if let Ok(mut r) = restarting_until.lock() {
+                    *r = None;
+                }
                 if let Ok(mut w) = writer.lock() {
                     *w = Some(write_half.try_clone().unwrap_or_else(|_| {
                         panic!("clone tcp stream");
@@ -433,6 +492,21 @@ fn handle_client(
             continue;
         }
         match msg.kind.as_str() {
+            "restarting" => {
+                restarting = true;
+                if let Ok(mut r) = restarting_until.lock() {
+                    *r = Some(Instant::now() + RESTART_GRACE);
+                }
+                if let Ok(mut s) = state.lock()
+                    && let Some(live) = s.as_mut()
+                {
+                    live.online.state = OnlineState::GettingMods;
+                }
+                if let Some(wake) = waker {
+                    wake();
+                }
+                break;
+            }
             "state" => {
                 let next = LiveState {
                     pid,
@@ -482,7 +556,18 @@ fn handle_client(
         if let Ok(mut w) = writer.lock() {
             *w = None;
         }
-        if let Ok(mut s) = state.lock() {
+        // If the game signaled a restart or dropped while getting mods, keep the
+        // last snapshot alive across the `tgg_restart_with` handoff window.
+        let keep_for_restart = restarting
+            || state.lock().ok().is_some_and(|s| {
+                s.as_ref()
+                    .is_some_and(|l| l.online.state == OnlineState::GettingMods)
+            });
+        if keep_for_restart && !stopped.load(Ordering::Relaxed) {
+            if let Ok(mut r) = restarting_until.lock() {
+                *r = Some(Instant::now() + RESTART_GRACE);
+            }
+        } else if let Ok(mut s) = state.lock() {
             *s = None;
         }
         if let Some(wake) = waker {
@@ -541,5 +626,74 @@ mod tests {
         let mut line = String::new();
         BufReader::new(&client).read_line(&mut line).unwrap();
         assert!(line.contains("\"cmd\":\"stop_search\""));
+    }
+
+    #[test]
+    fn restart_handoff_preserves_state_across_reconnect() {
+        let server = Companion::start(None).expect("start companion");
+        let (_, val) = server.env_var();
+        let val = val.to_string_lossy();
+        let parts: Vec<&str> = val.split(':').collect();
+        let port: u16 = parts[1].parse().unwrap();
+        let token = parts[2];
+
+        // First process connects, reports getting-mods, signals restarting, and drops.
+        {
+            let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).expect("connect 1");
+            writeln!(
+                client,
+                "{{\"type\":\"hello\",\"v\":1,\"token\":\"{token}\",\"pid\":100,\"mod_set_id\":\"old\"}}"
+            )
+            .unwrap();
+            writeln!(
+                client,
+                "{{\"type\":\"state\",\"activity\":\"menu\",\"mod_set_id\":\"old\",\"online\":{{\"state\":\"getting-mods\",\"room\":{{\"code\":\"KFXD\",\"host\":\"saavy\"}}}}}}"
+            )
+            .unwrap();
+            writeln!(client, "{{\"type\":\"restarting\"}}").unwrap();
+            client.flush().unwrap();
+        }
+
+        // Wait until the server enters restarting grace; snapshot MUST stay GettingMods!
+        for _ in 0..40 {
+            if server.is_restarting() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(server.is_restarting());
+        assert!(server.has_live_connection());
+        let held = server.snapshot().expect("state preserved during restart");
+        assert_eq!(held.online.state, OnlineState::GettingMods);
+        assert_eq!(held.online.room.host, "saavy");
+
+        // Replacement process connects back on the same port with new PID & mod set.
+        let mut next = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).expect("connect 2");
+        writeln!(
+            next,
+            "{{\"type\":\"hello\",\"v\":1,\"token\":\"{token}\",\"pid\":200,\"mod_set_id\":\"host_set\"}}"
+        )
+        .unwrap();
+        writeln!(
+            next,
+            "{{\"type\":\"state\",\"activity\":\"menu\",\"mod_set_id\":\"host_set\",\"online\":{{\"state\":\"room-waiting\",\"room\":{{\"code\":\"KFXD\",\"host\":\"saavy\",\"players\":[\"saavy\",\"me\"],\"max\":4}}}}}}"
+        )
+        .unwrap();
+
+        let mut reconnected = None;
+        for _ in 0..40 {
+            if let Some(s) = server.snapshot()
+                && s.pid == 200
+                && s.online.state == OnlineState::RoomWaiting
+            {
+                reconnected = Some(s);
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let s = reconnected.expect("reconnected process state");
+        assert!(!server.is_restarting());
+        assert_eq!(s.mod_set_id, "host_set");
+        assert_eq!(s.online.room.players, vec!["saavy", "me"]);
     }
 }

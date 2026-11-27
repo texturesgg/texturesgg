@@ -19,6 +19,17 @@ pub mod view;
 use tgg_mod::Queue;
 use tgg_mod::sets::{QueueMod, SetPlan};
 
+/// An online or set-switch action waiting for the player to confirm leaving
+/// their current match (or waiting for the game to return to menus after
+/// `LeaveMatch`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PendingAction {
+    Find,
+    Host,
+    Join(String),
+    SwitchSet,
+}
+
 /// Play's own state: what the meeting point last said, the picker's menu,
 /// and the friend sheet.
 #[derive(Default)]
@@ -31,6 +42,11 @@ pub struct Play {
     pub friend: bool,
     /// The code typed in the friend sheet's Join.
     pub join: rune::TextEdit,
+    /// Confirmation dialog before disrupting an active match.
+    pub confirm: Option<PendingAction>,
+    /// Action to dispatch as soon as the running game returns to menus after
+    /// `Command::LeaveMatch`.
+    pub after_leave: Option<PendingAction>,
     /// The fighter the card shows, in the costume they had on: the player's
     /// from their latest match, else Fox's.
     pub hero: Option<melee_dat::MeleeSlot>,

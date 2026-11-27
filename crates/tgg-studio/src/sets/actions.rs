@@ -319,7 +319,7 @@ fn launch_env(app: &mut App, how: &How) -> Vec<(String, std::ffi::OsString)> {
     match crate::companion::Companion::start(app.jobs.waker()) {
         Ok(server) => {
             env.push(server.env_var());
-            app.companion = Some(server);
+            app.companion = Some(Arc::new(server));
         }
         Err(error) => {
             tgg_app::log(&format!("companion server: {error}"));
@@ -337,10 +337,15 @@ fn started(
     running: Result<tgg_mod::Running, tgg_mod::Error>,
 ) {
     app.sets.launching = None;
+    let set_key = if matches!(how, How::Queue { .. }) {
+        String::new()
+    } else {
+        app.sets.active.clone()
+    };
     match running {
         Ok(running) => {
             crate::mods::actions::watch(app, running);
-            app.sets.session = Some(Session { how, name });
+            app.sets.session = Some(Session { how, name, set_key });
         }
         Err(error) => app.tell(
             format!(

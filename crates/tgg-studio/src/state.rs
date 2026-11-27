@@ -79,7 +79,7 @@ pub struct App {
     /// A textures.gg link waiting to be opened (see `links`).
     pub link: Option<crate::links::Link>,
     /// Two-way companion bridge to the running `tgg-melee` process.
-    pub companion: Option<crate::companion::Companion>,
+    pub companion: Option<std::sync::Arc<crate::companion::Companion>>,
     /// Override for live game state in tests and headless preview scenes.
     pub companion_override: Option<crate::companion::LiveState>,
 }
@@ -152,7 +152,7 @@ impl App {
             return Some(state.clone());
         }
         self.companion
-            .as_ref()
+            .as_deref()
             .and_then(crate::companion::Companion::snapshot)
     }
 
