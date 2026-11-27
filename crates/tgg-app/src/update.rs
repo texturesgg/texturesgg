@@ -5,8 +5,8 @@
 use crate::net::{self, NetError};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
-use std::path::{Component, Path, PathBuf};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
@@ -580,7 +580,7 @@ fn extract_zip_binary(archive: &Path, stage: &Path) -> Result<PathBuf, UpdateErr
                 fs::create_dir_all(parent).map_err(|e| UpdateError::Io(e.to_string()))?;
             }
             let mut dest = File::create(&out).map_err(|e| UpdateError::Io(e.to_string()))?;
-            io::copy(&mut entry, &mut dest).map_err(|e| UpdateError::Io(e.to_string()))?;
+            std::io::copy(&mut entry, &mut dest).map_err(|e| UpdateError::Io(e.to_string()))?;
             if out.file_name().and_then(|n| n.to_str()) == Some("tgg-studio.exe") {
                 found = Some(out);
             }
@@ -721,7 +721,7 @@ fn extract_tar_gz_binary(archive: &Path, stage: &Path) -> Result<(PathBuf, PathB
                 fs::create_dir_all(parent).map_err(|e| UpdateError::Io(e.to_string()))?;
             }
             let mut dest = File::create(&out).map_err(|e| UpdateError::Io(e.to_string()))?;
-            io::copy(&mut entry, &mut dest).map_err(|e| UpdateError::Io(e.to_string()))?;
+            std::io::copy(&mut entry, &mut dest).map_err(|e| UpdateError::Io(e.to_string()))?;
             if out.file_name().and_then(|n| n.to_str()) == Some("tgg-studio") {
                 found = Some(out);
             }
@@ -799,6 +799,7 @@ fn apply_linux_tar_gz(
 
 #[cfg(any(target_os = "windows", target_os = "linux", test))]
 fn safe_rel_path(path: &Path) -> Option<PathBuf> {
+    use std::path::Component;
     let mut clean = PathBuf::new();
     for component in path.components() {
         match component {
