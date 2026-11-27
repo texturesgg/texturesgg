@@ -22,11 +22,14 @@ pub fn view(app: &App, p: &Palette) -> Option<El> {
 /// New set: what it's called and the sets it builds on.
 fn new_set(app: &App, p: &Palette) -> Option<El> {
     let sheet = app.mods.new_set.as_ref()?;
-    let online = app
+    let choices: Vec<El> = app
         .mods
         .sets
         .iter()
-        .any(|set| set.name == sets::ONLINE_PLAY);
+        .filter(|set| set.can_build_on())
+        .map(|set| build_on_row(sheet, set, "mods/new-set", p))
+        .collect();
+    let has_choices = !choices.is_empty();
     let mut body = col()
         .key("mods/new-set/body")
         .pt(space::XS)
@@ -43,27 +46,19 @@ fn new_set(app: &App, p: &Palette) -> Option<El> {
                 .font(text::LABEL)
                 .color(p.faint)
                 .pt(space::SM),
-        );
-    if !online {
+        )
+        .children(choices);
+    if has_choices {
         body = body.child(
-            label("textures.gg has no Online play set yet")
-                .key("mods/new-set/no-online")
+            label("Leave everything off to start from an empty set.")
+                .key("mods/new-set/blank-hint")
                 .font(text::SMALL)
                 .color(p.muted)
                 .wrap(),
         );
-    }
-    let choices: Vec<El> = app
-        .mods
-        .sets
-        .iter()
-        .filter(|set| set.can_build_on())
-        .map(|set| build_on_row(sheet, set, "mods/new-set", p))
-        .collect();
-    body = body.children(choices);
-    if app.mods.sets.iter().all(|set| !set.can_build_on()) {
+    } else {
         body = body.child(
-            label("textures.gg has no sets to build on yet.")
+            label("Starts from an empty set. Add mods once it's created.")
                 .key("mods/new-set/none")
                 .font(text::SMALL)
                 .color(p.muted)

@@ -48,6 +48,11 @@ pub struct Sets {
 }
 
 impl Sets {
+    /// Whether the active set is the built-in Vanilla (no mods) mode.
+    pub fn is_vanilla(&self) -> bool {
+        self.active == tgg_mod::sets::VANILLA
+    }
+
     /// The active set, once the list is read.
     pub fn active(&self) -> Option<&MySet> {
         self.list.iter().find(|set| set.key == self.active)

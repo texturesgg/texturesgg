@@ -213,6 +213,14 @@ fn join(app: &mut App) -> bool {
         return false;
     }
     // Without a set read there's nothing to start the game from yet.
+    if app.sets.is_vanilla() {
+        app.link = None;
+        app.tell(
+            "Switch from Vanilla to a set with online mods to join a room.",
+            true,
+        );
+        return true;
+    }
     if app.sets.active().is_none() {
         return false;
     }

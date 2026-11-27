@@ -88,6 +88,7 @@ const SCENES: &[Scene] = &[
             progress: std::sync::Arc::new(std::sync::Mutex::new(Some(progress))),
             cancel: std::sync::Arc::default(),
             target: None,
+            port: true,
         });
     }),
     ("first-run-done", |app| {
@@ -109,12 +110,45 @@ const SCENES: &[Scene] = &[
         first_run_scene(app);
         scene_disc(app);
         if let Some(first) = app.first_run.as_mut() {
-            first.picks = first_run::Picks {
-                competitive: false,
-                practice: false,
-                replays: false,
-            };
+            first.use_default_set = false;
         }
+    }),
+    ("first-run-installed", |app| {
+        let net = first_run_scene(app);
+        scene_disc(app);
+        let never = std::sync::atomic::AtomicBool::new(false);
+        if let Some(release) = tgg_mod::port_releases(&*net)
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+        {
+            let _ = tgg_mod::install_port(&*net, &release, &app.data.ports, &|_| {}, &never);
+            mods::actions::read_disk(app);
+        }
+    }),
+    ("first-run-update", |app| {
+        let net = first_run_scene(app);
+        scene_disc(app);
+        let never = std::sync::atomic::AtomicBool::new(false);
+        if let Some(release) = tgg_mod::port_releases(&*net)
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+        {
+            let _ = tgg_mod::install_port(&*net, &release, &app.data.ports, &|_| {}, &never);
+            mods::actions::read_disk(app);
+        }
+        net.publish_port("0.6.0");
+        let mut releases = tgg_mod::port_releases(&*net).unwrap_or_default();
+        if let Some(release) = releases.first_mut() {
+            release.files.game.size = 48_000_000;
+        }
+        app.mods.releases = releases;
+    }),
+    ("first-run-disc-warning", |app| {
+        first_run_scene(app);
+        scene_disc(app);
+        app.mods.disc_modified = vec!["PlFc.dat".into()];
     }),
     // Skins as it opens: textures.gg's skins, with their previews (live, for
     // a look).
@@ -272,6 +306,25 @@ const SCENES: &[Scene] = &[
     ("play", |app| {
         play_scene(app);
         play_queues(app, false);
+    }),
+    // Play with Vanilla (no mods) active and standing/open queues below.
+    ("play-vanilla", |app| {
+        play_scene(app);
+        play_queues(app, true);
+        let _ = tgg_mod::sets::activate(&app.data.tgg, tgg_mod::sets::VANILLA);
+        app.sets.active = tgg_mod::sets::VANILLA.to_owned();
+    }),
+    // Play with a tgg-melee update banner, sidebar indicator, and modified disc warning.
+    ("play-port-update", |app| {
+        let net = play_scene_net(app);
+        play_queues(app, false);
+        net.publish_port("0.6.0");
+        let mut releases = tgg_mod::port_releases(&*net).unwrap_or_default();
+        if let Some(release) = releases.first_mut() {
+            release.files.game.size = 48_000_000;
+        }
+        app.mods.releases = releases;
+        app.mods.disc_modified = vec!["PlFc.dat".into()];
     }),
     // A set with a queue of its own: nobody in the standing one is its
     // queue, so the list keeps Competitive under "Always open".
@@ -627,11 +680,10 @@ fn main() {
         let traffic_light_y =
             ((ui::tokens::size::TOP_BAR - rune::Chrome::TRAFFIC_LIGHT) / 2.0).round();
         let app = rune::App::new(spec)
-            .chrome(rune::Chrome {
-                full_size_content: true,
-                traffic_lights: Some((TRAFFIC_LIGHT_X, traffic_light_y)),
-                drag_regions: true,
-            })
+            .titlebar(
+                rune::Titlebar::new(ui::tokens::size::TOP_BAR)
+                    .traffic_lights(TRAFFIC_LIGHT_X, traffic_light_y),
+            )
             .window_options(rune::WindowOptions {
                 position,
                 // See-through where the sidebar is glass (`ui::tokens::GLASS`):
@@ -648,9 +700,10 @@ fn main() {
             .on_open_url(links::opened_with)
             .init(move || {
                 let data = Data::of_player();
+                let loaded = settings::load();
                 let mut app = App::new(
-                    start(iso.as_deref(), &data),
-                    settings::load(),
+                    start(iso.as_deref(), &data, &loaded),
+                    loaded,
                     data,
                     persists(),
                 );
@@ -676,13 +729,14 @@ fn main() {
 /// app as set up when a game is found: they aren't the player's first run.
 fn launch() -> App {
     let data = Data::of_player();
-    let start = match start(None, &data) {
+    let loaded = settings::load();
+    let start = match start(None, &data, &loaded) {
         Start::FirstRun {
             game: Some(game), ..
         } => Start::Game(game),
         other => other,
     };
-    App::new(start, settings::load(), data, persists())
+    App::new(start, loaded, data, persists())
 }
 
 /// Whether changes to settings are saved: in a window, yes; in Rune's
@@ -695,9 +749,10 @@ fn persists() -> bool {
 /// The game given, else the one chosen before, else the one Slippi Launcher
 /// plays or one in Dolphin's folders, remembered so the next launch opens it
 /// directly. With none of those, a game found in the player's folders is
-/// theirs without a press. First run shows until there is one and tgg-melee
-/// is installed; a given or remembered game it can't use says why.
-fn start(iso: Option<&Path>, data: &Data) -> Start {
+/// theirs without a press. First run shows once on a fresh install (until
+/// `settings.onboarded` is persisted) and whenever there's no disc or
+/// tgg-melee installed; a given or remembered game it can't use says why.
+fn start(iso: Option<&Path>, data: &Data, settings: &settings::Settings) -> Start {
     let installed = tgg_mod::installed_ports(&data.ports)
         .is_ok_and(|ports| ports.iter().any(|port| port.current));
     let found = tgg_app::find_game(iso).map(|found| found.map(|(game, _)| game));
@@ -726,7 +781,10 @@ fn start(iso: Option<&Path>, data: &Data) -> Start {
         }
         tgg_app::game_references(game).ok()
     });
-    if installed && let Some(game) = game {
+    if settings.onboarded
+        && installed
+        && let Some(game) = game
+    {
         return Start::Game(game);
     }
     let state = FirstRun {
@@ -800,7 +858,7 @@ fn new_mod_scene(app: &mut App) {
 
 /// For scenes: first run over a fake textures.gg, its releases and sets
 /// filled in place so nothing arrives mid-snapshot.
-fn first_run_scene(app: &mut App) -> &mut App {
+fn first_run_scene(app: &mut App) -> std::sync::Arc<tgg_mod::FakeNet> {
     let folder = std::env::temp_dir().join("tgg-studio-scene-first-run");
     let _ = std::fs::remove_dir_all(&folder);
     app.data.mods = folder.join("mods");
@@ -812,21 +870,15 @@ fn first_run_scene(app: &mut App) -> &mut App {
         // A size a player knows, as the real one is.
         release.files.game.size = 48_000_000;
     }
-    let mut sets = tgg_mod::sets(&*net).unwrap_or_default();
-    // The fake has Competitive and Replays; Practice is textures.gg's third.
-    if let Some(mut practice) = sets.iter().find(|set| set.name == "competitive").cloned() {
-        practice.name = "practice".into();
-        practice.title = "Practice".into();
-        practice.description = "Drills, trainers, save states and a practice stage.".into();
-        sets.push(practice);
-    }
-    app.mods.net = net;
+    let sets = tgg_mod::sets(&*net).unwrap_or_default();
+    app.mods.net = net.clone();
     app.mods.releases = releases;
     app.mods.sets = sets;
     app.mods.registry = mods::Registry::Answered;
     app.mods.disc = mods::Disc::Missing;
+    app.mods.disc_modified.clear();
     app.first_run = Some(FirstRun::default());
-    app
+    net
 }
 
 /// For scenes: the disc found, without needing one on this computer.
@@ -842,6 +894,7 @@ fn scene_disc(app: &mut App) {
 fn mods_scene(app: &mut App, installed: bool) -> std::sync::Arc<tgg_mod::FakeNet> {
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
+    app.first_run = None;
     let folder = std::env::temp_dir().join("tgg-studio-scene-mods");
     let _ = std::fs::remove_dir_all(&folder);
     app.data.mods = folder.join("mods");
@@ -988,9 +1041,13 @@ fn show_scene_sets(app: &mut App, net: &dyn tgg_mod::Net, active: &str, chosen: 
 /// answers taken before the scene sets what the shot shows (its queues
 /// too, by [`play_queues`]).
 fn play_scene(app: &mut App) {
+    let _ = play_scene_net(app);
+}
+
+fn play_scene_net(app: &mut App) -> Arc<tgg_mod::FakeNet> {
     use tgg_mod::sets;
     app.jobs.inline = true;
-    mods_scene(app, true);
+    let fake = mods_scene(app, true);
     let net = app.mods.net.clone();
     let (data, mods) = (app.data.tgg.clone(), app.data.mods.clone());
     let local = app.mods.local.clone();
@@ -1044,6 +1101,7 @@ fn play_scene(app: &mut App) {
     app.signin.who = Some(signed_in("ciao"));
     play_matches(app);
     app.nav.place = nav::Place::Play;
+    fake
 }
 
 /// For scenes: the queues the meeting point would list. With `own`, the

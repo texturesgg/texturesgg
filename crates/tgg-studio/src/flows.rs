@@ -3122,3 +3122,340 @@ fn skins_browse_discards_stale_responses_from_older_queries() {
         "existing page stays intact"
     );
 }
+
+#[test]
+fn first_run_unchecking_default_set_activates_vanilla_and_marks_onboarded() {
+    let (_folder, iso) = melee_iso();
+    let game = tgg_app::Game::open(&iso).expect("the test disc opens");
+    let references = tgg_app::game_references(game).expect("references");
+    let (mut rt, _data) = runtime(Start::FirstRun {
+        game: Some(references),
+        state: FirstRun::default(),
+    });
+    rt.state.mods.net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    crate::first_run::actions::opened(&mut rt.state);
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered && !app.mods.releases.is_empty()
+    });
+    crate::mods::actions::use_disc(&mut rt.state, iso);
+    settle(&mut rt);
+
+    // Default set starts checked; turning it off sets up plain Melee (Vanilla).
+    assert!(
+        rt.state
+            .first_run
+            .as_ref()
+            .is_some_and(|first| first.use_default_set)
+    );
+    tap(&mut rt, "first-run/pick/competitive");
+    assert!(
+        rt.state
+            .first_run
+            .as_ref()
+            .is_some_and(|first| !first.use_default_set)
+    );
+    tap(&mut rt, "first-run/download");
+    jobs_until(&mut rt, |app| {
+        app.first_run
+            .as_ref()
+            .is_some_and(|first| first.stage == crate::first_run::Stage::Done)
+            && app.sets.active == tgg_mod::sets::VANILLA
+    });
+    assert!(
+        rt.state.settings.onboarded,
+        "completing first run marks onboarded"
+    );
+
+    tap(&mut rt, "first-run/play");
+    settle(&mut rt);
+    assert!(rt.state.first_run.is_none());
+    assert_eq!(rt.state.nav.place, Place::Play);
+    assert!(rt.state.sets.is_vanilla());
+    assert!(rt.find("play/offline").is_some());
+    assert!(rt.find("play/find").is_none());
+}
+
+#[test]
+fn start_runs_first_run_until_onboarded_even_with_existing_port_and_iso() {
+    let (_folder, iso) = melee_iso();
+    let temp = tempfile::tempdir().expect("temp dir");
+    let data = Data::in_folder(temp.path());
+    let net = tgg_mod::FakeNet::new();
+    let release = tgg_mod::port_releases(&net)
+        .expect("releases")
+        .into_iter()
+        .next()
+        .expect("a port release");
+    let never = std::sync::atomic::AtomicBool::new(false);
+    tgg_mod::install_port(&net, &release, &data.ports, &|_| {}, &never).expect("install port");
+
+    let fresh = Settings::default();
+    assert!(
+        matches!(
+            crate::start(Some(&iso), &data, &fresh),
+            Start::FirstRun { game: Some(_), .. }
+        ),
+        "fresh studio install runs FirstRun even when tgg-melee + ISO already exist"
+    );
+
+    let mut onboarded = Settings::default();
+    onboarded.onboarded = true;
+    assert!(
+        matches!(crate::start(Some(&iso), &data, &onboarded), Start::Game(_)),
+        "once onboarded, launches straight into the app"
+    );
+}
+
+#[test]
+fn first_run_handles_already_installed_and_updatable_tgg_melee() {
+    // Part A: tgg-melee already installed and up to date.
+    let (_folder, iso) = melee_iso();
+    let game = tgg_app::Game::open(&iso).expect("disc");
+    let references = tgg_app::game_references(game).expect("refs");
+    let (mut rt, _data) = runtime(Start::FirstRun {
+        game: Some(references),
+        state: FirstRun::default(),
+    });
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let release = tgg_mod::port_releases(&*net)
+        .expect("releases")
+        .into_iter()
+        .next()
+        .expect("release");
+    let never = std::sync::atomic::AtomicBool::new(false);
+    tgg_mod::install_port(&*net, &release, &rt.state.data.ports, &|_| {}, &never)
+        .expect("preinstall port");
+    rt.state.mods.net = net.clone();
+    crate::first_run::actions::opened(&mut rt.state);
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered && app.mods.port().is_some()
+    });
+    assert!(rt.find("first-run/port-installed").is_some());
+
+    // Part B: newer tgg-melee 0.6.0 is available -> offers updating right in FirstRun.
+    net.publish_port("0.6.0");
+    rt.update(|app, _| crate::mods::actions::fetch(app));
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered && app.mods.port_update().is_some()
+    });
+    assert!(rt.find("first-run/port-update").is_some());
+
+    tap(&mut rt, "first-run/download");
+    assert_eq!(
+        rt.state.first_run.as_ref().map(|first| first.stage),
+        Some(crate::first_run::Stage::Downloading)
+    );
+    jobs_until(&mut rt, |app| {
+        app.first_run
+            .as_ref()
+            .is_some_and(|first| first.stage == crate::first_run::Stage::Done)
+            && app.mods.port().is_some_and(|port| port.version == "0.6.0")
+            && app.sets.list.iter().any(|set| set.name == "Competitive")
+    });
+    assert!(rt.state.settings.onboarded);
+}
+
+#[test]
+fn sets_tab_hides_online_play_and_new_set_works_without_it() {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let (mut rt, _disc, _data) = with_port(net);
+
+    // Inject an `online-play` set into the fetched list to confirm Sets hides it.
+    rt.update(|app, _| {
+        if let Some(mut online) = app.mods.sets.first().cloned() {
+            online.name = tgg_mod::sets::ONLINE_PLAY.into();
+            online.title = "Online play".into();
+            app.mods.sets.push(online);
+        }
+    });
+    tap(&mut rt, "mods/tab/sets");
+    settle(&mut rt);
+    assert!(
+        rt.find("mods/sets/official/online-play").is_none(),
+        "online-play is hidden from the From textures.gg browse list"
+    );
+    assert!(rt.find("mods/sets/official/competitive").is_some());
+
+    // Without online-play in the registry, New set pre-selects Competitive and
+    // lets the player uncheck it to create an empty custom set with no warning.
+    rt.update(|app, _| {
+        app.notice = None;
+        app.mods
+            .sets
+            .retain(|set| set.name != tgg_mod::sets::ONLINE_PLAY);
+    });
+    tap(&mut rt, "mods/new-set");
+    settle(&mut rt);
+    assert!(rt.find("mods/new-set/no-online").is_none());
+    assert_eq!(
+        rt.state
+            .mods
+            .new_set
+            .as_ref()
+            .map(|sheet| sheet.builds_on.clone()),
+        Some(vec![crate::first_run::DEFAULT_SET.to_owned()])
+    );
+    tap(&mut rt, "mods/new-set/competitive");
+    rt.update(|app, _| {
+        if let Some(sheet) = &mut app.mods.new_set {
+            sheet.name.text = "Blank custom".into();
+        }
+    });
+    settle(&mut rt);
+    tap(&mut rt, "mods/new-set/create");
+    jobs_until(&mut rt, |app| {
+        app.sets.list.iter().any(|set| set.name == "Blank custom")
+    });
+    assert!(
+        rt.state.notice.is_none(),
+        "no obsolete online-play warning toast"
+    );
+}
+
+#[cfg_attr(windows, ignore = "the fake game is a shell script")]
+#[test]
+fn play_vanilla_mode_launches_offline_with_empty_mods_dir() {
+    let (mut rt, _disc, _data) = with_port(std::sync::Arc::new(tgg_mod::FakeNet::new()));
+    jobs_until(&mut rt, |app| app.sets.active().is_some());
+    open_place(&mut rt, Place::Play);
+
+    tap(&mut rt, "play/set");
+    settle(&mut rt);
+    assert!(rt.find("play/set/vanilla").is_some());
+    tap(&mut rt, "play/set/vanilla");
+    settle(&mut rt);
+
+    assert!(rt.state.sets.is_vanilla());
+    assert!(rt.find("play/find").is_none());
+    assert!(rt.find("play/friend").is_none());
+    assert!(rt.find("play/offline").is_some());
+
+    tap(&mut rt, "play/offline");
+    jobs_until(&mut rt, |app| app.mods.playing.is_some());
+    assert_eq!(
+        rt.state
+            .sets
+            .session
+            .as_ref()
+            .map(|session| session.name.as_str()),
+        Some(tgg_mod::sets::VANILLA_NAME)
+    );
+    let vanilla_dir = tgg_mod::sets::vanilla_mods_dir(&rt.state.data.tgg);
+    assert!(
+        vanilla_dir.is_dir(),
+        "empty vanilla mods folder was prepared"
+    );
+    tap(&mut rt, "play/session");
+    jobs_until(&mut rt, |app| app.mods.playing.is_none());
+}
+
+#[test]
+fn play_and_sidebar_surface_tgg_melee_update_and_install_it() {
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let (mut rt, _disc, _data) = with_port(net.clone());
+    open_place(&mut rt, Place::Play);
+    assert!(rt.find("play/port-update").is_none());
+    assert!(rt.find("sidebar/port-update").is_none());
+
+    net.publish_port("0.6.0");
+    rt.update(|app, _| crate::mods::actions::fetch(app));
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered && app.mods.port_update().is_some()
+    });
+    assert!(rt.find("play/port-update").is_some());
+    assert!(rt.find("play/port-update/install").is_some());
+    assert!(rt.find("sidebar/port-update").is_some());
+
+    tap(&mut rt, "play/port-update/install");
+    jobs_until(&mut rt, |app| {
+        app.mods.port().is_some_and(|port| port.version == "0.6.0")
+            && app.mods.registry == crate::mods::Registry::Answered
+    });
+    assert!(rt.find("play/port-update").is_none());
+    assert!(rt.find("sidebar/port-update").is_none());
+}
+
+#[test]
+fn top_bar_clears_windows_trailing_caption_insets() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    open_place(&mut rt, Place::Replays);
+    settle(&mut rt);
+
+    let without_inset = rt
+        .presented("replays/open")
+        .expect("top bar action shows")
+        .0;
+    let trailing = 138.0;
+    let mut insets = rune::ChromeInsets::default();
+    insets.trailing = trailing;
+    insets.height = crate::ui::tokens::size::TOP_BAR;
+    rt.set_chrome_insets(insets);
+    settle(&mut rt);
+    let with_inset = rt
+        .presented("replays/open")
+        .expect("top bar action still shows")
+        .0;
+    assert!(
+        ((without_inset[0] - with_inset[0]) - trailing).abs() < 0.5,
+        "top bar action should shift left by trailing inset {trailing}: before={} after={}",
+        without_inset[0],
+        with_inset[0]
+    );
+    assert!(
+        with_inset[0] + with_inset[2] <= WINDOW.0 - trailing,
+        "top bar action must not overlap Windows caption buttons"
+    );
+}
+
+#[test]
+fn modified_disc_shows_warning_in_first_run_and_play() {
+    let folder = tempfile::tempdir().expect("temp dir");
+    let iso = folder.path().join("modded.iso");
+    std::fs::write(
+        &iso,
+        tgg_app::game::test_disc_with_file(b"GALE01", 2, b"PlFc.dat", b"modified"),
+    )
+    .expect("write modded disc");
+
+    let game = tgg_app::Game::open(&iso).expect("open disc");
+    let references = tgg_app::game_references(game).expect("refs");
+    let (mut rt, data) = runtime(Start::FirstRun {
+        game: Some(references),
+        state: FirstRun::default(),
+    });
+    rt.state.mods.net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    crate::first_run::actions::opened(&mut rt.state);
+    jobs_until(&mut rt, |app| {
+        matches!(app.mods.disc, crate::mods::Disc::Found(_))
+            && !app.mods.disc_modified.is_empty()
+            && app.mods.registry == crate::mods::Registry::Answered
+            && !app.mods.releases.is_empty()
+    });
+    assert_eq!(rt.state.mods.disc_modified, vec!["PlFc.dat"]);
+    assert!(rt.find("first-run/disc-warning").is_some());
+
+    // Complete setup and check Play also surfaces the disc warning with Choose another.
+    tap(&mut rt, "first-run/download");
+    jobs_until(&mut rt, |app| {
+        app.first_run
+            .as_ref()
+            .is_some_and(|first| first.stage == crate::first_run::Stage::Done)
+    });
+    tap(&mut rt, "first-run/play");
+    settle(&mut rt);
+    assert!(rt.find("play/disc-warning").is_some());
+    assert!(rt.find("play/disc-warning/choose").is_some());
+
+    // Once a cached clean copy exists under `<data>/clean/<sha256>`, re-checking clears the warning.
+    let vanilla = melee_dat::vanilla::vanilla_files()
+        .find(|f| f.name == "PlFc.dat")
+        .expect("PlFc.dat");
+    let clean = data.path().join("clean");
+    std::fs::create_dir_all(&clean).expect("clean dir");
+    std::fs::write(clean.join(&vanilla.sha256), vec![0u8; vanilla.byte_length])
+        .expect("clean copy");
+    rt.update(|app, _| crate::mods::actions::use_disc(app, iso.clone()));
+    jobs_until(&mut rt, |app| app.mods.disc_modified.is_empty());
+    assert!(rt.find("play/disc-warning").is_none());
+}

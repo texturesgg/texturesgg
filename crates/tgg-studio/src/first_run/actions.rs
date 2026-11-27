@@ -1,8 +1,8 @@
 //! First run's work: finding and choosing the disc, opening the game the app
-//! reads skins from, installing tgg-melee and making the chosen sets, and
-//! leaving for Play.
+//! reads skins from, installing or updating tgg-melee, setting up the default
+//! set (or plain Melee), and leaving for Play.
 
-use super::Stage;
+use super::{DEFAULT_SET, Stage};
 use crate::jobs::Done as Job;
 use crate::mods::{Disc, Registry};
 use crate::nav::{Place, actions as nav};
@@ -11,18 +11,19 @@ use rune::{FileDialogOptions, Tx};
 use std::path::Path;
 use tgg_app::Game;
 use tgg_app::settings::Settings;
-use tgg_mod::Local;
 use tgg_mod::Net;
 
 /// What a first-run job found.
 pub enum Done {
-    /// The picked sets were made, or why they couldn't be.
+    /// The starting set was made, or why it couldn't be.
     Made(Result<(), String>),
 }
 
-/// The work first run does when it opens: find the disc on its own when it
-/// can, and ask textures.gg what it offers.
+/// The work first run does when it opens: read any existing tgg-melee install
+/// on disk, find the disc on its own when it can, and ask textures.gg what it
+/// offers.
 pub fn opened(app: &mut App) {
+    crate::mods::actions::read_disk(app);
     if app.mods.disc == Disc::Unknown {
         crate::mods::actions::find_disc(app);
     }
@@ -32,7 +33,7 @@ pub fn opened(app: &mut App) {
 }
 
 /// Before each frame: adopt a disc found on its own, and move on once
-/// tgg-melee has installed. True when what shows changed.
+/// tgg-melee has installed or updated. True when what shows changed.
 pub fn poll(app: &mut App) -> bool {
     if app.first_run.is_none() {
         return false;
@@ -54,23 +55,9 @@ pub fn poll(app: &mut App) -> bool {
     if !downloading || app.mods.work.is_some() {
         return changed;
     }
-    // The install stopped: installed, cancelled, or failed.
-    if app.mods.port().is_some() {
-        match app.first_run.as_ref().map(|first| first.picks.links()) {
-            Some(links) if !links.is_empty() => {
-                if let Some(first) = app.first_run.as_mut() {
-                    first.stage = Stage::SettingUp;
-                }
-                start_sets(app, links);
-            }
-            _ => {
-                // No picks: Installed mods stays active.
-                if let Some(first) = app.first_run.as_mut() {
-                    first.stage = Stage::Done;
-                }
-                after_install(app);
-            }
-        }
+    // The install or update stopped: succeeded, cancelled, or failed.
+    if app.mods.port().is_some() && app.mods.port_update().is_none() {
+        begin_sets(app);
     } else if let Some(first) = app.first_run.as_mut() {
         first.stage = Stage::Ready;
         first.problem = app
@@ -116,8 +103,8 @@ pub fn use_game_at(app: &mut App, path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Download tgg-melee and make the picked sets, once the player presses the
-/// one button. Nothing starts before this.
+/// Download or update tgg-melee (when needed) and set up the starting set,
+/// once the player presses the one button. Nothing starts before this.
 pub fn download(app: &mut App) {
     if app
         .first_run
@@ -130,15 +117,25 @@ pub fn download(app: &mut App) {
         set_problem(app, "Choose your Melee disc first.");
         return;
     }
-    if app.mods.port().is_some() {
+    let update = app.mods.port_update();
+    if app.mods.port().is_some() && update.is_none() {
         begin_sets(app);
         return;
     }
-    if app.mods.releases.is_empty() {
+    if app.mods.port().is_none() && app.mods.releases.is_empty() {
         set_problem(
             app,
             "textures.gg didn't answer. Check your connection and try again.",
         );
+        return;
+    }
+    // Switching to a newer version that's already installed finishes
+    // synchronously without a download.
+    if let Some(release) = update
+        && app.mods.has_port(&release.version)
+    {
+        crate::mods::actions::use_port(app, &release.version);
+        begin_sets(app);
         return;
     }
     if let Some(first) = app.first_run.as_mut() {
@@ -162,14 +159,14 @@ pub fn cancel(app: &mut App) {
     }
 }
 
-/// Turn `link` on or off among the mods to start with.
-pub fn toggle(app: &mut App, link: &str) {
+/// Turn the recommended default set on or off.
+pub fn toggle_default_set(app: &mut App) {
     if let Some(first) = app.first_run.as_mut() {
-        first.picks.toggle(link);
+        first.use_default_set = !first.use_default_set;
     }
 }
 
-/// Leave for Play once everything is installed.
+/// Leave for Play once everything is set up.
 pub fn play(app: &mut App) {
     if app
         .first_run
@@ -178,6 +175,7 @@ pub fn play(app: &mut App) {
     {
         return;
     }
+    mark_onboarded(app);
     app.first_run = None;
     nav::go(app, Place::Play);
     crate::editor::draft::offer(app);
@@ -191,84 +189,66 @@ pub fn done(app: &mut App, done: Done) -> bool {
             first.stage = Stage::Done;
             first.problem = result
                 .err()
-                .map(|why| format!("Your sets couldn't be made: {why}"));
+                .map(|why| format!("Your set couldn't be made: {why}"));
         }
-        (Err(why), None) => app.tell(format!("Your sets couldn't be made: {why}"), true),
+        (Err(why), None) => app.tell(format!("Your set couldn't be made: {why}"), true),
         (Ok(()), None) => {}
     }
+    mark_onboarded(app);
     after_install(app);
     true
+}
+
+/// Persist that the player has completed first-run setup once.
+fn mark_onboarded(app: &mut App) {
+    if !app.settings.onboarded {
+        app.change_settings(|settings| settings.onboarded = true);
+    }
 }
 
 /// The newest tgg-melee installed, and what textures.gg says about it.
 fn after_install(app: &mut App) {
     crate::mods::actions::read_disk(app);
-    // The picks made sets on disk; read them so Play can use them.
+    // Setup changed the active set on disk; read them so Play can use it.
     crate::sets::actions::read(app);
     app.mods.registry = Registry::Answered;
     crate::mods::actions::fetch(app);
 }
 
-/// After the game installs: with no picks, Installed mods stays active;
-/// with some, make them off the window's thread.
+/// After tgg-melee is ready: activate Vanilla if unchecked, or fetch and
+/// activate the default set off the window's thread.
 fn begin_sets(app: &mut App) {
-    let links = app
+    let use_default = app
         .first_run
         .as_ref()
-        .map_or_else(Vec::new, |first| first.picks.links());
-    if links.is_empty() {
+        .is_none_or(|first| first.use_default_set);
+    if !use_default {
+        let problem = tgg_mod::sets::activate(&app.data.tgg, tgg_mod::sets::VANILLA)
+            .err()
+            .map(|why| format!("Couldn't switch to plain Melee: {why}"));
         if let Some(first) = app.first_run.as_mut() {
             first.stage = Stage::Done;
+            first.problem = problem;
         }
+        mark_onboarded(app);
         after_install(app);
         return;
     }
     if let Some(first) = app.first_run.as_mut() {
         first.stage = Stage::SettingUp;
+        first.problem = None;
     }
-    start_sets(app, links);
-}
-
-fn start_sets(app: &mut App, links: Vec<String>) {
     let net = app.mods.net.clone();
     let data = app.data.tgg.clone();
-    let local = app.mods.local.clone();
     app.jobs.spawn("first run sets", move || {
-        Job::FirstRun(Box::new(Done::Made(make(&*net, &data, &local, &links))))
+        Job::FirstRun(Box::new(Done::Made(make(&*net, &data))))
     });
 }
 
-/// One pick is that set as it is; several make the player's "My set", which
-/// builds on all of them. Either way it becomes the active set.
-fn make(net: &dyn Net, data: &Path, local: &Local, links: &[String]) -> Result<(), String> {
-    let key = if let [link] = links {
-        tgg_mod::sets::get(net, data, link)
-            .map_err(|error| error.to_string())?
-            .key
-    } else {
-        let mine = my_set(data, local)?;
-        for link in links {
-            tgg_mod::sets::build_on(net, data, local, &mine.key, link)
-                .map_err(|error| error.to_string())?;
-        }
-        mine.key
-    };
-    tgg_mod::sets::activate(data, &key).map_err(|error| error.to_string())
-}
-
-/// The player's "My set", or a new one by that name. First run can run again
-/// after a cancelled install; an existing one is built on again.
-fn my_set(data: &Path, local: &Local) -> Result<tgg_mod::sets::MySet, String> {
-    match tgg_mod::sets::new(data, "My set") {
-        Ok(set) => Ok(set),
-        Err(_) => tgg_mod::sets::list(data, local)
-            .map_err(|error| error.to_string())?
-            .into_iter()
-            .find(|set| {
-                !set.is_installed() && !set.locked && set.name.eq_ignore_ascii_case("My set")
-            })
-            .ok_or_else(|| "a set named My set is already taken".to_owned()),
-    }
+/// Add the default set and make it the active set.
+fn make(net: &dyn Net, data: &Path) -> Result<(), String> {
+    let set = tgg_mod::sets::get(net, data, DEFAULT_SET).map_err(|error| error.to_string())?;
+    tgg_mod::sets::activate(data, &set.key).map_err(|error| error.to_string())
 }
 
 /// The disc found, as tgg-melee will play it (else the app's game).

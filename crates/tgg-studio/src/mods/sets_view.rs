@@ -22,13 +22,20 @@ const PLACEHOLDERS: usize = 3;
 /// textures.gg sets not yet added.
 pub fn tab_count(app: &App) -> usize {
     let yours = visible_sets(app).count();
-    let extra_official = app
-        .mods
-        .sets
-        .iter()
+    let extra_official = official_sets(app)
         .filter(|set| local_for_official(app, &set.name).is_none())
         .count();
     yours + extra_official
+}
+
+/// Official sets shown in the "From textures.gg" browse list: hides
+/// `online-play` (internal plumbing that is now included in Competitive and
+/// only used as a build-on base if still present in the registry).
+fn official_sets(app: &App) -> impl Iterator<Item = &Set> {
+    app.mods
+        .sets
+        .iter()
+        .filter(|set| set.name != tgg_mod::sets::ONLINE_PLAY)
 }
 
 /// The scrollable body of the Sets tab: Your sets, then From textures.gg.
@@ -59,6 +66,7 @@ pub fn view(app: &App, p: &Palette) -> El {
     let loading = matches!(app.mods.registry, Registry::NotAsked | Registry::Asking)
         && app.mods.sets.is_empty();
 
+    let official: Vec<&Set> = official_sets(app).collect();
     let official_section = col()
         .key("mods/sets/official")
         .pt(space::SM)
@@ -72,7 +80,7 @@ pub fn view(app: &App, p: &Palette) -> El {
                     .child(skeleton(0.3, p))
                     .child(skeleton(0.6, p))
             }))
-        } else if app.mods.sets.is_empty() {
+        } else if official.is_empty() {
             label("textures.gg has no sets yet.")
                 .key("mods/sets/official/empty")
                 .font(text::BODY)
@@ -81,9 +89,8 @@ pub fn view(app: &App, p: &Palette) -> El {
                 .py(space::XS)
         } else {
             col().children(
-                app.mods
-                    .sets
-                    .iter()
+                official
+                    .into_iter()
                     .map(|set| official_set_row(app, set, p)),
             )
         });
