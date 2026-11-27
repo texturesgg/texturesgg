@@ -133,44 +133,28 @@ fn find_a_match_starts_the_active_sets_game_searching_from_its_own_folder() {
 
 #[cfg_attr(windows, ignore = "the fake game is a shell script")]
 #[test]
-fn hosting_a_room_starts_the_game_with_a_report_file_of_its_own() {
+fn hosting_a_room_starts_the_game_with_companion_env() {
     let folder = tempfile::tempdir().expect("a temporary folder");
     let (mut app, _net) = ready(folder.path());
-    let report = super::actions::room_report(&app);
-    // The last run's lines are still there when the next one starts.
-    if let Some(parent) = report.parent() {
-        std::fs::create_dir_all(parent).expect("its folder");
-    }
-    std::fs::write(&report, "{\"state\":\"ended\"}\n").expect("the last run's report");
 
     let env = started_with(&mut app, How::Host);
     assert_eq!(value(&env, "TGG_DIRECT_CONNECT"), Some("room"));
-    assert_eq!(
-        value(&env, "TGG_DIRECT_CONNECT_REPORT"),
-        Some(&*report.to_string_lossy()),
-        "the game is told where to report: {env}"
-    );
-    assert_eq!(
-        std::fs::read_to_string(&report).expect("read the report"),
-        "",
-        "this run starts the report again"
-    );
-    assert_eq!(
-        report.parent(),
-        app.data.ports.parent(),
-        "the report is in the app's data folder, not the game's"
+    let companion = value(&env, "TGG_COMPANION").expect("TGG_COMPANION set");
+    assert!(
+        companion.starts_with("127.0.0.1:"),
+        "loopback companion addr: {companion}"
     );
 }
 
 #[cfg_attr(windows, ignore = "the fake game is a shell script")]
 #[test]
-fn joining_a_room_starts_the_game_with_the_code_and_a_report() {
+fn joining_a_room_starts_the_game_with_the_code_and_companion_env() {
     let folder = tempfile::tempdir().expect("a temporary folder");
     let (mut app, _net) = ready(folder.path());
     let env = started_with(&mut app, How::Join("KFXD".into()));
     assert_eq!(value(&env, "TGG_DIRECT_CONNECT"), Some("room:KFXD"));
     assert!(
-        value(&env, "TGG_DIRECT_CONNECT_REPORT").is_some(),
-        "a joiner reads the host's mods from the report: {env}"
+        value(&env, "TGG_COMPANION").is_some(),
+        "a joiner connects to Studio via companion: {env}"
     );
 }

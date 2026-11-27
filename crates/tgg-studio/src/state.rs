@@ -78,6 +78,10 @@ pub struct App {
     pub port_before: Option<crate::library::port::Before>,
     /// A textures.gg link waiting to be opened (see `links`).
     pub link: Option<crate::links::Link>,
+    /// Two-way companion bridge to the running `tgg-melee` process.
+    pub companion: Option<std::sync::Arc<crate::companion::Companion>>,
+    /// Override for live game state in tests and headless preview scenes.
+    pub companion_override: Option<crate::companion::LiveState>,
 }
 
 /// Where the app starts.
@@ -137,7 +141,19 @@ impl App {
             jobs: Jobs::default(),
             link: None,
             port_before: None,
+            companion: None,
+            companion_override: None,
         }
+    }
+
+    /// Live state reported by the running `tgg-melee` process via companion.
+    pub fn live_game(&self) -> Option<crate::companion::LiveState> {
+        if let Some(state) = &self.companion_override {
+            return Some(state.clone());
+        }
+        self.companion
+            .as_deref()
+            .and_then(crate::companion::Companion::snapshot)
     }
 
     /// Change the settings here and, when persisting, on disk: read, change

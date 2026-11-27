@@ -7,7 +7,6 @@ use crate::mods::Disc;
 use crate::state::App;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 use tgg_mod::sets::{self, MySet, SetPlan};
 use tgg_mod::{Profile, ProfileEntry, Progress};
 
@@ -128,9 +127,6 @@ pub fn launch(app: &mut App, how: How) {
         return;
     }
     if app.sets.is_vanilla() {
-        let (Some(port), Disc::Found(disc)) = (app.mods.port(), &app.mods.disc) else {
-            return;
-        };
         let vanilla = sets::vanilla_mods_dir(&app.data.tgg);
         if let Err(error) = std::fs::create_dir_all(&vanilla) {
             app.tell(
@@ -140,12 +136,16 @@ pub fn launch(app: &mut App, how: How) {
             return;
         }
         let log = game_log(app);
+        let env = launch_env(app, &how);
+        let (Some(port), Disc::Found(disc)) = (app.mods.port(), &app.mods.disc) else {
+            return;
+        };
         let running = tgg_mod::ports::launch_with_env(
             port,
             disc,
             &vanilla,
             std::iter::empty::<&str>(),
-            &how.env(&room_report(app)),
+            &env,
             Some(&log),
         );
         started(app, how, sets::VANILLA_NAME.to_owned(), running);
@@ -307,17 +307,26 @@ fn prepare(app: &mut App, how: How, source: Source) {
     });
 }
 
-/// Where the game writes what it says: Play reads it for who it found.
+/// Where the game writes its log.
 pub fn game_log(app: &App) -> std::path::PathBuf {
     app.data.ports.with_file_name("game.log")
 }
 
-/// Where the game writes the room report, beside its log: the room, its
-/// players and its state, one JSON line each time it changes. Its own file,
-/// in the app's data folder, emptied before each run that makes or joins a
-/// room.
-pub fn room_report(app: &App) -> std::path::PathBuf {
-    app.data.ports.with_file_name("room.jsonl")
+/// Build the launch environment for `how`, starting a fresh companion TCP
+/// server so `tgg-melee` connects back with live state and command support.
+fn launch_env(app: &mut App, how: &How) -> Vec<(String, std::ffi::OsString)> {
+    let mut env = how.env();
+    match crate::companion::Companion::start(app.jobs.waker()) {
+        Ok(server) => {
+            env.push(server.env_var());
+            app.companion = Some(Arc::new(server));
+        }
+        Err(error) => {
+            tgg_app::log(&format!("companion server: {error}"));
+            app.companion = None;
+        }
+    }
+    env
 }
 
 /// The game started: watch it until it ends.
@@ -328,14 +337,15 @@ fn started(
     running: Result<tgg_mod::Running, tgg_mod::Error>,
 ) {
     app.sets.launching = None;
+    let set_key = if matches!(how, How::Queue { .. }) {
+        String::new()
+    } else {
+        app.sets.active.clone()
+    };
     match running {
         Ok(running) => {
             crate::mods::actions::watch(app, running);
-            app.sets.session = Some(Session {
-                how,
-                name,
-                started: Instant::now(),
-            });
+            app.sets.session = Some(Session { how, name, set_key });
         }
         Err(error) => app.tell(
             format!(
@@ -388,17 +398,18 @@ pub fn done(app: &mut App, done: Done) -> bool {
                 return true;
             }
             app.sets.said = notices.iter().map(|n| withdrawn_words(app, n)).collect();
+            let log = game_log(app);
+            let env = launch_env(app, &how);
             let (Some(port), Disc::Found(disc)) = (app.mods.port(), &app.mods.disc) else {
                 app.sets.launching = None;
                 return true;
             };
-            let log = game_log(app);
             let running = tgg_mod::ports::launch_with_env(
                 port,
                 disc,
                 &app.data.mods,
                 std::iter::empty::<&str>(),
-                &how.env(&room_report(app)),
+                &env,
                 Some(&log),
             );
             started(app, how, tgg_mod::sets::INSTALLED_NAME.to_owned(), running);
@@ -410,17 +421,18 @@ pub fn done(app: &mut App, done: Done) -> bool {
             }
             match result {
                 Ok(prepared) => {
+                    let log = game_log(app);
+                    let env = launch_env(app, &how);
                     let Disc::Found(disc) = &app.mods.disc else {
                         app.sets.launching = None;
                         return true;
                     };
-                    let log = game_log(app);
                     let running = tgg_mod::launch_profile_with_env(
                         &prepared.port,
                         disc,
                         &prepared,
                         None,
-                        &how.env(&room_report(app)),
+                        &env,
                         Some(&log),
                     );
                     started(app, how, name, running);

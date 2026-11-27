@@ -19,10 +19,8 @@ mod tests;
 
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 use tgg_mod::sets::{MySet, QueueMod, SetPlan};
 use tgg_mod::{Prepared, ProfilePlan, Progress};
 
@@ -40,6 +38,9 @@ pub struct Sets {
     pub trust: Option<Trust>,
     /// How the game that's running was started, while it runs.
     pub session: Option<Session>,
+    /// Next launch queued once the currently running game finishes quitting
+    /// (used for switching mod sets seamlessly while `tgg-melee` is running).
+    pub relaunch: Option<How>,
     /// Why the sets couldn't be read.
     pub problem: Option<String>,
     /// What the last check of withdrawals before Installed mods' game
@@ -128,36 +129,17 @@ pub enum How {
 
 impl How {
     /// What the game starts with in its environment: direct-connect's
-    /// `TGG_DIRECT_CONNECT`, and for a room its `TGG_DIRECT_CONNECT_REPORT`,
-    /// which is `report` emptied for this run (the game appends its lines
-    /// and never deletes it). A run without a room gets no report.
-    pub fn env(&self, report: &Path) -> Vec<(String, OsString)> {
+    /// `TGG_DIRECT_CONNECT` boot shortcut (live state and commands travel over
+    /// `TGG_COMPANION`).
+    pub fn env(&self) -> Vec<(String, OsString)> {
         let connect = match self {
             How::Offline => return Vec::new(),
             How::Search | How::Queue { .. } => "search".to_owned(),
             How::Host => "room".to_owned(),
             How::Join(code) => format!("room:{}", code.trim()),
         };
-        let mut env = vec![("TGG_DIRECT_CONNECT".to_owned(), connect.into())];
-        if matches!(self, How::Host | How::Join(_)) && emptied(report) {
-            env.push((
-                "TGG_DIRECT_CONNECT_REPORT".to_owned(),
-                report.as_os_str().to_owned(),
-            ));
-        }
-        env
+        vec![("TGG_DIRECT_CONNECT".to_owned(), connect.into())]
     }
-}
-
-/// `path` made an empty file, for a game about to start. False: it couldn't
-/// be made, and the game goes without it.
-fn emptied(path: &Path) -> bool {
-    if let Some(folder) = path.parent()
-        && std::fs::create_dir_all(folder).is_err()
-    {
-        return false;
-    }
-    std::fs::File::create(path).is_ok()
 }
 
 /// A game being got ready.
@@ -203,7 +185,8 @@ pub struct Session {
     pub how: How,
     /// The set's name, or the queue's.
     pub name: String,
-    pub started: Instant,
+    /// The set key that was launched (`""` for ad-hoc queue launches).
+    pub set_key: String,
 }
 
 /// What a set job found.

@@ -3561,3 +3561,147 @@ fn settings_shows_port_and_app_updates_and_opens_in_app_update_dialog() {
     settle(&mut rt);
     assert!(rt.find("update").is_some());
 }
+
+#[test]
+fn companion_mid_match_confirm_and_set_switch_flows() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::{Ipv4Addr, TcpStream};
+    use std::time::Duration;
+
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let current = tgg_mod::port_releases(&*net)
+        .expect("releases")
+        .into_iter()
+        .next()
+        .expect("current port");
+    let never = std::sync::atomic::AtomicBool::new(false);
+    tgg_mod::install_port(&*net, &current, &rt.state.data.ports, &|_| {}, &never).expect("install");
+    rt.update({
+        let net = net.clone();
+        let iso = iso.clone();
+        move |app, _| {
+            app.mods.net = net;
+            app.mods.disc = crate::mods::Disc::Found(iso);
+            crate::mods::actions::read_disk(app);
+        }
+    });
+    jobs_until(&mut rt, |app| app.mods.port().is_some());
+    let server = std::sync::Arc::new(crate::companion::Companion::start(None).expect("companion"));
+    let (_, val) = server.env_var();
+    let val = val.to_string_lossy();
+    let parts: Vec<&str> = val.split(':').collect();
+    let port: u16 = parts[1].parse().unwrap();
+    let token = parts[2].to_owned();
+
+    let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).expect("connect");
+    client
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    writeln!(
+        client,
+        "{{\"type\":\"hello\",\"v\":1,\"token\":\"{token}\",\"pid\":77,\"mod_set_id\":\"abc\"}}"
+    )
+    .unwrap();
+    writeln!(
+        client,
+        "{{\"type\":\"state\",\"activity\":\"match\",\"mod_set_id\":\"abc\",\"online\":{{\"state\":\"idle\"}}}}"
+    )
+    .unwrap();
+
+    for _ in 0..40 {
+        if server
+            .snapshot()
+            .is_some_and(|s| s.activity == crate::companion::Activity::Match)
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    rt.update(move |app, _| {
+        app.nav.place = Place::Play;
+        app.play.opened = true;
+        app.companion = Some(server);
+        app.mods.playing = Some(crate::mods::Playing {
+            stop: std::sync::Arc::default(),
+        });
+        app.sets.active = "competitive".to_owned();
+        app.sets.session = Some(crate::sets::Session {
+            how: crate::sets::How::Offline,
+            name: "Competitive".to_owned(),
+            set_key: "competitive".to_owned(),
+        });
+    });
+    settle(&mut rt);
+
+    // 1. Receiving a join link while in a match prompts confirmation instead of interrupting.
+    rt.update(|app, _| crate::play::actions::join_link(app, "KFXD"));
+    settle(&mut rt);
+    assert!(
+        rt.find("play/confirm/sheet").is_some(),
+        "confirm dialog opens when joining a room mid-match"
+    );
+
+    // Confirming sends `leave_match` (and focus) and queues `Join("KFXD")` until menu returns.
+    tap(&mut rt, "play/confirm/ok");
+    settle(&mut rt);
+    assert!(rt.find("play/confirm/sheet").is_none());
+    let mut reader = BufReader::new(client.try_clone().expect("clone"));
+    let mut line = String::new();
+    reader.read_line(&mut line).expect("leave_match cmd");
+    assert!(line.contains("\"cmd\":\"leave_match\""), "got {line}");
+    line.clear();
+    reader.read_line(&mut line).expect("focus cmd");
+    assert!(line.contains("\"cmd\":\"focus\""), "got {line}");
+
+    // Game reports returning to menus -> Studio automatically dispatches `join_room` for KFXD.
+    writeln!(
+        client,
+        "{{\"type\":\"state\",\"activity\":\"menu\",\"mod_set_id\":\"abc\",\"online\":{{\"state\":\"idle\"}}}}"
+    )
+    .unwrap();
+    for _ in 0..40 {
+        if rt
+            .state
+            .live_game()
+            .is_some_and(|s| s.activity == crate::companion::Activity::Menu)
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    rt.update(|app, tx| {
+        crate::jobs::poll(app, 0.0, tx);
+    });
+    settle(&mut rt);
+    line.clear();
+    reader.read_line(&mut line).expect("join_room cmd");
+    assert!(
+        line.contains("\"cmd\":\"join_room\"") && line.contains("\"code\":\"KFXD\""),
+        "got {line}"
+    );
+    line.clear();
+    reader.read_line(&mut line).expect("focus cmd");
+
+    // 2. Switching active set while running in menus surfaces `play/switch-set` and queues relaunch.
+    rt.update(|app, _| {
+        app.play.friend = false;
+        app.sets.active = tgg_mod::sets::VANILLA.to_owned();
+    });
+    settle(&mut rt);
+    assert!(
+        rt.find("play/switch-set").is_some(),
+        "Switch set button appears when active set differs from running session"
+    );
+    tap(&mut rt, "play/switch-set");
+    settle(&mut rt);
+    assert!(
+        rt.state.sets.relaunch.is_some(),
+        "relaunch queued for the newly selected set"
+    );
+    line.clear();
+    reader.read_line(&mut line).expect("quit cmd");
+    assert!(line.contains("\"cmd\":\"quit\""), "got {line}");
+}
