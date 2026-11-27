@@ -76,6 +76,10 @@ pub const FORMAT: u32 = 1;
 pub const INSTALLED: &str = "installed";
 /// The built-in set's name.
 pub const INSTALLED_NAME: &str = "Installed mods";
+/// The key of the built-in set that launches Melee with no mods at all.
+pub const VANILLA: &str = "vanilla";
+/// The built-in unmodded set's name.
+pub const VANILLA_NAME: &str = "Vanilla";
 /// The textures.gg set a new set builds on unless the player says not to:
 /// netplay, direct connect, http and unlocks, the Online menu.
 pub const ONLINE_PLAY: &str = "online-play";
@@ -396,6 +400,23 @@ impl MySet {
         self.key == INSTALLED
     }
 
+    /// The built-in unmodded set: launches plain Melee with no mods.
+    pub fn vanilla() -> Self {
+        Self {
+            key: VANILLA.to_owned(),
+            name: VANILLA_NAME.to_owned(),
+            locked: true,
+            lines: Vec::new(),
+            resolved: BTreeMap::new(),
+        }
+    }
+
+    /// Whether it's the built-in unmodded set, which launches plain Melee
+    /// with an empty mods folder rather than through [`plan`].
+    pub fn is_vanilla(&self) -> bool {
+        self.key == VANILLA
+    }
+
     /// The sets it builds on, by link name.
     pub fn builds_on(&self) -> impl Iterator<Item = &str> {
         self.lines.iter().filter_map(|line| match line {
@@ -471,6 +492,11 @@ pub fn sets_dir(data: &Path) -> PathBuf {
     tgg_dir(data).join(SETS)
 }
 
+/// An empty mods folder used when launching [`VANILLA`] (no mods).
+pub fn vanilla_mods_dir(data: &Path) -> PathBuf {
+    tgg_dir(data).join(VANILLA)
+}
+
 fn path(data: &Path, key: &str) -> PathBuf {
     sets_dir(data).join(format!("{key}.json"))
 }
@@ -542,6 +568,9 @@ pub fn load(data: &Path, local: &Local, key: &str) -> Result<MySet, Error> {
     if key == INSTALLED {
         return Ok(MySet::installed(local));
     }
+    if key == VANILLA {
+        return Ok(MySet::vanilla());
+    }
     let path = path(data, key);
     if !valid_key(key) || !path.is_file() {
         return Err(Error::NoMySet(key.to_owned()));
@@ -554,6 +583,9 @@ pub fn load(data: &Path, local: &Local, key: &str) -> Result<MySet, Error> {
 pub fn save(data: &Path, set: &MySet) -> Result<(), Error> {
     if set.is_installed() {
         return Err(Error::InstalledSet);
+    }
+    if set.is_vanilla() {
+        return Err(Error::SetLocked(VANILLA_NAME.to_owned()));
     }
     let on_disk = load(data, &Local::empty(), &set.key)?;
     if on_disk.locked {
@@ -675,6 +707,9 @@ pub fn rename(data: &Path, local: &Local, key: &str, name: &str) -> Result<MySet
     if key == INSTALLED {
         return Err(Error::InstalledSet);
     }
+    if key == VANILLA {
+        return Err(Error::SetLocked(VANILLA_NAME.to_owned()));
+    }
     let mut set = load(data, local, key)?;
     let name = check_name(data, name, Some(key))?;
     let new_key = if slug(&name) == slug(&set.name) {
@@ -709,6 +744,9 @@ pub fn remove(data: &Path, key: &str) -> Result<(), Error> {
     if key == INSTALLED {
         return Err(Error::InstalledSet);
     }
+    if key == VANILLA {
+        return Err(Error::SetLocked(VANILLA_NAME.to_owned()));
+    }
     let file = path(data, key);
     if !valid_key(key) || !file.is_file() {
         return Err(Error::NoMySet(key.to_owned()));
@@ -731,7 +769,7 @@ pub fn active(data: &Path) -> String {
     std::fs::read_to_string(sets_dir(data).join(ACTIVE))
         .ok()
         .map(|key| key.trim().to_owned())
-        .filter(|key| valid_key(key) && path(data, key).is_file())
+        .filter(|key| key == VANILLA || (valid_key(key) && path(data, key).is_file()))
         .unwrap_or_else(|| INSTALLED.to_owned())
 }
 
@@ -746,7 +784,7 @@ pub fn activate(data: &Path, key: &str) -> Result<(), Error> {
             _ => Ok(()),
         };
     }
-    if !valid_key(key) || !path(data, key).is_file() {
+    if key != VANILLA && (!valid_key(key) || !path(data, key).is_file()) {
         return Err(Error::NoMySet(key.to_owned()));
     }
     cache::write_atomic(&file, format!("{key}\n").as_bytes())
@@ -1097,6 +1135,7 @@ fn check_name(data: &Path, name: &str, own: Option<&str>) -> Result<String, Erro
     }
     let taken = |other: &str| other.to_lowercase() == name.to_lowercase();
     if taken(INSTALLED_NAME)
+        || taken(VANILLA_NAME)
         || saved(data)?
             .iter()
             .any(|set| Some(set.key.as_str()) != own && taken(&set.name))
@@ -1113,8 +1152,10 @@ fn free_name(data: &Path, base: &str) -> Result<String, Error> {
         .map(|set| set.name.to_lowercase())
         .collect();
     let free = |name: &str| {
-        name.to_lowercase() != INSTALLED_NAME.to_lowercase()
-            && !names.contains(&name.to_lowercase())
+        let lower = name.to_lowercase();
+        lower != INSTALLED_NAME.to_lowercase()
+            && lower != VANILLA_NAME.to_lowercase()
+            && !names.contains(&lower)
     };
     if free(base) {
         return Ok(base.to_owned());
@@ -1130,7 +1171,7 @@ fn free_name(data: &Path, base: &str) -> Result<String, Error> {
 /// [`INSTALLED`], and `-2`, `-3`… when taken.
 fn free_key(data: &Path, name: &str) -> String {
     let base = slug(name);
-    let free = |key: &str| key != INSTALLED && !path(data, key).exists();
+    let free = |key: &str| key != INSTALLED && key != VANILLA && !path(data, key).exists();
     if free(&base) {
         return base;
     }
@@ -1208,5 +1249,26 @@ mod tests {
         assert!(quick.left_out && quick.version == Want::Latest);
         let back = serde_json::to_string(&lines).expect("json");
         assert!(back.contains(r#"{"mod":"tgg.skip-results"}"#), "{back}");
+    }
+
+    #[test]
+    fn vanilla_set_activates_and_stays_reserved() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        assert_eq!(active(dir.path()), INSTALLED);
+
+        activate(dir.path(), VANILLA).expect("activate vanilla");
+        assert_eq!(active(dir.path()), VANILLA);
+
+        let loaded = load(dir.path(), &Local::empty(), VANILLA).expect("load vanilla");
+        assert!(loaded.is_vanilla() && loaded.locked && loaded.lines.is_empty());
+
+        assert!(matches!(
+            new(dir.path(), "Vanilla"),
+            Err(Error::SetExists(_))
+        ));
+        assert!(matches!(
+            remove(dir.path(), VANILLA),
+            Err(Error::SetLocked(_))
+        ));
     }
 }

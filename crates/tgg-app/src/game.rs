@@ -198,6 +198,35 @@ impl Game {
         changed
     }
 
+    /// Files on the disc whose bytes differ from a clean NTSC 1.02 disc and
+    /// have no clean copy cached in `clean_dir` (tgg-melee's `<data>/clean/`).
+    /// Includes fighter data (`PlFc.dat`), effects (`Ef*.dat`), costumes, and
+    /// stages that tgg-melee hashes into its netplay mod-set ID when uncached.
+    pub fn modified_counted_files(&self, clean_dir: Option<&Path>) -> Vec<String> {
+        let mut modified: Vec<String> = vanilla_files()
+            .filter(|file| {
+                let Ok(bytes) = self.read(&file.name) else {
+                    return false;
+                };
+                if is_vanilla(&file.name, &bytes) {
+                    return false;
+                }
+                if let Some(dir) = clean_dir {
+                    let cached = dir.join(&file.sha256);
+                    if std::fs::metadata(&cached)
+                        .is_ok_and(|meta| meta.len() == file.byte_length as u64)
+                    {
+                        return false;
+                    }
+                }
+                true
+            })
+            .map(|file| file.name.clone())
+            .collect();
+        modified.sort();
+        modified
+    }
+
     /// Every slot the disc has a file for: each fighter's costumes in roster
     /// and color order, then the versus stages.
     pub fn slots(&self) -> Vec<MeleeSlot> {
@@ -437,27 +466,37 @@ fn disc_images_in(folder: &Path) -> Vec<PathBuf> {
 /// `PlFcRe.dat`.
 #[cfg(any(test, feature = "test-support"))]
 pub fn test_disc(game_id: &[u8; 6], revision: u8, contents: &[u8]) -> Vec<u8> {
+    test_disc_with_file(game_id, revision, b"PlFcRe.dat", contents)
+}
+
+/// A disc image of game `game_id` at `revision` holding one file named `name`.
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_disc_with_file(
+    game_id: &[u8; 6],
+    revision: u8,
+    name: &[u8],
+    contents: &[u8],
+) -> Vec<u8> {
     const FST: usize = 0x500;
     const FILE: usize = 0x800;
-    const NAME: &[u8] = b"PlFcRe.dat";
     let mut disc = vec![0; FILE + contents.len()];
     disc[0..6].copy_from_slice(game_id);
     disc[7] = revision;
     disc[0x1C..0x20].copy_from_slice(&0xC233_9F3D_u32.to_be_bytes());
     disc[0x424..0x428].copy_from_slice(&(FST as u32).to_be_bytes());
-    disc[0x428..0x42c].copy_from_slice(&((24 + NAME.len() + 1) as u32).to_be_bytes());
+    disc[0x428..0x42c].copy_from_slice(&((24 + name.len() + 1) as u32).to_be_bytes());
     disc[FST] = 1;
     disc[FST + 8..FST + 12].copy_from_slice(&2_u32.to_be_bytes());
     disc[FST + 16..FST + 20].copy_from_slice(&(FILE as u32).to_be_bytes());
     disc[FST + 20..FST + 24].copy_from_slice(&(contents.len() as u32).to_be_bytes());
-    disc[FST + 24..FST + 24 + NAME.len()].copy_from_slice(NAME);
+    disc[FST + 24..FST + 24 + name.len()].copy_from_slice(name);
     disc[FILE..].copy_from_slice(contents);
     disc
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Game, GameError, iso_paths, test_disc};
+    use super::{Game, GameError, iso_paths, test_disc, test_disc_with_file};
     use std::path::PathBuf;
 
     #[test]
@@ -489,5 +528,32 @@ mod tests {
         let other = open(b"GMSE01", 2).expect_err("another game is refused");
         assert!(matches!(&other, GameError::NotMelee { game_id, .. } if game_id == "GMSE01"));
         assert!(other.to_string().contains("GMSE01"), "{other}");
+    }
+
+    #[test]
+    fn modified_counted_files_catches_fighter_data_and_respects_clean_cache() {
+        let folder = tempfile::tempdir().expect("temp folder");
+        let iso = folder.path().join("modded-falco.iso");
+        std::fs::write(
+            &iso,
+            test_disc_with_file(b"GALE01", 2, b"PlFc.dat", b"modified"),
+        )
+        .expect("write disc");
+        let game = Game::open(&iso).expect("open disc");
+
+        // `modified_counted_files` catches modified fighter data (`PlFc.dat`),
+        // which tgg-melee hashes into netplay mod-set IDs when uncached.
+        assert_eq!(game.modified_counted_files(None), vec!["PlFc.dat"]);
+
+        // Once a clean copy of the expected vanilla byte length is cached
+        // under `<clean_dir>/<sha256>`, tgg-melee skips counting it.
+        let vanilla = melee_dat::vanilla::vanilla_files()
+            .find(|f| f.name == "PlFc.dat")
+            .expect("PlFc.dat in vanilla table");
+        let clean = folder.path().join("clean");
+        std::fs::create_dir_all(&clean).expect("create clean dir");
+        std::fs::write(clean.join(&vanilla.sha256), vec![0u8; vanilla.byte_length])
+            .expect("write cached clean copy");
+        assert!(game.modified_counted_files(Some(&clean)).is_empty());
     }
 }

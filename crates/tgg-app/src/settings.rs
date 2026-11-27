@@ -46,6 +46,8 @@ pub struct Settings {
     pub recent: Vec<MeleeSlot>,
     /// Look for a newer version at launch (default on).
     pub check_for_updates: Option<bool>,
+    /// The player has completed first-run setup once.
+    pub onboarded: bool,
 }
 
 /// One of the editor's panes: open, and folded to its header.
@@ -129,6 +131,7 @@ impl Settings {
             sidebar,
             recent,
             check_for_updates,
+            onboarded,
         } = after;
         fn take<T: Clone + PartialEq>(target: &mut T, before: &T, after: &T) {
             if before != after {
@@ -162,6 +165,7 @@ impl Settings {
             &before.check_for_updates,
             check_for_updates,
         );
+        take(&mut self.onboarded, &before.onboarded, onboarded);
     }
 
     fn parse(text: &str) -> Self {
@@ -231,7 +235,14 @@ mod tests {
         let partial = Settings::parse(r#"{"palette":"neon","future":1}"#);
         assert_eq!(partial.appearance(), Appearance::Gallery);
         assert_eq!(partial.inspector_width, None);
+        assert!(!partial.onboarded);
         assert_eq!(Settings::parse("not json"), Settings::default());
+
+        let onboarded = Settings {
+            onboarded: true,
+            ..Settings::default()
+        };
+        assert!(Settings::parse(&onboarded.to_json()).onboarded);
     }
 
     #[test]

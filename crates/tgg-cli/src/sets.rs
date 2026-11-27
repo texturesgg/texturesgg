@@ -344,11 +344,44 @@ fn show(api: &str, data: &Path, set: &MySet) -> Result<()> {
     Ok(())
 }
 
-/// Run the set `key`: Installed mods as `tgg port run` always has, any
-/// other through its own mods folder for this session.
+/// Run the set `key`: Installed mods as `tgg port run` always has, Vanilla
+/// with an empty mods folder, any other through its own mods folder for
+/// this session.
 pub fn run_set(api: &str, key: &str, yes: bool, verbose: bool) -> Result<()> {
     if key == INSTALLED {
         return crate::ports::run_installed(api, None, &[], verbose);
+    }
+    if key == sets::VANILLA {
+        let data = crate::paths::data()?;
+        let ports = crate::paths::ports()?;
+        let port = tgg_mod::installed_ports(&ports)?
+            .into_iter()
+            .find(|port| port.current)
+            .ok_or_else(|| {
+                anyhow::anyhow!("tgg-melee isn't installed. Run `tgg port install` first.")
+            })?;
+        let vanilla = sets::vanilla_mods_dir(&data);
+        std::fs::create_dir_all(&vanilla)?;
+        let iso = crate::config::iso_or_ask()?;
+        let log = crate::paths::state()?.join(crate::ports::GAME_LOG);
+        let log = (!verbose).then_some(log.as_path());
+        let signals = crate::signals::handle()?;
+        let mut running = tgg_mod::ports::launch_with_args(
+            &port,
+            &iso,
+            &vanilla,
+            std::iter::empty::<&str>(),
+            log,
+        )?;
+        println!(
+            "Starting tgg-melee {} with {}",
+            port.version,
+            sets::VANILLA_NAME
+        );
+        signals.set_game(Some(running.id()));
+        let status = running.wait();
+        signals.set_game(None);
+        return crate::profiles::finish(status, &signals, &port.executable(), log);
     }
     let net = crate::profiles::http(api);
     let signals = crate::signals::handle()?;
