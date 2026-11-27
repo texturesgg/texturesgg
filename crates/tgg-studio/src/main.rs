@@ -10,6 +10,7 @@
 //! tgg-studio [--iso PATH] --snap out.png [--scene NAME]   headless, as Rune's tooling
 //! ```
 
+mod companion;
 mod editor;
 mod first_run;
 mod jobs;
@@ -523,7 +524,6 @@ const SCENES: &[Scene] = &[
         app.sets.session = Some(crate::sets::Session {
             how: crate::sets::How::Offline,
             name: "Friday night".into(),
-            started: std::time::Instant::now(),
         });
     }),
     // The launch video's start: a player new to mods, against the live
@@ -1369,7 +1369,6 @@ fn searching_scene(app: &mut App) {
     app.sets.session = Some(crate::sets::Session {
         how: crate::sets::How::Search,
         name: "Friday night".to_owned(),
-        started: std::time::Instant::now() - std::time::Duration::from_secs(7),
     });
     app.mods.playing = Some(crate::mods::Playing {
         stop: Arc::default(),
@@ -1416,26 +1415,68 @@ const ENDED: &str = "{\"state\":\"ended\",\"code\":\"\",\"link\":\"\",\"host\":\
                      \"players\":[],\"max\":4,\"signin\":{\"url\":\"\",\"code\":\"\"},\
                      \"why\":\"The host left, so the room closed.\"}";
 
-/// For scenes: a game started `how` and running, its room report saying
-/// `line`, and the friend sheet open over Play.
+/// For scenes: a game started `how` and running, its live companion state
+/// parsed from `line`, and the friend sheet open over Play.
 fn room_scene(app: &mut App, how: crate::sets::How, line: &str) {
     app.sets.session = Some(crate::sets::Session {
         how,
         name: "Friday night".to_owned(),
-        started: std::time::Instant::now() - std::time::Duration::from_secs(12),
     });
     app.mods.playing = Some(crate::mods::Playing {
         stop: Arc::default(),
     });
     app.play.friend = true;
-    // What the game writes as the room changes; Play reads it each second
-    // while a game runs, so the line has to be there.
-    let report = crate::sets::actions::room_report(app);
-    if let Some(folder) = report.parent() {
-        let _ = std::fs::create_dir_all(folder);
+    #[derive(serde::Deserialize)]
+    struct SceneRoom {
+        #[serde(default)]
+        state: String,
+        #[serde(default)]
+        code: String,
+        #[serde(default)]
+        link: String,
+        #[serde(default)]
+        host: String,
+        #[serde(default)]
+        players: Vec<String>,
+        #[serde(default)]
+        max: u32,
+        #[serde(default)]
+        signin: crate::companion::SigninInfo,
+        #[serde(default)]
+        why: String,
     }
-    let _ = std::fs::write(&report, format!("{line}\n"));
-    app.play.room = crate::play::read_report(line);
+    if let Ok(r) = serde_json::from_str::<SceneRoom>(line) {
+        let state = match r.state.as_str() {
+            "starting" => crate::companion::OnlineState::Connecting,
+            "signing-in" => crate::companion::OnlineState::SigningIn,
+            "waiting" => crate::companion::OnlineState::RoomWaiting,
+            "getting-mods" => crate::companion::OnlineState::GettingMods,
+            "playing" => crate::companion::OnlineState::RoomPlaying,
+            "ended" => crate::companion::OnlineState::Ended,
+            _ => crate::companion::OnlineState::Idle,
+        };
+        app.companion_override = Some(crate::companion::LiveState {
+            pid: 1,
+            mod_set_id: String::new(),
+            activity: crate::companion::Activity::Menu,
+            online: crate::companion::Online {
+                state,
+                queue_label: String::new(),
+                search_ms: 0,
+                opponent: String::new(),
+                room: crate::companion::RoomInfo {
+                    code: r.code,
+                    link: r.link,
+                    host: r.host,
+                    players: r.players,
+                    max: r.max,
+                },
+                signin: r.signin,
+                why: r.why,
+            },
+            updated_at: Some(std::time::Instant::now()),
+        });
+    }
 }
 
 /// For scenes: hosting a room, its link and code out.

@@ -6,7 +6,8 @@
 //! The set picker's menu and the friend sheet sit over the page.
 
 use super::actions;
-use super::{Queue, QueueMod, Room, State, gameplay, matching, searching};
+use super::{Queue, QueueMod, gameplay, matching, searching};
+use crate::companion::{Activity, LiveState, Online, OnlineState, RoomInfo};
 use crate::jobs::renders::RenderKey;
 use crate::mods::Disc;
 use crate::nav::Place;
@@ -424,79 +425,216 @@ fn picker(app: &App, p: &Palette) -> El {
 }
 
 /// Find a match, Play with a friend, Play offline, all one height. While a
-/// game runs, what it's doing instead of Find a match, with Cancel, and only
-/// Play with a friend for a room (the sheet with its code): another game
-/// can't start beside it.
+/// game runs, the live companion state drives the controls: Leaving a queue
+/// leaves the queue without killing the game, and returning to menus brings
+/// back Find a match / Play with a friend for the already-running game.
 fn buttons(app: &App, p: &Palette) -> El {
     let vanilla = app.sets.is_vanilla();
-    let main = match &app.sets.session {
-        Some(session) => live(app, session, p),
-        None if app.mods.playing.is_some() => running(p),
-        None if vanilla && app.sets.busy() => button_main("Play offline", ButtonKind::Primary, p)
+    let live_state = app.live_game();
+    if let Some(session) = &app.sets.session {
+        return running_buttons(app, session, live_state.as_ref(), vanilla, p);
+    }
+    if app.mods.playing.is_some() {
+        return row()
+            .flex_wrap()
+            .gap(space::XS)
+            .items_center()
+            .child(session_pill(
+                "A game is running".to_owned(),
+                None,
+                "Quit game",
+                actions::quit_game,
+                p,
+            ));
+    }
+    let main = match () {
+        _ if vanilla && app.sets.busy() => button_main("Play offline", ButtonKind::Primary, p)
             .disabled(true)
             .opacity(BUSY),
-        None if vanilla => button_main("Play offline", ButtonKind::Primary, p)
+        _ if vanilla => button_main("Play offline", ButtonKind::Primary, p)
             .key("play/offline")
             .on_press(actions::play_offline),
-        None if app.sets.busy() => button_main("Find a match", ButtonKind::Primary, p)
+        _ if app.sets.busy() => button_main("Find a match", ButtonKind::Primary, p)
             .disabled(true)
             .opacity(BUSY),
-        None => button_main("Find a match", ButtonKind::Primary, p)
+        _ => button_main("Find a match", ButtonKind::Primary, p)
             .key("play/find")
             .on_press(actions::find),
     };
-    let running = app.mods.playing.is_some() || app.sets.session.is_some();
-    let room = app
-        .sets
-        .session
-        .as_ref()
-        .is_some_and(|session| matches!(session.how, How::Host | How::Join(_)));
-    // In a narrow window they wrap rather than run under the fighter.
     row()
         .flex_wrap()
         .gap(space::XS)
         .items_center()
         .child(main)
-        .children(((!running && !vanilla) || room).then(|| {
+        .children((!vanilla).then(|| {
             button_main("Play with a friend", ButtonKind::Secondary, p)
                 .key("play/friend")
                 .on_press(actions::open_friend)
         }))
-        .children((!running && !vanilla).then(|| {
+        .children((!vanilla).then(|| {
             button_main("Play offline", ButtonKind::Secondary, p)
                 .key("play/offline")
                 .on_press(actions::play_offline)
         }))
 }
 
-/// The main button while a game runs: what it's doing, how long it has been
-/// (or who it found), and Cancel, which ends it.
-fn live(app: &App, session: &Session, p: &Palette) -> El {
-    let words = match &session.how {
-        How::Search => format!("Searching {}", searching_in(app, session)),
-        How::Queue { label, .. } => format!("Searching {label}"),
-        How::Host => "In a room".to_owned(),
-        How::Join(_) => "Joining a room".to_owned(),
-        How::Offline => "Playing offline".to_owned(),
+fn running_buttons(
+    app: &App,
+    session: &Session,
+    live: Option<&LiveState>,
+    vanilla: bool,
+    p: &Palette,
+) -> El {
+    let quit = button_main("Quit game", ButtonKind::Secondary, p)
+        .key("play/quit")
+        .on_press(actions::quit_game);
+
+    let Some(live) = live else {
+        // Connected companion not yet received (game is still starting up).
+        let words = format!("Starting {}", session.name);
+        return row()
+            .flex_wrap()
+            .gap(space::XS)
+            .items_center()
+            .child(session_pill(
+                words,
+                None,
+                "Quit game",
+                actions::quit_game,
+                p,
+            ));
     };
-    let searching = matches!(session.how, How::Search | How::Queue { .. });
-    let next = searching.then(|| match &app.play.log.found {
-        Some(name) => label(format!("Found {name}. Starting the game"))
-            .font(text::SMALL)
-            .color(p.on_ink),
-        None => label(clock(session)).font(text::MONO_TEXT).color(p.on_ink),
-    });
-    session_pill(words, next, p)
+
+    match live.online.state {
+        OnlineState::Searching => {
+            let queue = if !live.online.queue_label.is_empty() {
+                live.online.queue_label.clone()
+            } else {
+                searching_in(app, session)
+            };
+            let secs = live.search_secs();
+            let timer = label(format!("{}:{:02}", secs / 60, secs % 60))
+                .font(text::MONO_TEXT)
+                .color(p.on_ink);
+            row()
+                .flex_wrap()
+                .gap(space::XS)
+                .items_center()
+                .child(session_pill(
+                    format!("Searching {queue}"),
+                    Some(timer),
+                    "Leave queue",
+                    actions::leave_queue,
+                    p,
+                ))
+                .child(quit)
+        }
+        OnlineState::Connecting | OnlineState::SigningIn | OnlineState::Choosing => {
+            let words = match live.online.state {
+                OnlineState::SigningIn => "Sign in to play online".to_owned(),
+                OnlineState::Choosing => "Choosing fighter".to_owned(),
+                _ => "Connecting to textures.gg".to_owned(),
+            };
+            row()
+                .flex_wrap()
+                .gap(space::XS)
+                .items_center()
+                .child(session_pill(
+                    words,
+                    None,
+                    "Leave queue",
+                    actions::leave_queue,
+                    p,
+                ))
+                .child(quit)
+        }
+        OnlineState::Matched => {
+            let words = if live.online.opponent.is_empty() {
+                "In online match".to_owned()
+            } else {
+                format!("Playing {}", live.online.opponent)
+            };
+            row()
+                .flex_wrap()
+                .gap(space::XS)
+                .items_center()
+                .child(session_pill(words, None, "Focus", actions::focus_game, p))
+                .child(quit)
+        }
+        OnlineState::RoomWaiting | OnlineState::RoomPlaying | OnlineState::GettingMods => {
+            let words = if !live.online.room.code.is_empty() {
+                format!("In room {}", live.online.room.code)
+            } else if live.online.state == OnlineState::GettingMods {
+                "Getting host's mods".to_owned()
+            } else {
+                "In a room".to_owned()
+            };
+            let count = (!live.online.room.players.is_empty()).then(|| {
+                label(live.online.room.count())
+                    .font(text::SMALL)
+                    .color(p.on_ink)
+            });
+            row()
+                .flex_wrap()
+                .gap(space::XS)
+                .items_center()
+                .child(session_pill(
+                    words,
+                    count,
+                    "Leave room",
+                    actions::leave_room,
+                    p,
+                ))
+                .child(
+                    button_main("Play with a friend", ButtonKind::Secondary, p)
+                        .key("play/friend")
+                        .on_press(actions::open_friend),
+                )
+                .child(quit)
+        }
+        OnlineState::Idle | OnlineState::Ended => {
+            let activity = match live.activity {
+                Activity::Training => "In Training".to_owned(),
+                Activity::Match => format!("In match · {}", session.name),
+                Activity::Replay => "Watching replay".to_owned(),
+                Activity::Menu => format!("Playing {}", session.name),
+            };
+            let in_match = matches!(live.activity, Activity::Match | Activity::Training);
+            row()
+                .flex_wrap()
+                .gap(space::XS)
+                .items_center()
+                .child(session_pill(
+                    activity,
+                    None,
+                    "Focus",
+                    actions::focus_game,
+                    p,
+                ))
+                .children((!vanilla && !in_match).then(|| {
+                    button_main("Find a match", ButtonKind::Secondary, p)
+                        .key("play/find")
+                        .on_press(actions::find)
+                }))
+                .children((!vanilla && !in_match).then(|| {
+                    button_main("Play with a friend", ButtonKind::Secondary, p)
+                        .key("play/friend")
+                        .on_press(actions::open_friend)
+                }))
+                .child(quit)
+        }
+    }
 }
 
-/// The main button while a game runs that Play didn't start (a replay): it
-/// can still be ended here.
-fn running(p: &Palette) -> El {
-    session_pill("A game is running".to_owned(), None, p)
-}
-
-/// A main button that says what's running, with Cancel.
-fn session_pill(words: String, next: Option<El>, p: &Palette) -> El {
+/// A main status pill with one clear action (`Leave queue`, `Leave room`,
+/// `Focus`, or `Quit game`).
+fn session_pill(
+    words: String,
+    next: Option<El>,
+    action: &str,
+    on_press: fn(&mut App),
+    p: &Palette,
+) -> El {
     row()
         .key("play/session")
         .h(size::CONTROL_MAIN)
@@ -508,22 +646,16 @@ fn session_pill(words: String, next: Option<El>, p: &Palette) -> El {
         .fill(p.ink)
         .cursor(rune::Cursor::Pointer)
         .role("button")
-        .label(format!("{words} · Cancel"))
-        .on_press(crate::mods::actions::stop)
+        .label(format!("{words} · {action}"))
+        .on_press(on_press)
         .child(label(words).font(text::STRONG).color(p.on_ink))
         .children(next)
         .child(label("·").font(text::SMALL).color(p.on_ink.alpha(0.35)))
         .child(
-            label("Cancel")
+            label(action.to_owned())
                 .font(text::STRONG)
                 .color(p.on_ink.alpha(0.6)),
         )
-}
-
-/// How long the game has been searching, as `0:07`.
-fn clock(session: &Session) -> String {
-    let seconds = session.started.elapsed().as_secs();
-    format!("{}:{:02}", seconds / 60, seconds % 60)
 }
 
 /// The queue the pill names: the queue the card's line matches, else the
@@ -979,10 +1111,24 @@ pub fn friend(app: &App, p: &Palette) -> Option<El> {
     if !app.play.friend || app.nav.place != Place::Play {
         return None;
     }
-    let busy = app.sets.busy() || app.mods.playing.is_some();
-    let room: El = match &app.sets.session {
-        Some(session) => room_state(&app.play.room, &session.how, p).key("play/friend/room"),
-        _ if busy => button_off("Host a room", p),
+    let live_state = app.live_game();
+    let in_room_or_queue = live_state
+        .as_ref()
+        .is_some_and(|s| s.online.state.is_room() || s.online.state.is_queue());
+    let busy = app.sets.busy() || (app.mods.playing.is_some() && live_state.is_none());
+    let room: El = match (&app.sets.session, live_state.as_ref()) {
+        (Some(session), Some(live))
+            if live.online.state.is_room()
+                || live.online.state == OnlineState::SigningIn
+                || live.online.state == OnlineState::Connecting
+                || live.online.state == OnlineState::Ended =>
+        {
+            room_state(&live.online, &session.how, p).key("play/friend/room")
+        }
+        (Some(session), None) if matches!(session.how, How::Host | How::Join(_)) => {
+            room_state(&Online::default(), &session.how, p).key("play/friend/room")
+        }
+        _ if busy || in_room_or_queue => button_off("Host a room", p),
         _ => col()
             .gap(space::XS)
             .child(
@@ -1005,7 +1151,7 @@ pub fn friend(app: &App, p: &Palette) -> Option<El> {
                     .on_edit(|app: &mut App| &mut app.play.join),
             ),
         )
-        .child(if empty || busy {
+        .child(if empty || busy || in_room_or_queue {
             button_off("Join", p)
         } else {
             button("Join", ButtonKind::Primary, p)
@@ -1037,13 +1183,16 @@ pub fn friend(app: &App, p: &Palette) -> Option<El> {
     ))
 }
 
-/// The room, as the report's state has it: signing in, waiting with the
+/// The room, as the live companion state has it: signing in, waiting with the
 /// link and code out, getting the host's mods, playing, or ended and why.
-fn room_state(report: &Room, how: &How, p: &Palette) -> El {
+fn room_state(online: &Online, how: &How, p: &Palette) -> El {
     let joining = matches!(how, How::Join(_));
     let mut body = col().gap(space::SM);
-    match report.state {
-        State::None => {
+    match online.state {
+        OnlineState::Idle
+        | OnlineState::Choosing
+        | OnlineState::Searching
+        | OnlineState::Matched => {
             let words = if joining {
                 "Joining the room"
             } else {
@@ -1053,20 +1202,20 @@ fn room_state(report: &Room, how: &How, p: &Palette) -> El {
                 .child(quiet(words, p))
                 .child(faint("This takes a few seconds.", p));
         }
-        State::Starting => {
+        OnlineState::Connecting => {
             body = body
                 .child(quiet("Signing you in", p))
                 .child(faint("This takes a few seconds.", p));
         }
-        State::SigningIn => body = body.children(sign_in(report, p)),
-        State::Waiting => {
+        OnlineState::SigningIn => body = body.children(sign_in(online, p)),
+        OnlineState::RoomWaiting => {
             body = body
-                .children(shared(report, p))
-                .children(players(report, p))
+                .children(shared(&online.room, p))
+                .children(players(&online.room, p))
                 .child(quiet("Your friends join with the code or the link.", p));
         }
-        State::GettingMods => {
-            let whose = match report.host.as_str() {
+        OnlineState::GettingMods => {
+            let whose = match online.room.host.as_str() {
                 "" => "the host's mods".to_owned(),
                 host => format!("{host}'s mods"),
             };
@@ -1074,15 +1223,15 @@ fn room_state(report: &Room, how: &How, p: &Palette) -> El {
                 .child(quiet(format!("Downloading {whose}"), p))
                 .child(faint("The game restarts with them and joins again.", p));
         }
-        State::Playing => {
-            body = body.children(players(report, p)).child(quiet(
+        OnlineState::RoomPlaying => {
+            body = body.children(players(&online.room, p)).child(quiet(
                 "The host started the game, so nobody else can join.",
                 p,
             ));
         }
-        State::Ended => {
+        OnlineState::Ended => {
             body = body.child(quiet(
-                match report.why.as_str() {
+                match online.why.as_str() {
                     "" => "The room ended.",
                     why => why,
                 },
@@ -1095,9 +1244,9 @@ fn room_state(report: &Room, how: &How, p: &Palette) -> El {
 
 /// What's shareable: the invite link with Copy, and the code large with its
 /// own Copy under it.
-fn shared(report: &Room, p: &Palette) -> Vec<El> {
+fn shared(room: &RoomInfo, p: &Palette) -> Vec<El> {
     let mut parts = Vec::new();
-    if let Some(invite) = report.invite() {
+    if let Some(invite) = room.invite() {
         parts.push(
             col()
                 .gap(space::XXS)
@@ -1123,21 +1272,21 @@ fn shared(report: &Room, p: &Palette) -> Vec<El> {
                 ),
         );
     }
-    if !report.code.is_empty() {
-        parts.push(code_block(&report.code, p));
+    if !room.code.is_empty() {
+        parts.push(code_block(&room.code, p));
     }
     parts
 }
 
 /// Who's in the room, the host first, and how full it is.
-fn players(report: &Room, p: &Palette) -> Option<El> {
-    (!report.players.is_empty()).then(|| {
+fn players(room: &RoomInfo, p: &Palette) -> Option<El> {
+    (!room.players.is_empty()).then(|| {
         row()
             .key("play/friend/players")
             .gap(space::SM)
             .items_center()
             .child(
-                label(report.players.join(", "))
+                label(room.players.join(", "))
                     .font(text::BODY)
                     .color(p.ink)
                     .wrap()
@@ -1145,7 +1294,7 @@ fn players(report: &Room, p: &Palette) -> Option<El> {
                     .min_w(0.0),
             )
             .child(
-                label(report.count())
+                label(room.count())
                     .font(text::SMALL)
                     .color(p.muted)
                     .truncate(),
@@ -1154,9 +1303,9 @@ fn players(report: &Room, p: &Palette) -> Option<El> {
 }
 
 /// Nobody's signed in: the code to confirm, and the page to confirm it on.
-fn sign_in(report: &Room, p: &Palette) -> Vec<El> {
+fn sign_in(online: &Online, p: &Palette) -> Vec<El> {
     let mut parts = vec![quiet("Confirm the code on textures.gg to sign in.", p)];
-    if !report.signin.code.is_empty() {
+    if !online.signin.code.is_empty() {
         parts.push(
             row()
                 .gap(space::SM)
@@ -1167,7 +1316,7 @@ fn sign_in(report: &Room, p: &Palette) -> Vec<El> {
                 .border(size::LINE, p.line)
                 .radius(radius::CONTROL + 1.0)
                 .child(
-                    label(report.signin.code.clone())
+                    label(online.signin.code.clone())
                         .key("play/friend/signin/code")
                         .font(text::MONO_CODE)
                         .color(p.ink)
@@ -1182,14 +1331,14 @@ fn sign_in(report: &Room, p: &Palette) -> Vec<El> {
                 ),
         );
     }
-    if !report.signin.url.is_empty() {
+    if !online.signin.url.is_empty() {
         parts.push(
             button("Open textures.gg", ButtonKind::Primary, p)
                 .key("play/friend/signin/open")
                 .on_press_tx(actions::open_sign_in),
         );
         parts.push(
-            label(report.signin.url.clone())
+            label(online.signin.url.clone())
                 .key("play/friend/signin/url")
                 .font(text::MONO_SMALL)
                 .color(p.muted)

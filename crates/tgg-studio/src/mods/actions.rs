@@ -781,6 +781,7 @@ pub fn done(app: &mut App, done: Done) -> bool {
         Done::GameEnded(result) => {
             app.mods.playing = None;
             app.sets.session = None;
+            app.companion = None;
             // A profile game's folder goes once nothing runs on it.
             if let Err(error) = tgg_mod::finish_profile(&app.data.tgg) {
                 tgg_app::log(&format!("finishing profile games: {error}"));

@@ -5,16 +5,17 @@
 //! report about once a second, asking for the next second's frame so the
 //! clock keeps up.
 
-use super::{Done, Log, Queue, Room, read_log, read_report};
+use super::{Done, Queue};
+use crate::companion::{Command, OnlineState};
 use crate::jobs::Done as Job;
 use crate::nav::Place;
 use crate::sets::How;
 use crate::state::App;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tgg_mod::ReplayInfo;
 
-/// How often the running game's log and room report are read.
-const LOG_EVERY: Duration = Duration::from_millis(900);
+/// How often the live queue timer ticks while searching.
+const CLOCK_TICK: Duration = Duration::from_secs(1);
 /// How Play's fighter is seen: turned from facing straight out, in radians,
 /// toward the words beside it, with some depth; and how much closer than
 /// the renderer's own framing.
@@ -51,8 +52,22 @@ pub fn done(app: &mut App, done: Done) -> bool {
 }
 
 /// Before each frame, while Play shows: open it the first time, keep the
-/// card's fighter asked for, and read what a running game says.
+/// card's fighter asked for, surface any refused companion command, and keep
+/// the live queue timer ticking while actually searching.
 pub fn tick(app: &mut App, tx: &mut rune::Tx) {
+    if let Some(ack) = app
+        .companion
+        .as_ref()
+        .and_then(crate::companion::Companion::take_error_ack)
+    {
+        let msg = match ack.reason.as_str() {
+            "in-match" => "Finish or leave the current match first.".to_owned(),
+            "busy" => "Leave the current online session in-game first.".to_owned(),
+            "unsupported" => "The running game doesn't have online mods loaded.".to_owned(),
+            _ => "Couldn't complete that action in the running game.".to_owned(),
+        };
+        app.tell(msg, true);
+    }
     if app.nav.place != Place::Play {
         return;
     }
@@ -60,40 +75,63 @@ pub fn tick(app: &mut App, tx: &mut rune::Tx) {
         opened(app);
     }
     hero(app);
-    match app.sets.session {
-        Some(_) => {
-            let due = app.play.log_at.is_none_or(|at| at.elapsed() >= LOG_EVERY);
-            if due {
-                app.play.log_at = Some(Instant::now());
-                let log = crate::sets::actions::game_log(app);
-                app.play.log = std::fs::read_to_string(log)
-                    .map(|text| read_log(&text))
-                    .unwrap_or_default();
-                let report = crate::sets::actions::room_report(app);
-                app.play.room = std::fs::read_to_string(report)
-                    .map(|text| read_report(&text))
-                    .unwrap_or_default();
-            }
-            // The clock's next second, and the room a host is waiting on.
-            tx.wake_after(LOG_EVERY);
-        }
-        None if app.play.log != Log::default() || app.play.room != Room::default() => {
-            app.play.log = Log::default();
-            app.play.room = Room::default();
-            app.play.log_at = None;
-        }
-        None => {}
+    if app
+        .live_game()
+        .is_some_and(|live| live.online.state == OnlineState::Searching)
+    {
+        tx.wake_after(CLOCK_TICK);
     }
 }
 
-/// Find a match: sign in first when signed out, else start the set's game
-/// searching in its queue.
+/// Find a match: sign in first when signed out; if tgg-melee is already
+/// running and connected, ask it to open Find a match; else launch it.
 pub fn find(app: &mut App) {
     if app.signin.who.is_none() {
         crate::signin::actions::begin(app);
         return;
     }
+    if let Some(companion) = &app.companion
+        && companion.snapshot().is_some()
+    {
+        companion.send(Command::StartSearch {
+            mode: "vs".to_owned(),
+        });
+        companion.send(Command::Focus);
+        return;
+    }
     crate::sets::actions::launch(app, How::Search);
+}
+
+/// Leave the matchmaking queue without closing tgg-melee.
+pub fn leave_queue(app: &mut App) {
+    if let Some(companion) = &app.companion {
+        companion.send(Command::StopSearch);
+    }
+}
+
+/// Leave the current room without closing tgg-melee.
+pub fn leave_room(app: &mut App) {
+    if let Some(companion) = &app.companion {
+        companion.send(Command::LeaveRoom);
+    }
+}
+
+/// Bring the running tgg-melee window to the front.
+pub fn focus_game(app: &mut App) {
+    if let Some(companion) = &app.companion {
+        companion.send(Command::Focus);
+    }
+}
+
+/// Ask tgg-melee to quit cleanly (falls back to killing the process if
+/// companion isn't connected).
+pub fn quit_game(app: &mut App) {
+    if let Some(companion) = &app.companion
+        && companion.send(Command::Quit)
+    {
+        return;
+    }
+    crate::mods::actions::stop(app);
 }
 
 /// Play the set offline, its menus and no search.
@@ -110,64 +148,84 @@ pub fn close_friend(app: &mut App) {
     app.play.friend = false;
 }
 
-/// Host a room: the game makes it and reports its code, link and players,
-/// which the sheet reads out.
+/// Host a room: if tgg-melee is already running, ask it to host; else launch.
 pub fn host(app: &mut App) {
-    begin_room(app);
+    if let Some(companion) = &app.companion
+        && companion.snapshot().is_some()
+    {
+        companion.send(Command::HostRoom);
+        companion.send(Command::Focus);
+        return;
+    }
     crate::sets::actions::launch(app, How::Host);
 }
 
-/// Join the room whose code was typed, or whose invite was pasted. The
-/// sheet stays: it's where the game's way into the room shows.
+/// Join the room whose code was typed, or whose invite was pasted.
 pub fn join(app: &mut App) {
     let code = super::typed_code(&app.play.join.text);
     if code.is_empty() {
         return;
     }
-    begin_room(app);
+    if let Some(companion) = &app.companion
+        && companion.snapshot().is_some()
+    {
+        companion.send(Command::JoinRoom { code });
+        companion.send(Command::Focus);
+        return;
+    }
     crate::sets::actions::launch(app, How::Join(code));
 }
 
 /// Join the room a `textures-gg://join/<code>` link names, with the active
-/// set, showing the sheet as the game makes its way in.
+/// set, or straight into the already-running game.
 pub fn join_link(app: &mut App, code: &str) {
-    begin_room(app);
     app.play.friend = true;
+    if let Some(companion) = &app.companion
+        && companion.snapshot().is_some()
+    {
+        companion.send(Command::JoinRoom {
+            code: code.to_owned(),
+        });
+        companion.send(Command::Focus);
+        return;
+    }
     crate::sets::actions::launch(app, How::Join(code.to_owned()));
-}
-
-/// A room is about to start: its report is written afresh, so nothing the
-/// last game said shows.
-fn begin_room(app: &mut App) {
-    app.play.room = Room::default();
-    app.play.log_at = None;
 }
 
 /// Copy the room's code, for pasting to a friend.
 pub fn copy_code(app: &mut App, tx: &mut rune::Tx) {
-    if !app.play.room.code.is_empty() {
-        tx.copy(app.play.room.code.clone());
+    if let Some(live) = app.live_game()
+        && !live.online.room.code.is_empty()
+    {
+        tx.copy(live.online.room.code);
     }
 }
 
 /// Copy the room's invite, to send a friend: the site's page for it,
 /// which chat apps make clickable and which opens the app.
 pub fn copy_link(app: &mut App, tx: &mut rune::Tx) {
-    if let Some(invite) = app.play.room.invite() {
+    if let Some(live) = app.live_game()
+        && let Some(invite) = live.online.room.invite()
+    {
         tx.copy(invite);
     }
 }
 
 /// Copy the sign-in code the room waits on, to confirm on textures.gg.
 pub fn copy_sign_in_code(app: &mut App, tx: &mut rune::Tx) {
-    if !app.play.room.signin.code.is_empty() {
-        tx.copy(app.play.room.signin.code.clone());
+    if let Some(live) = app.live_game()
+        && !live.online.signin.code.is_empty()
+    {
+        tx.copy(live.online.signin.code);
     }
 }
 
 /// Open the page the room's sign-in code is confirmed on.
 pub fn open_sign_in(app: &mut App, tx: &mut rune::Tx) {
-    let url = app.play.room.signin.url.clone();
+    let Some(live) = app.live_game() else {
+        return;
+    };
+    let url = live.online.signin.url;
     if url.is_empty() {
         return;
     }
