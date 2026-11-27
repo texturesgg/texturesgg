@@ -49,8 +49,8 @@ pub struct App {
     pub preferences: Preferences,
     /// A report of a problem, open in its dialog.
     pub report: Option<Report>,
-    /// A newer version of the app, when the launch check found one.
-    pub update: Option<String>,
+    /// App updates: launch check, manual check, and the in-app update dialog.
+    pub update: crate::update::Update,
     /// Who's signed in to textures.gg, and signing in.
     pub signin: SignIn,
     /// Starting a code mod on this computer.
@@ -128,7 +128,7 @@ impl App {
             slippi: crate::slippi::Slippi::default(),
             preferences: Preferences::default(),
             report: None,
-            update: None,
+            update: crate::update::Update::default(),
             signin: SignIn::new(persist, credentials),
             new_mod: crate::newmod::NewMod::default(),
             replays: Replays::default(),

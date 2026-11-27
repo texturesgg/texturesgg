@@ -14,7 +14,7 @@ use crate::ui::{
 };
 use crate::{
     editor, first_run, keys, library, melee, mods, newmod, play, preferences, profile, replays,
-    report, signin,
+    report, signin, update,
 };
 use rune::{Cx, El, col, el, row, text as label};
 
@@ -78,6 +78,7 @@ pub fn view(app: &App, cx: &mut Cx<App>) -> El {
         // A select's menu, over Settings.
         .children(preferences::view::menu(app, &p))
         .children(report::view::view(app, &p))
+        .children(update::view::view(app, &p))
         .children(signin::view::sign_in(app, &p))
         .children(replays::review::view(app, &p))
         .children(newmod::view::view(app, &p))
@@ -381,17 +382,12 @@ fn sidebar_port_update(app: &App, p: &Palette) -> Option<El> {
     )
 }
 
-/// A newer version of the app, when the launch check found one: a link to
-/// where the player gets it.
+/// A newer version of the app, when found: opens the in-app update dialog.
 fn update(app: &App, p: &Palette) -> Option<El> {
-    let version = app.update.as_ref()?;
+    let release = app.update.available.as_ref()?;
     Some(
-        text_action(&format!("textures.gg {version} is out"), false, p)
+        text_action(&format!("textures.gg {} is out", release.version), false, p)
             .key("shell/update")
-            .on_press_tx(|app: &mut App, tx| {
-                if let Err(error) = tx.open_url(tgg_app::update::DOWNLOAD_URL) {
-                    app.tell(format!("Couldn't open the download page: {error}"), true);
-                }
-            }),
+            .on_press(update::actions::open),
     )
 }

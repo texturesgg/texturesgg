@@ -17,6 +17,7 @@ pub fn open(app: &mut App) {
     preferences.editor.text = kept.unwrap_or_default();
     preferences.apps = apps;
     preferences.menu = None;
+    preferences.port_checked = false;
     preferences.open = true;
 }
 
@@ -75,6 +76,12 @@ pub fn report_problem(app: &mut App) {
 /// Check for a newer version at launch, or not.
 pub fn set_update_check(app: &mut App, on: bool) {
     app.change_settings(move |settings| settings.check_for_updates = Some(on));
+}
+
+/// Check textures.gg for tgg-melee updates from Settings, showing the result inline.
+pub fn check_port_updates(app: &mut App) {
+    app.preferences.port_checked = true;
+    crate::mods::actions::fetch(app);
 }
 
 /// Ask for another ISO to put skins into. Not while a costume is open for

@@ -29,8 +29,11 @@ sha2 = "0.10"
 thiserror = "2"
 # The update check, and sending a problem report the player chose to send.
 ureq = { version = "3", default-features = false, features = ["rustls"] }
-# Skins added as zip archives.
+# Skins added as zip archives; Windows portable updates.
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# Linux app updates ship as tar.gz archives.
+flate2 = "1"
+tar = { version = "0.4", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"

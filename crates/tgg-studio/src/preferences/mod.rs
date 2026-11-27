@@ -21,6 +21,8 @@ pub struct Preferences {
     pub editor: TextEdit,
     /// The select whose menu is open.
     pub menu: Option<Menu>,
+    /// The player clicked "Check for updates" on tgg-melee during this open.
+    pub port_checked: bool,
 }
 
 /// Settings' selects.

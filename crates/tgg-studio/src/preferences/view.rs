@@ -6,14 +6,16 @@
 //! `view` draws the dialog.
 
 use super::{Menu, actions};
-use crate::mods::Disc;
+use crate::mods::{Disc, Registry};
 use crate::state::App;
-use crate::ui::tokens::{Palette, space};
+use crate::ui::tokens::{Palette, space, text};
 use crate::ui::{
-    ButtonKind, Dialog, DialogWidth, TEXT_ACTION_INSET, button, dialog, select, select_item,
-    select_menu, select_rule, spacer, switch, text_action, text_field,
+    ButtonKind, Dialog, DialogWidth, TEXT_ACTION_INSET, button, button_small, dialog, select,
+    select_item, select_menu, select_rule, setting_row_with, spacer, switch, text_action,
+    text_field,
 };
-use rune::{El, col, row};
+use crate::update::Check as AppUpdateCheck;
+use rune::{El, col, row, text as label};
 
 /// The image editor's choices and field, at their widest.
 const CHOICES: f32 = 300.0;
@@ -132,25 +134,91 @@ fn slippi(app: &App, p: &Palette) -> El {
 
 /// tgg-melee's version, its versions, and asking for updates.
 fn tgg_melee(app: &App, p: &Palette) -> El {
-    let line = match app.mods.port() {
-        Some(port) => format!("You have tgg-melee {}.", port.version),
-        None => "tgg-melee isn't installed yet.".to_owned(),
+    let asking = app.mods.registry == Registry::Asking;
+    let working = app.mods.work.is_some();
+    let update = app.mods.port_update();
+    let (line_text, line_color) = if working {
+        ("Updating tgg-melee…".to_owned(), p.muted)
+    } else if asking {
+        ("Checking textures.gg for updates…".to_owned(), p.muted)
+    } else if let Some(ref release) = update {
+        let text = match app.mods.port() {
+            Some(port) => format!(
+                "You have tgg-melee {}. {} is available.",
+                port.version, release.version
+            ),
+            None => format!("tgg-melee {} is available.", release.version),
+        };
+        (text, p.accent)
+    } else if app.preferences.port_checked {
+        match &app.mods.registry {
+            Registry::Offline => ("Couldn't check for updates (offline).".to_owned(), p.danger),
+            Registry::Failed(_) => ("Couldn't check for updates.".to_owned(), p.danger),
+            Registry::Answered => match app.mods.port() {
+                Some(port) => (
+                    format!("You have tgg-melee {} (up to date).", port.version),
+                    p.success,
+                ),
+                None => ("tgg-melee isn't installed yet.".to_owned(), p.muted),
+            },
+            Registry::NotAsked | Registry::Asking => {
+                ("Checking textures.gg for updates…".to_owned(), p.muted)
+            }
+        }
+    } else {
+        let text = match app.mods.port() {
+            Some(port) => format!("You have tgg-melee {}.", port.version),
+            None => "tgg-melee isn't installed yet.".to_owned(),
+        };
+        (text, p.muted)
     };
-    let control = row()
-        .mr(-TEXT_ACTION_INSET)
-        .gap(space::XXS)
+
+    let action = if working {
+        None
+    } else if update.is_some() {
+        Some(
+            button_small("Update", ButtonKind::Primary, p)
+                .key("settings/update-port")
+                .on_press(crate::mods::actions::install_port),
+        )
+    } else if asking {
+        Some(
+            text_action("Checking…", false, p)
+                .key("settings/fetch")
+                .disabled(true),
+        )
+    } else {
+        Some(
+            text_action("Check for updates", false, p)
+                .key("settings/fetch")
+                .on_press(actions::check_port_updates),
+        )
+    };
+
+    let mut control = row()
+        .gap(space::XS)
         .items_center()
         .child(
             text_action("Versions", false, p)
                 .key("settings/versions")
                 .on_press(|app: &mut App| crate::mods::actions::show_versions(app, true)),
         )
-        .child(
-            text_action("Check for updates", false, p)
-                .key("settings/fetch")
-                .on_press(crate::mods::actions::fetch),
-        );
-    setting("settings/tgg-melee", "tgg-melee", line, control, p)
+        .children(action);
+    if update.is_none() {
+        control = control.mr(-TEXT_ACTION_INSET);
+    }
+
+    setting_row_with(
+        "tgg-melee",
+        label(line_text)
+            .key("settings/tgg-melee/status")
+            .font(text::SMALL)
+            .color(line_color)
+            .wrap(),
+        control,
+        p,
+    )
+    .key("settings/tgg-melee")
 }
 
 /// The image editor: the system's default, an app on this computer that
@@ -252,21 +320,69 @@ pub fn menu(app: &App, p: &Palette) -> Option<El> {
     }
 }
 
-/// The app's own updates: ask textures.gg at launch, or not.
+/// The app's own updates: ask textures.gg at launch, check now, or install an available update.
 fn updates(app: &App, p: &Palette) -> El {
     let on = app.settings.check_for_updates.unwrap_or(true);
-    setting(
-        "settings/updates",
-        "Check for updates",
-        format!(
-            "Check textures.gg for app updates at launch. You're on {}.",
-            env!("CARGO_PKG_VERSION")
-        ),
+    let current = env!("CARGO_PKG_VERSION");
+    let checking = app.update.check == AppUpdateCheck::Checking;
+    let (line_text, line_color) = if checking {
+        ("Checking textures.gg for app updates…".to_owned(), p.muted)
+    } else if let Some(release) = &app.update.available {
+        (
+            format!(
+                "You're on {current}. textures.gg {} is available.",
+                release.version
+            ),
+            p.accent,
+        )
+    } else {
+        match &app.update.check {
+            AppUpdateCheck::UpToDate => (
+                format!("You're on {current} (up to date). Checks automatically at launch."),
+                p.success,
+            ),
+            AppUpdateCheck::Failed(_) => (
+                format!("Couldn't check for updates. You're on {current}."),
+                p.danger,
+            ),
+            AppUpdateCheck::Idle | AppUpdateCheck::Checking => (
+                format!("Check textures.gg for app updates at launch. You're on {current}."),
+                p.muted,
+            ),
+        }
+    };
+
+    let action = if app.update.available.is_some() {
+        button_small("Update", ButtonKind::Primary, p)
+            .key("settings/update-app")
+            .on_press(crate::update::actions::open)
+    } else if checking {
+        text_action("Checking…", false, p)
+            .key("settings/check-app-update")
+            .disabled(true)
+    } else {
+        text_action("Check now", false, p)
+            .key("settings/check-app-update")
+            .on_press(crate::update::actions::check_now)
+    };
+
+    let control = row().gap(space::SM).items_center().child(action).child(
         switch("settings/updates/switch", on, p)
             .label("Check for updates")
             .on_press(move |app: &mut App| actions::set_update_check(app, !on)),
+    );
+
+    setting_row_with(
+        "App updates",
+        label(line_text)
+            .key("settings/updates/status")
+            .font(text::SMALL)
+            .color(line_color)
+            .wrap(),
+        control,
         p,
     )
+    .key("settings/updates")
 }
 
 /// Sending what went wrong to textures.gg.
