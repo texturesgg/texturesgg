@@ -32,6 +32,7 @@ mod slippi;
 mod stage;
 mod state;
 mod ui;
+mod update;
 mod window;
 
 #[cfg(test)]
@@ -645,6 +646,110 @@ const SCENES: &[Scene] = &[
         play_queues(app, false);
         app.nav.sidebar = false;
     }),
+    ("report-sent", |app| {
+        play_scene(app);
+        report::actions::open(app, false);
+        report::actions::sent(app, Ok("r-94f2c8a1".into()));
+    }),
+    ("settings-updates", |app| {
+        play_scene(app);
+        let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+        if let Some(current) = tgg_mod::port_releases(&*net)
+            .unwrap_or_default()
+            .into_iter()
+            .next()
+        {
+            let never = std::sync::atomic::AtomicBool::new(false);
+            let _ = tgg_mod::install_port(&*net, &current, &app.data.ports, &|_| {}, &never);
+        }
+        net.publish_port("0.6.0");
+        let releases = tgg_mod::port_releases(&*net).unwrap_or_default();
+        app.mods.net = net;
+        app.mods.releases = releases;
+        app.mods.registry = mods::Registry::Answered;
+        mods::actions::read_disk(app);
+        app.update.available = Some(tgg_app::update::Release {
+            version: "1.0.5".into(),
+            released: Some("2026-11-28".into()),
+            notes_url: Some(
+                "https://github.com/texturesgg/texturesgg/releases/tag/app-v1.0.5".into(),
+            ),
+            assets: tgg_app::update::Assets {
+                linux: vec![tgg_app::update::Asset {
+                    kind: "tar.gz".into(),
+                    url: "https://example.com/textures.gg-1.0.5-linux-x86_64.tar.gz".into(),
+                    size: 20_600_000,
+                    sha256: "deadbeef".into(),
+                    min_os: None,
+                }],
+                ..Default::default()
+            },
+        });
+        preferences::actions::open(app);
+    }),
+    ("app-update-dialog", |app| {
+        play_scene(app);
+        let release = tgg_app::update::Release {
+            version: "1.0.5".into(),
+            released: Some("2026-11-28".into()),
+            notes_url: Some(
+                "https://github.com/texturesgg/texturesgg/releases/tag/app-v1.0.5".into(),
+            ),
+            assets: tgg_app::update::Assets {
+                linux: vec![tgg_app::update::Asset {
+                    kind: "tar.gz".into(),
+                    url: "https://example.com/textures.gg-1.0.5-linux-x86_64.tar.gz".into(),
+                    size: 20_600_000,
+                    sha256: "deadbeef".into(),
+                    min_os: None,
+                }],
+                ..Default::default()
+            },
+        };
+        app.update.available = Some(release.clone());
+        app.update.dialog = Some(update::UpdateDialog {
+            release,
+            method: tgg_app::update::InstallMethod::LinuxLocalInstall(PathBuf::from(
+                "/home/player/.local/bin/tgg-studio",
+            )),
+            stage: update::Stage::Ready,
+        });
+    }),
+    ("app-update-downloading", |app| {
+        play_scene(app);
+        let release = tgg_app::update::Release {
+            version: "1.0.5".into(),
+            released: Some("2026-11-28".into()),
+            notes_url: None,
+            assets: tgg_app::update::Assets {
+                linux: vec![tgg_app::update::Asset {
+                    kind: "tar.gz".into(),
+                    url: "https://example.com/textures.gg-1.0.5-linux-x86_64.tar.gz".into(),
+                    size: 20_600_000,
+                    sha256: "deadbeef".into(),
+                    min_os: None,
+                }],
+                ..Default::default()
+            },
+        };
+        app.update.available = Some(release.clone());
+        let progress =
+            std::sync::Arc::new(std::sync::Mutex::new(Some(tgg_app::update::Progress {
+                stage: tgg_app::update::Stage::Downloading,
+                bytes: 12_800_000,
+                total: Some(20_600_000),
+            })));
+        app.update.dialog = Some(update::UpdateDialog {
+            release,
+            method: tgg_app::update::InstallMethod::LinuxLocalInstall(PathBuf::from(
+                "/home/player/.local/bin/tgg-studio",
+            )),
+            stage: update::Stage::Working {
+                progress,
+                cancel: std::sync::Arc::default(),
+            },
+        });
+    }),
 ];
 
 /// Leading offset for macOS traffic lights; vertical offset centers them on
@@ -661,6 +766,7 @@ fn main() {
         return;
     }
     tgg_app::log::start("tgg-studio", env!("CARGO_PKG_VERSION"));
+    tgg_app::update::cleanup_old_binary();
     let iso = iso_argument();
     // The id its desktop entry and icon are filed under (dist/linux), so
     // the desktop matches the window to them.

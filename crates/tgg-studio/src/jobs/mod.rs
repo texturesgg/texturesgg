@@ -27,8 +27,8 @@ pub enum Done {
     Mods(Box<crate::mods::Done>),
     /// A report was sent, under this id, or why not.
     ReportSent(Result<String, String>),
-    /// A newer version of the app, if the launch check found one.
-    Update(Option<String>),
+    /// App updates: launch check, manual check, or in-app install finished.
+    Update(crate::update::Done),
     /// Signing in: who's signed in, a code, a poll's answer, signing out.
     SignIn(Box<crate::signin::Done>),
     /// Replays: read, what textures.gg says, a replay's profile prepared.
@@ -198,7 +198,9 @@ pub fn setup(app: &mut crate::state::App, waker: Waker) {
         }
         if app.settings.check_for_updates.unwrap_or(true) {
             app.jobs.spawn("update check", || {
-                Done::Update(tgg_app::update::check(env!("CARGO_PKG_VERSION")))
+                Done::Update(crate::update::Done::Launched(tgg_app::update::check(env!(
+                    "CARGO_PKG_VERSION"
+                ))))
             });
         }
     }
@@ -225,7 +227,7 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
         changed = true;
     }
     // An install reports progress by waking the window.
-    changed |= app.mods.work.is_some();
+    changed |= app.mods.work.is_some() || app.update.is_working();
     for done in app.jobs.take() {
         changed |= match done {
             Done::States {
@@ -244,10 +246,7 @@ pub fn poll(app: &mut crate::state::App, _: f64, tx: &mut rune::Tx) -> bool {
             Done::Play(done) => crate::play::actions::done(app, *done),
             Done::NoticeExpired(id) => app.notice_expired(id),
             Done::Verdicts(verdicts) => crate::library::port::answered(app, verdicts),
-            Done::Update(newer) => {
-                app.update = newer;
-                app.update.is_some()
-            }
+            Done::Update(done) => crate::update::actions::done(app, done, tx),
         };
     }
     // First run adopts a disc found on its own, and moves on once the game

@@ -28,7 +28,10 @@ pub enum Progress {
     Copied,
     Sending,
     /// Sent, kept under this id.
-    Sent(String),
+    Sent {
+        id: String,
+        copied: bool,
+    },
     Failed(String),
 }
 

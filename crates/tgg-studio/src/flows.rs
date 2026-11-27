@@ -2443,6 +2443,21 @@ fn a_report_shows_what_it_would_send_and_copies_it() {
         crate::report::actions::sent(app, Ok("r-42".into()));
     });
     rt.frame(FRAME);
+    assert!(
+        rt.find("report/code").is_some() && rt.find("report/copy-code").is_some(),
+        "once sent, the report code has its own copy button"
+    );
+    tap(&mut rt, "report/copy-code");
+    assert_eq!(
+        rt.state
+            .report
+            .as_ref()
+            .map(|report| report.progress.clone()),
+        Some(crate::report::Progress::Sent {
+            id: "r-42".into(),
+            copied: true,
+        })
+    );
     tap(&mut rt, "report/send");
     assert!(
         rt.state.report.is_none(),
@@ -3458,4 +3473,91 @@ fn modified_disc_shows_warning_in_first_run_and_play() {
     rt.update(|app, _| crate::mods::actions::use_disc(app, iso.clone()));
     jobs_until(&mut rt, |app| app.mods.disc_modified.is_empty());
     assert!(rt.find("play/disc-warning").is_none());
+}
+
+#[test]
+fn settings_shows_port_and_app_updates_and_opens_in_app_update_dialog() {
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let current = tgg_mod::port_releases(&*net)
+        .expect("releases")
+        .into_iter()
+        .next()
+        .expect("current port");
+    let never = std::sync::atomic::AtomicBool::new(false);
+    tgg_mod::install_port(&*net, &current, &rt.state.data.ports, &|_| {}, &never).expect("install");
+    net.publish_port("0.6.0");
+    rt.update(move |app, _| {
+        app.mods.net = net;
+        crate::mods::actions::read_disk(app);
+    });
+
+    // Open Settings and click Check for updates on tgg-melee -> Update button appears.
+    tap(&mut rt, "sidebar/settings");
+    settle(&mut rt);
+    assert!(rt.find("settings/update-port").is_none());
+    tap(&mut rt, "settings/fetch");
+    jobs_until(&mut rt, |app| {
+        app.mods.registry == crate::mods::Registry::Answered
+    });
+    settle(&mut rt);
+    assert!(
+        rt.find("settings/update-port").is_some(),
+        "Settings surfaces an inline Update button when a newer tgg-melee exists"
+    );
+
+    // An available app update shows both in Settings and the top bar, and opens the update dialog.
+    let release = tgg_app::update::Release {
+        version: "9.9.9".into(),
+        released: Some("2026-11-28".into()),
+        notes_url: Some("https://github.com/texturesgg/texturesgg/releases/tag/app-v9.9.9".into()),
+        assets: tgg_app::update::Assets {
+            windows: vec![tgg_app::update::Asset {
+                kind: "Installer".into(),
+                url: "https://example.com/setup.exe".into(),
+                size: 12_000_000,
+                sha256: "abc".into(),
+                min_os: None,
+            }],
+            macos: vec![tgg_app::update::Asset {
+                kind: "dmg".into(),
+                url: "https://example.com/app.dmg".into(),
+                size: 17_000_000,
+                sha256: "def".into(),
+                min_os: None,
+            }],
+            linux: vec![tgg_app::update::Asset {
+                kind: "tar.gz".into(),
+                url: "https://example.com/app.tar.gz".into(),
+                size: 20_000_000,
+                sha256: "ghi".into(),
+                min_os: None,
+            }],
+        },
+    };
+    rt.update(move |app, _| {
+        app.update.available = Some(release);
+    });
+    settle(&mut rt);
+    assert!(
+        rt.find("settings/update-app").is_some(),
+        "Settings shows an inline Update button when an app update is available"
+    );
+    tap(&mut rt, "settings/update-app");
+    settle(&mut rt);
+    assert!(
+        !rt.state.preferences.open,
+        "Settings closes for update dialog"
+    );
+    assert!(rt.find("update").is_some(), "In-app update dialog opens");
+    tap(&mut rt, "update/close");
+    settle(&mut rt);
+    assert!(rt.state.update.dialog.is_none());
+
+    // Clicking the top-bar "textures.gg 9.9.9 is out" action also opens the update dialog.
+    assert!(rt.find("shell/update").is_some());
+    tap(&mut rt, "shell/update");
+    settle(&mut rt);
+    assert!(rt.find("update").is_some());
 }

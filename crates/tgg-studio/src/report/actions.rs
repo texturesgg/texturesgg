@@ -21,14 +21,25 @@ pub fn close(app: &mut App) {
     app.report = None;
 }
 
-/// Copy the report, to paste it anywhere.
+/// Copy the report log, to paste it anywhere.
 pub fn copy(app: &mut App, tx: &mut Tx) {
     let Some(report) = &mut app.report else {
         return;
     };
     tx.copy(report.text.clone());
-    if !matches!(report.progress, Progress::Sent(_)) {
+    if !matches!(report.progress, Progress::Sent { .. }) {
         report.progress = Progress::Copied;
+    }
+}
+
+/// Copy the sent report's code to mention on Discord.
+pub fn copy_code(app: &mut App, tx: &mut Tx) {
+    let Some(report) = &mut app.report else {
+        return;
+    };
+    if let Progress::Sent { id, copied } = &mut report.progress {
+        tx.copy(id.clone());
+        *copied = true;
     }
 }
 
@@ -46,7 +57,7 @@ pub fn send(app: &mut App) {
     };
     match report.progress {
         Progress::Sending => return,
-        Progress::Sent(_) => return close(app),
+        Progress::Sent { .. } => return close(app),
         _ => {}
     }
     report.progress = Progress::Sending;
@@ -75,7 +86,7 @@ pub fn sent(app: &mut App, result: Result<String, String>) -> bool {
         return false;
     };
     report.progress = match result {
-        Ok(id) => Progress::Sent(id),
+        Ok(id) => Progress::Sent { id, copied: false },
         Err(error) => {
             tgg_app::log(&format!("report not sent: {error}"));
             Progress::Failed(error)
