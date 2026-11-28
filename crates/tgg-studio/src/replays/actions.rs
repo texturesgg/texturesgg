@@ -202,10 +202,14 @@ pub fn done(app: &mut App, done: Done) -> bool {
         Done::Stats { path, result } => {
             app.replays.stats.insert(path, Some(result));
         }
-        Done::Prepared { path, result } => {
+        Done::Prepared {
+            path,
+            profile_key,
+            result,
+        } => {
             app.replays.preparing = None;
             match *result {
-                Ok(prepared) => launch_prepared(app, &path, &prepared),
+                Ok(prepared) => launch_prepared(app, &path, &prepared, profile_key),
                 Err(tgg_mod::Error::Cancelled) => {
                     app.tell("Stopped getting the replay's mods.", false)
                 }
@@ -309,10 +313,56 @@ pub fn plan_for(app: &App, path: &Path) -> Option<ProfilePlan> {
     item.plan.clone()
 }
 
-/// Play the replay at `path`: its mods' withdrawals are checked first, then
-/// it plays as installed when they match, else after its review.
+/// Whether the replay at `path` can be loaded in-place into the currently
+/// running `tgg-melee` via companion without restarting.
+pub fn replay_fits_running(app: &App, path: &Path) -> bool {
+    let (Some(_), Some(session), Some(plan)) = (
+        &app.companion,
+        app.sets.session.as_ref(),
+        plan_for(app, path),
+    ) else {
+        return false;
+    };
+    if !plan.missing.is_empty() {
+        return false;
+    }
+    if session.profile_key.as_deref() == Some(plan.key.as_str()) {
+        return true;
+    }
+    if !matches!(plan.game, GameNeed::Installed(_)) {
+        return false;
+    }
+    if session.set_key == tgg_mod::sets::INSTALLED {
+        return plan.fit == Fit::AsInstalled;
+    }
+    let Some(set_plan) = app.sets.plan(&session.set_key) else {
+        return false;
+    };
+    let has_player = set_plan
+        .plan
+        .mods
+        .iter()
+        .any(|m| m.id.as_str() == "tgg.replay-player");
+    if !has_player {
+        return false;
+    }
+    fn gameplay(mods: &[tgg_mod::ProfileMod]) -> Vec<(&str, String)> {
+        let mut g: Vec<_> = mods
+            .iter()
+            .filter(|m| m.changes_game)
+            .map(|m| (m.id.as_str(), m.version.to_string()))
+            .collect();
+        g.sort_by_key(|(id, _)| *id);
+        g
+    }
+    gameplay(&set_plan.plan.mods) == gameplay(&plan.mods)
+}
+
+/// Play the replay at `path`: if `tgg-melee` is already running, load it
+/// in-place via companion when its mods fit or cleanly relaunch (confirming
+/// first if in an active match). Otherwise check withdrawals and launch.
 pub fn play(app: &mut App, path: &Path) {
-    if app.mods.playing.is_some() || app.replays.preparing.is_some() {
+    if app.replays.preparing.is_some() {
         return;
     }
     let Disc::Found(_) = &app.mods.disc else {
@@ -327,6 +377,10 @@ pub fn play(app: &mut App, path: &Path) {
             true,
         );
     };
+    if app.mods.playing.is_some() {
+        crate::play::actions::watch_replay(app, path.to_owned());
+        return;
+    }
     if app.replays.checked.contains(path) {
         return play_checked(app, path, plan);
     }
@@ -457,6 +511,7 @@ pub fn confirm(app: &mut App) {
     });
     let (net, data, waker) = (app.mods.net.clone(), app.data.tgg.clone(), app.jobs.waker());
     let (plan, path) = (review.plan, review.path);
+    let profile_key = plan.key.clone();
     app.jobs.spawn("replay profile", move || {
         let report = move |step: tgg_mod::Progress| {
             if let Ok(mut latest) = progress.lock() {
@@ -469,6 +524,7 @@ pub fn confirm(app: &mut App) {
         let result = tgg_mod::prepare_profile(&*net, &plan, &data, &report, &cancel);
         Job::Replays(Box::new(Done::Prepared {
             path,
+            profile_key,
             result: Box::new(result),
         }))
     });
@@ -483,13 +539,16 @@ pub fn cancel_preparing(app: &mut App) {
 
 /// Play the replay at `path` with the installed mods.
 fn launch_as_installed(app: &mut App, path: &Path) {
-    let (Some(port), Disc::Found(disc)) = (app.mods.port(), &app.mods.disc) else {
-        return;
-    };
-    let env = [(
+    let mut env: Vec<(String, std::ffi::OsString)> = vec![(
         "TGG_REPLAY_PLAYER_FILE".to_owned(),
         path.as_os_str().to_owned(),
     )];
+    if let Some(comp) = crate::sets::actions::start_companion(app) {
+        env.push(comp);
+    }
+    let (Some(port), Disc::Found(disc)) = (app.mods.port(), &app.mods.disc) else {
+        return;
+    };
     let log = app.data.ports.with_file_name("game.log");
     let running = tgg_mod::ports::launch_with_env(
         port,
@@ -499,26 +558,63 @@ fn launch_as_installed(app: &mut App, path: &Path) {
         &env,
         Some(&log),
     );
-    started(app, running);
+    started(
+        app,
+        crate::sets::Session {
+            how: crate::sets::How::Offline,
+            name: tgg_mod::sets::INSTALLED_NAME.to_owned(),
+            set_key: tgg_mod::sets::INSTALLED.to_owned(),
+            profile_key: None,
+        },
+        running,
+    );
 }
 
 /// Play the replay at `path` in its prepared folder.
-fn launch_prepared(app: &mut App, path: &Path, prepared: &tgg_mod::Prepared) {
+fn launch_prepared(app: &mut App, path: &Path, prepared: &tgg_mod::Prepared, profile_key: String) {
+    let mut env: Vec<(String, std::ffi::OsString)> = Vec::new();
+    if let Some(comp) = crate::sets::actions::start_companion(app) {
+        env.push(comp);
+    }
     let Disc::Found(disc) = &app.mods.disc else {
         return;
     };
     let log = app.data.ports.with_file_name("game.log");
-    let running = tgg_mod::launch_profile(&prepared.port, disc, prepared, Some(path), Some(&log));
-    started(app, running);
+    let running = tgg_mod::launch_profile_with_env(
+        &prepared.port,
+        disc,
+        prepared,
+        Some(path),
+        &env,
+        Some(&log),
+    );
+    started(
+        app,
+        crate::sets::Session {
+            how: crate::sets::How::Offline,
+            name: "Replay".to_owned(),
+            set_key: String::new(),
+            profile_key: Some(profile_key),
+        },
+        running,
+    );
 }
 
-fn started(app: &mut App, running: Result<tgg_mod::Running, tgg_mod::Error>) {
+fn started(
+    app: &mut App,
+    session: crate::sets::Session,
+    running: Result<tgg_mod::Running, tgg_mod::Error>,
+) {
     match running {
         Ok(running) => {
             crate::mods::actions::watch(app, running);
+            app.sets.session = Some(session);
             app.tell("Watching the replay in tgg-melee.", false);
         }
-        Err(error) => app.tell(format!("The replay couldn't start: {error}."), true),
+        Err(error) => {
+            app.companion = None;
+            app.tell(format!("The replay couldn't start: {error}."), true);
+        }
     }
 }
 

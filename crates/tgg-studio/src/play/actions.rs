@@ -5,14 +5,16 @@
 //! report about once a second, asking for the next second's frame so the
 //! clock keeps up.
 
-use super::{Done, PendingAction, Queue};
+use super::{Done, PendingAction, Queue, gameplay};
 use crate::companion::{Activity, Command, LiveState, OnlineState};
 use crate::jobs::Done as Job;
 use crate::nav::Place;
 use crate::sets::How;
 use crate::state::App;
+use std::path::PathBuf;
 use std::time::Duration;
 use tgg_mod::ReplayInfo;
+use tgg_mod::sets::QueueMod;
 
 /// How often the live queue timer ticks while searching.
 const CLOCK_TICK: Duration = Duration::from_secs(1);
@@ -61,11 +63,13 @@ pub fn tick(app: &mut App, tx: &mut rune::Tx) {
         .as_deref()
         .and_then(crate::companion::Companion::take_error_ack)
     {
+        app.play.after_leave = None;
         let msg = match ack.reason.as_str() {
             "in-match" => "Finish or leave the current match first.".to_owned(),
             "busy" => "Leave the current online session in-game first.".to_owned(),
             "invalid" => "Room codes are 4 letters (no I, L, or O).".to_owned(),
-            "unsupported" => "The running game doesn't have online mods loaded.".to_owned(),
+            "bad-replay" => "Couldn't load that replay in the running game.".to_owned(),
+            "unsupported" => "The running game doesn't have the required mod loaded.".to_owned(),
             _ => "Couldn't complete that action in the running game.".to_owned(),
         };
         app.tell(msg, true);
@@ -98,13 +102,66 @@ pub fn tick(app: &mut App, tx: &mut rune::Tx) {
     }
 }
 
-/// Whether the running game was launched from a different mod set than the
-/// currently active one in Studio.
-fn needs_set_switch(app: &App) -> bool {
+fn sorted_queue_mods(mods: &[QueueMod]) -> Vec<QueueMod> {
+    let mut out = mods.to_vec();
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    out
+}
+
+/// Whether the currently running `tgg-melee` session has the exact gameplay
+/// mods of a public queue (and online mods loaded) so it can join in-place.
+pub fn queue_matches_running(app: &App, queue_mods: &[QueueMod]) -> bool {
+    if queue_mods.is_empty() {
+        return false;
+    }
+    let Some(session) = app.sets.session.as_ref() else {
+        return false;
+    };
+    let target = sorted_queue_mods(queue_mods);
+    if let How::Queue { mods, .. } = &session.how {
+        return sorted_queue_mods(mods) == target;
+    }
+    if session.profile_key.is_some()
+        || session.set_key.is_empty()
+        || session.set_key == tgg_mod::sets::VANILLA
+    {
+        return false;
+    }
     app.sets
-        .session
-        .as_ref()
-        .is_some_and(|s| !s.set_key.is_empty() && s.set_key != app.sets.active)
+        .plan(&session.set_key)
+        .is_some_and(|plan| gameplay(plan) == target)
+}
+
+/// Whether the running game was launched from a different mod set or profile
+/// than the currently active set in Studio.
+fn needs_set_switch(app: &App) -> bool {
+    let Some(session) = app.sets.session.as_ref() else {
+        return false;
+    };
+    if session.profile_key.is_some() {
+        return true;
+    }
+    if let How::Queue { mods, .. } = &session.how {
+        if app.sets.is_vanilla() {
+            return true;
+        }
+        return app
+            .sets
+            .plan(&app.sets.active)
+            .is_none_or(|plan| gameplay(plan) != sorted_queue_mods(mods));
+    }
+    !session.set_key.is_empty() && session.set_key != app.sets.active
+}
+
+/// Whether completing `action` requires closing and relaunching `tgg-melee`
+/// with a different mod set or profile folder.
+pub fn needs_relaunch(app: &App, action: &PendingAction) -> bool {
+    match action {
+        PendingAction::SwitchSet => true,
+        PendingAction::Find | PendingAction::Host | PendingAction::Join(_) => needs_set_switch(app),
+        PendingAction::Queue { mods, .. } => !queue_matches_running(app, mods),
+        PendingAction::Replay(path) => !crate::replays::actions::replay_fits_running(app, path),
+    }
 }
 
 /// Whether the running game is currently in an active match or training session
@@ -122,24 +179,46 @@ fn action_how(action: &PendingAction) -> How {
         PendingAction::Find => How::Search,
         PendingAction::Host => How::Host,
         PendingAction::Join(code) => How::Join(code.clone()),
-        PendingAction::SwitchSet => How::Offline,
+        PendingAction::Queue { label, mods } => How::Queue {
+            label: label.clone(),
+            mods: mods.clone(),
+        },
+        PendingAction::SwitchSet | PendingAction::Replay(_) => How::Offline,
     }
 }
 
-/// Send an online command to an already-running game that is idle in menus
-/// (or cleanly restart into the newly selected set if the set changed).
+fn queue_relaunch(app: &mut App, action: PendingAction) {
+    match action {
+        PendingAction::Replay(path) => {
+            app.sets.relaunch = None;
+            app.replays.relaunch = Some(path);
+        }
+        other => {
+            app.replays.relaunch = None;
+            app.sets.relaunch = Some(action_how(&other));
+        }
+    }
+    quit_game(app);
+}
+
+/// Send an online or replay command to an already-running game that is idle in
+/// menus (or cleanly restart into the needed set/profile if mods changed).
 fn dispatch_in_menus(app: &mut App, action: PendingAction) {
-    if matches!(action, PendingAction::SwitchSet) || needs_set_switch(app) {
-        app.sets.relaunch = Some(action_how(&action));
-        quit_game(app);
+    if needs_relaunch(app, &action) {
+        queue_relaunch(app, action);
         return;
     }
     let Some(companion) = &app.companion else {
-        crate::sets::actions::launch(app, action_how(&action));
+        if let PendingAction::Replay(path) = action {
+            app.replays.relaunch = Some(path);
+            quit_game(app);
+        } else {
+            crate::sets::actions::launch(app, action_how(&action));
+        }
         return;
     };
     match action {
-        PendingAction::Find => {
+        PendingAction::Find | PendingAction::Queue { .. } => {
             companion.send(Command::StartSearch {
                 mode: "vs".to_owned(),
             });
@@ -153,27 +232,71 @@ fn dispatch_in_menus(app: &mut App, action: PendingAction) {
             companion.send(Command::JoinRoom { code });
             companion.send(Command::Focus);
         }
+        PendingAction::Replay(path) => {
+            companion.send(Command::LoadReplay {
+                path: path.to_string_lossy().into_owned(),
+            });
+            companion.send(Command::Focus);
+        }
         PendingAction::SwitchSet => {}
     }
 }
 
-/// Route an online or set-switch action through the running game (prompting if
-/// in an active match, switching sets if needed, or launching if not running).
+/// Route an online, replay, or set-switch action through the running game
+/// (prompting if in an active match, switching sets/profiles if needed, or
+/// launching if not running).
 fn run_or_prompt(app: &mut App, action: PendingAction) {
     if let Some(live) = app.live_game() {
-        if in_active_match(&live) {
+        let disruptive = in_active_match(&live)
+            || (matches!(action, PendingAction::Replay(_))
+                && (live.online.state.is_queue() || live.online.state.is_room()))
+            || (matches!(action, PendingAction::Find | PendingAction::Queue { .. })
+                && live.online.state.is_room());
+        if disruptive {
             app.play.confirm = Some(action);
+            return;
+        }
+        if live.activity == Activity::Replay {
+            if needs_relaunch(app, &action) {
+                queue_relaunch(app, action);
+                return;
+            }
+            if let Some(companion) = &app.companion {
+                app.play.after_leave = Some(action);
+                companion.send(Command::LeaveMatch);
+                companion.send(Command::Focus);
+            }
+            return;
+        }
+        if live.online.state.is_queue() {
+            if !needs_relaunch(app, &action)
+                && matches!(action, PendingAction::Find | PendingAction::Queue { .. })
+            {
+                focus_game(app);
+                return;
+            }
+            if needs_relaunch(app, &action) {
+                queue_relaunch(app, action);
+                return;
+            }
+            if let Some(companion) = &app.companion {
+                app.play.after_leave = Some(action);
+                companion.send(Command::StopSearch);
+                companion.send(Command::Focus);
+            }
             return;
         }
         dispatch_in_menus(app, action);
         return;
     }
-    if app.sets.session.is_some() {
-        // Running game hasn't finished connecting companion yet; if switching sets, queue it.
-        if matches!(action, PendingAction::SwitchSet) || needs_set_switch(app) {
-            app.sets.relaunch = Some(action_how(&action));
-            quit_game(app);
+    if app.mods.playing.is_some() || app.sets.session.is_some() {
+        if needs_relaunch(app, &action) {
+            queue_relaunch(app, action);
         }
+        return;
+    }
+    if let PendingAction::Replay(path) = action {
+        crate::replays::actions::play(app, &path);
         return;
     }
     crate::sets::actions::launch(app, action_how(&action));
@@ -189,6 +312,28 @@ pub fn find(app: &mut App) {
     run_or_prompt(app, PendingAction::Find);
 }
 
+/// Join a public queue row: sends `StartSearch` in-place when the running game
+/// already has the queue's mods, or cleanly switches/relaunches (confirming
+/// first if in an active match).
+pub fn join_queue(app: &mut App, label: String, mods: Vec<QueueMod>) {
+    run_or_prompt(app, PendingAction::Queue { label, mods });
+}
+
+/// Watch a replay while `tgg-melee` is already running: focuses it if already
+/// playing that replay, loads it in-place when its mods fit, or cleanly
+/// relaunches (confirming first if in an active match or online session).
+pub fn watch_replay(app: &mut App, path: PathBuf) {
+    if let Some(live) = app.live_game()
+        && live.activity == Activity::Replay
+        && !live.replay_path.is_empty()
+        && std::path::Path::new(&live.replay_path) == path.as_path()
+    {
+        focus_game(app);
+        return;
+    }
+    run_or_prompt(app, PendingAction::Replay(path));
+}
+
 /// Switch the running `tgg-melee` over to the newly chosen active set.
 pub fn switch_set(app: &mut App) {
     run_or_prompt(app, PendingAction::SwitchSet);
@@ -199,9 +344,8 @@ pub fn confirm_leave(app: &mut App) {
     let Some(action) = app.play.confirm.take() else {
         return;
     };
-    if matches!(action, PendingAction::SwitchSet) || needs_set_switch(app) {
-        app.sets.relaunch = Some(action_how(&action));
-        quit_game(app);
+    if needs_relaunch(app, &action) {
+        queue_relaunch(app, action);
         return;
     }
     if let Some(companion) = &app.companion {

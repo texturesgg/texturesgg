@@ -3632,6 +3632,7 @@ fn companion_mid_match_confirm_and_set_switch_flows() {
             how: crate::sets::How::Offline,
             name: "Competitive".to_owned(),
             set_key: "competitive".to_owned(),
+            profile_key: None,
         });
     });
     settle(&mut rt);
@@ -3704,4 +3705,281 @@ fn companion_mid_match_confirm_and_set_switch_flows() {
     line.clear();
     reader.read_line(&mut line).expect("quit cmd");
     assert!(line.contains("\"cmd\":\"quit\""), "got {line}");
+}
+
+#[test]
+fn companion_queue_join_and_replay_flows() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::{Ipv4Addr, TcpStream};
+    use std::time::Duration;
+
+    let (_folder, iso) = melee_iso();
+    let (mut rt, _data) = runtime(game_at(&iso));
+    let net = std::sync::Arc::new(tgg_mod::FakeNet::new());
+    let current = tgg_mod::port_releases(&*net)
+        .expect("releases")
+        .into_iter()
+        .next()
+        .expect("current port");
+    let never = std::sync::atomic::AtomicBool::new(false);
+    let installed_port =
+        tgg_mod::install_port(&*net, &current, &rt.state.data.ports, &|_| {}, &never)
+            .expect("install port");
+    rt.update({
+        let net = net.clone();
+        let iso = iso.clone();
+        move |app, _| {
+            app.mods.net = net;
+            app.mods.disc = crate::mods::Disc::Found(iso);
+            crate::mods::actions::read_disk(app);
+        }
+    });
+    jobs_until(&mut rt, |app| app.mods.port().is_some());
+
+    let server = std::sync::Arc::new(crate::companion::Companion::start(None).expect("companion"));
+    let (_, val) = server.env_var();
+    let val = val.to_string_lossy();
+    let parts: Vec<&str> = val.split(':').collect();
+    let port: u16 = parts[1].parse().unwrap();
+    let token = parts[2];
+
+    let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).expect("connect");
+    client
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .expect("timeout");
+    writeln!(
+        client,
+        "{{\"type\":\"hello\",\"v\":1,\"token\":\"{token}\",\"pid\":77,\"mod_set_id\":\"abc\"}}"
+    )
+    .unwrap();
+    writeln!(
+        client,
+        "{{\"type\":\"state\",\"activity\":\"menu\",\"mod_set_id\":\"abc\",\"replay_path\":\"\",\"online\":{{\"state\":\"idle\"}}}}"
+    )
+    .unwrap();
+    for _ in 0..40 {
+        if server.snapshot().is_some() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    let ucf = tgg_mod::sets::QueueMod {
+        id: "tgg.ucf".parse().unwrap(),
+        version: "1.0.0".parse().unwrap(),
+    };
+    let frozen = tgg_mod::sets::QueueMod {
+        id: "tgg.frozen-stadium".parse().unwrap(),
+        version: "1.0.0".parse().unwrap(),
+    };
+    let replay_a = std::path::PathBuf::from("/tmp/replay_a.slp");
+    let replay_b = std::path::PathBuf::from("/tmp/replay_b.slp");
+    let replay_other = std::path::PathBuf::from("/tmp/replay_other.slp");
+
+    let make_plan = |key: &str, fit: tgg_mod::Fit| tgg_mod::ProfilePlan {
+        game: tgg_mod::GameNeed::Installed(installed_port.clone()),
+        mods: Vec::new(),
+        missing: Vec::new(),
+        key: key.to_owned(),
+        fit,
+        profile: tgg_mod::Profile::new("1.0.0"),
+    };
+
+    rt.update(|app, _| {
+        app.nav.place = crate::nav::Place::Play;
+        app.play.opened = true;
+        app.companion = Some(server.clone());
+        app.mods.playing = Some(crate::mods::Playing {
+            stop: std::sync::Arc::default(),
+        });
+        app.sets.active = tgg_mod::sets::INSTALLED.to_owned();
+        app.sets.session = Some(crate::sets::Session {
+            how: crate::sets::How::Queue {
+                label: "Competitive".to_owned(),
+                mods: vec![ucf.clone()],
+            },
+            name: "Competitive".to_owned(),
+            set_key: String::new(),
+            profile_key: None,
+        });
+        app.replays.items = vec![
+            crate::replays::Item {
+                path: replay_a.clone(),
+                source: "Local".to_owned(),
+                info: None,
+                profile: Ok(tgg_mod::Profile::new("1.0.0")),
+                plan: Some(make_plan("k_installed", tgg_mod::Fit::AsInstalled)),
+                status: crate::replays::Status::AsIs,
+            },
+            crate::replays::Item {
+                path: replay_b.clone(),
+                source: "Local".to_owned(),
+                info: None,
+                profile: Ok(tgg_mod::Profile::new("1.0.0")),
+                plan: Some(make_plan("k_installed", tgg_mod::Fit::AsInstalled)),
+                status: crate::replays::Status::AsIs,
+            },
+            crate::replays::Item {
+                path: replay_other.clone(),
+                source: "Local".to_owned(),
+                info: None,
+                profile: Ok(tgg_mod::Profile::new("1.0.0")),
+                plan: Some(make_plan("k_other", tgg_mod::Fit::NeedsProfile)),
+                status: crate::replays::Status::Needs {
+                    mods: 1,
+                    size: 100,
+                    game: None,
+                },
+            },
+        ];
+    });
+    settle(&mut rt);
+
+    let mut reader = BufReader::new(client.try_clone().expect("clone"));
+    let mut line = String::new();
+
+    // 1. Clicking Join on a queue whose gameplay mods match the running game sends start_search in-place.
+    rt.update(|app, _| {
+        crate::play::actions::join_queue(app, "Competitive".to_owned(), vec![ucf.clone()]);
+    });
+    settle(&mut rt);
+    reader.read_line(&mut line).expect("start_search");
+    assert!(line.contains("\"cmd\":\"start_search\""), "got {line}");
+    line.clear();
+    reader.read_line(&mut line).expect("focus");
+    assert!(line.contains("\"cmd\":\"focus\""), "got {line}");
+    assert!(rt.state.sets.relaunch.is_none());
+
+    // 2. Clicking Join on a queue with DIFFERENT gameplay mods queues How::Queue relaunch and sends quit.
+    rt.update(|app, _| {
+        crate::play::actions::join_queue(
+            app,
+            "Frozen".to_owned(),
+            vec![ucf.clone(), frozen.clone()],
+        );
+    });
+    settle(&mut rt);
+    assert!(matches!(
+        rt.state.sets.relaunch,
+        Some(crate::sets::How::Queue { ref label, .. }) if label == "Frozen"
+    ));
+    line.clear();
+    reader.read_line(&mut line).expect("quit");
+    assert!(line.contains("\"cmd\":\"quit\""), "got {line}");
+
+    // 3. Switch session to Installed mods, click Watch on fitting replay_a -> loads in-place.
+    rt.update(|app, _| {
+        app.sets.relaunch = None;
+        app.sets.session = Some(crate::sets::Session {
+            how: crate::sets::How::Offline,
+            name: tgg_mod::sets::INSTALLED_NAME.to_owned(),
+            set_key: tgg_mod::sets::INSTALLED.to_owned(),
+            profile_key: None,
+        });
+        crate::replays::actions::play(app, &replay_a);
+    });
+    settle(&mut rt);
+    line.clear();
+    reader.read_line(&mut line).expect("load_replay a");
+    assert!(
+        line.contains("\"cmd\":\"load_replay\"") && line.contains("replay_a.slp"),
+        "got {line}"
+    );
+    line.clear();
+    reader.read_line(&mut line).expect("focus");
+
+    // 4. While playing replay_a, clicking Watch on fitting replay_b switches without confirmation modal.
+    writeln!(
+        client,
+        "{{\"type\":\"state\",\"activity\":\"replay\",\"mod_set_id\":\"abc\",\"replay_path\":\"/tmp/replay_a.slp\",\"online\":{{\"state\":\"idle\"}}}}"
+    )
+    .unwrap();
+    for _ in 0..40 {
+        if rt
+            .state
+            .live_game()
+            .is_some_and(|s| s.activity == crate::companion::Activity::Replay)
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    rt.update(|app, _| crate::replays::actions::play(app, &replay_b));
+    settle(&mut rt);
+    assert!(
+        rt.find("play/confirm/sheet").is_none(),
+        "switching between replays should not ask for match-leave confirmation"
+    );
+    line.clear();
+    reader.read_line(&mut line).expect("leave_match");
+    assert!(line.contains("\"cmd\":\"leave_match\""), "got {line}");
+    line.clear();
+    reader.read_line(&mut line).expect("focus");
+
+    // Once game reports menu, replay_b is dispatched automatically.
+    writeln!(
+        client,
+        "{{\"type\":\"state\",\"activity\":\"menu\",\"mod_set_id\":\"abc\",\"replay_path\":\"\",\"online\":{{\"state\":\"idle\"}}}}"
+    )
+    .unwrap();
+    for _ in 0..40 {
+        if rt
+            .state
+            .live_game()
+            .is_some_and(|s| s.activity == crate::companion::Activity::Menu)
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    rt.update(|app, tx| {
+        crate::jobs::poll(app, 0.0, tx);
+    });
+    settle(&mut rt);
+    line.clear();
+    reader.read_line(&mut line).expect("load_replay b");
+    assert!(
+        line.contains("\"cmd\":\"load_replay\"") && line.contains("replay_b.slp"),
+        "got {line}"
+    );
+    line.clear();
+    reader.read_line(&mut line).expect("focus");
+
+    // 5. Clicking Watch on a replay needing its own profile queues replays.relaunch and quits.
+    rt.update(|app, _| crate::replays::actions::play(app, &replay_other));
+    settle(&mut rt);
+    assert_eq!(
+        rt.state.replays.relaunch.as_deref(),
+        Some(replay_other.as_path())
+    );
+    line.clear();
+    reader
+        .read_line(&mut line)
+        .expect("quit for replay relaunch");
+    assert!(line.contains("\"cmd\":\"quit\""), "got {line}");
+
+    // 6. Error ack clears after_leave so stale queued actions cannot fire later.
+    rt.update(|app, _| {
+        app.play.after_leave = Some(crate::play::PendingAction::Find);
+    });
+    writeln!(
+        client,
+        "{{\"type\":\"ack\",\"id\":99,\"ok\":false,\"reason\":\"failed\"}}"
+    )
+    .unwrap();
+    for _ in 0..40 {
+        if server.has_live_connection() {
+            rt.update(|app, tx| {
+                crate::jobs::poll(app, 0.0, tx);
+            });
+            if rt.state.play.after_leave.is_none() {
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        rt.state.play.after_leave.is_none(),
+        "error ack must clear after_leave"
+    );
 }

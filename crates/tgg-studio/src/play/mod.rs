@@ -16,18 +16,21 @@
 pub mod actions;
 pub mod view;
 
+use std::path::PathBuf;
 use tgg_mod::Queue;
 use tgg_mod::sets::{QueueMod, SetPlan};
 
-/// An online or set-switch action waiting for the player to confirm leaving
-/// their current match (or waiting for the game to return to menus after
-/// `LeaveMatch`).
+/// An online, replay, or set-switch action waiting for the player to confirm
+/// leaving their current match (or waiting for the game to return to menus
+/// after `LeaveMatch` / `StopSearch`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PendingAction {
     Find,
     Host,
     Join(String),
+    Queue { label: String, mods: Vec<QueueMod> },
     SwitchSet,
+    Replay(PathBuf),
 }
 
 /// Play's own state: what the meeting point last said, the picker's menu,

@@ -600,7 +600,8 @@ fn running_buttons(
                 Activity::Menu => format!("Playing {}", session.name),
             };
             let in_match = matches!(live.activity, Activity::Match | Activity::Training);
-            let set_changed = !session.set_key.is_empty() && session.set_key != app.sets.active;
+            let set_changed = session.profile_key.is_some()
+                || (!session.set_key.is_empty() && session.set_key != app.sets.active);
             let active_name = app
                 .sets
                 .active()
@@ -898,19 +899,23 @@ fn queue_row(app: &App, queue: &Queue, p: &Palette) -> El {
                 .font(text::MONO_SMALL)
                 .color(p.faint),
         )
-        .child(
-            button_small("Join", ButtonKind::Secondary, p)
-                .key(format!("{key}/join"))
-                .on_press(move |app: &mut App| {
-                    crate::sets::actions::launch(
-                        app,
-                        How::Queue {
-                            label: label_here.clone(),
-                            mods: mods_here.clone(),
-                        },
-                    );
-                }),
-        )
+        .child({
+            let searching_this = app
+                .live_game()
+                .is_some_and(|live| live.online.state == OnlineState::Searching)
+                && actions::queue_matches_running(app, &queue.mods);
+            if searching_this {
+                button_small("Focus", ButtonKind::Primary, p)
+                    .key(format!("{key}/join"))
+                    .on_press(actions::focus_game)
+            } else {
+                button_small("Join", ButtonKind::Secondary, p)
+                    .key(format!("{key}/join"))
+                    .on_press(move |app: &mut App| {
+                        actions::join_queue(app, label_here.clone(), mods_here.clone());
+                    })
+            }
+        })
 }
 
 /// A queue's name as a key: its letters and digits, the rest as dashes.
@@ -1229,6 +1234,23 @@ pub fn confirm(app: &App, p: &Palette) -> Option<El> {
             format!("Leaving will end your current match and join room {code}."),
             format!("Leave & join {code}"),
         ),
+        PendingAction::Queue { label, .. } => {
+            if actions::needs_relaunch(app, action) {
+                (
+                    "Leave current match?",
+                    format!(
+                        "Joining {label} will close the running game and restart with {label}'s mods."
+                    ),
+                    format!("Switch to {label}"),
+                )
+            } else {
+                (
+                    "Leave current match?",
+                    format!("Leaving will end your current match and start searching in {label}."),
+                    format!("Leave & join {label}"),
+                )
+            }
+        }
         PendingAction::SwitchSet => (
             "Leave current match?",
             format!(
@@ -1236,6 +1258,23 @@ pub fn confirm(app: &App, p: &Palette) -> Option<El> {
             ),
             format!("Switch to {active_name}"),
         ),
+        PendingAction::Replay(_) => {
+            if actions::needs_relaunch(app, action) {
+                (
+                    "Leave current session?",
+                    "Watching this replay will close the running game and open it with the replay's mods."
+                        .to_owned(),
+                    "Close & watch".to_owned(),
+                )
+            } else {
+                (
+                    "Leave current session?",
+                    "Leaving will end your current session and play the replay in tgg-melee."
+                        .to_owned(),
+                    "Leave & watch".to_owned(),
+                )
+            }
+        }
     };
     Some(dialog(
         "play/confirm/sheet",

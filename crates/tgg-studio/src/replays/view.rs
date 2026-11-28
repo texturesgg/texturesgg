@@ -287,13 +287,28 @@ fn replay_row(app: &App, replays: &Replays, item: &Item, p: &Palette) -> El {
 }
 
 /// Watch, while a replay can be played: not one that can't be read or needs
-/// a game that can't be had, and not while a game runs or a replay's mods
-/// are on their way. The caller keys it and makes pressing it play.
+/// a game that can't be had, and not while a replay's mods are on their way.
+/// Shows "Watching" when this replay is currently playing in `tgg-melee`.
 pub fn play_button(app: &App, item: &Item, p: &Palette) -> Option<El> {
     let playable = !matches!(item.status, Status::Unreadable(_) | Status::NoGame(_));
     let checking = app.replays.checking.as_ref() == Some(&item.path);
-    (playable && !checking && app.mods.playing.is_none() && app.replays.preparing.is_none())
-        .then(|| button("Watch", ButtonKind::Secondary, p))
+    if !playable || checking || app.replays.preparing.is_some() {
+        return None;
+    }
+    let watching = app.live_game().is_some_and(|live| {
+        live.activity == crate::companion::Activity::Replay
+            && !live.replay_path.is_empty()
+            && std::path::Path::new(&live.replay_path) == item.path.as_path()
+    });
+    Some(button(
+        if watching { "Watching" } else { "Watch" },
+        if watching {
+            ButtonKind::Primary
+        } else {
+            ButtonKind::Secondary
+        },
+        p,
+    ))
 }
 
 /// What a replay needs, as a badge.

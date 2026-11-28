@@ -185,8 +185,10 @@ pub struct Session {
     pub how: How,
     /// The set's name, or the queue's.
     pub name: String,
-    /// The set key that was launched (`""` for ad-hoc queue launches).
+    /// The set key that was launched (`""` for ad-hoc queue or replay-profile launches).
     pub set_key: String,
+    /// Prepared profile hash key when launched from a replay's prepared folder.
+    pub profile_key: Option<String>,
 }
 
 /// What a set job found.
