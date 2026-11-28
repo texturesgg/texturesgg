@@ -6,7 +6,7 @@
 //! clock keeps up.
 
 use super::{Done, PendingAction, Queue, gameplay};
-use crate::companion::{Activity, Command, LiveState, OnlineState};
+use crate::companion::{Activity, Command, Event, LiveState, OnlineState};
 use crate::jobs::Done as Job;
 use crate::nav::Place;
 use crate::sets::How;
@@ -74,6 +74,27 @@ pub fn tick(app: &mut App, tx: &mut rune::Tx) {
         };
         app.tell(msg, true);
     }
+    if let Some(events) = app
+        .companion
+        .as_deref()
+        .map(crate::companion::Companion::drain_events)
+    {
+        let has_recorder = app
+            .live_game()
+            .is_some_and(|live| live.has_cap("replay_record"));
+        let mut refresh_replays = false;
+        for ev in events {
+            match ev {
+                Event::ReplaySaved { .. } => refresh_replays = true,
+                Event::MatchEnded(_) if !has_recorder => refresh_replays = true,
+                Event::MatchEnded(_) => {}
+            }
+        }
+        if refresh_replays && app.replays.scanned {
+            app.play.hero = None;
+            crate::replays::actions::scan(app);
+        }
+    }
     if let Some(live) = app.live_game()
         && let Some(action) = app.play.after_leave.clone()
         && live.activity == Activity::Menu
@@ -90,6 +111,21 @@ pub fn tick(app: &mut App, tx: &mut rune::Tx) {
         opened(app);
     }
     hero(app);
+    if let Some(live) = app.live_game()
+        && let Some(live_match) = live.match_state.as_ref()
+        && let Some(iso) = app
+            .game
+            .as_ref()
+            .map(|references| references.game().path().to_owned())
+    {
+        for player in &live_match.players {
+            if let Some(ch) = player.character_id.and_then(tgg_app::replays::character)
+                && let Some(slot) = crate::replays::actions::costume_slot(app, ch, player.costume)
+            {
+                app.renders.request(&iso, slot);
+            }
+        }
+    }
     let wake = app
         .live_game()
         .is_some_and(|live| live.online.state == OnlineState::Searching)
@@ -112,6 +148,12 @@ fn sorted_queue_mods(mods: &[QueueMod]) -> Vec<QueueMod> {
 /// mods of a public queue (and online mods loaded) so it can join in-place.
 pub fn queue_matches_running(app: &App, queue_mods: &[QueueMod]) -> bool {
     if queue_mods.is_empty() {
+        return false;
+    }
+    if let Some(live) = app.live_game()
+        && !live.caps.is_empty()
+        && !live.has_cap("online")
+    {
         return false;
     }
     let Some(session) = app.sets.session.as_ref() else {
@@ -158,7 +200,15 @@ fn needs_set_switch(app: &App) -> bool {
 pub fn needs_relaunch(app: &App, action: &PendingAction) -> bool {
     match action {
         PendingAction::SwitchSet => true,
-        PendingAction::Find | PendingAction::Host | PendingAction::Join(_) => needs_set_switch(app),
+        PendingAction::Find | PendingAction::Host | PendingAction::Join(_) => {
+            if let Some(live) = app.live_game()
+                && !live.caps.is_empty()
+                && !live.has_cap("online")
+            {
+                return true;
+            }
+            needs_set_switch(app)
+        }
         PendingAction::Queue { mods, .. } => !queue_matches_running(app, mods),
         PendingAction::Replay(path) => !crate::replays::actions::replay_fits_running(app, path),
     }

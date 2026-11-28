@@ -3601,20 +3601,24 @@ fn companion_mid_match_confirm_and_set_switch_flows() {
         .unwrap();
     writeln!(
         client,
-        "{{\"type\":\"hello\",\"v\":1,\"token\":\"{token}\",\"pid\":77,\"mod_set_id\":\"abc\"}}"
+        "{{\"type\":\"hello\",\"v\":2,\"token\":\"{token}\",\"pid\":77,\"mod_set_id\":\"abc\",\"caps\":[\"match\",\"events\",\"online\",\"replay\",\"replay_record\"]}}"
     )
     .unwrap();
     writeln!(
         client,
-        "{{\"type\":\"state\",\"activity\":\"match\",\"mod_set_id\":\"abc\",\"online\":{{\"state\":\"idle\"}}}}"
+        "{{\"type\":\"state\",\"topic\":\"session\",\"data\":{{\"activity\":\"match\",\"mod_set_id\":\"abc\",\"replay_path\":\"\"}}}}"
+    )
+    .unwrap();
+    writeln!(
+        client,
+        "{{\"type\":\"state\",\"topic\":\"match\",\"data\":{{\"stage\":\"melee/battlefield\",\"stage_name\":\"Battlefield\",\"stage_id\":31,\"match_kind\":\"stock\",\"timer_secs\":420,\"time_limit\":480,\"teams\":false,\"paused\":false,\"players\":[{{\"port\":1,\"kind\":\"human\",\"character\":\"melee/fox\",\"character_id\":2,\"costume\":0,\"stocks\":3,\"percent\":42,\"team\":0}},{{\"port\":2,\"kind\":\"human\",\"character\":\"melee/falco\",\"character_id\":20,\"costume\":1,\"stocks\":2,\"percent\":115,\"team\":0}}]}}}}"
     )
     .unwrap();
 
     for _ in 0..40 {
-        if server
-            .snapshot()
-            .is_some_and(|s| s.activity == crate::companion::Activity::Match)
-        {
+        if server.snapshot().is_some_and(|s| {
+            s.activity == crate::companion::Activity::Match && s.match_state.is_some()
+        }) {
             break;
         }
         std::thread::sleep(Duration::from_millis(10));
@@ -3637,6 +3641,14 @@ fn companion_mid_match_confirm_and_set_switch_flows() {
     });
     settle(&mut rt);
 
+    // Live match strip renders while match telemetry is active.
+    assert!(
+        rt.find("play/live-match").is_some(),
+        "live match telemetry strip renders in hero"
+    );
+    assert!(rt.find("play/live-match/p1").is_some());
+    assert!(rt.find("play/live-match/p2").is_some());
+
     // 1. Receiving a join link while in a match prompts confirmation instead of interrupting.
     rt.update(|app, _| crate::play::actions::join_link(app, "KFXD"));
     settle(&mut rt);
@@ -3657,18 +3669,21 @@ fn companion_mid_match_confirm_and_set_switch_flows() {
     reader.read_line(&mut line).expect("focus cmd");
     assert!(line.contains("\"cmd\":\"focus\""), "got {line}");
 
-    // Game reports returning to menus -> Studio automatically dispatches `join_room` for KFXD.
+    // Game reports returning to menus + clearing match -> Studio clears strip and dispatches `join_room`.
     writeln!(
         client,
-        "{{\"type\":\"state\",\"activity\":\"menu\",\"mod_set_id\":\"abc\",\"online\":{{\"state\":\"idle\"}}}}"
+        "{{\"type\":\"state\",\"topic\":\"session\",\"data\":{{\"activity\":\"menu\",\"mod_set_id\":\"abc\",\"replay_path\":\"\"}}}}"
+    )
+    .unwrap();
+    writeln!(
+        client,
+        "{{\"type\":\"state\",\"topic\":\"match\",\"data\":null}}"
     )
     .unwrap();
     for _ in 0..40 {
-        if rt
-            .state
-            .live_game()
-            .is_some_and(|s| s.activity == crate::companion::Activity::Menu)
-        {
+        if rt.state.live_game().is_some_and(|s| {
+            s.activity == crate::companion::Activity::Menu && s.match_state.is_none()
+        }) {
             break;
         }
         std::thread::sleep(Duration::from_millis(10));
@@ -3677,6 +3692,10 @@ fn companion_mid_match_confirm_and_set_switch_flows() {
         crate::jobs::poll(app, 0.0, tx);
     });
     settle(&mut rt);
+    assert!(
+        rt.find("play/live-match").is_none(),
+        "live match strip disappears when match ends"
+    );
     line.clear();
     reader.read_line(&mut line).expect("join_room cmd");
     assert!(
@@ -3749,12 +3768,12 @@ fn companion_queue_join_and_replay_flows() {
         .expect("timeout");
     writeln!(
         client,
-        "{{\"type\":\"hello\",\"v\":1,\"token\":\"{token}\",\"pid\":77,\"mod_set_id\":\"abc\"}}"
+        "{{\"type\":\"hello\",\"v\":2,\"token\":\"{token}\",\"pid\":77,\"mod_set_id\":\"abc\",\"caps\":[\"match\",\"events\",\"online\",\"replay\",\"replay_record\"]}}"
     )
     .unwrap();
     writeln!(
         client,
-        "{{\"type\":\"state\",\"activity\":\"menu\",\"mod_set_id\":\"abc\",\"replay_path\":\"\",\"online\":{{\"state\":\"idle\"}}}}"
+        "{{\"type\":\"state\",\"topic\":\"session\",\"data\":{{\"activity\":\"menu\",\"mod_set_id\":\"abc\",\"replay_path\":\"\"}}}}"
     )
     .unwrap();
     for _ in 0..40 {
@@ -3891,7 +3910,7 @@ fn companion_queue_join_and_replay_flows() {
     // 4. While playing replay_a, clicking Watch on fitting replay_b switches without confirmation modal.
     writeln!(
         client,
-        "{{\"type\":\"state\",\"activity\":\"replay\",\"mod_set_id\":\"abc\",\"replay_path\":\"/tmp/replay_a.slp\",\"online\":{{\"state\":\"idle\"}}}}"
+        "{{\"type\":\"state\",\"topic\":\"session\",\"data\":{{\"activity\":\"replay\",\"mod_set_id\":\"abc\",\"replay_path\":\"/tmp/replay_a.slp\"}}}}"
     )
     .unwrap();
     for _ in 0..40 {
@@ -3919,7 +3938,7 @@ fn companion_queue_join_and_replay_flows() {
     // Once game reports menu, replay_b is dispatched automatically.
     writeln!(
         client,
-        "{{\"type\":\"state\",\"activity\":\"menu\",\"mod_set_id\":\"abc\",\"replay_path\":\"\",\"online\":{{\"state\":\"idle\"}}}}"
+        "{{\"type\":\"state\",\"topic\":\"session\",\"data\":{{\"activity\":\"menu\",\"mod_set_id\":\"abc\",\"replay_path\":\"\"}}}}"
     )
     .unwrap();
     for _ in 0..40 {
@@ -3958,7 +3977,7 @@ fn companion_queue_join_and_replay_flows() {
         .expect("quit for replay relaunch");
     assert!(line.contains("\"cmd\":\"quit\""), "got {line}");
 
-    // 6. Error ack clears after_leave so stale queued actions cannot fire later.
+    // 6. Error ack followed immediately by ok: true ack still clears after_leave.
     rt.update(|app, _| {
         app.play.after_leave = Some(crate::play::PendingAction::Find);
     });
@@ -3967,6 +3986,7 @@ fn companion_queue_join_and_replay_flows() {
         "{{\"type\":\"ack\",\"id\":99,\"ok\":false,\"reason\":\"failed\"}}"
     )
     .unwrap();
+    writeln!(client, "{{\"type\":\"ack\",\"id\":100,\"ok\":true}}").unwrap();
     for _ in 0..40 {
         if server.has_live_connection() {
             rt.update(|app, tx| {
@@ -3980,6 +4000,62 @@ fn companion_queue_join_and_replay_flows() {
     }
     assert!(
         rt.state.play.after_leave.is_none(),
-        "error ack must clear after_leave"
+        "error ack must clear after_leave even when followed by ok: true"
+    );
+
+    // 7. replay_saved event triggers an immediate replay re-scan and hero reset.
+    rt.update(|app, _| {
+        app.replays.scanned = true;
+        app.replays.scanning = false;
+        app.play.hero = crate::play::actions::fox_slot(app);
+    });
+    writeln!(
+        client,
+        "{{\"type\":\"event\",\"name\":\"replay_saved\",\"data\":{{\"path\":\"/tmp/new.slp\",\"frames\":1200}}}}"
+    )
+    .unwrap();
+    for _ in 0..40 {
+        rt.update(|app, tx| {
+            crate::jobs::poll(app, 0.0, tx);
+        });
+        if rt.state.replays.scanning || rt.state.play.hero.is_none() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        rt.state.replays.scanning || rt.state.play.hero.is_none(),
+        "replay_saved event triggers replay refresh"
+    );
+
+    // 8. Capability gating: when connected game lacks "online"/"replay", actions require relaunch.
+    rt.update(|app, _| {
+        app.companion_override = Some(crate::companion::LiveState {
+            pid: 77,
+            mod_set_id: "abc".to_owned(),
+            caps: vec!["match".to_owned(), "events".to_owned()],
+            activity: crate::companion::Activity::Menu,
+            replay_path: String::new(),
+            online: crate::companion::Online::default(),
+            match_state: None,
+            updated_at: Some(std::time::Instant::now()),
+        });
+        app.sets.session = Some(crate::sets::Session {
+            how: crate::sets::How::Queue {
+                label: "Competitive".to_owned(),
+                mods: vec![ucf.clone()],
+            },
+            name: "Competitive".to_owned(),
+            set_key: tgg_mod::sets::INSTALLED.to_owned(),
+            profile_key: None,
+        });
+    });
+    assert!(
+        !crate::play::actions::queue_matches_running(&rt.state, &[ucf]),
+        "missing online cap must force relaunch for queue join"
+    );
+    assert!(
+        !crate::replays::actions::replay_fits_running(&rt.state, &replay_a),
+        "missing replay cap must force relaunch for replay watch"
     );
 }
