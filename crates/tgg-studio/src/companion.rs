@@ -1,13 +1,15 @@
 //! Two-way loopback TCP companion bridge between `tgg-studio` and a running
 //! `tgg-melee` process (`TGG_COMPANION=127.0.0.1:<port>:<token>`).
 //!
-//! Studio binds an ephemeral loopback port with a random per-launch token;
-//! `tgg-melee` connects outbound on startup (and reconnects automatically if it
-//! restarts via `tgg_restart_with`). The game pushes full state snapshots on
-//! every change, and Studio sends commands (`focus`, `quit`, `start_search`,
-//! `stop_search`, `host_room`, `join_room`, `leave_room`) with acks.
+//! Protocol v2: Studio binds an ephemeral loopback port with a random
+//! per-launch token; `tgg-melee` connects outbound on startup (and reconnects
+//! automatically if it restarts via `tgg_restart_with`). `hello` advertises
+//! host + mod capabilities (`caps`), state arrives as independent topic
+//! snapshots (`session`, `online`, `match`), one-shot events (`match_ended`,
+//! `replay_saved`) stream alongside snapshots, and commands return acks.
 
 use serde::Deserialize;
+use std::collections::VecDeque;
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{Ipv4Addr, TcpListener, TcpStream};
@@ -18,22 +20,33 @@ use std::time::{Duration, Instant};
 /// How long Studio holds onto the last `GettingMods` state while `tgg-melee`
 /// replaces itself via `tgg_restart_with` and reconnects on the same port.
 const RESTART_GRACE: Duration = Duration::from_secs(12);
+/// Bound on buffered unread events or error acks if the UI is paused.
+const MAX_QUEUED: usize = 32;
 
 /// Live state reported by the running `tgg-melee` process.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LiveState {
     pub pid: u32,
     pub mod_set_id: String,
+    /// Capabilities advertised by the game and its loaded mods in `hello`.
+    pub caps: Vec<String>,
     pub activity: Activity,
     /// Active replay file path when `activity == Activity::Replay`, else empty.
     pub replay_path: String,
     pub online: Online,
+    /// Live match telemetry while `tgg_in_match()` is active, else `None`.
+    pub match_state: Option<LiveMatch>,
     /// When `online.state` last entered `Searching`, used to tick the timer
     /// locally from `online.search_ms` without per-second network traffic.
     pub updated_at: Option<Instant>,
 }
 
 impl LiveState {
+    /// Whether the connected game advertised capability `cap` in `hello`.
+    pub fn has_cap(&self, cap: &str) -> bool {
+        self.caps.iter().any(|c| c == cap)
+    }
+
     /// Elapsed search seconds while `online.state == OnlineState::Searching`.
     pub fn search_secs(&self) -> u64 {
         let base_ms = self.online.search_ms;
@@ -116,7 +129,8 @@ pub struct Online {
     pub state: OnlineState,
     pub queue_label: String,
     pub search_ms: u64,
-    pub opponent: String,
+    /// Other players in a matched online session.
+    pub players: Vec<String>,
     pub room: RoomInfo,
     pub signin: SigninInfo,
     pub why: String,
@@ -154,6 +168,66 @@ pub struct SigninInfo {
     pub url: String,
     #[serde(default)]
     pub code: String,
+}
+
+/// Live match snapshot pushed by `tgg-melee` while in a match, training, or
+/// replay (`topic: "match"`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LiveMatch {
+    pub stage: String,
+    pub stage_name: String,
+    pub stage_id: Option<u16>,
+    pub match_kind: String,
+    pub timer_secs: Option<u32>,
+    pub time_limit: u32,
+    pub teams: bool,
+    pub paused: bool,
+    pub players: Vec<LivePlayer>,
+}
+
+impl LiveMatch {
+    /// Human-readable stage name (prefers the game's registry name, falls back
+    /// to vanilla stage id or raw content id).
+    pub fn display_stage(&self) -> String {
+        if !self.stage_name.is_empty() {
+            return self.stage_name.clone();
+        }
+        if let Some(name) = self.stage_id.and_then(tgg_app::replays::stage_name) {
+            return name.to_owned();
+        }
+        self.stage.clone()
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LivePlayer {
+    pub port: u8,
+    pub kind: String,
+    pub character: String,
+    pub character_id: Option<u8>,
+    pub costume: u8,
+    pub stocks: u8,
+    pub percent: u32,
+    pub team: u8,
+}
+
+impl LivePlayer {
+    pub fn display_character(&self) -> String {
+        if let Some(ch) = self.character_id.and_then(tgg_app::replays::character) {
+            return ch.name().to_owned();
+        }
+        if let Some((_, slug)) = self.character.split_once('/') {
+            return slug.to_owned();
+        }
+        format!("P{}", self.port)
+    }
+}
+
+/// One-shot events streamed from the running game (`{"type":"event",...}`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Event {
+    MatchEnded(Option<LiveMatch>),
+    ReplaySaved { path: String, frames: u32 },
 }
 
 /// Commands Studio can send to the running `tgg-melee` process.
@@ -201,8 +275,8 @@ impl Command {
     }
 }
 
-/// Last command acknowledgment from the game, surfaced if a command was refused
-/// (e.g. `"in-match"`).
+/// Command acknowledgment from the game, queued when `ok == false` so a
+/// following `ok: true` ack (e.g. `Focus`) never overwrites an error.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ack {
     pub id: u32,
@@ -218,7 +292,8 @@ pub struct Companion {
     next_id: AtomicU32,
     writer: Arc<Mutex<Option<TcpStream>>>,
     state: Arc<Mutex<Option<LiveState>>>,
-    last_ack: Arc<Mutex<Option<Ack>>>,
+    error_acks: Arc<Mutex<VecDeque<Ack>>>,
+    events: Arc<Mutex<VecDeque<Event>>>,
     restarting_until: Arc<Mutex<Option<Instant>>>,
 }
 
@@ -235,14 +310,16 @@ impl Companion {
         let stopped = Arc::new(AtomicBool::new(false));
         let writer: Arc<Mutex<Option<TcpStream>>> = Arc::new(Mutex::new(None));
         let state: Arc<Mutex<Option<LiveState>>> = Arc::new(Mutex::new(None));
-        let last_ack: Arc<Mutex<Option<Ack>>> = Arc::new(Mutex::new(None));
+        let error_acks: Arc<Mutex<VecDeque<Ack>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let events: Arc<Mutex<VecDeque<Event>>> = Arc::new(Mutex::new(VecDeque::new()));
         let restarting_until: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
 
         let t_stopped = stopped.clone();
         let t_token = token.clone();
         let t_writer = writer.clone();
         let t_state = state.clone();
-        let t_ack = last_ack.clone();
+        let t_acks = error_acks.clone();
+        let t_events = events.clone();
         let t_restart = restarting_until.clone();
 
         std::thread::Builder::new()
@@ -258,7 +335,8 @@ impl Companion {
                         &t_stopped,
                         &t_writer,
                         &t_state,
-                        &t_ack,
+                        &t_acks,
+                        &t_events,
                         &t_restart,
                         waker.as_deref(),
                     );
@@ -273,7 +351,8 @@ impl Companion {
             next_id: AtomicU32::new(1),
             writer,
             state,
-            last_ack,
+            error_acks,
+            events,
             restarting_until,
         })
     }
@@ -330,14 +409,17 @@ impl Companion {
         self.state.lock().ok()?.clone()
     }
 
-    /// Take the latest failed command ack, if any.
+    /// Pop the oldest failed command ack, if any.
     pub fn take_error_ack(&self) -> Option<Ack> {
-        let mut guard = self.last_ack.lock().ok()?;
-        if guard.as_ref().is_some_and(|ack| !ack.ok) {
-            guard.take()
-        } else {
-            None
-        }
+        self.error_acks.lock().ok()?.pop_front()
+    }
+
+    /// Drain all pending one-shot events received since the last call.
+    pub fn drain_events(&self) -> Vec<Event> {
+        let Ok(mut guard) = self.events.lock() else {
+            return Vec::new();
+        };
+        guard.drain(..).collect()
     }
 
     /// Send a command to the connected game. Returns `true` if written.
@@ -389,23 +471,37 @@ struct WireMsg {
     #[serde(rename = "type")]
     kind: String,
     #[serde(default)]
+    v: u32,
+    #[serde(default)]
     token: String,
     #[serde(default)]
     pid: u32,
     #[serde(default)]
     mod_set_id: String,
     #[serde(default)]
-    activity: String,
+    caps: Vec<String>,
     #[serde(default)]
-    replay_path: String,
+    topic: String,
     #[serde(default)]
-    online: WireOnline,
+    name: String,
+    #[serde(default)]
+    data: serde_json::Value,
     #[serde(default)]
     id: u32,
     #[serde(default)]
     ok: bool,
     #[serde(default)]
     reason: String,
+}
+
+#[derive(Default, Deserialize)]
+struct WireSession {
+    #[serde(default)]
+    activity: String,
+    #[serde(default)]
+    mod_set_id: String,
+    #[serde(default)]
+    replay_path: String,
 }
 
 #[derive(Default, Deserialize)]
@@ -417,7 +513,7 @@ struct WireOnline {
     #[serde(default)]
     search_ms: u64,
     #[serde(default)]
-    opponent: String,
+    players: Vec<String>,
     #[serde(default)]
     room: WireRoom,
     #[serde(default)]
@@ -440,6 +536,92 @@ struct WireRoom {
     max: u32,
 }
 
+#[derive(Default, Deserialize)]
+struct WireMatch {
+    #[serde(default)]
+    stage: String,
+    #[serde(default)]
+    stage_name: String,
+    #[serde(default)]
+    stage_id: i32,
+    #[serde(default)]
+    match_kind: String,
+    #[serde(default)]
+    timer_secs: Option<u32>,
+    #[serde(default)]
+    time_limit: u32,
+    #[serde(default)]
+    teams: bool,
+    #[serde(default)]
+    paused: bool,
+    #[serde(default)]
+    players: Vec<WirePlayer>,
+}
+
+#[derive(Default, Deserialize)]
+struct WirePlayer {
+    #[serde(default)]
+    port: u8,
+    #[serde(default)]
+    kind: String,
+    #[serde(default)]
+    character: String,
+    #[serde(default)]
+    character_id: i32,
+    #[serde(default)]
+    costume: u8,
+    #[serde(default)]
+    stocks: u8,
+    #[serde(default)]
+    percent: u32,
+    #[serde(default)]
+    team: u8,
+}
+
+#[derive(Default, Deserialize)]
+struct WireReplaySaved {
+    #[serde(default)]
+    path: String,
+    #[serde(default)]
+    frames: u32,
+}
+
+impl From<WireMatch> for LiveMatch {
+    fn from(m: WireMatch) -> Self {
+        Self {
+            stage: m.stage,
+            stage_name: m.stage_name,
+            stage_id: u16::try_from(m.stage_id).ok(),
+            match_kind: m.match_kind,
+            timer_secs: m.timer_secs,
+            time_limit: m.time_limit,
+            teams: m.teams,
+            paused: m.paused,
+            players: m
+                .players
+                .into_iter()
+                .map(|p| LivePlayer {
+                    port: p.port,
+                    kind: p.kind,
+                    character: p.character,
+                    character_id: u8::try_from(p.character_id).ok(),
+                    costume: p.costume,
+                    stocks: p.stocks,
+                    percent: p.percent,
+                    team: p.team,
+                })
+                .collect(),
+        }
+    }
+}
+
+fn push_bounded<T>(queue: &mut VecDeque<T>, item: T) {
+    if queue.len() >= MAX_QUEUED {
+        queue.pop_front();
+    }
+    queue.push_back(item);
+}
+
 #[allow(clippy::too_many_arguments)]
 fn handle_client(
     stream: TcpStream,
@@ -447,7 +629,8 @@ fn handle_client(
     stopped: &AtomicBool,
     writer: &Mutex<Option<TcpStream>>,
     state: &Mutex<Option<LiveState>>,
-    last_ack: &Mutex<Option<Ack>>,
+    error_acks: &Mutex<VecDeque<Ack>>,
+    events: &Mutex<VecDeque<Event>>,
     restarting_until: &Mutex<Option<Instant>>,
     waker: Option<&(dyn Fn() + Send + Sync)>,
 ) {
@@ -459,7 +642,6 @@ fn handle_client(
     let mut line = String::new();
     let mut authed = false;
     let mut restarting = false;
-    let mut pid = 0u32;
 
     loop {
         if stopped.load(Ordering::Relaxed) {
@@ -474,9 +656,8 @@ fn handle_client(
             continue;
         };
         if !authed {
-            if msg.kind == "hello" && msg.token == expected_token {
+            if msg.kind == "hello" && msg.v == 2 && msg.token == expected_token {
                 authed = true;
-                pid = msg.pid;
                 if let Ok(mut r) = restarting_until.lock() {
                     *r = None;
                 }
@@ -487,11 +668,13 @@ fn handle_client(
                 }
                 if let Ok(mut s) = state.lock() {
                     *s = Some(LiveState {
-                        pid,
+                        pid: msg.pid,
                         mod_set_id: msg.mod_set_id,
+                        caps: msg.caps,
                         activity: Activity::Menu,
                         replay_path: String::new(),
                         online: Online::default(),
+                        match_state: None,
                         updated_at: Some(Instant::now()),
                     });
                 }
@@ -513,6 +696,7 @@ fn handle_client(
                     && let Some(live) = s.as_mut()
                 {
                     live.online.state = OnlineState::GettingMods;
+                    live.match_state = None;
                 }
                 if let Some(wake) = waker {
                     wake();
@@ -520,42 +704,98 @@ fn handle_client(
                 break;
             }
             "state" => {
-                let next = LiveState {
-                    pid,
-                    mod_set_id: msg.mod_set_id,
-                    activity: Activity::parse(&msg.activity),
-                    replay_path: msg.replay_path,
-                    online: Online {
-                        state: OnlineState::parse(&msg.online.state),
-                        queue_label: msg.online.queue_label,
-                        search_ms: msg.online.search_ms,
-                        opponent: msg.online.opponent,
-                        room: RoomInfo {
-                            code: msg.online.room.code,
-                            link: msg.online.room.link,
-                            host: msg.online.room.host,
-                            players: msg.online.room.players,
-                            max: msg.online.room.max,
-                        },
-                        signin: msg.online.signin,
-                        why: msg.online.why,
-                    },
-                    updated_at: Some(Instant::now()),
-                };
-                if let Ok(mut s) = state.lock() {
-                    *s = Some(next);
+                let mut changed = false;
+                if let Ok(mut s) = state.lock()
+                    && let Some(live) = s.as_mut()
+                {
+                    match msg.topic.as_str() {
+                        "session" => {
+                            if let Ok(sess) = serde_json::from_value::<WireSession>(msg.data) {
+                                live.activity = Activity::parse(&sess.activity);
+                                live.mod_set_id = sess.mod_set_id;
+                                live.replay_path = sess.replay_path;
+                                changed = true;
+                            }
+                        }
+                        "online" => {
+                            if let Ok(online) = serde_json::from_value::<WireOnline>(msg.data) {
+                                live.online = Online {
+                                    state: OnlineState::parse(&online.state),
+                                    queue_label: online.queue_label,
+                                    search_ms: online.search_ms,
+                                    players: online.players,
+                                    room: RoomInfo {
+                                        code: online.room.code,
+                                        link: online.room.link,
+                                        host: online.room.host,
+                                        players: online.room.players,
+                                        max: online.room.max,
+                                    },
+                                    signin: online.signin,
+                                    why: online.why,
+                                };
+                                live.updated_at = Some(Instant::now());
+                                changed = true;
+                            }
+                        }
+                        "match" => {
+                            if msg.data.is_null() {
+                                live.match_state = None;
+                                changed = true;
+                            } else if let Ok(m) = serde_json::from_value::<WireMatch>(msg.data) {
+                                live.match_state = Some(m.into());
+                                changed = true;
+                            }
+                        }
+                        _ => {}
+                    }
                 }
-                if let Some(wake) = waker {
+                if changed && let Some(wake) = waker {
                     wake();
                 }
             }
-            "ack" => {
-                if let Ok(mut a) = last_ack.lock() {
-                    *a = Some(Ack {
-                        id: msg.id,
-                        ok: msg.ok,
-                        reason: msg.reason,
-                    });
+            "event" => {
+                let ev = match msg.name.as_str() {
+                    "match_ended" => {
+                        let summary = if msg.data.is_object()
+                            && msg.data.as_object().is_some_and(|o| !o.is_empty())
+                        {
+                            serde_json::from_value::<WireMatch>(msg.data)
+                                .ok()
+                                .map(LiveMatch::from)
+                        } else {
+                            None
+                        };
+                        Some(Event::MatchEnded(summary))
+                    }
+                    "replay_saved" => serde_json::from_value::<WireReplaySaved>(msg.data)
+                        .ok()
+                        .filter(|r| !r.path.is_empty())
+                        .map(|r| Event::ReplaySaved {
+                            path: r.path,
+                            frames: r.frames,
+                        }),
+                    _ => None,
+                };
+                if let Some(ev) = ev {
+                    if let Ok(mut q) = events.lock() {
+                        push_bounded(&mut q, ev);
+                    }
+                    if let Some(wake) = waker {
+                        wake();
+                    }
+                }
+            }
+            "ack" if !msg.ok => {
+                if let Ok(mut a) = error_acks.lock() {
+                    push_bounded(
+                        &mut a,
+                        Ack {
+                            id: msg.id,
+                            ok: false,
+                            reason: msg.reason,
+                        },
+                    );
                 }
                 if let Some(wake) = waker {
                     wake();
@@ -595,7 +835,7 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn handshake_state_and_command_roundtrip() {
+    fn handshake_topics_events_and_error_ack_queue() {
         let server = Companion::start(None).expect("start companion");
         let (key, val) = server.env_var();
         assert_eq!(key, "TGG_COMPANION");
@@ -611,12 +851,17 @@ mod tests {
             .unwrap();
         writeln!(
             client,
-            "{{\"type\":\"hello\",\"v\":1,\"token\":\"{token}\",\"pid\":42,\"mod_set_id\":\"abc\"}}"
+            "{{\"type\":\"hello\",\"v\":2,\"token\":\"{token}\",\"pid\":42,\"mod_set_id\":\"abc\",\"caps\":[\"match\",\"events\",\"online\",\"replay\"]}}"
         )
         .unwrap();
         writeln!(
             client,
-            "{{\"type\":\"state\",\"activity\":\"menu\",\"mod_set_id\":\"abc\",\"online\":{{\"state\":\"searching\",\"queue_label\":\"Competitive\",\"search_ms\":5000}}}}"
+            "{{\"type\":\"state\",\"topic\":\"online\",\"data\":{{\"state\":\"searching\",\"queue_label\":\"Competitive\",\"search_ms\":5000}}}}"
+        )
+        .unwrap();
+        writeln!(
+            client,
+            "{{\"type\":\"state\",\"topic\":\"match\",\"data\":{{\"stage\":\"melee/battlefield\",\"stage_name\":\"Battlefield\",\"stage_id\":31,\"match_kind\":\"stock\",\"timer_secs\":420,\"time_limit\":480,\"teams\":false,\"paused\":false,\"players\":[{{\"port\":1,\"kind\":\"human\",\"character\":\"melee/fox\",\"character_id\":2,\"costume\":0,\"stocks\":3,\"percent\":48,\"team\":0}}]}}}}"
         )
         .unwrap();
 
@@ -624,44 +869,72 @@ mod tests {
         for _ in 0..40 {
             if let Some(s) = server.snapshot()
                 && s.online.state == OnlineState::Searching
+                && s.match_state.is_some()
             {
                 got = Some(s);
                 break;
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        let s = got.expect("received searching state");
+        let s = got.expect("received searching + match state");
         assert_eq!(s.pid, 42);
+        assert!(s.has_cap("online"));
+        assert!(s.has_cap("replay"));
         assert_eq!(s.online.queue_label, "Competitive");
         assert!(s.search_secs() >= 5);
+        let m = s.match_state.expect("live match");
+        assert_eq!(m.display_stage(), "Battlefield");
+        assert_eq!(m.timer_secs, Some(420));
+        assert_eq!(m.players.len(), 1);
+        assert_eq!(m.players[0].display_character(), "Fox");
+        assert_eq!(m.players[0].stocks, 3);
+        assert_eq!(m.players[0].percent, 48);
 
-        assert!(server.send(Command::StopSearch));
-        let mut line = String::new();
-        BufReader::new(&client).read_line(&mut line).unwrap();
-        assert!(line.contains("\"cmd\":\"stop_search\""));
-
+        // Failed ack followed immediately by ok: true ack (e.g. Focus) MUST preserve the error!
         writeln!(
             client,
-            "{{\"type\":\"state\",\"activity\":\"replay\",\"mod_set_id\":\"abc123\",\"replay_path\":\"/tmp/match.slp\",\"online\":{{\"state\":\"idle\"}}}}"
+            "{{\"type\":\"ack\",\"id\":1,\"ok\":false,\"reason\":\"in-match\"}}"
         )
         .unwrap();
-        let mut replay = None;
+        writeln!(client, "{{\"type\":\"ack\",\"id\":2,\"ok\":true}}").unwrap();
+        writeln!(
+            client,
+            "{{\"type\":\"event\",\"name\":\"replay_saved\",\"data\":{{\"path\":\"/tmp/new.slp\",\"frames\":3600}}}}"
+        )
+        .unwrap();
+        writeln!(
+            client,
+            "{{\"type\":\"state\",\"topic\":\"match\",\"data\":null}}"
+        )
+        .unwrap();
+
+        let mut cleared = false;
         for _ in 0..40 {
-            if let Some(s) = server.snapshot()
-                && s.activity == Activity::Replay
-            {
-                replay = Some(s);
+            if server.snapshot().is_some_and(|s| s.match_state.is_none()) {
+                cleared = true;
                 break;
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        let r = replay.expect("received replay state");
-        assert_eq!(r.replay_path, "/tmp/match.slp");
+        assert!(cleared, "match_state cleared on null");
+        let err = server.take_error_ack().expect("error ack preserved");
+        assert_eq!(err.id, 1);
+        assert_eq!(err.reason, "in-match");
+        assert!(server.take_error_ack().is_none());
+
+        let events = server.drain_events();
+        assert_eq!(
+            events,
+            vec![Event::ReplaySaved {
+                path: "/tmp/new.slp".to_owned(),
+                frames: 3600,
+            }]
+        );
 
         assert!(server.send(Command::LoadReplay {
             path: "/tmp/next.slp".to_owned()
         }));
-        line.clear();
+        let mut line = String::new();
         BufReader::new(&client).read_line(&mut line).unwrap();
         assert!(line.contains("\"cmd\":\"load_replay\""));
         assert!(line.contains("\"/tmp/next.slp\""));
@@ -681,12 +954,12 @@ mod tests {
             let mut client = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).expect("connect 1");
             writeln!(
                 client,
-                "{{\"type\":\"hello\",\"v\":1,\"token\":\"{token}\",\"pid\":100,\"mod_set_id\":\"old\"}}"
+                "{{\"type\":\"hello\",\"v\":2,\"token\":\"{token}\",\"pid\":100,\"mod_set_id\":\"old\",\"caps\":[\"match\",\"events\",\"online\"]}}"
             )
             .unwrap();
             writeln!(
                 client,
-                "{{\"type\":\"state\",\"activity\":\"menu\",\"mod_set_id\":\"old\",\"online\":{{\"state\":\"getting-mods\",\"room\":{{\"code\":\"KFXD\",\"host\":\"saavy\"}}}}}}"
+                "{{\"type\":\"state\",\"topic\":\"online\",\"data\":{{\"state\":\"getting-mods\",\"room\":{{\"code\":\"KFXD\",\"host\":\"saavy\"}}}}}}"
             )
             .unwrap();
             writeln!(client, "{{\"type\":\"restarting\"}}").unwrap();
@@ -710,12 +983,12 @@ mod tests {
         let mut next = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).expect("connect 2");
         writeln!(
             next,
-            "{{\"type\":\"hello\",\"v\":1,\"token\":\"{token}\",\"pid\":200,\"mod_set_id\":\"host_set\"}}"
+            "{{\"type\":\"hello\",\"v\":2,\"token\":\"{token}\",\"pid\":200,\"mod_set_id\":\"host_set\",\"caps\":[\"match\",\"events\",\"online\"]}}"
         )
         .unwrap();
         writeln!(
             next,
-            "{{\"type\":\"state\",\"activity\":\"menu\",\"mod_set_id\":\"host_set\",\"online\":{{\"state\":\"room-waiting\",\"room\":{{\"code\":\"KFXD\",\"host\":\"saavy\",\"players\":[\"saavy\",\"me\"],\"max\":4}}}}}}"
+            "{{\"type\":\"state\",\"topic\":\"online\",\"data\":{{\"state\":\"room-waiting\",\"room\":{{\"code\":\"KFXD\",\"host\":\"saavy\",\"players\":[\"saavy\",\"me\"],\"max\":4}}}}}}"
         )
         .unwrap();
 

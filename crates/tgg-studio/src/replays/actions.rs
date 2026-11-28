@@ -316,6 +316,12 @@ pub fn plan_for(app: &App, path: &Path) -> Option<ProfilePlan> {
 /// Whether the replay at `path` can be loaded in-place into the currently
 /// running `tgg-melee` via companion without restarting.
 pub fn replay_fits_running(app: &App, path: &Path) -> bool {
+    if let Some(live) = app.live_game()
+        && !live.caps.is_empty()
+        && !live.has_cap("replay")
+    {
+        return false;
+    }
     let (Some(_), Some(session), Some(plan)) = (
         &app.companion,
         app.sets.session.as_ref(),

@@ -412,9 +412,11 @@ const SCENES: &[Scene] = &[
         app.companion_override = Some(crate::companion::LiveState {
             pid: 1,
             mod_set_id: String::new(),
+            caps: Vec::new(),
             activity: crate::companion::Activity::Match,
             replay_path: String::new(),
             online: crate::companion::Online::default(),
+            match_state: None,
             updated_at: Some(std::time::Instant::now()),
         });
         app.play.confirm = Some(crate::play::PendingAction::Join("KFXD".to_owned()));
@@ -1403,6 +1405,7 @@ fn searching_scene(app: &mut App) {
     app.companion_override = Some(crate::companion::LiveState {
         pid: 1,
         mod_set_id: String::new(),
+        caps: Vec::new(),
         activity: crate::companion::Activity::Menu,
         replay_path: String::new(),
         online: crate::companion::Online {
@@ -1411,6 +1414,7 @@ fn searching_scene(app: &mut App) {
             search_ms: 7_000,
             ..Default::default()
         },
+        match_state: None,
         updated_at: Some(std::time::Instant::now()),
     });
 }
@@ -1500,13 +1504,14 @@ fn room_scene(app: &mut App, how: crate::sets::How, line: &str) {
         app.companion_override = Some(crate::companion::LiveState {
             pid: 1,
             mod_set_id: String::new(),
+            caps: Vec::new(),
             activity: crate::companion::Activity::Menu,
             replay_path: String::new(),
             online: crate::companion::Online {
                 state,
                 queue_label: String::new(),
                 search_ms: 0,
-                opponent: String::new(),
+                players: Vec::new(),
                 room: crate::companion::RoomInfo {
                     code: r.code,
                     link: r.link,
@@ -1517,6 +1522,7 @@ fn room_scene(app: &mut App, how: crate::sets::How, line: &str) {
                 signin: r.signin,
                 why: r.why,
             },
+            match_state: None,
             updated_at: Some(std::time::Instant::now()),
         });
     }

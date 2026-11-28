@@ -7,7 +7,7 @@
 
 use super::actions;
 use super::{PendingAction, Queue, QueueMod, gameplay, matching, searching};
-use crate::companion::{Activity, LiveState, Online, OnlineState, RoomInfo};
+use crate::companion::{Activity, LiveMatch, LivePlayer, LiveState, Online, OnlineState, RoomInfo};
 use crate::jobs::renders::RenderKey;
 use crate::mods::Disc;
 use crate::nav::Place;
@@ -259,6 +259,10 @@ fn notices(app: &App, p: &Palette) -> Vec<El> {
 /// beside the fighter standing in a pool of light.
 fn hero(app: &App, p: &Palette) -> El {
     let side = if wide(app) { HERO.0 } else { HERO.1 };
+    let live_match = app
+        .live_game()
+        .and_then(|live| live.match_state)
+        .filter(|m| !m.players.is_empty());
     let words = col()
         .grow(1.0)
         .min_w(0.0)
@@ -270,6 +274,7 @@ fn hero(app: &App, p: &Palette) -> El {
                 .gap(space::SM)
                 .mt(space::XS)
                 .child(buttons(app, p))
+                .children(live_match.as_ref().map(|m| live_match_card(app, m, p)))
                 .children(match &app.sets.launching {
                     Some(launching) => Some(launching_line(launching, p)),
                     None => explainer(app, p),
@@ -282,6 +287,131 @@ fn hero(app: &App, p: &Palette) -> El {
         .gap(space::LG)
         .child(words)
         .child(spotlight(app, side, p))
+}
+
+/// Live match telemetry strip shown in the hero while a match, training, or
+/// replay is active in `tgg-melee`.
+fn live_match_card(app: &App, live: &LiveMatch, p: &Palette) -> El {
+    let stage = live.display_stage();
+    let stage_text = if stage.is_empty() {
+        "In match".to_owned()
+    } else {
+        stage
+    };
+    let timer = live.timer_secs.map(|secs| {
+        label(format!("{}:{:02}", secs / 60, secs % 60))
+            .font(text::MONO_TEXT)
+            .color(p.muted)
+    });
+    let paused = live.paused.then(|| {
+        el().px(space::XS)
+            .py(space::TIGHT)
+            .radius(radius::PILL)
+            .fill(p.fill)
+            .child(label("Paused").font(text::SMALL).color(p.muted))
+    });
+    let head = row()
+        .w_full()
+        .items_center()
+        .gap(space::XS)
+        .child(
+            el().size(size::DOT, size::DOT)
+                .radius(size::DOT / 2.0)
+                .fill(p.success)
+                .looping(LIVE_PULSE),
+        )
+        .child(
+            label(stage_text)
+                .font(text::STRONG)
+                .color(p.ink)
+                .truncate()
+                .grow(1.0)
+                .min_w(0.0),
+        )
+        .children(paused)
+        .children(timer);
+
+    let show_stocks = live.match_kind == "stock";
+    let players = row().flex_wrap().gap(space::XS).children(
+        live.players
+            .iter()
+            .map(|player| live_player_chip(app, player, show_stocks, p)),
+    );
+
+    col()
+        .key("play/live-match")
+        .w_full()
+        .fill(p.surface)
+        .border(size::LINE, p.line)
+        .radius(radius::CARD)
+        .px(space::MD)
+        .py(space::SM)
+        .gap(space::SM)
+        .child(head)
+        .child(players)
+}
+
+fn live_player_chip(app: &App, player: &LivePlayer, show_stocks: bool, p: &Palette) -> El {
+    let portrait = crate::replays::view::fighter_picture(
+        app,
+        player.character_id,
+        Some(player.costume),
+        FIGHTER,
+        p,
+    );
+    let name = if player.kind == "cpu" {
+        format!("{} · CPU", player.display_character())
+    } else {
+        format!("P{} · {}", player.port, player.display_character())
+    };
+    let percent_color = if player.percent >= 100 {
+        p.danger
+    } else {
+        p.ink
+    };
+    let stocks = show_stocks.then(|| {
+        if player.stocks <= 5 {
+            row()
+                .gap(space::TIGHT)
+                .items_center()
+                .children((0..player.stocks).map(|_| {
+                    el().size(size::DOT, size::DOT)
+                        .radius(size::DOT / 2.0)
+                        .fill(p.ink)
+                }))
+        } else {
+            row().child(
+                label(format!("×{}", player.stocks))
+                    .font(text::MONO_SMALL)
+                    .color(p.muted),
+            )
+        }
+    });
+    row()
+        .key(format!("play/live-match/p{}", player.port))
+        .items_center()
+        .gap(space::XS)
+        .px(space::SM)
+        .py(space::XS)
+        .radius(radius::CONTROL)
+        .fill(p.fill)
+        .child(portrait)
+        .child(
+            col()
+                .gap(space::TIGHT)
+                .child(label(name).font(text::SMALL).color(p.muted))
+                .child(
+                    row()
+                        .items_center()
+                        .gap(space::XS)
+                        .child(
+                            label(format!("{}%", player.percent))
+                                .font(text::TITLE)
+                                .color(percent_color),
+                        )
+                        .children(stocks),
+                ),
+        )
 }
 
 /// The fighter in a pool of light, with a warm glow behind: in 3D, idling,
@@ -549,10 +679,10 @@ fn running_buttons(
                 .child(quit)
         }
         OnlineState::Matched => {
-            let words = if live.online.opponent.is_empty() {
+            let words = if live.online.players.is_empty() {
                 "In online match".to_owned()
             } else {
-                format!("Playing {}", live.online.opponent)
+                format!("Playing {}", live.online.players.join(", "))
             };
             row()
                 .flex_wrap()
@@ -1220,8 +1350,7 @@ pub fn confirm(app: &App, p: &Palette) -> Option<El> {
     let (title, line, cta) = match action {
         PendingAction::Find => (
             "Leave current match?",
-            "Leaving will end your current match and start searching for a new opponent."
-                .to_owned(),
+            "Leaving will end your current match and start searching for a new match.".to_owned(),
             "Leave & find match".to_owned(),
         ),
         PendingAction::Host => (
