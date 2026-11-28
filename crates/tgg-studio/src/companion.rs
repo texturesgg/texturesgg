@@ -25,6 +25,8 @@ pub struct LiveState {
     pub pid: u32,
     pub mod_set_id: String,
     pub activity: Activity,
+    /// Active replay file path when `activity == Activity::Replay`, else empty.
+    pub replay_path: String,
     pub online: Online,
     /// When `online.state` last entered `Searching`, used to tick the timer
     /// locally from `online.search_ms` without per-second network traffic.
@@ -165,6 +167,7 @@ pub enum Command {
     HostRoom,
     JoinRoom { code: String },
     LeaveRoom,
+    LoadReplay { path: String },
 }
 
 impl Command {
@@ -188,6 +191,12 @@ impl Command {
                 )
             }
             Self::LeaveRoom => format!("{{\"id\":{id},\"cmd\":\"leave_room\"}}"),
+            Self::LoadReplay { path } => {
+                format!(
+                    "{{\"id\":{id},\"cmd\":\"load_replay\",\"path\":{}}}",
+                    serde_json::to_string(path).unwrap_or_else(|_| "\"\"".to_owned())
+                )
+            }
         }
     }
 }
@@ -388,6 +397,8 @@ struct WireMsg {
     #[serde(default)]
     activity: String,
     #[serde(default)]
+    replay_path: String,
+    #[serde(default)]
     online: WireOnline,
     #[serde(default)]
     id: u32,
@@ -479,6 +490,7 @@ fn handle_client(
                         pid,
                         mod_set_id: msg.mod_set_id,
                         activity: Activity::Menu,
+                        replay_path: String::new(),
                         online: Online::default(),
                         updated_at: Some(Instant::now()),
                     });
@@ -512,6 +524,7 @@ fn handle_client(
                     pid,
                     mod_set_id: msg.mod_set_id,
                     activity: Activity::parse(&msg.activity),
+                    replay_path: msg.replay_path,
                     online: Online {
                         state: OnlineState::parse(&msg.online.state),
                         queue_label: msg.online.queue_label,
@@ -626,6 +639,32 @@ mod tests {
         let mut line = String::new();
         BufReader::new(&client).read_line(&mut line).unwrap();
         assert!(line.contains("\"cmd\":\"stop_search\""));
+
+        writeln!(
+            client,
+            "{{\"type\":\"state\",\"activity\":\"replay\",\"mod_set_id\":\"abc123\",\"replay_path\":\"/tmp/match.slp\",\"online\":{{\"state\":\"idle\"}}}}"
+        )
+        .unwrap();
+        let mut replay = None;
+        for _ in 0..40 {
+            if let Some(s) = server.snapshot()
+                && s.activity == Activity::Replay
+            {
+                replay = Some(s);
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let r = replay.expect("received replay state");
+        assert_eq!(r.replay_path, "/tmp/match.slp");
+
+        assert!(server.send(Command::LoadReplay {
+            path: "/tmp/next.slp".to_owned()
+        }));
+        line.clear();
+        BufReader::new(&client).read_line(&mut line).unwrap();
+        assert!(line.contains("\"cmd\":\"load_replay\""));
+        assert!(line.contains("\"/tmp/next.slp\""));
     }
 
     #[test]

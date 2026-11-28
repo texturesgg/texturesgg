@@ -60,6 +60,8 @@ pub struct Replays {
     pub checking: Option<PathBuf>,
     /// The replays whose mods have been checked this session.
     pub checked: std::collections::HashSet<PathBuf>,
+    /// Replay to launch as soon as the currently running game finishes quitting.
+    pub relaunch: Option<PathBuf>,
 }
 
 /// A replay in the list.
@@ -165,6 +167,7 @@ pub enum Done {
     /// A replay's profile, prepared to play.
     Prepared {
         path: PathBuf,
+        profile_key: String,
         result: Box<Result<Prepared, Error>>,
     },
     /// A replay's stats, read from its frames.

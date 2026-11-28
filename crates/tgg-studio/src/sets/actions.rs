@@ -312,19 +312,29 @@ pub fn game_log(app: &App) -> std::path::PathBuf {
     app.data.ports.with_file_name("game.log")
 }
 
-/// Build the launch environment for `how`, starting a fresh companion TCP
-/// server so `tgg-melee` connects back with live state and command support.
-fn launch_env(app: &mut App, how: &How) -> Vec<(String, std::ffi::OsString)> {
-    let mut env = how.env();
+/// Start a fresh companion TCP server and return the `TGG_COMPANION` env entry
+/// so `tgg-melee` connects back with live state and command support.
+pub fn start_companion(app: &mut App) -> Option<(String, std::ffi::OsString)> {
     match crate::companion::Companion::start(app.jobs.waker()) {
         Ok(server) => {
-            env.push(server.env_var());
+            let env = server.env_var();
             app.companion = Some(Arc::new(server));
+            Some(env)
         }
         Err(error) => {
             tgg_app::log(&format!("companion server: {error}"));
             app.companion = None;
+            None
         }
+    }
+}
+
+/// Build the launch environment for `how`, starting a fresh companion TCP
+/// server so `tgg-melee` connects back with live state and command support.
+fn launch_env(app: &mut App, how: &How) -> Vec<(String, std::ffi::OsString)> {
+    let mut env = how.env();
+    if let Some(comp) = start_companion(app) {
+        env.push(comp);
     }
     env
 }
@@ -345,7 +355,12 @@ fn started(
     match running {
         Ok(running) => {
             crate::mods::actions::watch(app, running);
-            app.sets.session = Some(Session { how, name, set_key });
+            app.sets.session = Some(Session {
+                how,
+                name,
+                set_key,
+                profile_key: None,
+            });
         }
         Err(error) => app.tell(
             format!(

@@ -404,6 +404,7 @@ const SCENES: &[Scene] = &[
             how: crate::sets::How::Offline,
             name: "Friday night".to_owned(),
             set_key: app.sets.active.clone(),
+            profile_key: None,
         });
         app.mods.playing = Some(crate::mods::Playing {
             stop: Arc::default(),
@@ -412,6 +413,7 @@ const SCENES: &[Scene] = &[
             pid: 1,
             mod_set_id: String::new(),
             activity: crate::companion::Activity::Match,
+            replay_path: String::new(),
             online: crate::companion::Online::default(),
             updated_at: Some(std::time::Instant::now()),
         });
@@ -546,6 +548,7 @@ const SCENES: &[Scene] = &[
             how: crate::sets::How::Offline,
             name: "Friday night".into(),
             set_key: "friday-night".into(),
+            profile_key: None,
         });
     }),
     // The launch video's start: a player new to mods, against the live
@@ -1392,6 +1395,7 @@ fn searching_scene(app: &mut App) {
         how: crate::sets::How::Search,
         name: "Friday night".to_owned(),
         set_key: app.sets.active.clone(),
+        profile_key: None,
     });
     app.mods.playing = Some(crate::mods::Playing {
         stop: Arc::default(),
@@ -1400,6 +1404,7 @@ fn searching_scene(app: &mut App) {
         pid: 1,
         mod_set_id: String::new(),
         activity: crate::companion::Activity::Menu,
+        replay_path: String::new(),
         online: crate::companion::Online {
             state: crate::companion::OnlineState::Searching,
             queue_label: "Competitive".to_owned(),
@@ -1457,6 +1462,7 @@ fn room_scene(app: &mut App, how: crate::sets::How, line: &str) {
         how,
         name: "Friday night".to_owned(),
         set_key: app.sets.active.clone(),
+        profile_key: None,
     });
     app.mods.playing = Some(crate::mods::Playing {
         stop: Arc::default(),
@@ -1495,6 +1501,7 @@ fn room_scene(app: &mut App, how: crate::sets::How, line: &str) {
             pid: 1,
             mod_set_id: String::new(),
             activity: crate::companion::Activity::Menu,
+            replay_path: String::new(),
             online: crate::companion::Online {
                 state,
                 queue_label: String::new(),

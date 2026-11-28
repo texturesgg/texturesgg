@@ -806,9 +806,13 @@ pub fn done(app: &mut App, done: Done) -> bool {
             }
             if let Err(why) = result {
                 app.sets.relaunch = None;
+                app.replays.relaunch = None;
                 app.tell(why, true);
             } else if let Some(next) = app.sets.relaunch.take() {
+                app.replays.relaunch = None;
                 crate::sets::actions::launch(app, next);
+            } else if let Some(path) = app.replays.relaunch.take() {
+                crate::replays::actions::play(app, &path);
             }
         }
     }
